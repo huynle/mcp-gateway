@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jira-mcp
+  labels:
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/component: jira-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/component: jira-mcp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
