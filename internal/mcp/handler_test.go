@@ -506,3 +506,24 @@ func TestHandlerUsesSuppliedPipeline(t *testing.T) {
 		t.Errorf("text = %q", text(t, res))
 	}
 }
+
+// TestToolsListIsPrivatelyCacheable: the list is filtered per principal, so
+// the protocol's cache hint must say "private" (never the "public" default)
+// and immediately stale.
+func TestToolsListIsPrivatelyCacheable(t *testing.T) {
+	srv := httptest.NewServer(newHandler(t, httpTools(t), nil))
+	defer srv.Close()
+	resp := post(t, srv.URL, fullToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	var rpc struct {
+		Result struct {
+			TTLMs      int    `json:"ttlMs"`
+			CacheScope string `json:"cacheScope"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(resp.Body, &rpc); err != nil {
+		t.Fatalf("%s: %v", resp.Body, err)
+	}
+	if rpc.Result.CacheScope != "private" || rpc.Result.TTLMs != 0 {
+		t.Errorf("cacheScope/ttlMs = %q/%d, want private/0: %s", rpc.Result.CacheScope, rpc.Result.TTLMs, resp.Body)
+	}
+}

@@ -169,10 +169,11 @@ func (e *endpoint) middleware(next sdk.MethodHandler) sdk.MethodHandler {
 }
 
 // listTools renders the registry entries the caller may see. Cursors are
-// accepted and ignored: the whole list fits one page.
+// accepted and ignored: the whole list fits one page. The list is specific
+// to the principal, so the cache hint is "private" and immediately stale.
 func (e *endpoint) listTools(ctx context.Context, _ sdk.Request) (sdk.Result, error) {
 	principal := tokens.PrincipalFrom(ctx)
-	res := &sdk.ListToolsResult{Tools: []*sdk.Tool{}}
+	res := &sdk.ListToolsResult{Tools: []*sdk.Tool{}, Cacheable: sdk.Cacheable{CacheScope: "private"}}
 	for _, tool := range e.opts.Registry.List() {
 		if !e.opts.Visibility.Visible(ctx, principal, tool) {
 			continue

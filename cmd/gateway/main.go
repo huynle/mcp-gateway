@@ -235,7 +235,7 @@ func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, me
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
-	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "max_body", cfg.MCPMaxBody)
+	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "body_limit", cfg.MCPMaxBody)
 	return h, nil
 }
 
