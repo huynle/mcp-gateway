@@ -1,0 +1,50 @@
+{{template "head" .}}
+{{if .Notice}}<p class="ok">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<p>Connect the app accounts your tools should use. Company and personal accounts are kept apart; policy decides what each may do. Tokens are stored encrypted and never shown.</p>
+{{$csrf := .Caller.CSRFToken}}
+{{range .Vendors}}
+<section class="vendor">
+  <h2>{{title .Vendor}}</h2>
+  <table>
+    <thead><tr><th>Account</th><th>Label</th><th>Scopes</th><th>Status</th><th>Last refreshed</th><th></th></tr></thead>
+    <tbody>
+    {{$vendor := .Vendor}}
+    {{range .Connections}}
+    <tr>
+      <td>{{.DisplayName}}</td>
+      <td><span class="pill {{.Label}}">{{.Label}}</span></td>
+      <td><code>{{join .Scopes}}</code></td>
+      <td>{{if .NeedsReconnect}}<span class="pill needs_reconnect">needs reconnect</span>{{else}}<span class="pill active">{{.Status}}</span>{{end}}</td>
+      <td>{{if .LastRefreshedAt}}{{fmtTime .LastRefreshedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td class="actions">
+        <form method="get" action="/connect/{{$vendor}}/start">
+          <input type="hidden" name="variant" value="{{.Variant}}">
+          {{if .NeedsReconnect}}
+          <button class="btn primary" type="submit">Reconnect</button>
+          {{else}}
+          <input type="text" name="scopes" placeholder="extra scopes" aria-label="extra scopes">
+          <button class="btn" type="submit">Grant more access</button>
+          {{end}}
+        </form>
+        <form method="post" action="/connections/{{.ID}}/disconnect" onsubmit="return confirm('Disconnect {{.DisplayName}}? Its tokens are deleted.')">
+          <input type="hidden" name="_csrf" value="{{$csrf}}">
+          <button class="btn danger" type="submit">Disconnect</button>
+        </form>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6" class="muted">No {{title .Vendor}} account connected.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  <p>
+  {{range .Apps}}
+    <a class="btn primary" href="/connect/{{.Vendor}}/start?variant={{.Variant}}">Connect {{title .Vendor}}{{if eq .Vendor "google"}} ({{if eq .Variant "internal"}}company{{else}}personal{{end}}){{end}} account</a>
+  {{end}}
+  </p>
+</section>
+{{else}}
+<p class="notice">No vendor apps are configured yet. An admin registers them under Vendor apps.</p>
+{{end}}
+{{template "foot" .}}
