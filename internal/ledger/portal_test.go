@@ -1,0 +1,68 @@
+package ledger_test
+
+import (
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/huynle/mcp-gateway/internal/ledger"
+	"github.com/huynle/mcp-gateway/internal/store"
+)
+
+func TestOperationsPageListsTheCallersOperationsWithHints(t *testing.T) {
+	f := newFixture(t)
+	ok := f.begin(t, f.intent(map[string]any{"id": "it-ok"}))
+	if _, err := f.svc.Finish(t.Context(), alice, ok.ID, ledger.Succeeded(map[string]string{"id": "it-ok", "url": "https://app.example.com/i/it-ok"})); err != nil {
+		t.Fatal(err)
+	}
+	failed := f.begin(t, f.intent(map[string]any{"id": "it-failed"}))
+	if _, err := f.svc.Finish(t.Context(), alice, failed.ID, ledger.Failed("tool_error")); err != nil {
+		t.Fatal(err)
+	}
+	unresolved := f.begin(t, f.intent(map[string]any{"id": "it-lost"}))
+	f.st.SetState(unresolved.ID, store.LedgerUnresolved)
+	other := f.intent(map[string]any{"id": "it-bob"})
+	other.UserID = bob
+	bobs := f.begin(t, other)
+
+	mux := http.NewServeMux()
+	who := func(r *http.Request) (string, string) {
+		if r.Header.Get("X-User") == "" {
+			return "", ""
+		}
+		return r.Header.Get("X-User"), "csrf-token"
+	}
+	ledger.NewPortal(f.svc, who, slog.New(slog.DiscardHandler)).Mount(mux.Handle)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations", nil)
+	req.Header.Set("X-User", alice)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("status %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"<title>Operations", "fake.create_item", ok.ID[:8], failed.ID[:8], unresolved.ID[:8],
+		"succeeded", "failed", "unresolved", "it-ok", "https://app.example.com/i/it-ok", "verify in the app", "csrf-token",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, bobs.ID[:8]) || strings.Contains(body, "it-bob") {
+		t.Error("page shows another user's operation")
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+	}
+
+	// Anonymous: refused.
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous status = %d", rec.Code)
+	}
+}
