@@ -86,7 +86,7 @@ func (e *testEnv) grantLogin(ctx context.Context) error {
 		"ALTER ROLE gateway_app LOGIN PASSWORD '" + testAppPassword + "'",
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + testJobsPassword + "'",
 	} {
-		if _, err := e.super.Exec(ctx, stmt); err != nil {
+		if err := execRetryingConcurrentUpdate(ctx, e.super, stmt); err != nil {
 			return err
 		}
 	}
@@ -764,4 +764,19 @@ func TestIntegrationAppRoleHasNoDDL(t *testing.T) {
 	if _, err := conn.Exec(ctx, "ALTER TABLE connections DISABLE ROW LEVEL SECURITY"); err == nil {
 		t.Error("gateway_app could disable RLS")
 	}
+}
+
+// execRetryingConcurrentUpdate runs stmt, retrying when PostgreSQL reports
+// "tuple concurrently updated" (SQLSTATE XX000): every package's
+// integration bootstrap ALTERs the same cluster-global roles and `go test`
+// runs packages in parallel.
+func execRetryingConcurrentUpdate(ctx context.Context, conn *pgxpool.Pool, stmt string) error {
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if _, err = conn.Exec(ctx, stmt); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
 }
