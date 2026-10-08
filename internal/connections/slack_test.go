@@ -53,8 +53,8 @@ func TestSlackIdentityNeedsAnActiveCompanySlackConnection(t *testing.T) {
 	}
 
 	// Nothing connected.
-	if id, ok, err := env.svc.SlackIdentity(ctx, userAlice); ok || err != nil || id != (connections.SlackIdentity{}) {
-		t.Errorf("no connection: %+v %v %v", id, ok, err)
+	if u, tm, ok, err := env.svc.SlackIdentity(ctx, userAlice); ok || err != nil || u != "" || tm != "" {
+		t.Errorf("no connection: %q %q %v %v", u, tm, ok, err)
 	}
 	// A GitHub connection, a personal Slack one and a revoked company one
 	// do not count.
@@ -62,24 +62,24 @@ func TestSlackIdentityNeedsAnActiveCompanySlackConnection(t *testing.T) {
 	addConnection(t, env, userAlice, slack.ID, connections.SlackAccountID("THOME", "UHOME"), store.AccountPersonal, store.ConnectionActive)
 	addConnection(t, env, userAlice, slack.ID, connections.SlackAccountID("TOLD", "UOLD"), store.AccountCompany, store.ConnectionRevoked)
 	addConnection(t, env, userAlice, slack.ID, "not-a-slack-id", store.AccountCompany, store.ConnectionActive)
-	if id, ok, err := env.svc.SlackIdentity(ctx, userAlice); ok || err != nil {
-		t.Errorf("ineligible connections: %+v %v %v", id, ok, err)
+	if u, _, ok, err := env.svc.SlackIdentity(ctx, userAlice); ok || err != nil {
+		t.Errorf("ineligible connections: %q %v %v", u, ok, err)
 	}
 	// An active company Slack connection: the user and team it is bound to.
 	addConnection(t, env, userAlice, slack.ID, connections.SlackAccountID("TACME", "UALICE"), store.AccountCompany, store.ConnectionActive)
-	id, ok, err := env.svc.SlackIdentity(ctx, userAlice)
-	if !ok || err != nil || id.UserID != "UALICE" || id.TeamID != "TACME" {
-		t.Errorf("company connection: %+v %v %v", id, ok, err)
+	u, tm, ok, err := env.svc.SlackIdentity(ctx, userAlice)
+	if !ok || err != nil || u != "UALICE" || tm != "TACME" {
+		t.Errorf("company connection: %q %q %v %v", u, tm, ok, err)
 	}
 	// Connections are per user: bob's is his own, alice's stays hers.
 	addConnection(t, env, userBob, slack.ID, connections.SlackAccountID("TACME", "UBOB"), store.AccountCompany, store.ConnectionActive)
-	if id, ok, _ := env.svc.SlackIdentity(ctx, userBob); !ok || id.UserID != "UBOB" {
-		t.Errorf("bob = %+v %v", id, ok)
+	if u, _, ok, _ := env.svc.SlackIdentity(ctx, userBob); !ok || u != "UBOB" {
+		t.Errorf("bob = %q %v", u, ok)
 	}
-	if id, ok, _ := env.svc.SlackIdentity(ctx, userAlice); !ok || id.UserID != "UALICE" {
-		t.Errorf("alice after bob = %+v %v", id, ok)
+	if u, _, ok, _ := env.svc.SlackIdentity(ctx, userAlice); !ok || u != "UALICE" {
+		t.Errorf("alice after bob = %q %v", u, ok)
 	}
-	if _, ok, err := env.svc.SlackIdentity(ctx, ""); ok || err == nil {
+	if _, _, ok, err := env.svc.SlackIdentity(ctx, ""); ok || err == nil {
 		t.Errorf("empty user: %v %v", ok, err)
 	}
 }

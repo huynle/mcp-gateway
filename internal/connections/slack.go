@@ -27,24 +27,18 @@ func ParseSlackAccountID(s string) (teamID, userID string, ok bool) {
 	return teamID, userID, true
 }
 
-// SlackIdentity is the Slack user and workspace a gateway user is
-// connected as.
-type SlackIdentity struct {
-	UserID string
-	TeamID string
-}
-
 // SlackIdentity returns the Slack user and team of userID's active,
 // company-labelled Slack connection (decision s0p05diu: approval DMs only
 // go to the company Slack the user connected). ok is false when there is
-// none; err reports a store failure.
-func (s *Service) SlackIdentity(ctx context.Context, userID string) (id SlackIdentity, ok bool, err error) {
+// none; err reports a store failure. It satisfies the approvals package's
+// SlackIdentitySource.
+func (s *Service) SlackIdentity(ctx context.Context, userID string) (slackUserID, teamID string, ok bool, err error) {
 	if userID == "" {
-		return SlackIdentity{}, false, errors.New("connections: user is required")
+		return "", "", false, errors.New("connections: user is required")
 	}
 	list, err := s.Connections(ctx, userID)
 	if err != nil {
-		return SlackIdentity{}, false, err
+		return "", "", false, err
 	}
 	for _, c := range list {
 		if c.Vendor != VendorSlack || c.Label != store.AccountCompany || !c.Active() {
@@ -54,7 +48,7 @@ func (s *Service) SlackIdentity(ctx context.Context, userID string) (id SlackIde
 		if !ok {
 			continue
 		}
-		return SlackIdentity{UserID: user, TeamID: team}, true, nil
+		return user, team, true, nil
 	}
-	return SlackIdentity{}, false, nil
+	return "", "", false, nil
 }
