@@ -116,7 +116,7 @@ func TestBeginInsertsInProgressBeforeTheCall(t *testing.T) {
 	if n := f.st.Attempts(op.ID); len(n) != 0 {
 		t.Errorf("attempts before finish = %d", len(n))
 	}
-	if got := counter(t, f.metrics, "ledger_operations_total", "in_progress"); got != 1 {
+	if got := ledgerCounter(t, f.metrics, "in_progress"); got != 1 {
 		t.Errorf("ledger_operations_total{in_progress} = %v", got)
 	}
 }
@@ -156,7 +156,7 @@ func TestFinishRecordsOutcomeAndAttempt(t *testing.T) {
 	if len(atts) != 1 || atts[0].Kind != store.AttemptCall || atts[0].AttemptNo != 1 || atts[0].Outcome != store.LedgerSucceeded || !atts[0].StartedAt.Equal(op.CreatedAt) || atts[0].FinishedAt == nil {
 		t.Errorf("attempts = %+v", atts)
 	}
-	if got := counter(t, f.metrics, "ledger_operations_total", "succeeded"); got != 1 {
+	if got := ledgerCounter(t, f.metrics, "succeeded"); got != 1 {
 		t.Errorf("succeeded counter = %v", got)
 	}
 	// A finished operation cannot be finished again.
@@ -325,8 +325,10 @@ func TestOperationsListsTheUsersRecentOnes(t *testing.T) {
 	}
 }
 
-// counter reads one labelled counter from the private registry.
-func counter(t *testing.T, m *observability.Metrics, name, label string) float64 {
+// ledgerCounter reads ledger_operations_total{state} from the private registry.
+func ledgerCounter(t *testing.T, m *observability.Metrics, state string) float64 {
+	const name = "ledger_operations_total"
+	label := state
 	t.Helper()
 	families, err := m.Registry().Gather()
 	if err != nil {
