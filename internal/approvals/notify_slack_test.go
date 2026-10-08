@@ -113,6 +113,15 @@ func (f *fakeSlack) lastPost() map[string]string {
 	return f.posts[len(f.posts)-1]
 }
 
+func (f *fakeSlack) lastUpdate() map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.updates) == 0 {
+		return nil
+	}
+	return f.updates[len(f.updates)-1]
+}
+
 // fakeDirectory is a SlackIdentitySource and SlackSecretSource over maps.
 type fakeDirectory struct {
 	mu      sync.Mutex
