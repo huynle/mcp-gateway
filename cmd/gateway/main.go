@@ -5,9 +5,10 @@
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
 // mounts the portal and company sign-in routes when a database is
-// configured, and shuts down gracefully on SIGTERM/SIGINT, draining
-// in-flight requests for the configured period. Later tasks mount /mcp,
-// OAuth and metrics on the same mux.
+// configured, mounts the token pages and wires the token authenticator
+// (whose BearerMiddleware the /mcp endpoint will use), and shuts down
+// gracefully on SIGTERM/SIGINT, draining in-flight requests for the
+// configured period. Later tasks mount /mcp and OAuth on the same mux.
 package main
 
 import (
@@ -29,6 +30,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
 	"github.com/huynle/mcp-gateway/internal/store"
+	"github.com/huynle/mcp-gateway/internal/tokens"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -79,17 +81,24 @@ func run() error {
 
 	var recorder audit.Recorder = audit.NopRecorder{}
 	var portalHandler http.Handler
+	var authenticator tokens.Authenticator
 	if st != nil {
 		rec := audit.NewStoreRecorder(st)
 		recorder = rec
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, log)
+		tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokens.NewPostgresStore(st), metrics, rec, log)
+		if err != nil {
+			return fmt.Errorf("tokens: %w", err)
+		}
+		authenticator = tokenSvc
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, log)
 		if err != nil {
 			return err
 		}
 	} else {
-		log.Warn("no database: portal and sign-in are not mounted")
+		log.Warn("no database: portal, sign-in and tokens are not mounted")
 	}
-	_ = recorder // handed to the MCP pipeline once it exists
+	_ = recorder      // handed to the MCP pipeline once it exists
+	_ = authenticator // /mcp wraps itself in tokens.BearerMiddleware(authenticator, ...) once it exists
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
 	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler)))
@@ -156,9 +165,11 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 }
 
 // newPortal builds the identity service and the portal over the given
-// store. Providers come from GATEWAY_OIDC_PROVIDERS; with none configured
-// the sign-in page says so instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, log *slog.Logger) (http.Handler, error) {
+// store, mounts the activity, audit and token pages, and registers the
+// token service's disable hook so disabling a user revokes their tokens in
+// the same transaction. Providers come from GATEWAY_OIDC_PROVIDERS; with
+// none configured the sign-in page says so instead of failing startup.
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, log *slog.Logger) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -182,6 +193,15 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, log *s
 	}
 	p.MountUser("GET /activity", audit.ActivityHandler(reader, who))
 	p.MountAdmin("GET /admin/audit", audit.AdminSearchHandler(reader, who))
+	session := func(r *http.Request) (string, string) {
+		pr := identity.PrincipalFrom(r.Context())
+		if pr == nil {
+			return "", ""
+		}
+		return pr.UserID, pr.CSRFToken
+	}
+	tokens.NewPortal(tokenSvc, session, cfg.BaseURL, log).Mount(p.MountUser)
+	svc.OnDisable(tokenSvc.DisableHook())
 	return p.Handler(), nil
 }
 
