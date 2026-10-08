@@ -13,11 +13,12 @@ import (
 )
 
 // Stage names, the anchors for Pipeline.Insert. The default order is
-// authenticate, audit, resolve, strip, ratelimit, dispatch: audit sits
-// right after authenticate so it wraps every later stage and records the
-// outcome whether the call was denied, rate limited or dispatched. The
-// account-resolve, policy, confirm and ledger tasks insert themselves
-// between resolve/strip and dispatch.
+// authenticate, audit, resolve, strip, [account,] ratelimit, dispatch:
+// audit sits right after authenticate so it wraps every later stage and
+// records the outcome whether the call was denied, rate limited or
+// dispatched; account (StageAccount, account.go) is present when an
+// AccountSource is configured. The policy, confirm and ledger tasks insert
+// themselves between account and dispatch.
 const (
 	StageAuthenticate = "authenticate"
 	StageAudit        = "audit"
@@ -51,11 +52,14 @@ func (NopRateLimiter) Allow(context.Context, string, string) (bool, time.Duratio
 
 // PipelineDeps is what DefaultPipeline needs. Registry is required;
 // Visibility defaults to ScopeVisibility, RateLimiter to NopRateLimiter,
-// Audit to audit.NopRecorder and Log to slog.Default().
+// Audit to audit.NopRecorder and Log to slog.Default(). Accounts enables
+// the account stage; without it the account argument passes through to
+// the connector unchecked (only acceptable in tests).
 type PipelineDeps struct {
 	Registry    *connectors.Registry
 	Visibility  Visibility
 	RateLimiter RateLimiter
+	Accounts    connectors.AccountSource
 	Audit       audit.Recorder
 	Log         *slog.Logger
 }
@@ -80,19 +84,23 @@ func (d *PipelineDeps) defaults() error {
 }
 
 // DefaultPipeline builds the standard pipeline: authenticate, audit,
-// resolve, strip, ratelimit, dispatch.
+// resolve, strip, account (when deps.Accounts is set), ratelimit,
+// dispatch.
 func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	if err := deps.defaults(); err != nil {
 		return nil, err
 	}
-	return NewPipeline(
+	stages := []Stage{
 		AuthenticateStage(),
 		AuditStage(deps.Audit, deps.Log),
 		ResolveStage(deps.Registry, deps.Visibility),
 		StripStage(),
-		RateLimitStage(deps.RateLimiter),
-		DispatchStage(),
-	)
+	}
+	if deps.Accounts != nil {
+		stages = append(stages, AccountStage(deps.Accounts, deps.Log))
+	}
+	stages = append(stages, RateLimitStage(deps.RateLimiter), DispatchStage())
+	return NewPipeline(stages...)
 }
 
 // stage is a named function.
@@ -250,7 +258,7 @@ func auditEvent(ctx context.Context, cc *CallContext, res connectors.Result, err
 	switch {
 	case errors.As(err, &te):
 		ev.ErrorClass = te.Class()
-		if te.Code == CodeToolNotFound || te.Code == CodeDenied || te.Code == CodeRateLimited {
+		if te.Denial() {
 			ev.Decision = "deny"
 			ev.Outcome = "denied"
 		} else {
