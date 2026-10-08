@@ -1,0 +1,90 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 1.5rem; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  form.filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; }
+  form.filters label { display: flex; flex-direction: column; font-size: .8rem; color: #555; }
+  form.filters input { font: inherit; padding: .2rem .4rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; vertical-align: top; padding: .35rem .5rem; border-bottom: 1px solid #ddd; }
+  th { background: #f4f4f4; font-weight: 600; white-space: nowrap; }
+  td.mono, th.mono { font-family: ui-monospace, monospace; font-size: .85rem; }
+  .decision-allow { color: #137333; } .decision-deny { color: #b3261e; } .decision-confirm { color: #8a5a00; }
+  .empty { color: #666; padding: 2rem 0; }
+  nav.pager { margin-top: 1rem; display: flex; gap: 1rem; }
+  dl.resource { margin: 0; } dl.resource dt { display: inline; color: #555; } dl.resource dd { display: inline; margin: 0 .5rem 0 .2rem; }
+</style>
+</head>
+<body>
+<h1>{{.Title}}</h1>
+{{end}}
+
+{{define "filters"}}
+<form class="filters" method="get">
+  {{if .Admin}}<label>User ID <input name="user_id" value="{{.Filter.UserID}}" size="36" pattern="[0-9a-fA-F-]{36}"></label>{{end}}
+  <label>Tool <input name="tool" value="{{.Filter.Tool}}" placeholder="github.create_issue"></label>
+  <label>Decision <input name="decision" value="{{.Filter.Decision}}" placeholder="allow / deny / confirm"></label>
+  <label>Outcome <input name="outcome" value="{{.Filter.Outcome}}" placeholder="succeeded / failed / unknown"></label>
+  <label>Since <input name="since" value="{{if not .Filter.Since.IsZero}}{{.Filter.Since.Format "2006-01-02"}}{{end}}" placeholder="YYYY-MM-DD"></label>
+  <label>Until <input name="until" value="{{if not .Filter.Until.IsZero}}{{.Filter.Until.Format "2006-01-02"}}{{end}}" placeholder="YYYY-MM-DD"></label>
+  <label>&nbsp;<button type="submit">Filter</button></label>
+</form>
+{{end}}
+
+{{define "rows"}}
+{{if not .Rows}}
+<p class="empty">No activity matches.</p>
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>Time (UTC)</th>
+      {{if .Admin}}<th class="mono">User</th>{{end}}
+      <th>Tool</th>
+      <th>Account</th>
+      <th>Resource</th>
+      <th>Decision</th>
+      <th>Outcome</th>
+      <th>Latency</th>
+      <th class="mono">IDs</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Rows}}
+    <tr>
+      <td>{{fmtTime .Time}}</td>
+      {{if $.Admin}}<td class="mono">{{if .UserID}}{{.UserID}}{{else}}<em>system</em>{{end}}</td>{{end}}
+      <td>{{if .Tool}}{{.Tool}}{{else}}<em>{{.EventType}}</em>{{end}}</td>
+      <td>{{.AccountLabel}}</td>
+      <td>{{if .ResourceIdentity}}<dl class="resource">{{range $k, $v := .ResourceIdentity}}<dt>{{$k}}</dt><dd>{{$v}}</dd>{{end}}</dl>{{end}}</td>
+      <td class="decision-{{.Decision}}">{{.Decision}}</td>
+      <td>{{.Outcome}}{{if .ErrorClass}} <small>({{.ErrorClass}})</small>{{end}}</td>
+      <td>{{if .Latency}}{{fmtDur .Latency}}{{end}}</td>
+      <td class="mono">
+        {{if .RequestID}}req {{.RequestID}}<br>{{end}}
+        {{if .TokenID}}token {{.TokenID}}<br>{{end}}
+        {{if .ApprovalID}}approval {{.ApprovalID}}<br>{{end}}
+        {{if .OperationID}}operation {{.OperationID}}<br>{{end}}
+        {{if .PolicyVersion}}policy {{.PolicyVersion}}{{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+<nav class="pager">
+  {{if .PrevLink}}<a href="{{.PrevLink}}">&larr; Newer</a>{{end}}
+  <span>Page {{.PageNum}}</span>
+  {{if .NextLink}}<a href="{{.NextLink}}">Older &rarr;</a>{{end}}
+</nav>
+{{end}}
+
+{{define "foot"}}
+</body>
+</html>
+{{end}}
