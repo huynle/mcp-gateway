@@ -17,8 +17,9 @@ import (
 // audit sits right after authenticate so it wraps every later stage and
 // records the outcome whether the call was denied, rate limited or
 // dispatched; account (StageAccount, account.go) is present when an
-// AccountSource is configured. The policy, confirm and ledger tasks insert
-// themselves between account and dispatch.
+// AccountSource is configured; policy (StagePolicy, pipeline_policy.go)
+// follows it when a Decider is configured. The confirm and ledger tasks
+// insert themselves between policy and dispatch.
 const (
 	StageAuthenticate = "authenticate"
 	StageAudit        = "audit"
@@ -51,15 +52,21 @@ type NopRateLimiter struct{}
 func (NopRateLimiter) Allow(context.Context, string, string) (bool, time.Duration) { return true, 0 }
 
 // PipelineDeps is what DefaultPipeline needs. Registry is required;
-// Visibility defaults to ScopeVisibility, RateLimiter to NopRateLimiter,
-// Audit to audit.NopRecorder and Log to slog.Default(). Accounts enables
-// the account stage; without it the account argument passes through to
-// the connector unchecked (only acceptable in tests).
+// Visibility defaults to PolicyVisibility over Policy when that is set and
+// to ScopeVisibility otherwise, RateLimiter to NopRateLimiter, Audit to
+// audit.NopRecorder and Log to slog.Default(). Accounts enables the
+// account stage; without it the account argument passes through to the
+// connector unchecked (only acceptable in tests). Policy enables the
+// policy stage (Confirm is its confirm hook, nil for
+// DefaultConfirmHandler); without it every visible call is allowed (only
+// acceptable in tests).
 type PipelineDeps struct {
 	Registry    *connectors.Registry
 	Visibility  Visibility
 	RateLimiter RateLimiter
 	Accounts    connectors.AccountSource
+	Policy      Decider
+	Confirm     ConfirmHandler
 	Audit       audit.Recorder
 	// Metrics counts vendor rate limits (vendor_rate_limited_total); nil
 	// counts nothing.
@@ -72,7 +79,11 @@ func (d *PipelineDeps) defaults() error {
 		return errors.New("mcp: registry is required")
 	}
 	if d.Visibility == nil {
-		d.Visibility = ScopeVisibility{}
+		if d.Policy != nil {
+			d.Visibility = PolicyVisibility{Decider: d.Policy, Log: d.Log}
+		} else {
+			d.Visibility = ScopeVisibility{}
+		}
 	}
 	if d.RateLimiter == nil {
 		d.RateLimiter = NopRateLimiter{}
@@ -87,8 +98,8 @@ func (d *PipelineDeps) defaults() error {
 }
 
 // DefaultPipeline builds the standard pipeline: authenticate, audit,
-// resolve, strip, account (when deps.Accounts is set), ratelimit,
-// dispatch.
+// resolve, strip, account (when deps.Accounts is set), policy (when
+// deps.Policy is set), ratelimit, dispatch.
 func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	if err := deps.defaults(); err != nil {
 		return nil, err
@@ -101,6 +112,9 @@ func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	}
 	if deps.Accounts != nil {
 		stages = append(stages, AccountStage(deps.Accounts, deps.Log))
+	}
+	if deps.Policy != nil {
+		stages = append(stages, PolicyStage(deps.Policy, deps.Confirm, deps.Log))
 	}
 	stages = append(stages, RateLimitStage(deps.RateLimiter, deps.Metrics), DispatchStage())
 	return NewPipeline(stages...)

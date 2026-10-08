@@ -73,6 +73,11 @@ type Options struct {
 	RateLimiter RateLimiter
 	// Accounts enables the account stage (default pipeline only).
 	Accounts connectors.AccountSource
+	// Policy enables the policy stage (default pipeline only) and, when
+	// Visibility is nil, policy-driven visibility. Confirm is the stage's
+	// confirm hook (nil: DefaultConfirmHandler).
+	Policy  Decider
+	Confirm ConfirmHandler
 	// Metrics counts vendor rate limits (default pipeline only).
 	Metrics *observability.Metrics
 	// Log defaults to slog.Default().
@@ -106,7 +111,11 @@ func Handler(opts Options) (http.Handler, error) {
 		opts.Log = slog.Default()
 	}
 	if opts.Visibility == nil {
-		opts.Visibility = ScopeVisibility{}
+		if opts.Policy != nil {
+			opts.Visibility = PolicyVisibility{Decider: opts.Policy, Log: opts.Log}
+		} else {
+			opts.Visibility = ScopeVisibility{}
+		}
 	}
 	if opts.Version == "" {
 		opts.Version = "dev"
@@ -114,7 +123,8 @@ func Handler(opts Options) (http.Handler, error) {
 	if opts.Pipeline == nil {
 		p, err := DefaultPipeline(PipelineDeps{
 			Registry: opts.Registry, Visibility: opts.Visibility, RateLimiter: opts.RateLimiter,
-			Accounts: opts.Accounts, Audit: opts.Audit, Metrics: opts.Metrics, Log: opts.Log,
+			Accounts: opts.Accounts, Policy: opts.Policy, Confirm: opts.Confirm,
+			Audit: opts.Audit, Metrics: opts.Metrics, Log: opts.Log,
 		})
 		if err != nil {
 			return nil, err
