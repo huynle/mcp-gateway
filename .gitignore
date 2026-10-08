@@ -1,10 +1,23 @@
-.pytest_cache/
-.ruff_cache/
-__pycache__/
-*.pyc
-.venv/
-*.db
+# Build artifacts
+/bin/
+/dist/
+/gateway
+
+# Test and coverage output
+*.test
+*.out
+coverage.*
+*.prof
+
+# Local configuration and secrets
 .env
-dist/
-build/
-*.egg-info/
+*.local.yaml
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Git worktrees used by agents (also in .git/info/exclude)
+.worktrees/
