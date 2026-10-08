@@ -1,16 +1,18 @@
-.PHONY: all build test test-integration lint fmt fmt-check migrate compose-up compose-down clean
+.PHONY: all build test test-integration lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
 BIN            = bin/gateway
+MIGRATE_BIN    = bin/migrate
 VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS        = -s -w -X main.version=$(VERSION)
 
 all: fmt-check lint test build
 
-## build: compile the gateway binary into bin/
+## build: compile the gateway and migrate binaries into bin/
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/gateway
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(MIGRATE_BIN) ./cmd/migrate
 
 ## test: run unit tests with the race detector
 test:
@@ -37,13 +39,22 @@ fmt:
 fmt-check:
 	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed on:"; echo "$$out"; exit 1; fi
 
-## migrate: placeholder until the store task adds goose migrations
+## migrate: apply pending goose migrations (internal/store/migrations) as the
+## database owner/superuser named by GATEWAY_MIGRATE_DATABASE_URL (falls back
+## to GATEWAY_DATABASE_URL). Runs as a pre-upgrade job; the service never
+## migrates itself.
 migrate:
-	@echo "No migrations yet. The store task (Brain lutqeqg0) adds goose migrations under"
-	@echo "internal/store/migrations and turns this target into 'goose -dir internal/store/migrations postgres \"\$$GATEWAY_DATABASE_URL\" up'."
-	@echo "Migrations run as a pre-upgrade job; the service never migrates itself."
+	$(GO) run ./cmd/migrate up
 
-## compose-up: start PostgreSQL (15432), dex (15556) and the gateway (18080)
+## migrate-down: roll back the most recent migration
+migrate-down:
+	$(GO) run ./cmd/migrate down
+
+## migrate-status: list migrations and whether they are applied
+migrate-status:
+	$(GO) run ./cmd/migrate status
+
+## compose-up: start PostgreSQL (15432), dex (15556), run migrations, then the gateway (18080)
 compose-up:
 	docker compose up -d --build --wait
 

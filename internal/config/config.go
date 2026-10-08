@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -32,6 +33,13 @@ type Config struct {
 	LogLevel string `yaml:"log_level"`
 	// LogFormat is json or text (GATEWAY_LOG_FORMAT).
 	LogFormat string `yaml:"log_format"`
+	// DatabaseURL is the PostgreSQL connection string for the request path,
+	// as the gateway_app role (GATEWAY_DATABASE_URL). Empty disables the store
+	// (foundation-only mode); when set, JobsDatabaseURL is required too.
+	DatabaseURL string `yaml:"database_url"`
+	// JobsDatabaseURL is the connection string for background workers and
+	// admin metadata reads, as the gateway_jobs role (GATEWAY_JOBS_DATABASE_URL).
+	JobsDatabaseURL string `yaml:"jobs_database_url"`
 }
 
 // Default returns the built-in configuration used when nothing overrides it.
@@ -95,6 +103,12 @@ func applyEnv(getenv func(string) string, cfg *Config) error {
 	if v := getenv(EnvPrefix + "LOG_FORMAT"); v != "" {
 		cfg.LogFormat = v
 	}
+	if v := getenv(EnvPrefix + "DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := getenv(EnvPrefix + "JOBS_DATABASE_URL"); v != "" {
+		cfg.JobsDatabaseURL = v
+	}
 	return nil
 }
 
@@ -102,6 +116,8 @@ func (c *Config) normalize() {
 	c.ListenAddr = strings.TrimSpace(c.ListenAddr)
 	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
 	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
+	c.DatabaseURL = strings.TrimSpace(c.DatabaseURL)
+	c.JobsDatabaseURL = strings.TrimSpace(c.JobsDatabaseURL)
 }
 
 func (c Config) validate() error {
@@ -122,5 +138,49 @@ func (c Config) validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("log_format must be json or text, got %q", c.LogFormat))
 	}
+	errs = append(errs, c.validateDatabase()...)
 	return errors.Join(errs...)
+}
+
+// validateDatabase checks the two connection strings without ever echoing
+// them (they carry passwords): both or neither, PostgreSQL URLs, and distinct
+// roles so the bypass pool cannot silently be the request-path role.
+func (c Config) validateDatabase() []error {
+	if c.DatabaseURL == "" && c.JobsDatabaseURL == "" {
+		return nil
+	}
+	var errs []error
+	if c.DatabaseURL == "" {
+		return []error{errors.New("jobs_database_url requires database_url")}
+	}
+	if c.JobsDatabaseURL == "" {
+		return []error{errors.New("jobs_database_url must be set when database_url is set")}
+	}
+	appUser, err := postgresUser(c.DatabaseURL)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("database_url: %w", err))
+	}
+	jobsUser, err := postgresUser(c.JobsDatabaseURL)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("jobs_database_url: %w", err))
+	}
+	if len(errs) == 0 && appUser == jobsUser {
+		errs = append(errs, fmt.Errorf("database_url and jobs_database_url must use different database roles, both use %q", appUser))
+	}
+	return errs
+}
+
+// postgresUser parses a postgres:// or postgresql:// URL and returns its user name.
+func postgresUser(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", errors.New("not a valid URL")
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return "", fmt.Errorf("scheme must be postgres or postgresql, got %q", u.Scheme)
+	}
+	if u.User == nil || u.User.Username() == "" {
+		return "", errors.New("must name the database role (user) to connect as")
+	}
+	return u.User.Username(), nil
 }

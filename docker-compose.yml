@@ -4,7 +4,16 @@
 #
 #   make compose-up      # build + start, waits for health
 #   curl -f localhost:18080/healthz
+#   curl -f localhost:18080/readyz
 #   make compose-down    # stop and drop volumes
+#
+# Database roles (dev credentials only; see deploy/postgres/init/01-roles.sql):
+#   gateway       superuser, owns the schema, runs migrations
+#                 postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable
+#   gateway_app   request path, subject to row-level security
+#                 postgres://gateway_app:gateway-app-dev@localhost:15432/gateway?sslmode=disable
+#   gateway_jobs  background jobs and admin metadata, bypasses RLS
+#                 postgres://gateway_jobs:gateway-jobs-dev@localhost:15432/gateway?sslmode=disable
 
 name: mcp-gateway
 
@@ -19,11 +28,29 @@ services:
       - "15432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Creates gateway_app / gateway_jobs with LOGIN passwords on first start.
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # Pre-upgrade job: applies the embedded goose migrations as the owner, the
+  # same way a Kubernetes Job would before a rollout. The gateway never
+  # migrates itself and refuses to start on a schema version mismatch.
+  migrate:
+    build:
+      context: .
+      args:
+        VERSION: compose
+    entrypoint: ["/migrate", "up"]
+    environment:
+      GATEWAY_MIGRATE_DATABASE_URL: "postgres://gateway:gateway-dev@postgres:5432/gateway?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   # Mock company identity provider (OIDC). Static user dev@example.com /
   # "password", static client "gateway". The issuer is
@@ -53,11 +80,15 @@ services:
       GATEWAY_DRAIN_TIMEOUT: "25s"
       GATEWAY_LOG_LEVEL: "debug"
       GATEWAY_LOG_FORMAT: "text"
+      GATEWAY_DATABASE_URL: "postgres://gateway_app:gateway-app-dev@postgres:5432/gateway?sslmode=disable"
+      GATEWAY_JOBS_DATABASE_URL: "postgres://gateway_jobs:gateway-jobs-dev@postgres:5432/gateway?sslmode=disable"
     ports:
       - "18080:18080"
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       dex:
         condition: service_healthy
     # Match Kubernetes' terminationGracePeriodSeconds: must exceed GATEWAY_DRAIN_TIMEOUT.

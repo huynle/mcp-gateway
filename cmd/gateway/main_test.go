@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -44,5 +47,33 @@ func TestMuxRoutes(t *testing.T) {
 	}
 	if rec := do(t, mux, http.MethodGet, "/nope"); rec.Code != http.StatusNotFound {
 		t.Errorf("GET /nope = %d, want 404", rec.Code)
+	}
+}
+
+func TestOpenStoreIsOptional(t *testing.T) {
+	readiness := observability.NewReadiness(time.Second)
+	st, err := openStore(t.Context(), config.Config{}, readiness, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("openStore without DatabaseURL: %v", err)
+	}
+	if st != nil {
+		t.Fatal("openStore without DatabaseURL returned a store")
+	}
+	report, ready := readiness.Run(t.Context())
+	if !ready || len(report.Checks) != 0 {
+		t.Errorf("no checks should be registered without a database, got %+v", report)
+	}
+}
+
+func TestOpenStoreRefusesUnreachableDatabase(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cfg := config.Config{
+		DatabaseURL:     "postgres://gateway_app:x@127.0.0.1:1/gateway?sslmode=disable&connect_timeout=1",
+		JobsDatabaseURL: "postgres://gateway_jobs:x@127.0.0.1:1/gateway?sslmode=disable&connect_timeout=1",
+	}
+	_, err := openStore(ctx, cfg, observability.NewReadiness(time.Second), slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("openStore with an unreachable database returned no error")
 	}
 }
