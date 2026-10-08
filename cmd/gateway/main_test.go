@@ -96,11 +96,11 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, connSvc, registry, slog.New(slog.DiscardHandler))
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, connSvc, registry, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
-	mcpHandler, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, audit.NopRecorder{}, observability.NewMetrics(), slog.New(slog.DiscardHandler))
+	mcpHandler, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, nil, audit.NopRecorder{}, observability.NewMetrics(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newMCP: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestNewMCPBuildsPipelineWithAccountStage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, audit.NopRecorder{}, observability.NewMetrics(), log)
+	h, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, nil, audit.NopRecorder{}, observability.NewMetrics(), log)
 	if err != nil {
 		t.Fatal(err)
 	}

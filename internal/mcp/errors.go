@@ -41,6 +41,10 @@ type ToolError struct {
 	// retrying (rate limits); the endpoint puts it on the wire as
 	// error.data.retry_after in whole seconds, rounded up.
 	RetryAfter time.Duration
+	// Data, when set, is merged into error.data on the wire (the approval
+	// id and instructions of an "approval required" answer). Never
+	// argument content.
+	Data map[string]any
 	// class is the short audit error class (ErrorClass column).
 	class string
 }
@@ -56,7 +60,8 @@ func (e *ToolError) Class() string { return e.class }
 // params and unknown tool share -32602.
 func (e *ToolError) Denial() bool {
 	switch e.class {
-	case "tool_not_found", "denied", "rate_limited", "vendor_rate_limited", "unauthenticated":
+	case "tool_not_found", "denied", "rate_limited", "vendor_rate_limited", "unauthenticated",
+		"approval_mismatch", "approval_denied", "approval_used", "approval_expired":
 		return true
 	}
 	return false

@@ -258,11 +258,18 @@ func (e *endpoint) callTool(ctx context.Context, req *sdk.CallToolRequest) (sdk.
 
 // toRPCError renders a ToolError; a RetryAfter becomes
 // data.retry_after in whole seconds (rounded up) so a harness can wait
-// exactly as long as the vendor asked.
+// exactly as long as the vendor asked, and Data is merged into data.
 func toRPCError(te *ToolError) *jsonrpc.Error {
 	out := &jsonrpc.Error{Code: te.Code, Message: te.Message}
+	data := make(map[string]any, len(te.Data)+1)
+	for k, v := range te.Data {
+		data[k] = v
+	}
 	if secs := te.RetryAfterSeconds(); secs > 0 {
-		out.Data, _ = json.Marshal(map[string]int64{"retry_after": secs})
+		data["retry_after"] = secs
+	}
+	if len(data) > 0 {
+		out.Data, _ = json.Marshal(data)
 	}
 	return out
 }
