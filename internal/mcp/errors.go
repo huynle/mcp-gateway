@@ -1,6 +1,9 @@
 package mcp
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
 // and CodeInvalidParams reuse the standard "invalid params" code (the SDK
@@ -30,6 +33,10 @@ const (
 type ToolError struct {
 	Code    int64
 	Message string
+	// RetryAfter, when set, is how long the harness should wait before
+	// retrying (rate limits); the endpoint puts it on the wire as
+	// error.data.retry_after in whole seconds, rounded up.
+	RetryAfter time.Duration
 	// class is the short audit error class (ErrorClass column).
 	class string
 }
@@ -54,6 +61,15 @@ func (e *ToolError) Denial() bool {
 // NewToolError builds a ToolError with an audit class.
 func NewToolError(code int64, class, message string) *ToolError {
 	return &ToolError{Code: code, Message: message, class: class}
+}
+
+// RetryAfterSeconds is RetryAfter in whole seconds, rounded up, at least 1
+// when RetryAfter is set.
+func (e *ToolError) RetryAfterSeconds() int64 {
+	if e.RetryAfter <= 0 {
+		return 0
+	}
+	return int64((e.RetryAfter + time.Second - 1) / time.Second)
 }
 
 // ErrToolNotFound is the one error for a tool that does not exist or that

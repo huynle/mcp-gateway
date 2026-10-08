@@ -231,13 +231,24 @@ func (e *endpoint) callTool(ctx context.Context, req *sdk.CallToolRequest) (sdk.
 	var te *ToolError
 	switch {
 	case errors.As(err, &te):
-		return nil, &jsonrpc.Error{Code: te.Code, Message: te.Message}
+		return nil, toRPCError(te)
 	case err != nil:
 		out := &sdk.CallToolResult{}
 		out.SetError(errors.New(observability.RedactError(err)))
 		return out, nil
 	}
 	return toCallResult(cc, res)
+}
+
+// toRPCError renders a ToolError; a RetryAfter becomes
+// data.retry_after in whole seconds (rounded up) so a harness can wait
+// exactly as long as the vendor asked.
+func toRPCError(te *ToolError) *jsonrpc.Error {
+	out := &jsonrpc.Error{Code: te.Code, Message: te.Message}
+	if secs := te.RetryAfterSeconds(); secs > 0 {
+		out.Data, _ = json.Marshal(map[string]int64{"retry_after": secs})
+	}
+	return out
 }
 
 // decodeArgs turns the raw arguments into a map; absent or null means no

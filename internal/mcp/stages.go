@@ -61,7 +61,10 @@ type PipelineDeps struct {
 	RateLimiter RateLimiter
 	Accounts    connectors.AccountSource
 	Audit       audit.Recorder
-	Log         *slog.Logger
+	// Metrics counts vendor rate limits (vendor_rate_limited_total); nil
+	// counts nothing.
+	Metrics *observability.Metrics
+	Log     *slog.Logger
 }
 
 func (d *PipelineDeps) defaults() error {
@@ -99,7 +102,7 @@ func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	if deps.Accounts != nil {
 		stages = append(stages, AccountStage(deps.Accounts, deps.Log))
 	}
-	stages = append(stages, RateLimitStage(deps.RateLimiter), DispatchStage())
+	stages = append(stages, RateLimitStage(deps.RateLimiter, deps.Metrics), DispatchStage())
 	return NewPipeline(stages...)
 }
 
@@ -172,19 +175,44 @@ func StripStage() Stage {
 }
 
 // RateLimitStage asks the limiter before continuing and turns a refusal
-// into CodeRateLimited with the wait in the message.
-func RateLimitStage(l RateLimiter) Stage {
+// into CodeRateLimited carrying the wait. After the call it watches for a
+// connectors.RateLimited from the connector (a vendor 429): the error
+// becomes CodeRateLimited with the vendor's Retry-After, the app's bucket
+// is paused for that long when the limiter is an AppPauser, and
+// vendor_rate_limited_total{app} is incremented.
+func RateLimitStage(l RateLimiter, metrics *observability.Metrics) Stage {
 	if l == nil {
 		l = NopRateLimiter{}
 	}
+	pauser, _ := l.(AppPauser)
 	return stage{StageRateLimit, func(ctx context.Context, cc *CallContext, next Next) (connectors.Result, error) {
 		ok, wait := l.Allow(ctx, cc.Principal.UserID, cc.Call.Tool)
 		if !ok {
 			cc.Decision = "deny"
-			return connectors.Result{}, NewToolError(CodeRateLimited, "rate_limited",
-				fmt.Sprintf("rate limited; retry in %s", wait.Round(time.Second)))
+			te := NewToolError(CodeRateLimited, "rate_limited", fmt.Sprintf("rate limited; retry in %s", wait.Round(time.Second)))
+			te.RetryAfter = wait
+			return connectors.Result{}, te
 		}
-		return next(ctx)
+		res, err := next(ctx)
+		var rl *connectors.RateLimited
+		if !errors.As(err, &rl) {
+			return res, err
+		}
+		app := rl.App
+		if app == "" && cc.Tool != nil {
+			app = cc.Tool.App
+		}
+		if pauser != nil {
+			pauser.Pause(app, rl.RetryAfter)
+		}
+		if metrics != nil {
+			metrics.VendorRateLimited(app)
+		}
+		cc.Decision = "deny"
+		te := NewToolError(CodeRateLimited, "vendor_rate_limited",
+			fmt.Sprintf("%s is rate limiting this gateway; retry in %s", app, rl.RetryAfter.Round(time.Second)))
+		te.RetryAfter = rl.RetryAfter
+		return connectors.Result{}, te
 	}}
 }
 
