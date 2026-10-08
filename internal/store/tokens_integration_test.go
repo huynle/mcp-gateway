@@ -131,7 +131,7 @@ func TestIntegrationTokenLookupsAndRLS(t *testing.T) {
 
 	// B cannot revoke A's token: the update affects no visible row.
 	err = st.WithUser(ctx, userB, func(tx store.Tx) error {
-		err := store.RevokeToken(ctx, tx, tokA.ID, now)
+		_, err := store.RevokeToken(ctx, tx, tokA.ID, now)
 		if !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("B revoking A's token = %v, want ErrNotFound", err)
 		}
@@ -143,11 +143,16 @@ func TestIntegrationTokenLookupsAndRLS(t *testing.T) {
 	// A revokes their own; a second revoke keeps the first timestamp.
 	later := now.Add(time.Minute)
 	err = st.WithUser(ctx, userA, func(tx store.Tx) error {
-		if err := store.RevokeToken(ctx, tx, tokA.ID, now); err != nil {
+		first, err := store.RevokeToken(ctx, tx, tokA.ID, now)
+		if err != nil {
 			return err
 		}
-		if err := store.RevokeToken(ctx, tx, tokA.ID, later); err != nil {
+		second, err := store.RevokeToken(ctx, tx, tokA.ID, later)
+		if err != nil {
 			return err
+		}
+		if !first.Equal(now) || !second.Equal(now) {
+			t.Errorf("revoke times = %v, %v, want both %v", first, second, now)
 		}
 		got, err := tx.Tokens().Get(ctx, tokA.ID)
 		if err != nil {

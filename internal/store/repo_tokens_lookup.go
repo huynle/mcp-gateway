@@ -79,19 +79,21 @@ func ListTokensForUser(ctx context.Context, q Querier, userID string) ([]Token, 
 	return out, rows.Err()
 }
 
-// RevokeToken revokes one token. It returns ErrNotFound when no visible row
-// matches, which under WithUser includes another user's token; a token
-// already revoked keeps its original revocation time and is not an error.
-func RevokeToken(ctx context.Context, q Querier, id string, at time.Time) error {
+// RevokeToken revokes one token and returns its effective revocation time.
+// It returns ErrNotFound when no visible row matches, which under WithUser
+// includes another user's token; a token already revoked keeps its original
+// revocation time (the returned value is then earlier than at) and is not
+// an error.
+func RevokeToken(ctx context.Context, q Querier, id string, at time.Time) (time.Time, error) {
 	var revokedAt time.Time
 	err := q.QueryRow(ctx, `
 		UPDATE tokens SET revoked_at = coalesce(revoked_at, $2)
 		WHERE id = $1 RETURNING revoked_at`, id, at,
 	).Scan(&revokedAt)
 	if err != nil {
-		return notFound(err)
+		return time.Time{}, notFound(err)
 	}
-	return nil
+	return revokedAt, nil
 }
 
 // RevokeUserTokens revokes every live token of userID and returns how many
