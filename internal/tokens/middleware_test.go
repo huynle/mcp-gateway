@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -233,7 +234,7 @@ func TestBearerMiddlewareClientIPOption(t *testing.T) {
 func TestBearerMiddlewareLookupFailureIs503NotAFailure(t *testing.T) {
 	auth := &stubAuth{err: errors.New("database unreachable")}
 	l := tokens.NewFailureLimiter(1, time.Minute)
-	h := tokens.BearerMiddleware(auth, tokens.MiddlewareOptions{Limiter: l})(http.NotFoundHandler())
+	h := tokens.BearerMiddleware(auth, tokens.MiddlewareOptions{Limiter: l, Log: slog.New(slog.DiscardHandler)})(http.NotFoundHandler())
 	rec := serve(t, h, "Bearer mgw_x", "10.0.0.1:1")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)

@@ -1,0 +1,31 @@
+{{template "head" .}}
+{{if .Revoked}}<p class="ok">Token revoked. Anything still using it is refused from now on.</p>{{end}}
+<p>Tokens let a harness (OpenCode, Claude Code, ...) call the gateway as you. Each one lives at most 90 days and stops working if you have not signed in here for 30 days. <a class="btn primary" href="/tokens/new">New token</a></p>
+<table>
+  <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Expires</th><th>Last used</th><th>Scope</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {{$now := .Now}}{{$csrf := .Caller.CSRFToken}}
+  {{range .Tokens}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td><code>{{.Prefix}}_…</code></td>
+    <td>{{fmtDate .CreatedAt}}</td>
+    <td>{{fmtDate .ExpiresAt}}</td>
+    <td>{{if .LastUsedAt}}{{fmtTime .LastUsedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td>{{.Scope.String}}</td>
+    <td>{{if .RevokedAt}}<span class="pill revoked">revoked</span>{{else if .Active $now}}<span class="pill active">active</span>{{else}}<span class="pill expired">expired</span>{{end}}</td>
+    <td>
+      {{if .Active $now}}
+      <form class="inline" method="post" action="/tokens/{{.ID}}/revoke" onsubmit="return confirm('Revoke {{.Name}}? Anything using it stops working immediately.')">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <button class="btn danger" type="submit">Revoke</button>
+      </form>
+      {{end}}
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="8" class="muted">No tokens yet.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{template "foot" .}}
