@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -327,17 +328,42 @@ func adminPath(vendor, variant string) string {
 	return "/admin/vendor-apps/" + vendor
 }
 
-// adminFormData is the editor; the secret is never part of it.
+// adminFormData is the editor; no secret value is ever part of it.
 type adminFormData struct {
-	Title       string
-	Caller      caller
-	App         VendorApp
-	Path        string
-	ExtraText   string
-	ScopesText  string
-	RedirectURL string
-	Error       string
-	Saved       bool
+	Title        string
+	Caller       caller
+	App          VendorApp
+	Path         string
+	ExtraText    string
+	ScopesText   string
+	RedirectURL  string
+	ExtraSecrets []secretField
+	Error        string
+	Saved        bool
+}
+
+// secretField is one write-only extra secret input of the editor.
+type secretField struct {
+	Key, Label, Hint string
+	Stored           bool
+}
+
+// secretFields describes the vendor's extra secrets for the editor.
+func secretFields(app VendorApp) []secretField {
+	var out []secretField
+	for _, key := range ExtraSecretKeys(app.Vendor) {
+		f := secretField{Key: key, Stored: slices.Contains(app.SecretKeys, key)}
+		switch key {
+		case SecretSlackBotToken:
+			f.Label, f.Hint = "Bot User OAuth token", "xoxb-…; the approval notifier DMs with it; needed for Slack approvals"
+		case SecretSlackSigningSecret:
+			f.Label, f.Hint = "Signing secret", "Basic Information → App Credentials; verifies /slack/interactions"
+		default:
+			f.Label, f.Hint = key, "optional"
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func (p *Portal) adminEdit(w http.ResponseWriter, r *http.Request, c caller) {
@@ -366,7 +392,7 @@ func (p *Portal) formData(c caller, app VendorApp, saved bool, errMsg string) ad
 	return adminFormData{
 		Title: titleCase(app.Vendor) + " app", Caller: c, App: app, Path: adminPath(app.Vendor, app.Variant),
 		ExtraText: strings.Join(extra, "\n"), ScopesText: strings.Join(app.Scopes, "\n"),
-		RedirectURL: p.svc.RedirectURL(app.Vendor), Error: errMsg, Saved: saved,
+		RedirectURL: p.svc.RedirectURL(app.Vendor), ExtraSecrets: secretFields(app), Error: errMsg, Saved: saved,
 	}
 }
 
@@ -387,13 +413,17 @@ func (p *Portal) adminSave(w http.ResponseWriter, r *http.Request, c caller) {
 		ClientID: f.Get("client_id"), ClientSecret: f.Get("client_secret"),
 		AuthURL: f.Get("auth_url"), TokenURL: f.Get("token_url"), UserInfoURL: f.Get("userinfo_url"), RevokeURL: f.Get("revoke_url"),
 		Scopes: SplitScopes(f.Get("scopes")), Extra: parseExtra(f.Get("extra")), Enabled: f.Get("enabled") != "",
+		Secrets: map[string]string{},
+	}
+	for _, key := range ExtraSecretKeys(vendor) {
+		app.Secrets[key] = f.Get(key)
 	}
 	saved, err := p.svc.SaveVendorApp(r.Context(), c.UserID, app)
 	switch {
 	case errors.Is(err, ErrInvalidVendorApp):
-		app.ClientSecret = ""
+		app.ClientSecret, app.Secrets = "", nil
 		if existing, lookErr := p.svc.VendorApp(r.Context(), vendor, variant); lookErr == nil {
-			app.HasSecret = existing.HasSecret
+			app.HasSecret, app.SecretKeys = existing.HasSecret, existing.SecretKeys
 		}
 		p.render(w, r, http.StatusBadRequest, "admin_vendor_app.html", p.formData(c, app, false, userMessage(err)))
 		return

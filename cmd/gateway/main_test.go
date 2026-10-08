@@ -33,7 +33,7 @@ func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRec
 }
 
 func TestMuxRoutes(t *testing.T) {
-	mux := newMux(observability.NewReadiness(time.Second), nil, nil)
+	mux := newMux(observability.NewReadiness(time.Second), nil, nil, nil)
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", rec.Code)
@@ -104,7 +104,7 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newMCP: %v", err)
 	}
-	mux := newMux(observability.NewReadiness(time.Second), portalHandler, mcpHandler)
+	mux := newMux(observability.NewReadiness(time.Second), portalHandler, mcpHandler, nil)
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200 (health stays outside the portal)", rec.Code)

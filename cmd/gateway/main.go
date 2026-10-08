@@ -91,7 +91,7 @@ func run() error {
 		}
 	}()
 
-	var portalHandler, mcpHandler http.Handler
+	var portalHandler, mcpHandler, slackHandler http.Handler
 	if st != nil {
 		rec := audit.NewStoreRecorder(st)
 		tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokens.NewPostgresStore(st), metrics, rec, log)
@@ -120,7 +120,18 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
 		}
-		approvalSvc, err := newApprovals(cfg, st, keys, rec, metrics, getenv, log)
+		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)
+		if err != nil {
+			return err
+		}
+		approvalSvc, err := newApprovals(cfg, st, keys, rec, metrics, getenv, log, slackNotifier)
+		if err != nil {
+			return err
+		}
+		if slackNotifier != nil && approvalSvc != nil {
+			slackNotifier.SetArguments(approvalSvc)
+		}
+		slackHandler, err = newSlackInteractions(approvalSvc, connSvc, rec, log)
 		if err != nil {
 			return err
 		}
@@ -156,7 +167,7 @@ func run() error {
 	}
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler)))
+	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler)))
 	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	switch {
@@ -367,14 +378,18 @@ func (r routedAccountSource) ListAccounts(ctx context.Context, userID, app strin
 // newMux builds the public HTTP routes. Health endpoints are unauthenticated
 // and stay outside the portal; /mcp (when mounted) takes every method so
 // the SDK can answer 405 for the ones a stateless server does not serve;
-// the portal (when mounted) owns everything else, including /auth/ and
-// /static/.
-func newMux(readiness *observability.Readiness, portalHandler, mcpHandler http.Handler) http.Handler {
+// /slack/interactions (when mounted) is Slack's signed button-press
+// callback, outside the portal's session checks; the portal (when
+// mounted) owns everything else, including /auth/ and /static/.
+func newMux(readiness *observability.Readiness, portalHandler, mcpHandler, slackHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("GET /readyz", readiness)
 	if mcpHandler != nil {
 		mux.Handle("/mcp", mcpHandler)
+	}
+	if slackHandler != nil {
+		mux.Handle("POST /slack/interactions", slackHandler)
 	}
 	if portalHandler != nil {
 		mux.Handle("/", portalHandler)

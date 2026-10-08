@@ -21,9 +21,9 @@ import (
 // key provider the stored arguments could not be encrypted, so the
 // service is not built (nil, nil): confirmed calls then answer "approval
 // required" with no approval flow (mcp.DefaultConfirmHandler) and the
-// portal has no approval pages. The Slack notifier joins the
-// MultiNotifier in a later task.
-func newApprovals(cfg config.Config, st *store.Store, keys crypto.KeyProvider, rec audit.Recorder, metrics *observability.Metrics, getenv func(string) string, log *slog.Logger) (*approvals.Service, error) {
+// portal has no approval pages. extra notifiers (the Slack DM notifier
+// from newSlackNotifier) join the portal one in the MultiNotifier.
+func newApprovals(cfg config.Config, st *store.Store, keys crypto.KeyProvider, rec audit.Recorder, metrics *observability.Metrics, getenv func(string) string, log *slog.Logger, extra ...approvals.Notifier) (*approvals.Service, error) {
 	if keys == nil {
 		log.Warn("no key provider: approvals are not available; confirmed tool calls are refused")
 		return nil, nil
@@ -34,7 +34,7 @@ func newApprovals(cfg config.Config, st *store.Store, keys crypto.KeyProvider, r
 	}
 	acfg.BaseURL = cfg.BaseURL
 	svc, err := approvals.New(acfg, approvals.NewPostgresStore(st), keys, approvals.Options{
-		Audit: rec, Metrics: metrics, Notifier: approvals.MultiNotifier{approvals.PortalNotifier{}}, Log: log,
+		Audit: rec, Metrics: metrics, Notifier: notifiers(extra...), Log: log,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("approvals: %w", err)

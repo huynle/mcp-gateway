@@ -7,6 +7,10 @@
   <label>Client ID <input type="text" name="client_id" value="{{.App.ClientID}}" required></label>
   <label>Client secret {{if .App.HasSecret}}<span class="muted">(a secret is stored; leave blank to keep it)</span>{{else}}<span class="muted">(required)</span>{{end}}
     <input type="password" name="client_secret" value="" autocomplete="new-password"></label>
+  {{range .ExtraSecrets}}
+  <label>{{.Label}} {{if .Stored}}<span class="muted">(stored; leave blank to keep it)</span>{{else}}<span class="muted">({{.Hint}})</span>{{end}}
+    <input type="password" name="{{.Key}}" value="" autocomplete="new-password"></label>
+  {{end}}
   <label>Authorization URL <input type="text" name="auth_url" value="{{.App.AuthURL}}" required></label>
   <label>Token URL <input type="text" name="token_url" value="{{.App.TokenURL}}" required></label>
   <label>User info URL <span class="muted">(what identifies the account)</span> <input type="text" name="userinfo_url" value="{{.App.UserInfoURL}}"></label>

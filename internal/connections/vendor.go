@@ -69,15 +69,22 @@ type VendorApp struct {
 	ClientID     string
 	ClientSecret string
 	HasSecret    bool
-	AuthURL      string
-	TokenURL     string
-	UserInfoURL  string
-	RevokeURL    string
-	Scopes       []string
-	Extra        map[string]string
-	Enabled      bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Secrets are the vendor's extra secrets (ExtraSecretKeys; for Slack
+	// the bot token and the signing secret), write-only like ClientSecret:
+	// a non-empty value replaces the stored one, an empty or absent key
+	// keeps it. Reads leave it empty and list the stored keys in
+	// SecretKeys. Service.VendorSecrets returns the values.
+	Secrets     map[string]string
+	SecretKeys  []string
+	AuthURL     string
+	TokenURL    string
+	UserInfoURL string
+	RevokeURL   string
+	Scopes      []string
+	Extra       map[string]string
+	Enabled     bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Extra keys the flow and the GenericBinder understand. Anything else in
@@ -220,6 +227,18 @@ func (a *VendorApp) normalize() error {
 		}
 	}
 	a.Extra = extra
+	secrets := map[string]string{}
+	for k, v := range a.Secrets {
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if k == "" || k == SecretClientSecret {
+			continue
+		}
+		if !slices.Contains(ExtraSecretKeys(a.Vendor), k) {
+			return fmt.Errorf("%w: %s has no secret %q", ErrInvalidVendorApp, a.Vendor, k)
+		}
+		secrets[k] = v
+	}
+	a.Secrets = secrets
 	return nil
 }
 
@@ -267,7 +286,8 @@ func (a VendorApp) toRow() (*store.VendorApp, error) {
 	return &store.VendorApp{ID: a.ID, Vendor: a.Vendor, Name: a.Variant, ClientID: a.ClientID, Config: cfg, Enabled: a.Enabled}, nil
 }
 
-// fromRow converts a store row; the secret stays encrypted in the row.
+// fromRow converts a store row; the secrets stay encrypted in the row
+// (SecretKeys is filled by the admin reads, which open the bundle).
 func fromRow(r *store.VendorApp) (VendorApp, error) {
 	var cfg appConfig
 	if len(r.Config) > 0 {

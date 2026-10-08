@@ -1,0 +1,75 @@
+[
+  {
+    "type": "header",
+    "text": {
+      "type": "plain_text",
+      "text": "Approval required",
+      "emoji": false
+    }
+  },
+  {
+    "type": "section",
+    "fields": [
+      {
+        "type": "mrkdwn",
+        "text": "*Tool*\n`fake.create_item`"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Account*\ncompany · Alice at work"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Resource*\nid: it-1\nrepo: acme/widgets"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Expires*\n\u003c!date^1791461700^{date_short_pretty} {time}|12:15 UTC\u003e"
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "*Arguments*\n```body: the body \u0026lt;b\u0026gt;\u0026amp;amp;\u0026lt;/b\u0026gt;\nid: it-1\nname: first\ntags: [\"a\",\"b\"]```"
+    }
+  },
+  {
+    "type": "context",
+    "elements": [
+      {
+        "type": "mrkdwn",
+        "text": "Approval `0f0f0f0f-0000-4000-8000-000000000001` · \u003chttps://gw.example.com/approvals|Open in the portal\u003e"
+      }
+    ]
+  },
+  {
+    "type": "actions",
+    "block_id": "approval:0f0f0f0f-0000-4000-8000-000000000001",
+    "elements": [
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Approve",
+          "emoji": false
+        },
+        "action_id": "approve",
+        "value": "0f0f0f0f-0000-4000-8000-000000000001",
+        "style": "primary"
+      },
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Deny",
+          "emoji": false
+        },
+        "action_id": "deny",
+        "value": "0f0f0f0f-0000-4000-8000-000000000001",
+        "style": "danger"
+      }
+    ]
+  }
+]
