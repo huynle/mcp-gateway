@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -12,7 +13,10 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/connections"
+	"github.com/huynle/mcp-gateway/internal/connections/connectionstest"
 	"github.com/huynle/mcp-gateway/internal/connectors"
+	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/policy"
@@ -79,12 +83,20 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry := connectors.NewRegistry()
-	accounts, err := registerConnectors(cfg, registry, slog.New(slog.DiscardHandler))
+	kp, err := crypto.NewStaticProvider("k1", map[string][]byte{"k1": bytes.Repeat([]byte{1}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, registry, slog.New(slog.DiscardHandler))
+	connSvc, err := connections.New(connections.Config{BaseURL: cfg.BaseURL}, connectionstest.NewMemStore(), kp, connections.Options{Log: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := connectors.NewRegistry()
+	accounts, err := registerConnectors(cfg, registry, connSvc, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, connSvc, registry, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
@@ -96,6 +108,13 @@ func TestMuxMountsPortal(t *testing.T) {
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200 (health stays outside the portal)", rec.Code)
+	}
+	// The connection pages and the connect flow are mounted behind the
+	// signed-in check; the admin vendor-app pages behind the admin check.
+	for _, path := range []string{"/connections", "/connect/github/start", "/connect/github/callback", "/admin/vendor-apps"} {
+		if rec := do(t, mux, http.MethodGet, path); rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/signin?return_to=") {
+			t.Errorf("anonymous GET %s = %d %q, want redirect to sign-in", path, rec.Code, rec.Header().Get("Location"))
+		}
 	}
 	// /mcp is mounted behind the bearer middleware for every method, with
 	// the RFC 9728 pointer in the challenge; health stays public.
@@ -170,7 +189,7 @@ func TestRegisterConnectorsHonoursFakeFlag(t *testing.T) {
 	ctx := context.Background()
 
 	off := connectors.NewRegistry()
-	src, err := registerConnectors(config.Config{}, off, log)
+	src, err := registerConnectors(config.Config{}, off, nil, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +201,7 @@ func TestRegisterConnectorsHonoursFakeFlag(t *testing.T) {
 	}
 
 	on := connectors.NewRegistry()
-	src, err = registerConnectors(config.Config{EnableFakeConnector: true}, on, log)
+	src, err = registerConnectors(config.Config{EnableFakeConnector: true}, on, nil, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +227,7 @@ func TestNewMCPBuildsPipelineWithAccountStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := connectors.NewRegistry()
-	accounts, err := registerConnectors(cfg, registry, log)
+	accounts, err := registerConnectors(cfg, registry, nil, log)
 	if err != nil {
 		t.Fatal(err)
 	}

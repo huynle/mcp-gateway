@@ -1,0 +1,19 @@
+{{template "head" .}}
+{{if .Saved}}<p class="ok">Saved.</p>{{end}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<p class="muted">Vendor <strong>{{.App.Vendor}}</strong>, variant <strong>{{.App.Variant}}</strong>. Register this redirect URI at the vendor: <code>{{.RedirectURL}}</code></p>
+<form method="post" action="{{.Path}}" class="stack" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <label>Client ID <input type="text" name="client_id" value="{{.App.ClientID}}" required></label>
+  <label>Client secret {{if .App.HasSecret}}<span class="muted">(a secret is stored; leave blank to keep it)</span>{{else}}<span class="muted">(required)</span>{{end}}
+    <input type="password" name="client_secret" value="" autocomplete="new-password"></label>
+  <label>Authorization URL <input type="text" name="auth_url" value="{{.App.AuthURL}}" required></label>
+  <label>Token URL <input type="text" name="token_url" value="{{.App.TokenURL}}" required></label>
+  <label>User info URL <span class="muted">(what identifies the account)</span> <input type="text" name="userinfo_url" value="{{.App.UserInfoURL}}"></label>
+  <label>Revoke URL <span class="muted">(optional; best-effort on disconnect)</span> <input type="text" name="revoke_url" value="{{.App.RevokeURL}}"></label>
+  <label>Base scopes <span class="muted">(one per line; identity scopes, tools add theirs)</span> <textarea name="scopes" rows="4">{{.ScopesText}}</textarea></label>
+  <label>Extra parameters <span class="muted">(key=value per line: authorization parameters such as access_type=offline, plus company_domains=acme.com, default_label=company|personal, scope_param=user_scope, id_field, name_field, email_field)</span> <textarea name="extra" rows="5">{{.ExtraText}}</textarea></label>
+  <label class="check"><input type="checkbox" name="enabled" value="1" {{if .App.Enabled}}checked{{end}}> Enabled (users can connect)</label>
+  <p><button class="btn primary" type="submit">Save</button> <a class="btn" href="/admin/vendor-apps">Back</a></p>
+</form>
+{{template "foot" .}}
