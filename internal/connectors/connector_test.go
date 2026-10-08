@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -230,5 +231,20 @@ func TestReconcileKindValid(t *testing.T) {
 	}
 	if connectors.ReconcileKind("").Valid() || connectors.ReconcileKind("magic").Valid() {
 		t.Error("empty / unknown kinds must be invalid")
+	}
+}
+
+func TestNewAccountIDIsUUIDv4(t *testing.T) {
+	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	seen := map[string]bool{}
+	for range 100 {
+		id := connectors.NewAccountID()
+		if !re.MatchString(id) {
+			t.Fatalf("NewAccountID() = %q, not a canonical UUID v4", id)
+		}
+		if seen[id] {
+			t.Fatalf("duplicate id %q", id)
+		}
+		seen[id] = true
 	}
 }

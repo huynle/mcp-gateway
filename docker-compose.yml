@@ -87,6 +87,9 @@ services:
       # Company sign-in through the Compose dex (see deploy/dex/config.yaml).
       GATEWAY_BASE_URL: "http://localhost:18080"
       GATEWAY_MCP_MAX_BODY: "1048576" # /mcp request body limit in bytes
+      GATEWAY_ENABLE_FAKE_CONNECTOR: "true" # make-believe "fake" app for local harness smoke tests
+      GATEWAY_RATE_USER_PER_MIN: "60"
+      GATEWAY_RATE_APP_PER_MIN: "600"
       GATEWAY_SESSION_COOKIE_SECURE: "false" # plain http on localhost
       GATEWAY_OIDC_PROVIDERS: "dex"
       GATEWAY_OIDC_DEX_DISPLAY_NAME: "Local dex"

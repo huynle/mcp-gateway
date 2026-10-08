@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ const (
 	alice = "user-alice"
 	acct  = "fake-acct-1"
 )
+
+var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func newFake(t *testing.T) *fake.Connector {
 	t.Helper()
@@ -74,6 +77,9 @@ func TestFakeAutoAccountSeedsOnePerUser(t *testing.T) {
 	if err != nil || len(first) != 1 || first[0].Label != connectors.LabelCompany {
 		t.Fatalf("auto account = %+v, %v", first, err)
 	}
+	if !uuidRE.MatchString(first[0].ID) {
+		t.Errorf("auto account id %q is not a UUID (audit_events.connection_id is uuid)", first[0].ID)
+	}
 	second, _ := c.Accounts().ListAccounts(context.Background(), "someone", "fake")
 	if len(second) != 1 || second[0].ID != first[0].ID {
 		t.Errorf("auto account not stable: %+v vs %+v", first, second)
@@ -84,6 +90,9 @@ func TestFakeAutoAccountSeedsOnePerUser(t *testing.T) {
 	}
 	if list, _ := c.Accounts().ListAccounts(context.Background(), "someone", "github"); len(list) != 0 {
 		t.Errorf("auto account for another app: %+v", list)
+	}
+	if seeded := c.SeedAccount("someone", connectors.Account{Label: connectors.LabelPersonal}); !uuidRE.MatchString(seeded.ID) {
+		t.Errorf("SeedAccount without an id gave %q", seeded.ID)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/tokens"
@@ -151,4 +152,55 @@ func (noReader) ListForUser(context.Context, string, audit.Filter, audit.Page) (
 }
 func (noReader) AdminSearch(context.Context, audit.Filter, audit.Page) ([]audit.Record, error) {
 	return nil, nil
+}
+
+func TestRegisterConnectorsHonoursFakeFlag(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	ctx := context.Background()
+
+	off := connectors.NewRegistry()
+	src, err := registerConnectors(config.Config{}, off, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(off.List()); n != 0 {
+		t.Errorf("flag off: %d tools registered, want 0", n)
+	}
+	if accts, _ := src.ListAccounts(ctx, "anyone", "fake"); len(accts) != 0 {
+		t.Errorf("flag off: accounts %+v", accts)
+	}
+
+	on := connectors.NewRegistry()
+	src, err = registerConnectors(config.Config{EnableFakeConnector: true}, on, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := on.Get("fake.list_accounts"); !ok {
+		t.Error("flag on: fake.list_accounts missing")
+	}
+	if _, ok := on.Get("fake.create_item"); !ok {
+		t.Error("flag on: fake.create_item missing")
+	}
+	// Local development: every user gets one fake company account on first use.
+	accts, err := src.ListAccounts(ctx, "user-x", "fake")
+	if err != nil || len(accts) != 1 || accts[0].Label != connectors.LabelCompany {
+		t.Errorf("flag on: auto account = %+v, %v", accts, err)
+	}
+}
+
+func TestNewMCPBuildsPipelineWithAccountStage(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	cfg := config.Default()
+	cfg.EnableFakeConnector = true
+	tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokenstest.NewMemStore(), nil, nil, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := newMCP(cfg, tokenSvc, audit.NopRecorder{}, observability.NewMetrics(), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h == nil {
+		t.Fatal("nil handler")
+	}
 }

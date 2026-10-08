@@ -2,6 +2,7 @@ package connectors
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +66,10 @@ const (
 // connections package.
 type Account struct {
 	// ID is the connection's identifier the harness passes as "account".
+	// It is the connections row's UUID: the store-backed audit recorder
+	// writes it to audit_events.connection_id (a uuid column), so an ID
+	// of any other shape cannot be audited. Static sources used with a
+	// database must mint UUIDs (NewAccountID).
 	ID string
 	// Label is company or personal.
 	Label AccountLabel
@@ -76,6 +81,16 @@ type Account struct {
 	// Scopes are the vendor scopes the account granted; tools whose
 	// RequiredScopes are not covered hide (connections task).
 	Scopes []string
+}
+
+// NewAccountID returns a random UUID (version 4) in canonical form, the
+// shape every Account.ID must have.
+func NewAccountID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // AccountSource lists a user's connected accounts for one app. The

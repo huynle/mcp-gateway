@@ -117,12 +117,18 @@ func (c *Connector) App() string { return App }
 // the account stage).
 func (c *Connector) Accounts() connectors.AccountSource { return c.accounts }
 
-// SeedAccount gives userID the account; App is set to "fake" when empty.
-func (c *Connector) SeedAccount(userID string, acct connectors.Account) {
+// SeedAccount gives userID the account; App is set to "fake" when empty
+// and ID to a fresh UUID when empty (IDs must be UUIDs to be audited; see
+// connectors.Account). The account is returned as stored.
+func (c *Connector) SeedAccount(userID string, acct connectors.Account) connectors.Account {
 	if acct.App == "" {
 		acct.App = App
 	}
+	if acct.ID == "" {
+		acct.ID = connectors.NewAccountID()
+	}
 	c.accounts.static.Add(userID, acct)
+	return acct
 }
 
 // SeedItems stores items on account without going through a tool call.
@@ -589,7 +595,7 @@ func (s *accountSource) ListAccounts(ctx context.Context, userID, app string) ([
 		return list, nil
 	}
 	s.static.Add(userID, connectors.Account{
-		ID:          "fake-" + randomID(),
+		ID:          connectors.NewAccountID(),
 		App:         App,
 		Label:       connectors.LabelCompany,
 		DisplayName: "Fake company account",

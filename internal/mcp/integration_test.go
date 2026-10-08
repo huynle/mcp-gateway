@@ -20,6 +20,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
+	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -221,6 +222,109 @@ func TestIntegrationEndToEndWithRealToken(t *testing.T) {
 		t.Errorf("denied call audit = %+v", denied)
 	}
 	for _, ev := range calls {
+		raw, _ := json.Marshal(ev)
+		if strings.Contains(string(raw), "SECRET") {
+			t.Errorf("argument content reached the audit table: %s", raw)
+		}
+	}
+}
+
+// TestIntegrationFakeConnectorAccountsAndAudit registers the fake
+// connector the way cmd/gateway does, drives it with a real token through
+// the SDK client, and checks the audit rows carry the resolved account.
+func TestIntegrationFakeConnectorAccountsAndAudit(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	log := slog.New(slog.DiscardHandler)
+
+	idSvc, err := identity.New(identity.Config{
+		BaseURL:         "http://localhost:18080",
+		Providers:       []config.OIDCProvider{{Name: "dex", DisplayName: "dex", Issuer: dexIssuer, ClientID: "gateway", ClientSecret: "s", AllowedDomains: []string{"example.com"}}},
+		DefaultRole:     "member",
+		IdleTimeout:     12 * time.Hour,
+		AbsoluteTimeout: 7 * 24 * time.Hour,
+	}, identity.NewPostgresStore(st), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := idSvc.SignIn(ctx, "dex", identity.Claims{Issuer: dexIssuer, Subject: "bob-subject", Name: "Bob", Email: "bob@example.com", EmailVerified: true})
+	if err != nil {
+		t.Fatalf("SignIn: %v", err)
+	}
+	bob := signed.Principal.UserID
+	rec := audit.NewStoreRecorder(st)
+	tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: 30 * 24 * time.Hour}, tokens.NewPostgresStore(st), observability.NewMetrics(), rec, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := tokenSvc.Create(ctx, bob, tokens.CreateRequest{Name: "laptop"})
+	if err != nil {
+		t.Fatalf("Create token: %v", err)
+	}
+
+	f := fake.New(fake.Options{})
+	// Account IDs are connection UUIDs: audit_events.connection_id is uuid.
+	bobAcct := f.SeedAccount(bob, connectors.Account{Label: connectors.LabelPersonal, DisplayName: "Bob's fake"})
+	reg := connectors.NewRegistry()
+	if err := connectors.RegisterConnector(reg, f, f.Accounts()); err != nil {
+		t.Fatal(err)
+	}
+	h, err := mcp.Handler(mcp.Options{
+		Registry:      reg,
+		Authenticator: tokenSvc,
+		Auth:          tokens.MiddlewareOptions{Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow)},
+		BaseURL:       "http://localhost:18080",
+		Accounts:      f.Accounts(),
+		RateLimiter:   mcp.NewRateLimiter(mcp.RateLimitConfig{}),
+		Audit:         rec,
+		Log:           log,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(observability.RequestID(h))
+	defer srv.Close()
+
+	cs := connect(t, srv.URL, created.Raw, "2025-11-25")
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "fake.list_accounts"})
+	if err != nil || !strings.Contains(text(t, res), `"`+bobAcct.ID+`"`) {
+		t.Fatalf("list_accounts: err=%v text=%q", err, text(t, res))
+	}
+	if res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "fake.create_item", Arguments: map[string]any{"id": "it-1", "name": "first", "body": "SECRET BODY"}}); err != nil || res.IsError {
+		t.Fatalf("create_item: err=%v res=%+v", err, res)
+	}
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: "fake.list_items"})
+	if err != nil || res.IsError || !strings.Contains(text(t, res), `"it-1"`) {
+		t.Fatalf("list_items: err=%v text=%q", err, text(t, res))
+	}
+
+	events, err := rec.ListForUser(ctx, bob, audit.Filter{}, audit.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []audit.Record
+	for _, ev := range events {
+		if ev.EventType == audit.EventTypeToolCall {
+			calls = append(calls, ev)
+		}
+	}
+	if len(calls) != 3 {
+		t.Fatalf("tool_call events = %d, want 3: %+v", len(calls), calls)
+	}
+	for _, ev := range calls {
+		if ev.Outcome != "succeeded" || ev.UserID != bob {
+			t.Errorf("audit = %+v", ev)
+		}
+		switch ev.Tool {
+		case "fake.list_accounts":
+			if ev.AccountID != "" {
+				t.Errorf("list_accounts recorded an account: %+v", ev)
+			}
+		default:
+			if ev.AccountID != bobAcct.ID || ev.AccountLabel != "personal" {
+				t.Errorf("%s audit account = %q/%q, want %s/personal", ev.Tool, ev.AccountID, ev.AccountLabel, bobAcct.ID)
+			}
+		}
 		raw, _ := json.Marshal(ev)
 		if strings.Contains(string(raw), "SECRET") {
 			t.Errorf("argument content reached the audit table: %s", raw)
