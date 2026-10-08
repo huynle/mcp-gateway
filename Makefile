@@ -21,11 +21,13 @@ test:
 ## test-integration: run tests tagged `integration`; they need PostgreSQL and
 ## read GATEWAY_TEST_DATABASE_URL (skipped when unset, e.g.
 ## GATEWAY_TEST_DATABASE_URL=postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable)
+## Packages run one at a time (-p 1): they share one PostgreSQL server and the
+## store package migrates the primary database up and down.
 test-integration:
 	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
 		echo "GATEWAY_TEST_DATABASE_URL is unset; integration tests will be skipped (run 'make compose-up' and export it)"; \
 	fi
-	$(GO) test -race -count=1 -tags integration -run 'Integration' ./...
+	$(GO) test -race -count=1 -p 1 -tags integration -run 'Integration' ./...
 
 ## lint: run golangci-lint (install: https://golangci-lint.run/docs/welcome/install/)
 lint:
