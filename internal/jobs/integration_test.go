@@ -93,11 +93,12 @@ func openTestStore(t *testing.T) *store.Store {
 }
 
 type sharedJob struct {
-	runs   atomic.Int32
+	runs   *atomic.Int32 // shared across both replicas' jobs
+	mine   atomic.Int32
 	active *atomic.Int32
 	maxAct *atomic.Int32
-	holder string
-	seen   *sync.Map // run -> holder
+	enough chan struct{}
+	once   *sync.Once
 }
 
 func (j *sharedJob) Name() string            { return "integration.sweep" }
@@ -111,7 +112,10 @@ func (j *sharedJob) Run(ctx context.Context) error {
 			break
 		}
 	}
-	j.seen.Store(j.runs.Add(1), j.holder)
+	j.mine.Add(1)
+	if j.runs.Add(1) >= 4 {
+		j.once.Do(func() { close(j.enough) })
+	}
 	select {
 	case <-time.After(60 * time.Millisecond):
 	case <-ctx.Done():
@@ -120,25 +124,28 @@ func (j *sharedJob) Run(ctx context.Context) error {
 }
 
 // TestIntegrationTwoRunnersOneHolder: two runners over the real job_locks
-// table never run the job at the same time, the lease row names the
-// holder, and the lock survives the run (held until the next interval).
+// table never run the job at the same time, the job stays on the replica
+// that holds the lease, the lease row names that holder and survives the
+// run (held until the next interval). The runners run until the job has
+// run four times (condition, not a time budget: the shared test cluster
+// can be slow under the full suite).
 func TestIntegrationTwoRunnersOneHolder(t *testing.T) {
 	st := openTestStore(t)
 	locker := jobs.NewPostgresLocker(st)
-	var active, maxAct atomic.Int32
-	var seen sync.Map
-	j1 := &sharedJob{active: &active, maxAct: &maxAct, holder: "replica-1", seen: &seen}
-	j2 := &sharedJob{active: &active, maxAct: &maxAct, holder: "replica-2", seen: &seen}
-	r1 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-1", Lease: 300 * time.Millisecond, Log: slog.New(slog.DiscardHandler)})
-	r2 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-2", Lease: 300 * time.Millisecond, Log: slog.New(slog.DiscardHandler)})
+	var active, maxAct, runs atomic.Int32
+	enough := make(chan struct{})
+	var once sync.Once
+	j1 := &sharedJob{runs: &runs, active: &active, maxAct: &maxAct, enough: enough, once: &once}
+	j2 := &sharedJob{runs: &runs, active: &active, maxAct: &maxAct, enough: enough, once: &once}
+	r1 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-1", Lease: 2 * time.Second, Log: slog.New(slog.DiscardHandler)})
+	r2 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-2", Lease: 2 * time.Second, Log: slog.New(slog.DiscardHandler)})
 	if err := r1.Register(j1); err != nil {
 		t.Fatal(err)
 	}
 	if err := r2.Register(j2); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 700*time.Millisecond)
-	defer cancel()
+	ctx, cancel := context.WithCancel(t.Context())
 	var wg sync.WaitGroup
 	for _, r := range []*jobs.Runner{r1, r2} {
 		wg.Add(1)
@@ -147,16 +154,18 @@ func TestIntegrationTwoRunnersOneHolder(t *testing.T) {
 			_ = r.Run(ctx)
 		}()
 	}
-	wg.Wait()
-	total := j1.runs.Load() + j2.runs.Load()
-	if total < 3 {
-		t.Errorf("runs = %d + %d, want several", j1.runs.Load(), j2.runs.Load())
+	select {
+	case <-enough:
+	case <-time.After(30 * time.Second):
+		t.Errorf("only %d runs in 30s", runs.Load())
 	}
+	cancel()
+	wg.Wait()
 	if maxAct.Load() > 1 {
 		t.Errorf("job ran concurrently on both replicas (max %d)", maxAct.Load())
 	}
-	if j1.runs.Load() > 0 && j2.runs.Load() > 0 {
-		t.Errorf("the lease moved between healthy replicas: %d / %d", j1.runs.Load(), j2.runs.Load())
+	if j1.mine.Load() > 0 && j2.mine.Load() > 0 {
+		t.Errorf("the lease moved between healthy replicas: %d / %d", j1.mine.Load(), j2.mine.Load())
 	}
 	var holder string
 	var expires time.Time
