@@ -482,3 +482,21 @@ func (m *MemStore) String() string {
 	}
 	return b.String()
 }
+
+// Backdate sets a connection's last_refreshed_at (keep-alive tests).
+func (m *MemStore) Backdate(connectionID string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.conns[connectionID]; ok {
+		c.LastRefreshedAt = &at
+	}
+}
+
+// ExpireFlows sets every stored flow's expiry to at.
+func (m *MemStore) ExpireFlows(at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, f := range m.flows {
+		f.ExpiresAt = at
+	}
+}

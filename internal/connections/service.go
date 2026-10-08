@@ -190,7 +190,38 @@ func New(cfg Config, st Store, keys crypto.KeyProvider, opts Options) (*Service,
 }
 
 // SetClock replaces the time source (tests).
-func (s *Service) SetClock(now func() time.Time) { s.now = now }
+func (s *Service) SetClock(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = now
+}
+
+// clock, personalPolicy, notifications and sink read the swappable
+// collaborators under the lock (SetClock, SetPolicy, SetNotifier and
+// SetMetrics may run after requests started).
+func (s *Service) clock() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.now()
+}
+
+func (s *Service) personalPolicy() PersonalAccountPolicy {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.policy
+}
+
+func (s *Service) notifications() Notifier {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.notifier
+}
+
+func (s *Service) sink() Metrics {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.metrics
+}
 
 // RedirectURL is the callback URI registered at the vendor.
 func (s *Service) RedirectURL(vendor string) string {
@@ -354,7 +385,7 @@ func contains(list []string, s string) bool {
 // because the action it describes has already been committed.
 func (s *Service) record(ctx context.Context, userID, connectionID, label string, resource map[string]string, outcome, errorClass string) {
 	ev := audit.Event{
-		Time:             s.now(),
+		Time:             s.clock(),
 		UserID:           userID,
 		AccountID:        connectionID,
 		AccountLabel:     label,

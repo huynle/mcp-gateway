@@ -95,7 +95,7 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (string, error) {
 	scopes := unionScopes(app.Scopes, req.Scopes)
 	flow := &store.ConnectFlow{
 		State: state, UserID: req.UserID, VendorAppID: app.ID, Verifier: verifier, Scopes: scopes,
-		ReturnTo: req.ReturnTo, ExpiresAt: s.now().Add(s.cfg.FlowTTL),
+		ReturnTo: req.ReturnTo, ExpiresAt: s.clock().Add(s.cfg.FlowTTL),
 	}
 	if err := s.store.AsUser(ctx, req.UserID, func(tx Tx) error { return tx.CreateConnectFlow(ctx, flow) }); err != nil {
 		return "", fmt.Errorf("connections: start flow: %w", err)
@@ -122,7 +122,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 	if req.State == "" || req.UserID == "" {
 		return Info{}, fmt.Errorf("%w: missing state", ErrFlowInvalid)
 	}
-	now := s.now()
+	now := s.clock()
 	var flow *store.ConnectFlow
 	err := s.store.AsUser(ctx, req.UserID, func(tx Tx) (err error) {
 		flow, err = tx.TakeConnectFlow(ctx, req.State, now)
@@ -161,6 +161,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 		s.log.Warn("code exchange failed", "event", "connections.exchange_failed", "user_id", req.UserID, "vendor", app.Vendor, "vendor_error", code)
 		return Info{}, fmt.Errorf("%w: code exchange failed (%s)", ErrFlowInvalid, code)
 	}
+	s.normalizeExpiry(tok)
 	bound, err := s.binderFor(app.Vendor).Bind(ctx, BindInput{
 		App: app, Token: tok, Client: oauth2.NewClient(octx, oauth2.StaticTokenSource(tok)), RequestedScopes: flow.Scopes,
 	})
@@ -240,7 +241,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 // per-call policy still denies the apps that do).
 func (s *Service) personalAllowed(ctx context.Context, userID, vendor string) (bool, error) {
 	for _, app := range s.appsFor(vendor) {
-		ok, err := s.policy.PersonalAccountsAllowed(ctx, userID, app)
+		ok, err := s.personalPolicy().PersonalAccountsAllowed(ctx, userID, app)
 		if err != nil {
 			return false, fmt.Errorf("connections: personal account policy: %w", err)
 		}

@@ -213,15 +213,6 @@ func (v *fakeVendor) revokedTokens() []string {
 	return append([]string(nil), v.revoked...)
 }
 
-func (v *fakeVendor) lastAuthorize() url.Values {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if len(v.authorize) == 0 {
-		return nil
-	}
-	return v.authorize[len(v.authorize)-1]
-}
-
 // allTokens lists every access and refresh token the vendor ever issued,
 // for scanning stores and logs for plaintext.
 func (v *fakeVendor) allTokens() []string {
