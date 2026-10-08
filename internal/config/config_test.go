@@ -219,6 +219,9 @@ func TestIdentityDefaults(t *testing.T) {
 	if cfg.DefaultRole != "member" {
 		t.Errorf("DefaultRole = %q, want member", cfg.DefaultRole)
 	}
+	if cfg.TokenSignInMaxAge != 30*24*time.Hour {
+		t.Errorf("TokenSignInMaxAge = %v, want 720h", cfg.TokenSignInMaxAge)
+	}
 	if len(cfg.OIDCProviders) != 0 || len(cfg.BootstrapAdmins) != 0 {
 		t.Errorf("no providers or admins expected by default, got %+v", cfg)
 	}
@@ -230,6 +233,7 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 		"GATEWAY_SESSION_IDLE_TIMEOUT":        "1h",
 		"GATEWAY_SESSION_ABSOLUTE_TIMEOUT":    "48h",
 		"GATEWAY_SESSION_COOKIE_SECURE":       "false",
+		"GATEWAY_TOKEN_SIGNIN_MAX_AGE":        "240h",
 		"GATEWAY_DEFAULT_ROLE":                "staff",
 		"GATEWAY_BOOTSTRAP_ADMINS":            "http://localhost:15556/dex|08a8684b, https://accounts.google.com|1234",
 		"GATEWAY_OIDC_PROVIDERS":              "dex, google",
@@ -249,6 +253,9 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 	}
 	if cfg.BaseURL != "https://gw.example.com" {
 		t.Errorf("BaseURL = %q, want trailing slash trimmed", cfg.BaseURL)
+	}
+	if cfg.TokenSignInMaxAge != 240*time.Hour {
+		t.Errorf("TokenSignInMaxAge = %v, want 240h", cfg.TokenSignInMaxAge)
 	}
 	if cfg.SessionIdleTimeout != time.Hour || cfg.SessionAbsoluteTimeout != 48*time.Hour || cfg.SessionCookieSecure {
 		t.Errorf("session settings not applied: %+v", cfg)
@@ -323,6 +330,8 @@ func TestIdentityValidation(t *testing.T) {
 		"bad secure flag":       {"GATEWAY_SESSION_COOKIE_SECURE": "yes"},
 		"empty default role":    {"GATEWAY_DEFAULT_ROLE": " "},
 		"bad bootstrap admin":   {"GATEWAY_BOOTSTRAP_ADMINS": "no-pipe"},
+		"zero token max age":    {"GATEWAY_TOKEN_SIGNIN_MAX_AGE": "0s"},
+		"bad token max age":     {"GATEWAY_TOKEN_SIGNIN_MAX_AGE": "30 days"},
 	}
 	for name, overrides := range cases {
 		t.Run(name, func(t *testing.T) {

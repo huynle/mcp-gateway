@@ -4,7 +4,7 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 ## Status
 
-Foundation, data layer and sign-in: Go module, configuration, structured logging, `/healthz`, `/readyz` (`database` and `schema` checks), graceful shutdown, the full v1 PostgreSQL schema as goose migrations, a repository layer scoped per user, row-level security as the second isolation layer, the envelope-encryption key provider, company sign-in through any configured OIDC provider (dex locally; Google, Entra, Okta) with just-in-time users, server-side sessions, and the embedded portal shell (sign-in, my account, admin users). Tokens, `/mcp`, OAuth for harnesses and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
+Foundation, data layer and sign-in: Go module, configuration, structured logging, `/healthz`, `/readyz` (`database` and `schema` checks), graceful shutdown, the full v1 PostgreSQL schema as goose migrations, a repository layer scoped per user, row-level security as the second isolation layer, the envelope-encryption key provider, company sign-in through any configured OIDC provider (dex locally; Google, Entra, Okta) with just-in-time users, server-side sessions, the embedded portal shell (sign-in, my account, admin users, activity, audit search), and generated harness tokens (`mgw_...`) with their authenticator. `/mcp`, OAuth for harnesses and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
 
 ## Run locally
 
@@ -83,6 +83,27 @@ make compose-down
 
 The same flow can be scripted with curl: fetch `/auth/dex/start` with a cookie jar, POST `login`/`password` to the dex form `action`, and follow redirects back to `/account`. To run the gateway on the host instead (`go run ./cmd/gateway` with `.env`), keep Compose up for PostgreSQL and dex; no alias is needed there.
 
+## Harness tokens
+
+Signed-in users mint tokens at `/tokens` for harnesses that cannot do the MCP OAuth dance (or do not want to): OpenCode, Claude Code, scripts. A token is `mgw_<id>_<secret>`: the id is 8 random base62 characters stored in `tokens.public_id` and shown in lists and logs; the secret is 32 random bytes encoded as 43 base62 characters and stored only as its SHA-256 hash (`tokens.token_hash`). The full token is rendered exactly once, on the page that follows creation, together with ready-to-paste OpenCode (`opencode.json`) and Claude Code (`.mcp.json` / `claude mcp add`) snippets pointing at `GATEWAY_BASE_URL` + `/mcp` with `Authorization: Bearer <token>`. Lists show `mgw_<id>_…`.
+
+Rules (decision `uamxx6ba`):
+
+- **Expiry is required and at most 90 days** (default 30). There is no renewal; create a new token.
+- **Sign-in freshness:** a user's tokens stop working when their last company sign-in is older than `GATEWAY_TOKEN_SIGNIN_MAX_AGE` (default `720h` = 30 days). The harness sees `401` with *"sign in to the portal to reactivate your tokens"*; signing in at the portal reactivates every token at once, nothing needs re-issuing.
+- **Revocation is immediate** (button on `/tokens`); disabling a user revokes all their tokens in the same transaction (`identity.Service.OnDisable`).
+- **Scope:** an optional allow-list of apps (`github`) and tools (`github.create_issue`) and a read-only flag narrow the token below what the user's role allows; policy combines both. `last_used_at` is recorded at most once a minute, best-effort.
+- Authentication (`tokens.Service.Authenticate`, used by `tokens.BearerMiddleware` and the `/mcp` endpoint) does one lookup by public id through the bypass scope, a constant-time hash compare, then revocation, expiry, owner status and freshness. Every rejection increments `auth_failures_total{reason}` (`malformed`, `unknown`, `revoked`, `expired`, `user_disabled`, `signin_stale`, `rate_limited`) and logs `event=tokens.auth_failed reason=... public_id=...`; the secret is never logged (and the redacting logger would scrub it anyway). Failed authentications are rate limited per client IP (20 per minute, in memory) with `429` + `Retry-After`; a missing header is a plain `401` challenge and does not count.
+- Each create and revoke is a `user` audit event (`/activity`) with `token_id` and `action` in the resource identity.
+
+**Secret scanning.** The `mgw_` prefix is not registered with any scanner's built-in rules, so add a custom pattern (GitHub secret scanning custom pattern, gitleaks, trufflehog, pre-commit) wherever harness configs might be committed:
+
+```
+mgw_[A-Za-z0-9]{8}_[A-Za-z0-9]{43}
+```
+
+(`tokens.ScanPattern`; a unit test keeps it in sync with the generator.) A leaked token is bounded by its expiry and the 30-day freshness rule and can be revoked on `/tokens`.
+
 ## Repository layout
 
 ```
@@ -93,7 +114,7 @@ internal/server/        HTTP server lifecycle, bounded graceful drain
 internal/observability/ slog bootstrap, /healthz, /readyz check registry (metrics later)
 internal/identity/      users, sessions, company sign-in (OIDC relying party); identitytest/ in-memory store for tests
 internal/authserver/    MCP OAuth 2.1 authorization server (RFC 8414/9728/8707)
-internal/tokens/        generated mgw_ tokens
+internal/tokens/        generated mgw_ tokens: format, service, authenticator + BearerMiddleware, portal pages; tokenstest/ in-memory store
 internal/policy/        structured roles compiled to versioned Cedar
 internal/approvals/     durable confirmations with bounded wait
 internal/ledger/        write intent, idempotency, outcomes, reconciler
@@ -119,7 +140,7 @@ Each `internal/*` package has a `doc.go` stating what it owns and which design s
 - `make migrate` / `make migrate-down` / `make migrate-status` wrap `cmd/migrate`; migrations run as a pre-upgrade job, the service never migrates itself. Adding a migration means adding `internal/store/migrations/NNNNN_name.sql` **and** bumping `store.ExpectedSchemaVersion`; a unit test fails if they disagree.
 - Expected-failure assertions against PostgreSQL (an RLS violation, a bad enum) must run in their own `WithUser` transaction: PostgreSQL aborts the transaction on the first error.
 - Lookups that precede user resolution (identity by issuer+subject, session by hash, just-in-time user creation, admin actions) run through `store.WithJobs`; self-service reads run through `store.WithUser`. Package-level helpers for these live in `internal/store/repo_identity_lookup.go`.
-- The identity integration test uses its own database (`gateway_identity_test`, created on demand) so it never races the store tests' `TRUNCATE`.
+- The identity, audit and tokens integration tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, created on demand) so they never race the store tests' `TRUNCATE`.
 - Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.

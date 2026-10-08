@@ -9,10 +9,10 @@ type tokenRepo struct{ q Querier }
 
 func (r tokenRepo) Create(ctx context.Context, t *Token) error {
 	err := r.q.QueryRow(ctx, `
-		INSERT INTO tokens (user_id, name, token_hash, read_only, scope, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO tokens (user_id, public_id, name, token_hash, read_only, scope, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at`,
-		t.UserID, t.Name, t.TokenHash, t.ReadOnly, t.Scope, t.ExpiresAt,
+		t.UserID, t.PublicID, t.Name, t.TokenHash, t.ReadOnly, t.Scope, t.ExpiresAt,
 	).Scan(&t.ID, &t.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create token: %w", err)
@@ -23,9 +23,9 @@ func (r tokenRepo) Create(ctx context.Context, t *Token) error {
 func (r tokenRepo) Get(ctx context.Context, id string) (*Token, error) {
 	var t Token
 	err := r.q.QueryRow(ctx, `
-		SELECT id, user_id, name, token_hash, read_only, scope, expires_at, revoked_at, last_used_at, created_at
+		SELECT id, user_id, public_id, name, token_hash, read_only, scope, expires_at, revoked_at, last_used_at, created_at
 		FROM tokens WHERE id = $1`, id,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.TokenHash, &t.ReadOnly, &t.Scope, &t.ExpiresAt, &t.RevokedAt, &t.LastUsedAt, &t.CreatedAt)
+	).Scan(&t.ID, &t.UserID, &t.PublicID, &t.Name, &t.TokenHash, &t.ReadOnly, &t.Scope, &t.ExpiresAt, &t.RevokedAt, &t.LastUsedAt, &t.CreatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

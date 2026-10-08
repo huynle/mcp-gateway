@@ -14,6 +14,8 @@ import (
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/tokens"
+	"github.com/huynle/mcp-gateway/internal/tokens/tokenstest"
 )
 
 func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
@@ -63,7 +65,11 @@ func TestMuxMountsPortal(t *testing.T) {
 		Name: "dex", DisplayName: "Local dex", Issuer: "http://localhost:15556/dex",
 		ClientID: "gateway", ClientSecret: "s", AllowedDomains: []string{"example.com"},
 	}}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, slog.New(slog.DiscardHandler))
+	tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokenstest.NewMemStore(), nil, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
@@ -85,6 +91,9 @@ func TestMuxMountsPortal(t *testing.T) {
 	}
 	if rec := do(t, mux, http.MethodPost, "/auth/signout"); rec.Code != http.StatusForbidden {
 		t.Errorf("anonymous POST /auth/signout = %d, want 403 (CSRF)", rec.Code)
+	}
+	if rec := do(t, mux, http.MethodGet, "/tokens"); rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/signin") {
+		t.Errorf("anonymous GET /tokens = %d %q, want redirect to /signin (token pages mounted)", rec.Code, rec.Header().Get("Location"))
 	}
 }
 

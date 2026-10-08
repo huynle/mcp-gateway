@@ -56,6 +56,10 @@ type Config struct {
 	// cookies (GATEWAY_SESSION_COOKIE_SECURE). Only disable for plain-http
 	// localhost development.
 	SessionCookieSecure bool `yaml:"session_cookie_secure"`
+	// TokenSignInMaxAge: a user's generated tokens stop working when their
+	// last company sign-in is older than this (GATEWAY_TOKEN_SIGNIN_MAX_AGE,
+	// default 720h = 30 days; decision uamxx6ba).
+	TokenSignInMaxAge time.Duration `yaml:"token_signin_max_age"`
 	// DefaultRole is the role name given to users created on first sign-in
 	// (GATEWAY_DEFAULT_ROLE); the row is created when missing.
 	DefaultRole string `yaml:"default_role"`
@@ -100,6 +104,7 @@ func Default() Config {
 		SessionIdleTimeout:     12 * time.Hour,
 		SessionAbsoluteTimeout: 7 * 24 * time.Hour,
 		SessionCookieSecure:    true,
+		TokenSignInMaxAge:      30 * 24 * time.Hour,
 		DefaultRole:            "member",
 	}
 }
@@ -188,6 +193,13 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sSESSION_COOKIE_SECURE: %w", EnvPrefix, err)
 		}
 		cfg.SessionCookieSecure = b
+	}
+	if v := getenv(EnvPrefix + "TOKEN_SIGNIN_MAX_AGE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("%sTOKEN_SIGNIN_MAX_AGE: %w", EnvPrefix, err)
+		}
+		cfg.TokenSignInMaxAge = d
 	}
 	if v := getenv(EnvPrefix + "DEFAULT_ROLE"); v != "" {
 		cfg.DefaultRole = v
@@ -307,6 +319,9 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.SessionIdleTimeout > 0 && c.SessionAbsoluteTimeout > 0 && c.SessionIdleTimeout > c.SessionAbsoluteTimeout {
 		errs = append(errs, fmt.Errorf("session_idle_timeout (%v) must not exceed session_absolute_timeout (%v)", c.SessionIdleTimeout, c.SessionAbsoluteTimeout))
+	}
+	if c.TokenSignInMaxAge <= 0 {
+		errs = append(errs, fmt.Errorf("token_signin_max_age must be positive, got %v", c.TokenSignInMaxAge))
 	}
 	if c.DefaultRole == "" {
 		errs = append(errs, errors.New("default_role must not be empty"))

@@ -635,7 +635,7 @@ func TestIntegrationEntitiesInsertAndGet(t *testing.T) {
 			t.Errorf("policy version get = %+v, %v", got, err)
 		}
 		// tokens
-		tok := &store.Token{UserID: userA, Name: "laptop", TokenHash: []byte("tok-hash"), ReadOnly: true, Scope: []byte(`{"apps":["github"]}`), ExpiresAt: now.Add(24 * time.Hour)}
+		tok := &store.Token{UserID: userA, PublicID: "entity01", Name: "laptop", TokenHash: []byte("tok-hash"), ReadOnly: true, Scope: []byte(`{"apps":["github"]}`), ExpiresAt: now.Add(24 * time.Hour)}
 		if err := tx.Tokens().Create(ctx, tok); err != nil {
 			return err
 		}

@@ -94,10 +94,13 @@ type UserRestriction struct {
 }
 
 // Token is a generated mgw_ token (decision uamxx6ba); the secret is stored as
-// its SHA-256 hash. Scope is nil for "everything the user may do".
+// its SHA-256 hash. PublicID is the 8-character id embedded in the token
+// string (mgw_<PublicID>_<secret>), unique across all users. Scope is nil
+// for "everything the user may do".
 type Token struct {
 	ID         string
 	UserID     string
+	PublicID   string
 	Name       string
 	TokenHash  []byte
 	ReadOnly   bool
