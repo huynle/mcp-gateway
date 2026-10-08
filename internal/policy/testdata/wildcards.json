@@ -1,0 +1,12 @@
+{
+  "roles": [
+    {"name": "reader", "rules": [
+      {"app": "github", "tool": "*", "outcome": "allow", "conditions": [{"key": "org", "op": "equals", "value": "acme"}]},
+      {"app": "slack", "tool": "*", "outcome": "hidden"},
+      {"app": "jira", "tool": "*", "outcome": "deny"},
+      {"app": "jira", "tool": "search", "outcome": "allow"}
+    ], "personal_accounts": {"github": "allow"}}
+  ],
+  "assignments": [{"UserID": "u1", "Role": "reader"}],
+  "restrictions": []
+}

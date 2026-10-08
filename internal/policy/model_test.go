@@ -154,3 +154,17 @@ func TestRuleMatchesTool(t *testing.T) {
 		}
 	}
 }
+
+func TestRoleValidateRejectsHiddenWithConditionsAndControlChars(t *testing.T) {
+	r := validRole()
+	r.Rules[0].Outcome = OutcomeHidden
+	r.Rules[0].Conditions = []Condition{{Key: "repo", Op: OpEquals, Value: "x"}}
+	if err := r.Validate(); !errors.Is(err, ErrInvalidRole) {
+		t.Errorf("hidden with conditions: %v", err)
+	}
+	r = validRole()
+	r.Rules[1].Conditions[0].Value = "acme/\n"
+	if err := r.Validate(); !errors.Is(err, ErrInvalidRole) {
+		t.Errorf("control character: %v", err)
+	}
+}

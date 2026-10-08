@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Outcome is what a rule says about a tool (decision 490o45d0). Most
@@ -191,9 +192,26 @@ func validateRules(rules []ToolRule) error {
 			if c.Value == "" {
 				return fmt.Errorf("%w: rule %d condition %d: value must not be empty", ErrInvalidRole, i+1, j+1)
 			}
+			if !printable(c.Value) {
+				return fmt.Errorf("%w: rule %d condition %d: value must not contain control characters", ErrInvalidRole, i+1, j+1)
+			}
+		}
+		if rule.Outcome == OutcomeHidden && len(rule.Conditions) > 0 {
+			return fmt.Errorf("%w: rule %d: a hidden rule cannot have conditions", ErrInvalidRole, i+1)
 		}
 	}
 	return nil
+}
+
+// printable reports whether s has no control characters: condition values
+// are quoted into Cedar text and Cedar has no escape for them.
+func printable(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // Normalize trims and lower-cases identifiers and outcomes and sorts the
