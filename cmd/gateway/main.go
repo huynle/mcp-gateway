@@ -5,9 +5,10 @@
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
 // mounts the portal and company sign-in routes when a database is
-// configured, mounts the token pages and the /mcp endpoint (stateless
-// Streamable HTTP behind the token authenticator's BearerMiddleware, tools
-// from the connector registry), and shuts down gracefully on
+// configured, mounts the token and admin role pages and the /mcp endpoint
+// (stateless Streamable HTTP behind the token authenticator's
+// BearerMiddleware, tools from the connector registry filtered and
+// decided by the compiled policy), and shuts down gracefully on
 // SIGTERM/SIGINT, draining in-flight requests for the configured period.
 // Later tasks register connectors on the registry, insert pipeline stages
 // and mount OAuth on the same mux.
@@ -32,6 +33,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -91,13 +93,31 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("tokens: %w", err)
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, log)
+		policySvc, err := policy.New(policy.NewPostgresStore(st), policy.Options{
+			Audit: rec, Metrics: metrics, Log: log, MaxAge: cfg.PolicyReloadInterval,
+		})
+		if err != nil {
+			return fmt.Errorf("policy: %w", err)
+		}
+		registry := connectors.NewRegistry()
+		accounts, err := registerConnectors(cfg, registry, log)
+		if err != nil {
+			return fmt.Errorf("connectors: %w", err)
+		}
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, registry, log)
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, tokenSvc, rec, metrics, log)
+		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, rec, metrics, log)
 		if err != nil {
 			return err
+		}
+		if cur, err := policySvc.Current(ctx); err != nil {
+			// Not fatal: the service keeps retrying on use and every call
+			// fails closed until the policy loads.
+			log.Error("policy not loaded at startup; tool calls fail closed until it is", "error", err)
+		} else {
+			log.Info("policy ready", "version", cur.Version, "version_id", cur.ID)
 		}
 	} else {
 		log.Warn("no database: portal, sign-in, tokens and /mcp are not mounted")
@@ -168,11 +188,12 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 }
 
 // newPortal builds the identity service and the portal over the given
-// store, mounts the activity, audit and token pages, and registers the
-// token service's disable hook so disabling a user revokes their tokens in
-// the same transaction. Providers come from GATEWAY_OIDC_PROVIDERS; with
-// none configured the sign-in page says so instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, log *slog.Logger) (http.Handler, error) {
+// store, mounts the activity, audit, token and admin role pages, and
+// registers the token service's disable hook so disabling a user revokes
+// their tokens in the same transaction. Providers come from
+// GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
+// instead of failing startup.
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -204,28 +225,32 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 		return pr.UserID, pr.CSRFToken
 	}
 	tokens.NewPortal(tokenSvc, session, cfg.BaseURL, log).Mount(p.MountUser)
+	adminSession := func(r *http.Request) (string, string, bool) {
+		pr := identity.PrincipalFrom(r.Context())
+		if pr == nil {
+			return "", "", false
+		}
+		return pr.UserID, pr.CSRFToken, pr.IsAdmin()
+	}
+	policy.NewPortal(policySvc, registry, adminSession, log).Mount(p.MountAdmin)
 	svc.OnDisable(tokenSvc.DisableHook())
 	return p.Handler(), nil
 }
 
-// newMCP builds the /mcp endpoint: the connector registry, the account
-// source, the per-user / per-app rate limiter, the default pipeline
-// (authenticate, audit, resolve, strip, account, ratelimit, dispatch)
-// with the store-backed audit recorder, and the token authenticator with
-// the production failure limiter. The fake connector is registered only
-// when GATEWAY_ENABLE_FAKE_CONNECTOR=true; the real connectors register
-// here too. The account source is an in-memory one until the connections
-// task supplies the store-backed implementation. Later tasks obtain the
-// pipeline here to insert their stages.
-func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
-	registry := connectors.NewRegistry()
-	accounts, err := registerConnectors(cfg, registry, log)
-	if err != nil {
-		return nil, fmt.Errorf("connectors: %w", err)
-	}
+// newMCP builds the /mcp endpoint over the connector registry and account
+// source: the per-user / per-app rate limiter, policy-driven visibility,
+// the default pipeline (authenticate, audit, resolve, strip, account,
+// policy, ratelimit, dispatch) with the store-backed audit recorder and
+// the default confirm handler (approval required; the approvals task
+// supplies the real one through mcp.PipelineDeps.Confirm), and the token
+// authenticator with the production failure limiter. Later tasks obtain
+// the pipeline here to insert their stages.
+func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
+	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
-		Registry: registry, RateLimiter: limiter, Accounts: accounts, Audit: rec, Metrics: metrics, Log: log,
+		Registry: registry, Visibility: visibility, RateLimiter: limiter, Accounts: accounts,
+		Policy: policySvc, Confirm: mcp.DefaultConfirmHandler(), Audit: rec, Metrics: metrics, Log: log,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
@@ -233,6 +258,7 @@ func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, me
 	h, err := mcp.Handler(mcp.Options{
 		Registry:      registry,
 		Pipeline:      pipeline,
+		Visibility:    visibility,
 		Authenticator: auth,
 		Auth: tokens.MiddlewareOptions{
 			Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow),
@@ -252,11 +278,14 @@ func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, me
 	return h, nil
 }
 
-// registerConnectors fills the registry and returns the account source the
-// account stage consults. Today that source is a static, in-memory one
-// (the connections task replaces it with the connections table); the
-// fake connector, when enabled, seeds one company account per user on
-// first use so a local harness can call its tools right away.
+// registerConnectors fills the registry (which the admin role editor also
+// reads for its tool grid) and returns the account source the account
+// stage consults. Today that source is a static, in-memory one (the
+// connections task replaces it with the connections table); the fake
+// connector, when enabled, seeds one company account per user on first
+// use so a local harness can call its tools right away. The fake
+// connector is registered only when GATEWAY_ENABLE_FAKE_CONNECTOR=true;
+// the real connectors register here too.
 func registerConnectors(cfg config.Config, registry *connectors.Registry, log *slog.Logger) (connectors.AccountSource, error) {
 	static := connectors.NewStaticAccountSource()
 	if !cfg.EnableFakeConnector {
