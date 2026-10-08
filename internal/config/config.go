@@ -63,6 +63,17 @@ type Config struct {
 	// MCPMaxBody bounds the size of one /mcp request body in bytes
 	// (GATEWAY_MCP_MAX_BODY, default 1 MiB); larger requests get 413.
 	MCPMaxBody int64 `yaml:"mcp_max_body"`
+	// RateUserPerMin is each user's tools/call budget per minute across
+	// every app (GATEWAY_RATE_USER_PER_MIN, default 60; decision dovthftx).
+	RateUserPerMin int `yaml:"rate_user_per_min"`
+	// RateAppPerMin is the gateway-wide tools/call budget per vendor app
+	// per minute, shared by every user (GATEWAY_RATE_APP_PER_MIN, default
+	// 600): vendor quotas are per registered app.
+	RateAppPerMin int `yaml:"rate_app_per_min"`
+	// EnableFakeConnector registers the in-process "fake" connector
+	// (GATEWAY_ENABLE_FAKE_CONNECTOR). Development and test stacks only:
+	// its tools and accounts are make-believe.
+	EnableFakeConnector bool `yaml:"enable_fake_connector"`
 	// DefaultRole is the role name given to users created on first sign-in
 	// (GATEWAY_DEFAULT_ROLE); the row is created when missing.
 	DefaultRole string `yaml:"default_role"`
@@ -109,6 +120,8 @@ func Default() Config {
 		SessionCookieSecure:    true,
 		TokenSignInMaxAge:      30 * 24 * time.Hour,
 		MCPMaxBody:             1 << 20,
+		RateUserPerMin:         60,
+		RateAppPerMin:          600,
 		DefaultRole:            "member",
 	}
 }
@@ -211,6 +224,25 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sMCP_MAX_BODY: %w", EnvPrefix, err)
 		}
 		cfg.MCPMaxBody = n
+	}
+	for _, item := range []struct {
+		name string
+		dst  *int
+	}{{"RATE_USER_PER_MIN", &cfg.RateUserPerMin}, {"RATE_APP_PER_MIN", &cfg.RateAppPerMin}} {
+		if v := getenv(EnvPrefix + item.name); v != "" {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil {
+				return fmt.Errorf("%s%s: %w", EnvPrefix, item.name, err)
+			}
+			*item.dst = n
+		}
+	}
+	if v := getenv(EnvPrefix + "ENABLE_FAKE_CONNECTOR"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("%sENABLE_FAKE_CONNECTOR: %w", EnvPrefix, err)
+		}
+		cfg.EnableFakeConnector = b
 	}
 	if v := getenv(EnvPrefix + "DEFAULT_ROLE"); v != "" {
 		cfg.DefaultRole = v
@@ -336,6 +368,12 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.MCPMaxBody <= 0 {
 		errs = append(errs, fmt.Errorf("mcp_max_body must be positive, got %d", c.MCPMaxBody))
+	}
+	if c.RateUserPerMin <= 0 {
+		errs = append(errs, fmt.Errorf("rate_user_per_min must be positive, got %d", c.RateUserPerMin))
+	}
+	if c.RateAppPerMin <= 0 {
+		errs = append(errs, fmt.Errorf("rate_app_per_min must be positive, got %d", c.RateAppPerMin))
 	}
 	if c.DefaultRole == "" {
 		errs = append(errs, errors.New("default_role must not be empty"))
