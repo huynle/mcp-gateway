@@ -111,7 +111,7 @@ All on the private registry; no user, token, account or request identifiers as l
 | Metric | Type | Labels | Incremented by |
 |---|---|---|---|
 | `http_request_duration_seconds` | histogram | `route` (mux pattern), `method`, `status` | `HTTPMiddleware` |
-| `auth_failures_total` | counter | `reason` | identity / tokens / authserver (`expired`, `revoked`, `malformed`, `stale_sign_in`, `disabled`, ...) |
+| `auth_failures_total` | counter | `reason` | tokens (`malformed`, `unknown`, `revoked`, `expired`, `user_disabled`, `signin_stale`, `rate_limited`) / authserver later |
 | `policy_decisions_total` | counter | `decision` (`allow`, `deny`, `confirm`) | policy |
 | `approvals_total` | counter | `state` (`pending`, `approved`, `denied`, `consumed`, `expired`) | approvals |
 | `ledger_operations_total` | counter | `state` (`in_progress`, `succeeded`, `failed`, `unknown`, `unresolved`) | ledger / reconciler |
