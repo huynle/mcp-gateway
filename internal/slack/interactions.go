@@ -209,8 +209,10 @@ func (h *InteractionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Verify before parsing anything.
 	secrets, err := h.secrets.VendorSecrets(ctx, approvals.SlackVendor, "", approvals.SlackSecretSigningSecret, approvals.SlackSecretBotToken)
 	if err != nil {
+		// No Slack vendor app (or no store): nothing can be verified, so
+		// the answer is the same 401 as a bad signature.
 		h.log.Error("slack secrets unavailable", "event", "slack.secrets_failed", "error", observability.RedactError(err), observability.RequestIDAttr(ctx))
-		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if err := VerifySignature(secrets[approvals.SlackSecretSigningSecret], r.Header.Get(HeaderTimestamp), r.Header.Get(HeaderSignature), body, h.now(), h.maxSkew); err != nil {
