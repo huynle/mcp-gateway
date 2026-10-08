@@ -1,24 +1,55 @@
-.PHONY: install test render-k8s compile docker-build clean
+.PHONY: all build test test-integration lint fmt fmt-check migrate compose-up compose-down clean
 
-IMAGE ?= mcp-gateway:local
+GO            ?= go
+GOLANGCI_LINT ?= golangci-lint
+BIN            = bin/gateway
+VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS        = -s -w -X main.version=$(VERSION)
 
-install:
-	python -m pip install -e '.[dev]'
+all: fmt-check lint test build
 
+## build: compile the gateway binary into bin/
+build:
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/gateway
+
+## test: run unit tests with the race detector
 test:
-	pytest -q
+	$(GO) test -race -count=1 ./...
 
-compile:
-	python -m compileall -q src migrations
+## test-integration: run tests tagged `integration`; they need PostgreSQL and
+## read GATEWAY_TEST_DATABASE_URL (skipped when unset, e.g.
+## GATEWAY_TEST_DATABASE_URL=postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable)
+test-integration:
+	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
+		echo "GATEWAY_TEST_DATABASE_URL is unset; integration tests will be skipped (run 'make compose-up' and export it)"; \
+	fi
+	$(GO) test -race -count=1 -tags integration -run 'Integration' ./...
 
-render-k8s:
-	kubectl kustomize k8s/base >/tmp/mcp-gateway-base.yaml
-	kubectl kustomize k8s/overlays/local >/tmp/mcp-gateway-local.yaml
-	kubectl kustomize k8s/overlays/production >/tmp/mcp-gateway-production.yaml
+## lint: run golangci-lint (install: https://golangci-lint.run/docs/welcome/install/)
+lint:
+	$(GOLANGCI_LINT) run --build-tags integration ./...
 
-docker-build:
-	docker build -t $(IMAGE) .
+## fmt: rewrite sources with gofmt
+fmt:
+	gofmt -w .
+
+## fmt-check: fail when any file is not gofmt-clean (used by CI)
+fmt-check:
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed on:"; echo "$$out"; exit 1; fi
+
+## migrate: placeholder until the store task adds goose migrations
+migrate:
+	@echo "No migrations yet. The store task (Brain lutqeqg0) adds goose migrations under"
+	@echo "internal/store/migrations and turns this target into 'goose -dir internal/store/migrations postgres \"\$$GATEWAY_DATABASE_URL\" up'."
+	@echo "Migrations run as a pre-upgrade job; the service never migrates itself."
+
+## compose-up: start PostgreSQL (15432), dex (15556) and the gateway (18080)
+compose-up:
+	docker compose up -d --build --wait
+
+## compose-down: stop the local stack and drop its volumes
+compose-down:
+	docker compose down -v --remove-orphans
 
 clean:
-	rm -rf .pytest_cache src/mcp_gateway.egg-info
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	rm -rf bin dist coverage.out

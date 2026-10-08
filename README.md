@@ -1,210 +1,78 @@
 # MCP Gateway
 
-Production-oriented MCP gateway for agent harnesses. It exposes a single MCP Streamable HTTP endpoint, filters the advertised tools for each authenticated user, denies ungranted `tools/call` requests server-side, brokers per-user credentials to downstream MCP servers, and records audit logs for every MCP access decision.
+A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sits in front of every app a team's AI harnesses use. Coworkers sign in with their company account, connect their own app accounts (GitHub, Slack, Atlassian, Google Workspace, Microsoft 365), and point any harness (OpenCode, Claude Code, Claude Desktop, ...) at one endpoint using a generated token or MCP OAuth sign-in. Every tool call is filtered by role, checked by policy, optionally confirmed by the user, recorded in a write ledger and audited. One deployment serves one company. The design lives in Brain plan `36bakiw8` (*Team MCP Gateway v1 design*, revision 2) and its linked decisions; the earlier single-user design is in [`docs/plans/`](docs/plans/).
 
-The implementation was shaped by the same primitives Prefect Horizon describes publicly: a registry of MCP servers, a gateway that enforces authentication/RBAC/audit at the infrastructure layer, and scoped tool composition so agents only see the capabilities they should use.
+## Status
 
-## What Is Included
+Foundation only: Go module, configuration, structured logging, `/healthz`, `/readyz` (check registry; nothing registered yet) and graceful shutdown. The store, key provider, sign-in, tokens, `/mcp` endpoint, portal and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
 
-- `POST /mcp`: MCP JSON-RPC endpoint for agent harnesses.
-- Admin REST API for users, MCP server registration, grants, revocation, tool refresh, and audit reads.
-- User REST API for setting per-server credentials such as Atlassian URL, email, and PAT.
-- Built-in server registry entries for first-party `jira` and `confluence`.
-- Separate first-party Jira and Confluence MCP server apps.
-- Encrypted credential storage using Fernet.
-- SQLite for local development, PostgreSQL-ready SQLAlchemy configuration for Kubernetes.
-- Alembic migrations run by a Kubernetes init container before gateway pods serve traffic.
-- Prometheus metrics at `/metrics`.
-- Non-root, read-only-root-filesystem Kubernetes pod posture.
-- Kustomize base and local overlay.
+## Run locally
 
-## Local Setup
+Requirements: Go 1.25, Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-pytest
+make build test lint          # bin/gateway, unit tests (race detector), lint
+make compose-up               # PostgreSQL 16 (15432), dex (15556), gateway (18080)
+curl -f localhost:18080/healthz
+curl -f localhost:18080/readyz
+make compose-down             # stop and drop volumes
 ```
 
-Run the gateway:
+Run the binary on the host instead of in Compose:
 
 ```bash
-export GATEWAY_ADMIN_TOKEN=local-admin-token
-export GATEWAY_SECRET_KEY=local-secret-key
-export GATEWAY_ENCRYPTION_KEY=WpB-6_RzIvz2FZMfNfyWuIYfJ3VAwJvA9SRuB7rj2rw=
-uvicorn mcp_gateway.app:create_gateway_app --factory --reload --port 8000
+cp .env.example .env          # edit as needed; every GATEWAY_ variable is documented there
+set -a; . ./.env; set +a
+go run ./cmd/gateway
 ```
 
-Run first-party MCP servers in mock mode:
+Configuration precedence is built-in defaults < the YAML file named by `GATEWAY_CONFIG_FILE` < individual `GATEWAY_*` variables. Ports are deliberately off the usual defaults (15432 / 15556 / 18080) so parallel checkouts and other local services do not collide.
+
+Integration tests need PostgreSQL and read `GATEWAY_TEST_DATABASE_URL`; they are skipped when it is unset:
 
 ```bash
-ATLASSIAN_MOCK=true uvicorn mcp_gateway.atlassian:create_jira_app --factory --port 8101
-ATLASSIAN_MOCK=true uvicorn mcp_gateway.atlassian:create_confluence_app --factory --port 8102
+make compose-up
+export GATEWAY_TEST_DATABASE_URL='postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable'
+make test-integration
 ```
 
-Register local first-party server URLs:
+The Compose dex instance is a mock company identity provider: issuer `http://localhost:15556/dex`, static client `gateway` / `gateway-dev-secret`, static user `dev@example.com` / `password` (see [`deploy/dex/config.yaml`](deploy/dex/config.yaml)). Dev credentials only.
 
-```bash
-curl -sS -X POST http://localhost:8000/api/admin/servers \
-  -H 'authorization: Bearer local-admin-token' \
-  -H 'content-type: application/json' \
-  -d '{"slug":"jira","display_name":"Jira","url":"http://localhost:8101/mcp","first_party":true,"credential_header_map":{"base_url":"X-Atlassian-Base-Url","pat":"X-Atlassian-Token","email":"X-Atlassian-Email"}}'
+## Repository layout
 
-curl -sS -X POST http://localhost:8000/api/admin/servers \
-  -H 'authorization: Bearer local-admin-token' \
-  -H 'content-type: application/json' \
-  -d '{"slug":"confluence","display_name":"Confluence","url":"http://localhost:8102/mcp","first_party":true,"credential_header_map":{"base_url":"X-Atlassian-Base-Url","pat":"X-Atlassian-Token","email":"X-Atlassian-Email"}}'
+```
+cmd/gateway/            entry point: config, logging, routes, signal handling
+internal/config/        GATEWAY_* env + optional YAML config loader
+internal/server/        HTTP server lifecycle, bounded graceful drain
+internal/observability/ slog bootstrap, /healthz, /readyz check registry (metrics later)
+internal/identity/      users, sessions, company sign-in (OIDC relying party)
+internal/authserver/    MCP OAuth 2.1 authorization server (RFC 8414/9728/8707)
+internal/tokens/        generated mgw_ tokens
+internal/policy/        structured roles compiled to versioned Cedar
+internal/approvals/     durable confirmations with bounded wait
+internal/ledger/        write intent, idempotency, outcomes, reconciler
+internal/connections/   per-user app accounts, envelope-encrypted tokens
+internal/connectors/    connector interface; fake, github, slack, atlassian, google, microsoft
+internal/audit/         append-only audit events
+internal/store/         PostgreSQL, goose migrations, row-level security
+internal/crypto/        key provider interface, envelope encryption
+internal/mcp/           /mcp stateless Streamable HTTP endpoint and the call pipeline
+internal/portal/        embedded server-rendered portal (templates + htmx)
+internal/jobs/          single-replica background workers
+deploy/dex/             dex configuration for Compose
+docs/plans/             design documents
 ```
 
-Create a user, grant access, and set that user's Atlassian PAT:
+Each `internal/*` package has a `doc.go` stating what it owns and which design sections and decisions it implements.
 
-```bash
-USER_JSON=$(curl -sS -X POST http://localhost:8000/api/admin/users \
-  -H 'authorization: Bearer local-admin-token' \
-  -H 'content-type: application/json' \
-  -d '{"external_id":"alice","display_name":"Alice"}')
+## Development
 
-USER_ID=$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$USER_JSON")
-USER_TOKEN=$(python -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<< "$USER_JSON")
+- `make fmt` / `make fmt-check`, `make lint`, `make test`, `make test-integration`, `make build`.
+- `make migrate` is a placeholder until the store task adds goose migrations; migrations run as a pre-upgrade job, the service never migrates itself.
+- Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
+- Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
+- CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests against a PostgreSQL 16 service container and a container image smoke test.
 
-curl -sS -X POST http://localhost:8000/api/admin/policies \
-  -H 'authorization: Bearer local-admin-token' \
-  -H 'content-type: application/json' \
-  -d "{\"user_id\":\"$USER_ID\",\"server_slug\":\"jira\",\"tool_name\":\"search_issues\"}"
+## History
 
-curl -sS -X POST http://localhost:8000/api/users/me/credentials/jira \
-  -H "authorization: Bearer $USER_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"config":{"base_url":"https://your-domain.atlassian.net","email":"alice@example.com","pat":"ATATT..."}}'
-```
-
-List the user's MCP tools:
-
-```bash
-curl -sS -X POST http://localhost:8000/mcp \
-  -H "authorization: Bearer $USER_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```
-
-Call an allowed tool:
-
-```bash
-curl -sS -X POST http://localhost:8000/mcp \
-  -H "authorization: Bearer $USER_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"jira__search_issues","arguments":{"jql":"project = TEST","max_results":5}}}'
-```
-
-## API Model
-
-Admin APIs require the admin bearer token or an admin user token:
-
-- `POST /api/admin/users`: create a user and return a one-time API token.
-- `PATCH /api/admin/users/{user_id}/status`: activate or deactivate a user.
-- `POST /api/admin/users/{user_id}/rotate-token`: rotate a user's bearer token.
-- `POST /api/admin/servers`: register first-party or third-party MCP servers.
-- `POST /api/admin/policies`: grant a user either one tool or every tool on a server when `tool_name` is `null`.
-- `DELETE /api/admin/policies/{grant_id}`: revoke a grant.
-- `POST /api/admin/servers/{server_slug}/refresh-tools`: refresh a server's cached tool list.
-- `GET /api/admin/audit`: read recent audit events.
-
-User APIs require the user's bearer token:
-
-- `POST /api/users/me/credentials/{server_slug}`: set encrypted credential config for a downstream server.
-- `GET /api/users/me/tools`: list the same tools the MCP endpoint will advertise.
-
-## Credential Brokering
-
-Each server has a `credential_header_map`. For Jira and Confluence the default map is:
-
-```json
-{
-  "base_url": "X-Atlassian-Base-Url",
-  "pat": "X-Atlassian-Token",
-  "email": "X-Atlassian-Email"
-}
-```
-
-The gateway decrypts the user's config, maps only those values into downstream headers, and never includes credential values in audit records.
-
-## Kubernetes
-
-Render the production base:
-
-```bash
-kubectl kustomize k8s/base
-```
-
-Render a local mock overlay with in-cluster PostgreSQL and mocked Atlassian calls:
-
-```bash
-kubectl kustomize k8s/overlays/local
-```
-
-Render the production overlay with HTTPS ingress placeholders:
-
-```bash
-kubectl kustomize k8s/overlays/production
-```
-
-Deploy the local overlay to a test cluster:
-
-```bash
-kubectl apply -k k8s/overlays/local
-kubectl -n mcp-gateway rollout status deploy/mcp-gateway
-kubectl -n mcp-gateway rollout status deploy/jira-mcp
-kubectl -n mcp-gateway rollout status deploy/confluence-mcp
-```
-
-Before deploying production, replace:
-
-- `images` in `k8s/base/kustomization.yaml`
-- `GATEWAY_ADMIN_TOKEN`
-- `GATEWAY_SECRET_KEY`
-- `GATEWAY_ENCRYPTION_KEY`
-- `GATEWAY_DATABASE_URL`
-- `GATEWAY_FIRST_PARTY_INTERNAL_TOKEN` and `ATLASSIAN_INTERNAL_TOKEN`; these must be the same random value so the gateway can call the first-party Jira and Confluence MCP services.
-- `GATEWAY_ALLOW_ORIGINS` with a JSON list of trusted agent/client origins when browser-origin traffic can reach the service.
-- Keep `GATEWAY_ALLOW_INSECURE_BOOTSTRAP=false` in production. The local overlay sets it to `true` only so demo secrets can boot in a disposable cluster.
-
-Use a managed PostgreSQL database for production. The included local overlay is for cluster smoke tests, not durable production data.
-
-Generate a Fernet key:
-
-```bash
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-```
-
-Production migration flow:
-
-- The `mcp-gateway` Deployment has an `alembic upgrade head` init container.
-- `GATEWAY_AUTO_CREATE_SCHEMA=false` is set in Kubernetes so app pods do not mutate schema on startup.
-- The app still seeds the built-in `jira` and `confluence` registry rows after migrations are present.
-- Jira and Confluence MCP pods require `X-MCP-Gateway-Internal-Token` when `ATLASSIAN_INTERNAL_TOKEN` is configured. The gateway injects this header for first-party registered MCP servers.
-
-Operational endpoints:
-
-- `GET /healthz`: liveness.
-- `GET /readyz`: database readiness.
-- `GET /metrics`: Prometheus metrics.
-
-## Architecture Notes
-
-The gateway is stateless across pods. Shared state lives in PostgreSQL: users, server registry, grants, encrypted credentials, cached tool metadata, and audit logs. Downstream MCP servers can be first-party deployments in the same cluster or third-party HTTPS MCP URLs. Tool names are exposed as `<server_slug>__<tool_name>` to prevent collisions across many servers.
-
-For enterprise identity, keep the bearer-token boundary behind your IdP or API gateway now, then replace `require_user` with OIDC/JWT validation while preserving the same `User.external_id` policy lookup.
-
-## Production Checklist
-
-- Keep CI green. The included workflow runs tests, compiles Python, renders every Kustomize overlay, parses the rendered YAML, and builds the image.
-- Put TLS, WAF/rate limiting, and OIDC/JWT validation at your ingress or API gateway boundary.
-- Replace all generated Kustomize secrets before applying production manifests.
-- Leave `GATEWAY_ALLOW_INSECURE_BOOTSTRAP=false`; startup intentionally fails if placeholder secrets are still configured.
-- Update `k8s/overlays/production/ingress.yaml` for your ingress class, hostname, and TLS secret.
-- Use managed PostgreSQL with backups, PITR, and retention aligned to audit requirements.
-- Rotate `GATEWAY_ADMIN_TOKEN` after bootstrap and prefer named admin users for ongoing operations.
-- Restrict `GATEWAY_ALLOW_ORIGINS`; the default `["*"]` is for non-browser/local development.
-- Export pod logs to your SIEM. Audit entries are written to the database and emitted as structured JSON log lines.
-- Treat first-party Jira/Confluence write tools (`add_comment`, `transition_issue`, `create_page`, `update_page`) as separate grants from read tools.
+The repository started as a ~1,300-line Python prototype (FastAPI, SQLAlchemy, Alembic, Kustomize manifests). It was removed when the Go foundation landed; the last prototype revision is commit `b6ad1b4` (`git show b6ad1b4`). Its Jira/Confluence tests (`tests/test_atlassian.py`) and connector (`src/mcp_gateway/atlassian.py`) remain useful references for the Atlassian connector.

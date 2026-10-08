@@ -1,0 +1,30 @@
+# dex configuration for local development only. Mock company OIDC provider
+# with one static user and one static client. Never use outside Compose.
+issuer: http://localhost:15556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:15556
+
+# Dev-only: user sign-in via the static password list below.
+enablePasswordDB: true
+
+staticClients:
+  - id: gateway
+    name: MCP Gateway (local)
+    secret: gateway-dev-secret
+    redirectURIs:
+      - http://localhost:18080/auth/callback
+      - http://127.0.0.1:18080/auth/callback
+
+staticPasswords:
+  - email: dev@example.com
+    # bcrypt("password"), the hash from dex's own examples/config-dev.yaml
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: dev
+    userID: 08a8684b-db88-4b73-90a9-3cd1661f5466
+
+oauth2:
+  skipApprovalScreen: true

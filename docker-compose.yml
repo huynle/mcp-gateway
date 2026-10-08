@@ -1,0 +1,67 @@
+# Local development stack. Ports are deliberately off the defaults
+# (15432 / 15556 / 18080) so several checkouts or other services on this
+# machine do not collide. See .env.example for every GATEWAY_ variable.
+#
+#   make compose-up      # build + start, waits for health
+#   curl -f localhost:18080/healthz
+#   make compose-down    # stop and drop volumes
+
+name: mcp-gateway
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway-dev
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Mock company identity provider (OIDC). Static user dev@example.com /
+  # "password", static client "gateway". The issuer is
+  # http://localhost:15556/dex so browser redirects and discovery match from
+  # the host; dex listens on 15556 inside the container too so the same URL
+  # also works for a gateway running on the host with `go run`.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./deploy/dex/config.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "15556:15556"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:15556/dex/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    build:
+      context: .
+      args:
+        VERSION: compose
+    environment:
+      GATEWAY_LISTEN_ADDR: ":18080"
+      GATEWAY_DRAIN_TIMEOUT: "25s"
+      GATEWAY_LOG_LEVEL: "debug"
+      GATEWAY_LOG_FORMAT: "text"
+    ports:
+      - "18080:18080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dex:
+        condition: service_healthy
+    # Match Kubernetes' terminationGracePeriodSeconds: must exceed GATEWAY_DRAIN_TIMEOUT.
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:
