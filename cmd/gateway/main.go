@@ -27,6 +27,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
+	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -207,14 +208,25 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	return p.Handler(), nil
 }
 
-// newMCP builds the /mcp endpoint: the connector registry (empty until the
-// connector tasks register their tools), the default pipeline with the
-// store-backed audit recorder, and the token authenticator with the
-// production failure limiter. Later tasks obtain the pipeline here to
-// insert their stages.
+// newMCP builds the /mcp endpoint: the connector registry, the account
+// source, the per-user / per-app rate limiter, the default pipeline
+// (authenticate, audit, resolve, strip, account, ratelimit, dispatch)
+// with the store-backed audit recorder, and the token authenticator with
+// the production failure limiter. The fake connector is registered only
+// when GATEWAY_ENABLE_FAKE_CONNECTOR=true; the real connectors register
+// here too. The account source is an in-memory one until the connections
+// task supplies the store-backed implementation. Later tasks obtain the
+// pipeline here to insert their stages.
 func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
 	registry := connectors.NewRegistry()
-	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{Registry: registry, Audit: rec, Log: log})
+	accounts, err := registerConnectors(cfg, registry, log)
+	if err != nil {
+		return nil, fmt.Errorf("connectors: %w", err)
+	}
+	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
+	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
+		Registry: registry, RateLimiter: limiter, Accounts: accounts, Audit: rec, Metrics: metrics, Log: log,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
@@ -235,8 +247,27 @@ func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, me
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
-	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "body_limit", cfg.MCPMaxBody)
+	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "body_limit", cfg.MCPMaxBody,
+		"stages", pipeline.Names(), "rate_user_per_min", cfg.RateUserPerMin, "rate_app_per_min", cfg.RateAppPerMin)
 	return h, nil
+}
+
+// registerConnectors fills the registry and returns the account source the
+// account stage consults. Today that source is a static, in-memory one
+// (the connections task replaces it with the connections table); the
+// fake connector, when enabled, seeds one company account per user on
+// first use so a local harness can call its tools right away.
+func registerConnectors(cfg config.Config, registry *connectors.Registry, log *slog.Logger) (connectors.AccountSource, error) {
+	static := connectors.NewStaticAccountSource()
+	if !cfg.EnableFakeConnector {
+		return static, nil
+	}
+	f := fake.New(fake.Options{Accounts: static, AutoAccount: true})
+	if err := connectors.RegisterConnector(registry, f, f.Accounts()); err != nil {
+		return nil, err
+	}
+	log.Warn("fake connector registered (GATEWAY_ENABLE_FAKE_CONNECTOR=true): development only", "app", fake.App)
+	return f.Accounts(), nil
 }
 
 // newMux builds the public HTTP routes. Health endpoints are unauthenticated

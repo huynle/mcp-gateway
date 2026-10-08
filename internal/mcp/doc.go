@@ -13,15 +13,22 @@
 //     (ScopeVisibility until policy lands) and adds the optional string
 //     properties account and approval_id to every schema;
 //   - tools/call runs a Pipeline of named Stages. DefaultPipeline is
-//     authenticate, audit, resolve, strip, ratelimit, dispatch; audit sits
-//     second so it wraps every outcome. Later modules add account-resolve,
+//     authenticate, audit, resolve, strip, account, ratelimit, dispatch;
+//     audit sits second so it wraps every outcome. The account stage
+//     (present when an AccountSource is configured) auto-resolves a single
+//     connected account, demands a choice among the caller's own when
+//     there are several and treats any other account as unknown. The
+//     ratelimit stage is a per-user and per-app token bucket
+//     (TokenBucketLimiter) that also turns a connector's RateLimited into
+//     a retry_after for the harness and pauses the app. Later modules add
 //     policy, confirm and ledger with Pipeline.Insert(Before|After, anchor,
 //     stage) and never touch the transport.
 //
 // Hidden and unknown tools produce the same ToolError and therefore the
-// same JSON-RPC error bytes. A ToolError is a protocol error; an error from
-// a tool's Handler is a tool result with IsError after redaction; read
-// results carry empty/partial/unavailable under _meta["mcp-gateway/read"].
+// same JSON-RPC error bytes. A ToolError is a protocol error (with
+// error.data.retry_after when a wait applies); an error from a tool's
+// Handler is a tool result with IsError after redaction; read results
+// carry empty/partial/unavailable under _meta["mcp-gateway/read"].
 //
 // Design: Brain plan 36bakiw8 sections 2 and 3; decisions ysorv868, dovthftx,
 // s0p05diu (approval_id), 490o45d0 (hidden = absent).

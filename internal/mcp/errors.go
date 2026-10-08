@@ -1,6 +1,9 @@
 package mcp
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
 // and CodeInvalidParams reuse the standard "invalid params" code (the SDK
@@ -11,7 +14,14 @@ const (
 	CodeToolNotFound    int64 = -32602
 	CodeUnauthenticated int64 = -32001
 	CodeDenied          int64 = -32003
-	CodeRateLimited     int64 = -32029
+	// CodeNoAccount: the user has no connected account for the tool's app;
+	// changing the arguments cannot fix it, connecting one can.
+	CodeNoAccount   int64 = -32004
+	CodeRateLimited int64 = -32029
+	// CodeInternal is the JSON-RPC internal error, used when a gateway
+	// dependency (the account source) failed; the message never carries
+	// the cause.
+	CodeInternal int64 = -32603
 )
 
 // ToolError is a failure of the gateway's own pipeline (not of the tool):
@@ -23,6 +33,10 @@ const (
 type ToolError struct {
 	Code    int64
 	Message string
+	// RetryAfter, when set, is how long the harness should wait before
+	// retrying (rate limits); the endpoint puts it on the wire as
+	// error.data.retry_after in whole seconds, rounded up.
+	RetryAfter time.Duration
 	// class is the short audit error class (ErrorClass column).
 	class string
 }
@@ -32,9 +46,30 @@ func (e *ToolError) Error() string { return e.Message }
 // Class returns the audit error class for this error.
 func (e *ToolError) Class() string { return e.class }
 
+// Denial reports whether the error is the gateway refusing the call
+// (audit decision deny / outcome denied) rather than a precondition or
+// argument failure (outcome failed). Codes alone cannot tell: invalid
+// params and unknown tool share -32602.
+func (e *ToolError) Denial() bool {
+	switch e.class {
+	case "tool_not_found", "denied", "rate_limited", "vendor_rate_limited", "unauthenticated":
+		return true
+	}
+	return false
+}
+
 // NewToolError builds a ToolError with an audit class.
 func NewToolError(code int64, class, message string) *ToolError {
 	return &ToolError{Code: code, Message: message, class: class}
+}
+
+// RetryAfterSeconds is RetryAfter in whole seconds, rounded up, at least 1
+// when RetryAfter is set.
+func (e *ToolError) RetryAfterSeconds() int64 {
+	if e.RetryAfter <= 0 {
+		return 0
+	}
+	return int64((e.RetryAfter + time.Second - 1) / time.Second)
 }
 
 // ErrToolNotFound is the one error for a tool that does not exist or that

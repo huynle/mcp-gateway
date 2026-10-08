@@ -225,6 +225,12 @@ func TestIdentityDefaults(t *testing.T) {
 	if cfg.MCPMaxBody != 1<<20 {
 		t.Errorf("MCPMaxBody = %d, want 1 MiB", cfg.MCPMaxBody)
 	}
+	if cfg.RateUserPerMin != 60 || cfg.RateAppPerMin != 600 {
+		t.Errorf("rate limits = %d/%d, want 60/600", cfg.RateUserPerMin, cfg.RateAppPerMin)
+	}
+	if cfg.EnableFakeConnector {
+		t.Error("EnableFakeConnector must default to false")
+	}
 	if len(cfg.OIDCProviders) != 0 || len(cfg.BootstrapAdmins) != 0 {
 		t.Errorf("no providers or admins expected by default, got %+v", cfg)
 	}
@@ -341,6 +347,10 @@ func TestIdentityValidation(t *testing.T) {
 		"bad token max age":     {"GATEWAY_TOKEN_SIGNIN_MAX_AGE": "30 days"},
 		"zero mcp max body":     {"GATEWAY_MCP_MAX_BODY": "0"},
 		"bad mcp max body":      {"GATEWAY_MCP_MAX_BODY": "1MiB"},
+		"zero user rate":        {"GATEWAY_RATE_USER_PER_MIN": "0"},
+		"bad user rate":         {"GATEWAY_RATE_USER_PER_MIN": "many"},
+		"negative app rate":     {"GATEWAY_RATE_APP_PER_MIN": "-5"},
+		"bad fake flag":         {"GATEWAY_ENABLE_FAKE_CONNECTOR": "yes"},
 	}
 	for name, overrides := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -387,5 +397,28 @@ oidc_providers:
 	}
 	if len(cfg.OIDCProviders) != 1 || cfg.OIDCProviders[0].Name != "dex" {
 		t.Fatalf("env provider list should replace the file's, got %+v", cfg.OIDCProviders)
+	}
+}
+
+func TestRateLimitsAndFakeConnectorFromEnvAndFile(t *testing.T) {
+	p := writeFile(t, "rate_user_per_min: 10\nrate_app_per_min: 20\nenable_fake_connector: true\n")
+	cfg, err := config.Load(envFrom(map[string]string{"GATEWAY_CONFIG_FILE": p}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RateUserPerMin != 10 || cfg.RateAppPerMin != 20 || !cfg.EnableFakeConnector {
+		t.Errorf("from file: %d/%d fake=%v", cfg.RateUserPerMin, cfg.RateAppPerMin, cfg.EnableFakeConnector)
+	}
+	cfg, err = config.Load(envFrom(map[string]string{
+		"GATEWAY_CONFIG_FILE":           p,
+		"GATEWAY_RATE_USER_PER_MIN":     " 30 ",
+		"GATEWAY_RATE_APP_PER_MIN":      "900",
+		"GATEWAY_ENABLE_FAKE_CONNECTOR": "false",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RateUserPerMin != 30 || cfg.RateAppPerMin != 900 || cfg.EnableFakeConnector {
+		t.Errorf("env over file: %d/%d fake=%v", cfg.RateUserPerMin, cfg.RateAppPerMin, cfg.EnableFakeConnector)
 	}
 }

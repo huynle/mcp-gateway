@@ -68,8 +68,13 @@ type Options struct {
 	MaxBody int64
 	// Audit receives one event per tools/call (default pipeline only).
 	Audit audit.Recorder
-	// RateLimiter is the per-user hook (default pipeline only).
+	// RateLimiter is the per-user and per-app limiter (default pipeline
+	// only); nil allows everything.
 	RateLimiter RateLimiter
+	// Accounts enables the account stage (default pipeline only).
+	Accounts connectors.AccountSource
+	// Metrics counts vendor rate limits (default pipeline only).
+	Metrics *observability.Metrics
 	// Log defaults to slog.Default().
 	Log *slog.Logger
 	// Version is reported in initialize; empty means "dev".
@@ -108,7 +113,8 @@ func Handler(opts Options) (http.Handler, error) {
 	}
 	if opts.Pipeline == nil {
 		p, err := DefaultPipeline(PipelineDeps{
-			Registry: opts.Registry, Visibility: opts.Visibility, RateLimiter: opts.RateLimiter, Audit: opts.Audit, Log: opts.Log,
+			Registry: opts.Registry, Visibility: opts.Visibility, RateLimiter: opts.RateLimiter,
+			Accounts: opts.Accounts, Audit: opts.Audit, Metrics: opts.Metrics, Log: opts.Log,
 		})
 		if err != nil {
 			return nil, err
@@ -231,13 +237,24 @@ func (e *endpoint) callTool(ctx context.Context, req *sdk.CallToolRequest) (sdk.
 	var te *ToolError
 	switch {
 	case errors.As(err, &te):
-		return nil, &jsonrpc.Error{Code: te.Code, Message: te.Message}
+		return nil, toRPCError(te)
 	case err != nil:
 		out := &sdk.CallToolResult{}
 		out.SetError(errors.New(observability.RedactError(err)))
 		return out, nil
 	}
 	return toCallResult(cc, res)
+}
+
+// toRPCError renders a ToolError; a RetryAfter becomes
+// data.retry_after in whole seconds (rounded up) so a harness can wait
+// exactly as long as the vendor asked.
+func toRPCError(te *ToolError) *jsonrpc.Error {
+	out := &jsonrpc.Error{Code: te.Code, Message: te.Message}
+	if secs := te.RetryAfterSeconds(); secs > 0 {
+		out.Data, _ = json.Marshal(map[string]int64{"retry_after": secs})
+	}
+	return out
 }
 
 // decodeArgs turns the raw arguments into a map; absent or null means no
