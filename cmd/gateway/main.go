@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/approvals"
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -76,7 +77,8 @@ func run() error {
 	if st != nil {
 		defer st.Close()
 	}
-	if err := openKeyProvider(readiness, log); err != nil {
+	keys, err := openKeyProvider(readiness, log)
+	if err != nil {
 		return err
 	}
 	metrics := observability.NewMetrics()
@@ -104,13 +106,22 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, registry, log)
+		approvalSvc, err := newApprovals(cfg, st, keys, rec, metrics, getenv, log)
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, rec, metrics, log)
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, registry, log)
 		if err != nil {
 			return err
+		}
+		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, approvalSvc, rec, metrics, log)
+		if err != nil {
+			return err
+		}
+		if approvalSvc != nil {
+			if _, err := startJobs(ctx, st, log, approvalSvc.ExpiryJob(0)); err != nil {
+				return err
+			}
 		}
 		if cur, err := policySvc.Current(ctx); err != nil {
 			// Not fatal: the service keeps retrying on use and every call
@@ -171,20 +182,20 @@ func openStore(ctx context.Context, cfg config.Config, readiness *observability.
 // openKeyProvider builds the envelope-encryption key provider selected by
 // GATEWAY_KEY_PROVIDER / GATEWAY_KEY_FILE and registers the "key-provider"
 // readiness check. With neither variable set the gateway runs without one
-// (foundation-only mode, mirroring openStore); modules that need encryption
-// are not wired yet, so nothing else depends on the provider here.
-func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error {
+// (foundation-only mode, mirroring openStore) and returns (nil, nil); the
+// modules that encrypt (approvals, and connections) are then not wired.
+func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (crypto.KeyProvider, error) {
 	if os.Getenv(crypto.EnvKeyProvider) == "" && os.Getenv(crypto.EnvKeyFile) == "" {
 		log.Warn("no GATEWAY_KEY_PROVIDER or GATEWAY_KEY_FILE: running without a key provider")
-		return nil
+		return nil, nil
 	}
 	kp, err := crypto.NewProviderFromEnv(os.Getenv)
 	if err != nil {
-		return fmt.Errorf("key provider: %w", err)
+		return nil, fmt.Errorf("key provider: %w", err)
 	}
 	readiness.Register("key-provider", crypto.ReadinessCheck(kp))
 	log.Info("key provider ready", "provider", os.Getenv(crypto.EnvKeyProvider))
-	return nil
+	return kp, nil
 }
 
 // newPortal builds the identity service and the portal over the given
@@ -193,7 +204,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -225,6 +236,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 		return pr.UserID, pr.CSRFToken
 	}
 	tokens.NewPortal(tokenSvc, session, cfg.BaseURL, log).Mount(p.MountUser)
+	if approvalSvc != nil {
+		approvals.NewPortal(approvalSvc, session, log).Mount(p.MountUser)
+	}
 	adminSession := func(r *http.Request) (string, string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {
@@ -241,16 +255,20 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 // source: the per-user / per-app rate limiter, policy-driven visibility,
 // the default pipeline (authenticate, audit, resolve, strip, account,
 // policy, ratelimit, dispatch) with the store-backed audit recorder and
-// the default confirm handler (approval required; the approvals task
-// supplies the real one through mcp.PipelineDeps.Confirm), and the token
-// authenticator with the production failure limiter. Later tasks obtain
-// the pipeline here to insert their stages.
-func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
+// the approvals confirm handler (decision s0p05diu; the default handler,
+// which only answers "approval required", when approvals are not
+// available), and the token authenticator with the production failure
+// limiter. Later tasks obtain the pipeline here to insert their stages.
+func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
 	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
+	confirm := mcp.DefaultConfirmHandler()
+	if approvalSvc != nil {
+		confirm = approvals.NewConfirmHandler(approvalSvc, metrics, log)
+	}
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
 		Registry: registry, Visibility: visibility, RateLimiter: limiter, Accounts: accounts,
-		Policy: policySvc, Confirm: mcp.DefaultConfirmHandler(), Audit: rec, Metrics: metrics, Log: log,
+		Policy: policySvc, Confirm: confirm, Audit: rec, Metrics: metrics, Log: log,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
