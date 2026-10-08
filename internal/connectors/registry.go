@@ -59,7 +59,12 @@ type Call struct {
 	Account string
 	// ApprovalID is the approval the harness is retrying with, if any.
 	ApprovalID string
-	Args       map[string]any
+	// OperationID is the ledger operation a write runs under (set by the
+	// ledger stage; empty for reads and until that stage exists). Writes
+	// that reconcile by a derived ID or marker derive it from this value
+	// so Reconciliation.Check can derive the same one later.
+	OperationID string
+	Args        map[string]any
 }
 
 // Result is what a tool handler returns. Content is the payload the harness
@@ -102,7 +107,18 @@ type Tool struct {
 	// site, ...) from the arguments; it must never return argument content.
 	// nil means the tool has no resource identity.
 	ResourceIdentity func(args map[string]any) map[string]string
-	Handler          Handler
+	// Reconcile says how a write can be checked after an unknown outcome.
+	// Every write must set Kind explicitly (ReconcileNone is allowed);
+	// reads leave it empty.
+	Reconcile Reconciliation
+	// Bounds caps page size and result size.
+	Bounds Bounds
+	// NoAccount marks a tool that runs without a connected account; the
+	// account stage skips it. Only "<app>.list_accounts" sets it.
+	NoAccount bool
+	// Handler runs the call. Nil in a Connector's Tools (RegisterConnector
+	// binds it to Connector.Call); required by Registry.Register.
+	Handler Handler
 }
 
 // FullName returns "app.tool".
@@ -134,6 +150,25 @@ func (r *Registry) Register(t Tool) error {
 		return fmt.Errorf("%w: %s", ErrDuplicateTool, name)
 	}
 	r.tools[name] = t
+	return nil
+}
+
+// registerAll registers validated tools atomically: either every name is
+// new and all are added, or nothing changes.
+func (r *Registry) registerAll(tools []Tool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := map[string]bool{}
+	for _, t := range tools {
+		name := t.FullName()
+		if _, exists := r.tools[name]; exists || seen[name] {
+			return fmt.Errorf("%w: %s", ErrDuplicateTool, name)
+		}
+		seen[name] = true
+	}
+	for _, t := range tools {
+		r.tools[t.FullName()] = t
+	}
 	return nil
 }
 
@@ -169,6 +204,8 @@ func (t Tool) validate() error {
 		return fmt.Errorf("%w: %s: handler is nil", ErrInvalidTool, t.FullName())
 	case len(t.InputSchema) == 0:
 		return fmt.Errorf("%w: %s: input schema is required", ErrInvalidTool, t.FullName())
+	case t.Bounds.MaxPageSize < 0 || t.Bounds.MaxResultBytes < 0:
+		return fmt.Errorf("%w: %s: bounds must not be negative", ErrInvalidTool, t.FullName())
 	}
 	var schema struct {
 		Type string `json:"type"`
