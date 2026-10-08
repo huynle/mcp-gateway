@@ -178,29 +178,20 @@ func (w *writer) tokenPolicies() {
 		[]string{`context.token.restricted && !(context.token.apps.contains(resource.app) || context.token.tools.contains(resource.name))`}, nil)
 }
 
-// role emits the rules of one role. A wildcard rule excludes every tool of
-// the app that has its own rule in the same role (most specific wins);
-// hidden emits nothing but still counts as "its own rule".
+// role emits the rules of one role. Most specific wins: a wildcard rule
+// steps aside for every tool of the app that has its own allow, confirm
+// or hidden rule, exactly where that rule applies (under its conditions),
+// so the wildcard stays the default elsewhere. Deny rules need no
+// exclusion: a forbid wins over any permit. Hidden emits nothing but
+// still excludes the tool from the wildcard.
 func (w *writer) role(r Role) {
 	principal := fmt.Sprintf(`principal in %s::%s`, EntityRole, strconv.Quote(r.Name))
-	specific := map[string][]string{} // app -> full tool names with a specific rule
 	for _, rule := range r.Rules {
-		if !rule.IsWildcard() {
-			name := rule.App + "." + rule.Tool
-			if !slices.Contains(specific[rule.App], name) {
-				specific[rule.App] = append(specific[rule.App], name)
-			}
+		var excl exclusions
+		if rule.IsWildcard() {
+			excl = exclusionsFor(rule.App, r.Rules)
 		}
-	}
-	for _, list := range specific {
-		slices.Sort(list)
-	}
-	for _, rule := range r.Rules {
-		var unless []string
-		if rule.IsWildcard() && len(specific[rule.App]) > 0 {
-			unless = []string{fmt.Sprintf("%s.contains(resource.name)", quoteList(specific[rule.App]))}
-		}
-		w.rule("role/"+r.Name, principal, rule, unless, true)
+		w.rule("role/"+r.Name, principal, rule, excl, true)
 	}
 	apps := make([]string, 0, len(r.PersonalAccounts))
 	for app := range r.PersonalAccounts {
@@ -220,6 +211,44 @@ func (w *writer) role(r Role) {
 	}
 }
 
+// exclusions is what a wildcard rule leaves to the specific rules of its
+// app: call lists one term per specific rule (its tool, under its
+// conditions); list names the tools (visibility knows no arguments).
+type exclusions struct {
+	call []string
+	list []string
+}
+
+func exclusionsFor(app string, rules []ToolRule) exclusions {
+	var ex exclusions
+	for _, s := range rules {
+		if s.App != app || s.IsWildcard() || s.Outcome == OutcomeDeny {
+			continue
+		}
+		name := strconv.Quote(s.App + "." + s.Tool)
+		term := "resource.name == " + name
+		if when := conditions(s.Conditions); len(when) > 0 {
+			term = "(" + term + " && " + strings.Join(when, " && ") + ")"
+		}
+		if !slices.Contains(ex.call, term) {
+			ex.call = append(ex.call, term)
+		}
+		if !slices.Contains(ex.list, name) {
+			ex.list = append(ex.list, name)
+		}
+	}
+	slices.Sort(ex.call)
+	slices.Sort(ex.list)
+	return ex
+}
+
+func (ex exclusions) listClause() []string {
+	if len(ex.list) == 0 {
+		return nil
+	}
+	return []string{"[" + strings.Join(ex.list, ", ") + "].contains(resource.name)"}
+}
+
 // restriction emits one user's narrowing: forbids and confirm permits
 // only. Allow rules are skipped and reported.
 func (w *writer) restriction(u UserRestriction) []string {
@@ -233,15 +262,17 @@ func (w *writer) restriction(u UserRestriction) []string {
 		if rule.Outcome == OutcomeHidden {
 			rule.Outcome = OutcomeDeny
 		}
-		w.rule("restriction/"+u.UserID, principal, rule, nil, false)
+		w.rule("restriction/"+u.UserID, principal, rule, exclusions{}, false)
 	}
 	return warnings
 }
 
-// rule emits the policies for one rule under principal. Conditions apply
-// to call (and confirm) only: a tool is visible whenever any rule grants
-// it, whatever the arguments turn out to be.
-func (w *writer) rule(prefix, principal string, rule ToolRule, unless []string, grants bool) {
+// rule emits the policies for one rule under principal. Conditions and
+// call exclusions apply to call (and confirm) only; the list action gets
+// the name-only exclusions: a tool is visible whenever any rule grants
+// it, whatever the arguments turn out to be. A conditional deny never
+// touches visibility.
+func (w *writer) rule(prefix, principal string, rule ToolRule, excl exclusions, grants bool) {
 	name := rule.App + "." + rule.Tool
 	id := prefix + "/" + name + "/" + string(rule.Outcome)
 	var resource string
@@ -251,39 +282,38 @@ func (w *writer) rule(prefix, principal string, rule ToolRule, unless []string, 
 		resource = fmt.Sprintf(`resource == %s::%s`, EntityTool, strconv.Quote(name))
 	}
 	when := conditions(rule.Conditions)
+	var effect string
+	var callActions []string
 	switch rule.Outcome {
 	case OutcomeHidden:
 		// Absent from the permits, so absent from tools/list and a call
 		// answers like an unknown tool.
+		return
 	case OutcomeDeny:
-		if len(when) == 0 {
-			w.policy(id, "forbid", principal, actions(ActionCall, ActionConfirm, ActionList), resource, nil, unless)
-		} else {
-			w.policy(id, "forbid", principal, actions(ActionCall, ActionConfirm), resource, when, unless)
-		}
+		effect, callActions = "forbid", []string{ActionCall, ActionConfirm}
 	case OutcomeAllow:
 		if !grants {
 			return
 		}
-		if len(when) == 0 {
-			w.policy(id, "permit", principal, actions(ActionCall, ActionList), resource, nil, unless)
-		} else {
-			w.policy(id, "permit", principal, actions(ActionCall), resource, when, unless)
-			w.policy(id+"/list", "permit", principal, actions(ActionList), resource, nil, unless)
-		}
+		effect, callActions = "permit", []string{ActionCall}
 	case OutcomeConfirm:
+		effect = "permit"
 		if !grants {
 			// A restriction can add a confirmation but never the call itself.
-			w.policy(id, "permit", principal, actions(ActionConfirm), resource, when, unless)
+			w.policy(id, effect, principal, actions(ActionConfirm), resource, when, nil)
 			return
 		}
-		if len(when) == 0 {
-			w.policy(id, "permit", principal, actions(ActionCall, ActionConfirm, ActionList), resource, nil, unless)
-		} else {
-			w.policy(id, "permit", principal, actions(ActionCall, ActionConfirm), resource, when, unless)
-			w.policy(id+"/list", "permit", principal, actions(ActionList), resource, nil, unless)
-		}
+		callActions = []string{ActionCall, ActionConfirm}
 	}
+	if len(when) == 0 && len(excl.call) == 0 {
+		w.policy(id, effect, principal, actions(append(callActions, ActionList)...), resource, nil, nil)
+		return
+	}
+	w.policy(id, effect, principal, actions(callActions...), resource, when, excl.call)
+	if rule.Outcome == OutcomeDeny && len(when) > 0 {
+		return
+	}
+	w.policy(id+"/list", effect, principal, actions(ActionList), resource, nil, excl.listClause())
 }
 
 // policy writes one statement in cedar-go's own layout.
@@ -336,12 +366,3 @@ func conditions(cs []Condition) []string {
 // escapeLike makes s literal inside a Cedar like pattern ("*" is the only
 // metacharacter; "\*" matches a literal star).
 func escapeLike(s string) string { return strings.ReplaceAll(s, "*", `\*`) }
-
-// quoteList renders a Cedar list of strings.
-func quoteList(items []string) string {
-	parts := make([]string, len(items))
-	for i, s := range items {
-		parts[i] = strconv.Quote(s)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
-}

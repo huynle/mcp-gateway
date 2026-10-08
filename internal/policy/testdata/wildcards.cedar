@@ -36,10 +36,33 @@ permit (
 @id("role/reader/jira.*/deny")
 forbid (
     principal in Role::"reader",
-    action in [Action::"call", Action::"confirm", Action::"list"],
+    action in [Action::"call", Action::"confirm"],
     resource in App::"jira"
 )
-unless { ["jira.search"].contains(resource.name) };
+unless { (resource.name == "jira.get_issue" && (context.resource has "project" && context.resource["project"] == "OPS")) || resource.name == "jira.search" };
+
+@id("role/reader/jira.*/deny/list")
+forbid (
+    principal in Role::"reader",
+    action == Action::"list",
+    resource in App::"jira"
+)
+unless { ["jira.get_issue", "jira.search"].contains(resource.name) };
+
+@id("role/reader/jira.get_issue/allow")
+permit (
+    principal in Role::"reader",
+    action == Action::"call",
+    resource == Tool::"jira.get_issue"
+)
+when { (context.resource has "project" && context.resource["project"] == "OPS") };
+
+@id("role/reader/jira.get_issue/allow/list")
+permit (
+    principal in Role::"reader",
+    action == Action::"list",
+    resource == Tool::"jira.get_issue"
+);
 
 @id("role/reader/jira.search/allow")
 permit (

@@ -23,10 +23,18 @@ when { context.token.restricted && !(context.token.apps.contains(resource.app) |
 @id("role/engineer/github.*/allow")
 permit (
     principal in Role::"engineer",
-    action in [Action::"call", Action::"list"],
+    action == Action::"call",
     resource in App::"github"
 )
-unless { ["github.create_issue", "github.delete_repo", "github.merge_pr"].contains(resource.name) };
+unless { (resource.name == "github.create_issue" && (context.resource has "repo" && context.resource["repo"] like "acme/*")) || resource.name == "github.create_issue" || resource.name == "github.delete_repo" };
+
+@id("role/engineer/github.*/allow/list")
+permit (
+    principal in Role::"engineer",
+    action == Action::"list",
+    resource in App::"github"
+)
+unless { ["github.create_issue", "github.delete_repo"].contains(resource.name) };
 
 @id("role/engineer/github.create_issue/allow")
 permit (
@@ -61,10 +69,18 @@ when { (context.resource has "repo" && context.resource["repo"] == "acme/prod") 
 @id("role/engineer/slack.*/confirm")
 permit (
     principal in Role::"engineer",
-    action in [Action::"call", Action::"confirm", Action::"list"],
+    action in [Action::"call", Action::"confirm"],
     resource in App::"slack"
 )
-unless { ["slack.list_channels", "slack.post_message"].contains(resource.name) };
+unless { resource.name == "slack.list_channels" };
+
+@id("role/engineer/slack.*/confirm/list")
+permit (
+    principal in Role::"engineer",
+    action == Action::"list",
+    resource in App::"slack"
+)
+unless { ["slack.list_channels"].contains(resource.name) };
 
 @id("role/engineer/slack.list_channels/allow")
 permit (
@@ -100,7 +116,15 @@ when { context.account.label == "personal" };
 @id("role/member/fake.*/deny")
 forbid (
     principal in Role::"member",
-    action in [Action::"call", Action::"confirm", Action::"list"],
+    action in [Action::"call", Action::"confirm"],
+    resource in App::"fake"
+)
+unless { resource.name == "fake.get_item" || resource.name == "fake.list_accounts" || resource.name == "fake.list_items" };
+
+@id("role/member/fake.*/deny/list")
+forbid (
+    principal in Role::"member",
+    action == Action::"list",
     resource in App::"fake"
 )
 unless { ["fake.get_item", "fake.list_accounts", "fake.list_items"].contains(resource.name) };
