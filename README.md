@@ -4,31 +4,32 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 ## Status
 
-Foundation only: Go module, configuration, structured logging, `/healthz`, `/readyz` (check registry; nothing registered yet) and graceful shutdown. The store, key provider, sign-in, tokens, `/mcp` endpoint, portal and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
+Foundation plus the data layer: Go module, configuration, structured logging, `/healthz`, `/readyz` (`database` and `schema` checks), graceful shutdown, the full v1 PostgreSQL schema as goose migrations, a repository layer scoped per user, and row-level security as the second isolation layer. The key provider, sign-in, tokens, `/mcp` endpoint, portal and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
 
 ## Run locally
 
 Requirements: Go 1.25, Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
 
 ```bash
-make build test lint          # bin/gateway, unit tests (race detector), lint
-make compose-up               # PostgreSQL 16 (15432), dex (15556), gateway (18080)
+make build test lint          # bin/gateway + bin/migrate, unit tests (race detector), lint
+make compose-up               # PostgreSQL 16 (15432), dex (15556), migrations, gateway (18080)
 curl -f localhost:18080/healthz
-curl -f localhost:18080/readyz
+curl -f localhost:18080/readyz # {"status":"ok","checks":[{"name":"database",...},{"name":"schema",...}]}
 make compose-down             # stop and drop volumes
 ```
 
-Run the binary on the host instead of in Compose:
+Run the binary on the host instead of in Compose (Compose must be up for PostgreSQL, or unset `GATEWAY_DATABASE_URL` to run without a database):
 
 ```bash
 cp .env.example .env          # edit as needed; every GATEWAY_ variable is documented there
 set -a; . ./.env; set +a
+make migrate                  # applies pending migrations as the owner (GATEWAY_MIGRATE_DATABASE_URL)
 go run ./cmd/gateway
 ```
 
 Configuration precedence is built-in defaults < the YAML file named by `GATEWAY_CONFIG_FILE` < individual `GATEWAY_*` variables. Ports are deliberately off the usual defaults (15432 / 15556 / 18080) so parallel checkouts and other local services do not collide.
 
-Integration tests need PostgreSQL and read `GATEWAY_TEST_DATABASE_URL`; they are skipped when it is unset:
+Integration tests need a PostgreSQL **superuser** URL in `GATEWAY_TEST_DATABASE_URL` (they migrate up and down and give the two application roles a temporary password); they are skipped when it is unset:
 
 ```bash
 make compose-up
@@ -36,12 +37,27 @@ export GATEWAY_TEST_DATABASE_URL='postgres://gateway:gateway-dev@localhost:15432
 make test-integration
 ```
 
+## Database
+
+The schema is one linear set of goose migrations embedded in the binaries (`internal/store/migrations`). `cmd/migrate` (`make migrate`, `make migrate-down`, `make migrate-status`, or `/migrate up` in the container image) runs them as the database owner before a rollout; the gateway never migrates itself and refuses to start, and reports not ready, when the database's version differs from `store.ExpectedSchemaVersion`.
+
+Three roles, three connection strings:
+
+| Role | Variable | Purpose |
+|---|---|---|
+| owner / superuser | `GATEWAY_MIGRATE_DATABASE_URL` | runs migrations; migration 00001 creates the two roles below (NOLOGIN; grant LOGIN and a password out of band, as [`deploy/postgres/init/01-roles.sql`](deploy/postgres/init/01-roles.sql) does for Compose) |
+| `gateway_app` (NOBYPASSRLS) | `GATEWAY_DATABASE_URL` | the request path; `store.WithUser(ctx, userID, fn)` runs `fn` in a transaction after `SET LOCAL app.user_id` |
+| `gateway_jobs` (BYPASSRLS) | `GATEWAY_JOBS_DATABASE_URL` | `store.WithJobs(ctx, fn)`: background workers, just-in-time user creation, admin metadata reads |
+
+Isolation is enforced twice: repositories only exist on a transaction opened by `WithUser` or `WithJobs`, and every user-scoped table (`users`, `identities`, `sessions`, `role_assignments`, `user_restrictions`, `tokens`, `oauth_refresh_tokens`, `connections`, `connection_secrets`, `approvals`, `ledger_operations`, `ledger_attempts`, `audit_events`) has row-level security enabled and forced with a policy on `app_user_id()`, so a connection without a user scope sees and writes nothing. Global tables (`roles`, `policy_versions`, `oauth_clients`, `vendor_apps`, `signing_keys`, `job_locks`) have no policy. Secrets (vendor app client secrets, connection token bundles, approval payloads, signing private keys) are stored as the crypto package's four envelope-encryption columns and never appear in the `admin_*` views, which are `security_invoker` column projections. `audit_events` is append-only: `gateway_app` has no UPDATE/DELETE privilege and a statement-level trigger blocks UPDATE for everyone and DELETE unless the retention purge flags the transaction.
+
 The Compose dex instance is a mock company identity provider: issuer `http://localhost:15556/dex`, static client `gateway` / `gateway-dev-secret`, static user `dev@example.com` / `password` (see [`deploy/dex/config.yaml`](deploy/dex/config.yaml)). Dev credentials only.
 
 ## Repository layout
 
 ```
-cmd/gateway/            entry point: config, logging, routes, signal handling
+cmd/gateway/            entry point: config, logging, store, routes, signal handling
+cmd/migrate/            pre-upgrade job: goose up / down / down-to / status / version
 internal/config/        GATEWAY_* env + optional YAML config loader
 internal/server/        HTTP server lifecycle, bounded graceful drain
 internal/observability/ slog bootstrap, /healthz, /readyz check registry (metrics later)
@@ -54,12 +70,14 @@ internal/ledger/        write intent, idempotency, outcomes, reconciler
 internal/connections/   per-user app accounts, envelope-encrypted tokens
 internal/connectors/    connector interface; fake, github, slack, atlassian, google, microsoft
 internal/audit/         append-only audit events
-internal/store/         PostgreSQL, goose migrations, row-level security
+internal/store/         pgx pools, WithUser / WithJobs scopes, repositories, schema check
+internal/store/migrations/  embedded goose SQL migrations and their runner
 internal/crypto/        key provider interface, envelope encryption
 internal/mcp/           /mcp stateless Streamable HTTP endpoint and the call pipeline
 internal/portal/        embedded server-rendered portal (templates + htmx)
 internal/jobs/          single-replica background workers
 deploy/dex/             dex configuration for Compose
+deploy/postgres/init/   Compose-only role bootstrap (dev passwords)
 docs/plans/             design documents
 ```
 
@@ -68,7 +86,8 @@ Each `internal/*` package has a `doc.go` stating what it owns and which design s
 ## Development
 
 - `make fmt` / `make fmt-check`, `make lint`, `make test`, `make test-integration`, `make build`.
-- `make migrate` is a placeholder until the store task adds goose migrations; migrations run as a pre-upgrade job, the service never migrates itself.
+- `make migrate` / `make migrate-down` / `make migrate-status` wrap `cmd/migrate`; migrations run as a pre-upgrade job, the service never migrates itself. Adding a migration means adding `internal/store/migrations/NNNNN_name.sql` **and** bumping `store.ExpectedSchemaVersion`; a unit test fails if they disagree.
+- Expected-failure assertions against PostgreSQL (an RLS violation, a bad enum) must run in their own `WithUser` transaction: PostgreSQL aborts the transaction on the first error.
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
 - CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests against a PostgreSQL 16 service container and a container image smoke test.
