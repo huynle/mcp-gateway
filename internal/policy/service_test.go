@@ -75,8 +75,12 @@ func newService(t *testing.T) fixtureSvc {
 	return fixtureSvc{svc: svc, st: st, rec: rec, logs: logs, clock: &now}
 }
 
-func listItems() connectors.Tool  { return connectors.Tool{App: "fake", Name: "list_items", Kind: connectors.KindRead} }
-func createItem() connectors.Tool { return connectors.Tool{App: "fake", Name: "create_item", Kind: connectors.KindWrite} }
+func listItems() connectors.Tool {
+	return connectors.Tool{App: "fake", Name: "list_items", Kind: connectors.KindRead}
+}
+func createItem() connectors.Tool {
+	return connectors.Tool{App: "fake", Name: "create_item", Kind: connectors.KindWrite}
+}
 
 func TestServiceCompilesAndPersistsFirstVersion(t *testing.T) {
 	f := newService(t)
