@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/server"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -62,8 +63,9 @@ func run() error {
 	if st != nil {
 		defer st.Close()
 	}
-	// Later modules register further checks here, e.g.:
-	//   readiness.Register("key-provider", crypto.ProviderReachable)
+	if err := openKeyProvider(readiness, log); err != nil {
+		return err
+	}
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
 	srv := server.New(newMux(readiness), cfg.DrainTimeout, log)
@@ -107,6 +109,25 @@ func openStore(ctx context.Context, cfg config.Config, readiness *observability.
 	readiness.Register("schema", st.SchemaVersionMatches)
 	log.Info("database ready", "schema_version", store.ExpectedSchemaVersion)
 	return st, nil
+}
+
+// openKeyProvider builds the envelope-encryption key provider selected by
+// GATEWAY_KEY_PROVIDER / GATEWAY_KEY_FILE and registers the "key-provider"
+// readiness check. With neither variable set the gateway runs without one
+// (foundation-only mode, mirroring openStore); modules that need encryption
+// are not wired yet, so nothing else depends on the provider here.
+func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error {
+	if os.Getenv(crypto.EnvKeyProvider) == "" && os.Getenv(crypto.EnvKeyFile) == "" {
+		log.Warn("no GATEWAY_KEY_PROVIDER or GATEWAY_KEY_FILE: running without a key provider")
+		return nil
+	}
+	kp, err := crypto.NewProviderFromEnv(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("key provider: %w", err)
+	}
+	readiness.Register("key-provider", crypto.ReadinessCheck(kp))
+	log.Info("key provider ready", "provider", os.Getenv(crypto.EnvKeyProvider))
+	return nil
 }
 
 // newMux builds the public HTTP routes. Health endpoints are unauthenticated.

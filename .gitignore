@@ -21,3 +21,4 @@ coverage.*
 
 # Git worktrees used by agents (also in .git/info/exclude)
 .worktrees/
+.dev/
