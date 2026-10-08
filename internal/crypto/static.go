@@ -2,7 +2,6 @@ package crypto
 
 import (
 	"context"
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"fmt"
@@ -36,11 +35,7 @@ func NewStaticProvider(currentID string, keys map[string][]byte) (*StaticProvide
 		if len(k) != DataKeySize {
 			return nil, fmt.Errorf("crypto: key %q has %d bytes, want %d", id, len(k), DataKeySize)
 		}
-		block, err := aes.NewCipher(k)
-		if err != nil {
-			return nil, fmt.Errorf("crypto: key %q: %w", id, err)
-		}
-		aead, err := cipher.NewGCM(block)
+		aead, err := newAEAD(k)
 		if err != nil {
 			return nil, fmt.Errorf("crypto: key %q: %w", id, err)
 		}
