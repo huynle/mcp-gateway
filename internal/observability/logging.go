@@ -8,7 +8,8 @@ import (
 
 // NewLogger builds the process logger. level is one of debug, info, warn,
 // error; format is json or text. Both are validated by the config package,
-// so unknown values are programmer errors.
+// so unknown values are programmer errors. The returned logger redacts
+// every record (see RedactingHandler): there is no unredacted path.
 func NewLogger(w io.Writer, level, format string) (*slog.Logger, error) {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
@@ -24,5 +25,5 @@ func NewLogger(w io.Writer, level, format string) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("log format %q: must be json or text", format)
 	}
-	return slog.New(h), nil
+	return slog.New(NewRedactingHandler(h)), nil
 }
