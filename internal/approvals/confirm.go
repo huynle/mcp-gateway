@@ -27,13 +27,17 @@ import (
 //     CodeApprovalRequired with the approval id, the portal URL, the
 //     expiry and the retry instructions in error.data.
 //
-// Consumption runs in its own user transaction today (Service.ConsumeNow);
-// the ledger task moves it into the transaction that inserts the ledger
-// row (decision dovthftx) by calling Service.Consume with its Tx.
+// Consumption runs in its own user transaction (Service.ConsumeNow)
+// unless DeferConsumption is set: then the handler only resolves which
+// approval applies (waiting for a pending one) and the ledger stage
+// consumes it in the transaction that inserts the ledger row (decision
+// dovthftx; confirm_deferred.go).
 type ConfirmHandler struct {
 	svc     *Service
 	metrics metricsCounter
 	log     *slog.Logger
+	// deferred leaves consumption to the ledger stage (confirm_deferred.go).
+	deferred bool
 }
 
 // metricsCounter is the slice of observability.Metrics the handler uses.
@@ -77,6 +81,9 @@ func (h *ConfirmHandler) Confirm(ctx context.Context, cc *mcp.CallContext, next 
 		return connectors.Result{}, errNoAccount
 	}
 	b := Binding{UserID: cc.Principal.UserID, AccountID: cc.AccountID, Tool: cc.Call.Tool, PolicyVersionID: cc.PolicyVersion}
+	if h.deferred {
+		return h.confirmDeferred(ctx, cc, next, b)
+	}
 	if cc.Call.ApprovalID != "" {
 		b.ApprovalID = cc.Call.ApprovalID
 		return h.consumeAndRun(ctx, cc, next, b, true)
