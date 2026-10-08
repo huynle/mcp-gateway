@@ -215,8 +215,11 @@ func TestVaultProviderWrapUnwrapAndVersions(t *testing.T) {
 	if _, err := p.UnwrapDataKey(ctx, "v2", wrapped); err == nil {
 		t.Error("v1 blob presented as v2 must be rejected")
 	}
-	if _, err := p.UnwrapDataKey(ctx, "k1", wrapped); err == nil {
-		t.Error("non-vault key ID must be rejected")
+	if _, err := p.UnwrapDataKey(ctx, "k1", wrapped); !errors.Is(err, crypto.ErrUnknownKeyID) {
+		t.Errorf("non-vault key ID: want ErrUnknownKeyID (operator action), got %v", err)
+	}
+	if _, err := p.UnwrapDataKey(ctx, "v2", wrapped); !errors.Is(err, crypto.ErrDecrypt) {
+		t.Errorf("version mismatch: want ErrDecrypt (corruption), got %v", err)
 	}
 	if _, err := p.UnwrapDataKey(ctx, "v1", []byte("garbage")); err == nil {
 		t.Error("malformed blob must be rejected")

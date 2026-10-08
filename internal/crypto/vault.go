@@ -150,10 +150,14 @@ func (p *VaultProvider) WrapDataKey(ctx context.Context, plaintextKey []byte) (s
 	return vaultKeyID(version), []byte(resp.Data.Ciphertext), nil
 }
 
-// UnwrapDataKey implements KeyProvider via transit decrypt. keyID must match
-// the version embedded in the blob; a version Vault refuses as too old maps
-// to ErrUnknownKeyID.
+// UnwrapDataKey implements KeyProvider via transit decrypt. A keyID that is
+// not a transit version ("v<N>"), or one Vault refuses as too old, maps to
+// ErrUnknownKeyID (operator action); a keyID that disagrees with the version
+// embedded in the blob maps to ErrDecrypt (corruption).
 func (p *VaultProvider) UnwrapDataKey(ctx context.Context, keyID string, wrapped []byte) ([]byte, error) {
+	if _, ok := parseVaultKeyID(keyID); !ok {
+		return nil, fmt.Errorf("%w: %q is not a vault transit key version", ErrUnknownKeyID, keyID)
+	}
 	version, ok := parseVaultCiphertext(string(wrapped))
 	if !ok {
 		return nil, fmt.Errorf("%w: wrapped data key is not a vault transit ciphertext", ErrDecrypt)
@@ -207,6 +211,19 @@ func (e *vaultError) tooOld() bool {
 }
 
 func vaultKeyID(version int) string { return "v" + strconv.Itoa(version) }
+
+// parseVaultKeyID is the inverse of vaultKeyID.
+func parseVaultKeyID(id string) (int, bool) {
+	rest, found := strings.CutPrefix(id, "v")
+	if !found {
+		return 0, false
+	}
+	v, err := strconv.Atoi(rest)
+	if err != nil || v < 1 {
+		return 0, false
+	}
+	return v, true
+}
 
 // parseVaultCiphertext extracts N from "vault:v<N>:<payload>".
 func parseVaultCiphertext(s string) (version int, ok bool) {
