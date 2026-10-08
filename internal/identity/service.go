@@ -218,7 +218,7 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 			if ident, err = tx.CreateIdentity(ctx, user.ID, c.Issuer, c.Subject); err != nil {
 				return err
 			}
-			role, err := tx.EnsureRole(ctx, s.cfg.DefaultRole, "Default role for new users")
+			role, err := s.defaultRole(ctx, tx)
 			if err != nil {
 				return err
 			}
@@ -278,6 +278,21 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 		Created: created,
 		Cookie:  s.sessionCookie(secret, now.Add(s.cfg.AbsoluteTimeout)),
 	}, nil
+}
+
+// defaultRole is the role a new user receives: the one admins flagged as
+// default in the portal when there is one, else the configured
+// DefaultRole (created on first use).
+func (s *Service) defaultRole(ctx context.Context, tx Tx) (*store.Role, error) {
+	role, err := tx.FindDefaultRole(ctx)
+	switch {
+	case err == nil:
+		return role, nil
+	case errors.Is(err, store.ErrNotFound):
+		return tx.EnsureRole(ctx, s.cfg.DefaultRole, "Default role for new users")
+	default:
+		return nil, err
+	}
 }
 
 func roleNames(ctx context.Context, tx Tx, userID string) ([]string, error) {
