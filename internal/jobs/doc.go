@@ -10,9 +10,11 @@
 // were not used because they are bound to a session and pooled
 // connections make that fragile.
 //
-// Jobs registered here: approvals expiry (approvals.ExpiryJob); the
-// ledger reconciler, audit purge, token keep-alive refresh and the stale
-// in_progress sweep come with their modules.
+// Jobs registered here: approvals expiry (approvals.ExpiryJob), the
+// ledger reconciler (ReconcilerJob, every minute) and the stale
+// in_progress sweep (StaleSweepJob, every 30 s), the connections
+// keep-alive refresh (connections.KeepAliveJob); the audit purge comes
+// with its module.
 //
 // Design: Brain plan 36bakiw8 section 7; decision nq8wo4g3.
 package jobs
