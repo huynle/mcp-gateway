@@ -1,0 +1,14 @@
+.git
+.github
+.worktrees
+bin
+dist
+docs
+*.md
+.env
+.env.*
+docker-compose.yml
+deploy
+coverage.*
+*.out
+*.test
