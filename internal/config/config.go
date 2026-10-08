@@ -60,6 +60,9 @@ type Config struct {
 	// last company sign-in is older than this (GATEWAY_TOKEN_SIGNIN_MAX_AGE,
 	// default 720h = 30 days; decision uamxx6ba).
 	TokenSignInMaxAge time.Duration `yaml:"token_signin_max_age"`
+	// MCPMaxBody bounds the size of one /mcp request body in bytes
+	// (GATEWAY_MCP_MAX_BODY, default 1 MiB); larger requests get 413.
+	MCPMaxBody int64 `yaml:"mcp_max_body"`
 	// DefaultRole is the role name given to users created on first sign-in
 	// (GATEWAY_DEFAULT_ROLE); the row is created when missing.
 	DefaultRole string `yaml:"default_role"`
@@ -105,6 +108,7 @@ func Default() Config {
 		SessionAbsoluteTimeout: 7 * 24 * time.Hour,
 		SessionCookieSecure:    true,
 		TokenSignInMaxAge:      30 * 24 * time.Hour,
+		MCPMaxBody:             1 << 20,
 		DefaultRole:            "member",
 	}
 }
@@ -200,6 +204,13 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sTOKEN_SIGNIN_MAX_AGE: %w", EnvPrefix, err)
 		}
 		cfg.TokenSignInMaxAge = d
+	}
+	if v := getenv(EnvPrefix + "MCP_MAX_BODY"); v != "" {
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return fmt.Errorf("%sMCP_MAX_BODY: %w", EnvPrefix, err)
+		}
+		cfg.MCPMaxBody = n
 	}
 	if v := getenv(EnvPrefix + "DEFAULT_ROLE"); v != "" {
 		cfg.DefaultRole = v
@@ -322,6 +333,9 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.TokenSignInMaxAge <= 0 {
 		errs = append(errs, fmt.Errorf("token_signin_max_age must be positive, got %v", c.TokenSignInMaxAge))
+	}
+	if c.MCPMaxBody <= 0 {
+		errs = append(errs, fmt.Errorf("mcp_max_body must be positive, got %d", c.MCPMaxBody))
 	}
 	if c.DefaultRole == "" {
 		errs = append(errs, errors.New("default_role must not be empty"))
