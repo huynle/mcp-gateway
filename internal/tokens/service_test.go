@@ -13,6 +13,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
+	"github.com/huynle/mcp-gateway/internal/tokens/tokenstest"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 // fixture is a service over the in-memory store with a fixed clock, a
 // metrics registry and a log buffer.
 type fixture struct {
-	st      *memStore
+	st      *tokenstest.MemStore
 	svc     *tokens.Service
 	metrics *observability.Metrics
 	logs    *bytes.Buffer
@@ -41,7 +42,7 @@ func (r *recordingRecorder) Record(_ context.Context, ev audit.Event) error {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{
-		st:      newMemStore(),
+		st:      tokenstest.NewMemStore(),
 		metrics: observability.NewMetrics(),
 		logs:    &bytes.Buffer{},
 		now:     time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC),
@@ -58,8 +59,8 @@ func newFixture(t *testing.T) *fixture {
 	svc.SetClock(func() time.Time { return f.now })
 	f.svc = svc
 	signedIn := f.now.Add(-time.Hour)
-	f.st.addUser(alice, &signedIn)
-	f.st.addUser(bob, &signedIn)
+	f.st.AddUser(alice, &signedIn)
+	f.st.AddUser(bob, &signedIn)
 	return f
 }
 
@@ -95,7 +96,7 @@ func (f *fixture) failures(t *testing.T, reason string) float64 {
 }
 
 func TestNewRequiresPositiveSignInMaxAge(t *testing.T) {
-	if _, err := tokens.New(tokens.Config{}, newMemStore(), nil, nil, nil); err == nil {
+	if _, err := tokens.New(tokens.Config{}, tokenstest.NewMemStore(), nil, nil, nil); err == nil {
 		t.Error("zero SignInMaxAge accepted")
 	}
 }
@@ -116,7 +117,7 @@ func TestCreateReturnsTheTokenOnceAndStoresOnlyTheHash(t *testing.T) {
 	if want := f.now.Add(30 * 24 * time.Hour); !c.Token.ExpiresAt.Equal(want) {
 		t.Errorf("default expiry = %v, want %v (30 days)", c.Token.ExpiresAt, want)
 	}
-	row := f.st.token(c.Token.ID)
+	row := f.st.Token(c.Token.ID)
 	if !bytes.Equal(row.TokenHash, tokens.HashSecret(secret)) {
 		t.Error("stored hash != sha256(secret)")
 	}
@@ -161,7 +162,7 @@ func TestCreateValidatesNameExpiryAndScope(t *testing.T) {
 	if got := c.Token.Scope.String(); got != "github, slack.post_message, read-only" {
 		t.Errorf("scope = %q", got)
 	}
-	row := f.st.token(c.Token.ID)
+	row := f.st.Token(c.Token.ID)
 	if !row.ReadOnly || string(row.Scope) != `{"apps":["github"],"tools":["slack.post_message"]}` {
 		t.Errorf("stored row = read_only %v scope %s", row.ReadOnly, row.Scope)
 	}
@@ -190,7 +191,7 @@ func TestAuthenticateSuccessReturnsPrincipalWithScope(t *testing.T) {
 		t.Errorf("unrestricted scope = %+v", p2.Scope)
 	}
 	// Success touches last_used_at.
-	if row := f.st.token(c.Token.ID); row.LastUsedAt == nil || !row.LastUsedAt.Equal(f.now) {
+	if row := f.st.Token(c.Token.ID); row.LastUsedAt == nil || !row.LastUsedAt.Equal(f.now) {
 		t.Errorf("last_used_at = %v, want %v", row.LastUsedAt, f.now)
 	}
 	if strings.Contains(f.logs.String(), "tokens.auth_failed") {
@@ -224,12 +225,12 @@ func TestAuthenticateFailureReasons(t *testing.T) {
 		{"wrong secret", wrongSecret, nil, tokens.ReasonUnknown, publicID},
 		{"revoked", revoked.Raw, nil, tokens.ReasonRevoked, revoked.Token.PublicID},
 		{"expired", expired.Raw, func() { f.now = f.now.Add(24*time.Hour + time.Second) }, tokens.ReasonExpired, expired.Token.PublicID},
-		{"user disabled", bobs.Raw, func() { f.st.setUser(bob, store.UserDisabled, &f.now) }, tokens.ReasonUserDisabled, bobs.Token.PublicID},
+		{"user disabled", bobs.Raw, func() { f.st.SetUser(bob, store.UserDisabled, &f.now) }, tokens.ReasonUserDisabled, bobs.Token.PublicID},
 		{"sign-in stale", good.Raw, func() {
 			stale := f.now.Add(-30*24*time.Hour - time.Second)
-			f.st.setUser(alice, store.UserActive, &stale)
+			f.st.SetUser(alice, store.UserActive, &stale)
 		}, tokens.ReasonSignInStale, good.Token.PublicID},
-		{"never signed in", good.Raw, func() { f.st.setUser(alice, store.UserActive, nil) }, tokens.ReasonSignInStale, good.Token.PublicID},
+		{"never signed in", good.Raw, func() { f.st.SetUser(alice, store.UserActive, nil) }, tokens.ReasonSignInStale, good.Token.PublicID},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -270,14 +271,14 @@ func TestAuthenticateStaleBoundary(t *testing.T) {
 	f := newFixture(t)
 	c := f.create(t, alice, tokens.CreateRequest{Name: "laptop"})
 	exactly := f.now.Add(-30 * 24 * time.Hour)
-	f.st.setUser(alice, store.UserActive, &exactly)
+	f.st.SetUser(alice, store.UserActive, &exactly)
 	if _, err := f.svc.Authenticate(t.Context(), c.Raw); err != nil {
 		t.Errorf("sign-in exactly max age old rejected: %v", err)
 	}
 	// Expiry boundary: a token is valid until, not at, expires_at.
 	f.now = c.Token.ExpiresAt.Add(-time.Nanosecond)
 	fresh := f.now
-	f.st.setUser(alice, store.UserActive, &fresh)
+	f.st.SetUser(alice, store.UserActive, &fresh)
 	if _, err := f.svc.Authenticate(t.Context(), c.Raw); err != nil {
 		t.Errorf("token a nanosecond before expiry rejected: %v", err)
 	}
@@ -333,16 +334,16 @@ func TestLastUsedIsThrottledAndBestEffort(t *testing.T) {
 	auth()
 	f.now = first.Add(30 * time.Second)
 	auth()
-	if row := f.st.token(c.Token.ID); !row.LastUsedAt.Equal(first) {
+	if row := f.st.Token(c.Token.ID); !row.LastUsedAt.Equal(first) {
 		t.Errorf("last_used_at touched within a minute: %v", row.LastUsedAt)
 	}
 	f.now = first.Add(time.Minute)
 	auth()
-	if row := f.st.token(c.Token.ID); !row.LastUsedAt.Equal(f.now) {
+	if row := f.st.Token(c.Token.ID); !row.LastUsedAt.Equal(f.now) {
 		t.Errorf("last_used_at not touched after a minute: %v", row.LastUsedAt)
 	}
 	// A failing touch never fails authentication.
-	f.st.touchErr = errors.New("database gone")
+	f.st.TouchErr = errors.New("database gone")
 	f.now = f.now.Add(2 * time.Minute)
 	auth()
 	if !strings.Contains(f.logs.String(), "tokens.touch_failed") {
@@ -378,7 +379,7 @@ func TestSecretNeverReachesTheLog(t *testing.T) {
 	_, _ = f.svc.Authenticate(t.Context(), c.Raw)
 	_, _ = f.svc.Authenticate(t.Context(), tokens.Prefix+c.Token.PublicID+"_"+strings.Repeat("Z", tokens.SecretLen))
 	_, _ = f.svc.Authenticate(t.Context(), "garbage "+c.Raw)
-	f.st.touchErr = errors.New("db down while touching " + c.Raw)
+	f.st.TouchErr = errors.New("db down while touching " + c.Raw)
 	f.now = f.now.Add(2 * time.Minute)
 	_, _ = f.svc.Authenticate(t.Context(), c.Raw)
 	_ = f.svc.Revoke(t.Context(), alice, c.Token.ID)

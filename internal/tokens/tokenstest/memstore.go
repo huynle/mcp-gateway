@@ -1,4 +1,6 @@
-package tokens_test
+// Package tokenstest provides an in-memory tokens.Store for tests in this
+// and other packages (the portal).
+package tokenstest
 
 import (
 	"bytes"
@@ -12,15 +14,15 @@ import (
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
 
-// memStore is an in-memory tokens.Store that imitates row-level security:
+// MemStore is an in-memory tokens.Store that imitates row-level security:
 // under AsUser only the scoped user's tokens are visible; under Bypass every
-// row is. touchErr lets a test make TouchToken fail.
-type memStore struct {
+// row is. TouchErr, when set, makes TouchToken fail.
+type MemStore struct {
 	mu       sync.Mutex
 	seq      int
 	users    map[string]*memUser
 	tokens   map[string]*store.Token // by id
-	touchErr error
+	TouchErr error
 }
 
 type memUser struct {
@@ -28,35 +30,39 @@ type memUser struct {
 	lastSignIn *time.Time
 }
 
-func newMemStore() *memStore {
-	return &memStore{users: map[string]*memUser{}, tokens: map[string]*store.Token{}}
+// NewMemStore returns an empty store.
+func NewMemStore() *MemStore {
+	return &MemStore{users: map[string]*memUser{}, tokens: map[string]*store.Token{}}
 }
 
-func (m *memStore) addUser(id string, lastSignIn *time.Time) {
+// AddUser registers an active user with the given last company sign-in.
+func (m *MemStore) AddUser(id string, lastSignIn *time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.users[id] = &memUser{status: store.UserActive, lastSignIn: lastSignIn}
 }
 
-func (m *memStore) setUser(id, status string, lastSignIn *time.Time) {
+// SetUser sets a user's status and last company sign-in.
+func (m *MemStore) SetUser(id, status string, lastSignIn *time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.users[id] = &memUser{status: status, lastSignIn: lastSignIn}
 }
 
-func (m *memStore) token(id string) store.Token {
+// Token returns a copy of the stored row (hash included) for assertions.
+func (m *MemStore) Token(id string) store.Token {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return *m.tokens[id]
 }
 
-func (m *memStore) Bypass(_ context.Context, fn func(tokens.Tx) error) error {
+func (m *MemStore) Bypass(_ context.Context, fn func(tokens.Tx) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return fn(&memTx{m: m})
 }
 
-func (m *memStore) AsUser(_ context.Context, userID string, fn func(tokens.Tx) error) error {
+func (m *MemStore) AsUser(_ context.Context, userID string, fn func(tokens.Tx) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.users[userID]; !ok {
@@ -66,7 +72,7 @@ func (m *memStore) AsUser(_ context.Context, userID string, fn func(tokens.Tx) e
 }
 
 type memTx struct {
-	m     *memStore
+	m     *MemStore
 	scope string // "" = bypass
 }
 
@@ -102,8 +108,8 @@ func (t *memTx) FindTokenByPublicID(_ context.Context, publicID string) (*store.
 }
 
 func (t *memTx) TouchToken(_ context.Context, id string, at time.Time) error {
-	if t.m.touchErr != nil {
-		return t.m.touchErr
+	if t.m.TouchErr != nil {
+		return t.m.TouchErr
 	}
 	if tok, ok := t.m.tokens[id]; ok && t.visible(tok) {
 		tok.LastUsedAt = &at
