@@ -239,7 +239,7 @@ func (s *Service) VendorApps(ctx context.Context) ([]VendorApp, error) {
 			return err
 		}
 		for i := range rows {
-			a, err := fromRow(&rows[i])
+			a, err := s.fromRowWithKeys(ctx, &rows[i])
 			if err != nil {
 				return err
 			}
@@ -263,13 +263,28 @@ func (s *Service) VendorApp(ctx context.Context, vendor, variant string) (Vendor
 		if err != nil {
 			return err
 		}
-		out, err = fromRow(row)
+		out, err = s.fromRowWithKeys(ctx, row)
 		return err
 	})
 	if err != nil {
 		return VendorApp{}, err
 	}
 	return out, nil
+}
+
+// fromRowWithKeys converts a row for the admin pages: SecretKeys lists
+// the extra secrets the bundle holds (never their values).
+func (s *Service) fromRowWithKeys(ctx context.Context, row *store.VendorApp) (VendorApp, error) {
+	a, err := fromRow(row)
+	if err != nil {
+		return VendorApp{}, err
+	}
+	b, err := s.openBundle(ctx, row)
+	if err != nil {
+		return VendorApp{}, err
+	}
+	a.SecretKeys = b.keys()
+	return a, nil
 }
 
 func normalizeKey(vendor, variant string) (string, string) {
@@ -282,17 +297,22 @@ func normalizeKey(vendor, variant string) (string, string) {
 }
 
 // SaveVendorApp creates or updates the app for (Vendor, Variant) on
-// behalf of admin actorID. A non-empty ClientSecret replaces the stored
-// one (encrypted under AAD{Kind: vendor_app, RecordID: app id}); an empty
-// one keeps it, which is only allowed when a secret already exists. The
-// change is audited as a user event of the admin naming the vendor and
-// variant, never the secret.
+// behalf of admin actorID. The client secret and the vendor's extra
+// secrets (Secrets) are stored together as one envelope-encrypted bundle
+// under AAD{Kind: vendor_app, RecordID: app id}; a non-empty value
+// replaces the stored one and an empty one keeps it, which for the
+// client secret is only allowed when one already exists. The change is
+// audited as a user event of the admin naming the vendor and variant,
+// never a secret.
 func (s *Service) SaveVendorApp(ctx context.Context, actorID string, in VendorApp) (VendorApp, error) {
 	if err := in.normalize(); err != nil {
 		return VendorApp{}, err
 	}
-	secret := in.ClientSecret
-	in.ClientSecret = ""
+	given := secretBundle{SecretClientSecret: in.ClientSecret}
+	for k, v := range in.Secrets {
+		given[k] = v
+	}
+	in.ClientSecret, in.Secrets = "", nil
 	var out VendorApp
 	err := s.store.Bypass(ctx, func(tx Tx) error {
 		row, err := in.toRow()
@@ -300,28 +320,34 @@ func (s *Service) SaveVendorApp(ctx context.Context, actorID string, in VendorAp
 			return err
 		}
 		existing, err := tx.FindVendorApp(ctx, in.Vendor, in.Variant)
+		bundle := secretBundle{}
 		switch {
 		case err == nil:
 			row.ID = existing.ID
-			row.ClientSecret = existing.ClientSecret
+			if bundle, err = s.openBundle(ctx, existing); err != nil {
+				return err
+			}
 		case errors.Is(err, store.ErrNotFound):
 			row.ID = connectors.NewAccountID()
 		default:
 			return err
 		}
-		if secret != "" {
-			env, err := crypto.Encrypt(ctx, s.keys, crypto.AAD{Kind: aadKindVendorApp, RecordID: row.ID}, []byte(secret))
-			if err != nil {
-				return err
+		for k, v := range given {
+			if v != "" {
+				bundle[k] = v
 			}
-			row.ClientSecret = store.Encrypted(env)
-		} else if len(row.ClientSecret.Ciphertext) == 0 {
+		}
+		if bundle[SecretClientSecret] == "" {
 			return fmt.Errorf("%w: client secret is required", ErrInvalidVendorApp)
+		}
+		if err := s.sealBundle(ctx, row, bundle); err != nil {
+			return err
 		}
 		if err := tx.UpsertVendorApp(ctx, row); err != nil {
 			return err
 		}
 		out, err = fromRow(row)
+		out.SecretKeys = bundle.keys()
 		return err
 	})
 	if err != nil {
@@ -334,11 +360,14 @@ func (s *Service) SaveVendorApp(ctx context.Context, actorID string, in VendorAp
 
 // clientSecret decrypts the app's client secret.
 func (s *Service) clientSecret(ctx context.Context, row *store.VendorApp) (string, error) {
-	b, err := crypto.Decrypt(ctx, s.keys, crypto.AAD{Kind: aadKindVendorApp, RecordID: row.ID}, crypto.Envelope(row.ClientSecret))
+	b, err := s.openBundle(ctx, row)
 	if err != nil {
-		return "", fmt.Errorf("connections: vendor app %s/%s secret: %w", row.Vendor, row.Name, err)
+		return "", err
 	}
-	return string(b), nil
+	if b[SecretClientSecret] == "" {
+		return "", fmt.Errorf("connections: vendor app %s/%s has no client secret", row.Vendor, row.Name)
+	}
+	return b[SecretClientSecret], nil
 }
 
 // EnabledApps returns the enabled registered apps grouped by vendor, in
