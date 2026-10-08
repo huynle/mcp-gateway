@@ -236,6 +236,7 @@ func (c *Connector) Tools() []connectors.Tool {
 			}, ","), "name"),
 			ResourceIdentity: identity("id"),
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkItem},
+			ResultIDs:        resultID("id", func(v any) string { it, _ := v.(Item); return it.ID }),
 			Bounds:           connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes},
 		},
 		{
@@ -244,6 +245,7 @@ func (c *Connector) Tools() []connectors.Tool {
 			InputSchema:      obj(str("text", "Note text."), "text"),
 			ResourceIdentity: identity(),
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileNone},
+			ResultIDs:        resultID("id", func(v any) string { n, _ := v.(Note); return n.ID }),
 			Bounds:           connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes},
 		},
 		{
@@ -255,6 +257,7 @@ func (c *Connector) Tools() []connectors.Tool {
 			}, ",")),
 			ResourceIdentity: identity("marker"),
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkWrite},
+			ResultIDs:        resultID("marker", func(v any) string { w, _ := v.(Write); return w.Marker }),
 			Bounds:           connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes},
 		},
 	}
@@ -474,12 +477,38 @@ func (c *Connector) createItem(call connectors.Call) (connectors.Result, error) 
 	return connectors.Result{Content: it}, nil
 }
 
-// checkItem is create_item's reconciliation: look the stable id up.
-func (c *Connector) checkItem(_ context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+// reconcileCall rebuilds the call a Check derives its key from: the
+// operation id from the input when the call lacks it, and the resource
+// identity (the ledger keeps it; arguments are not stored) as the
+// arguments it was extracted from when the call carries none.
+func reconcileCall(in connectors.ReconcileInput) connectors.Call {
 	call := in.Call
 	if call.OperationID == "" {
 		call.OperationID = in.OperationID
 	}
+	if len(call.Args) == 0 && len(in.ResourceIdentity) > 0 {
+		call.Args = make(map[string]any, len(in.ResourceIdentity))
+		for k, v := range in.ResourceIdentity {
+			call.Args[k] = v
+		}
+	}
+	return call
+}
+
+// resultID builds a ResultIDs hook that reports one identifier under key.
+func resultID(key string, get func(v any) string) func(connectors.Result) map[string]string {
+	return func(res connectors.Result) map[string]string {
+		id := get(res.Content)
+		if id == "" {
+			return nil
+		}
+		return map[string]string{key: id}
+	}
+}
+
+// checkItem is create_item's reconciliation: look the stable id up.
+func (c *Connector) checkItem(_ context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	call := reconcileCall(in)
 	id := itemID(call)
 	if id == "" {
 		return connectors.ReconcileResult{}, errors.New("fake: no id or operation to reconcile by")
@@ -530,10 +559,7 @@ func (c *Connector) flakyWrite(call connectors.Call) (connectors.Result, error) 
 
 // checkWrite is flaky_write's reconciliation: search by marker.
 func (c *Connector) checkWrite(_ context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
-	call := in.Call
-	if call.OperationID == "" {
-		call.OperationID = in.OperationID
-	}
+	call := reconcileCall(in)
 	m := marker(call)
 	if m == "" {
 		return connectors.ReconcileResult{}, errors.New("fake: no marker or operation to reconcile by")

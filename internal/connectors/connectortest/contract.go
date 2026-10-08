@@ -91,6 +91,9 @@ func checkTool(t *testing.T, app string, tool connectors.Tool, seen map[string]b
 		if tool.Reconcile.Kind != "" {
 			t.Errorf("%s: a read declares reconciliation %q", full, tool.Reconcile.Kind)
 		}
+		if tool.ResultIDs != nil {
+			t.Errorf("%s: a read declares ResultIDs (the ledger records writes only)", full)
+		}
 	case connectors.KindWrite:
 		if !tool.Reconcile.Kind.Valid() {
 			t.Errorf("%s: write must declare a reconciliation kind (none is allowed but explicit), got %q", full, tool.Reconcile.Kind)

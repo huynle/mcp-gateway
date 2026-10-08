@@ -184,6 +184,12 @@ func (k ReconcileKind) Valid() bool {
 type ReconcileInput struct {
 	Call        Call
 	OperationID string
+	// ResourceIdentity is what the tool's ResourceIdentity hook produced
+	// for the original arguments (the ledger stores it; arguments are
+	// never stored). When the reconciler runs from the ledger, Call.Args
+	// is empty and connectors derive their stable id, client id or
+	// marker from this map and OperationID instead.
+	ResourceIdentity map[string]string
 }
 
 // ReconcileOutcome is what Check found.
