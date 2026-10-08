@@ -235,7 +235,12 @@ settings:
 2. **Install to Workspace** on the company workspace (Slack admin if installs are
    restricted). Copy the **Bot User OAuth Token** (`xoxb-...`) from
    **OAuth & Permissions**. This is the token the approval notifier uses.
-3. Hand back: App ID, Client ID, Client Secret, Signing Secret, bot token.
+3. Hand back: App ID, Client ID, Client Secret, Signing Secret, bot token. They go
+   into **Admin portal -> Vendor apps -> Slack**: client ID and client secret as for
+   every vendor, plus the *Bot User OAuth token* and *Signing secret* fields (all
+   three secrets are write-only and stored encrypted together; leave a field blank
+   to keep the stored value). Without the bot token no approval DM is sent; without
+   the signing secret `/slack/interactions` answers 401 to everything.
 4. For local work, developers create a personal dev Slack app from the same manifest in
    a sandbox workspace with a tunnel URL. Never point a dev app at the company workspace.
 

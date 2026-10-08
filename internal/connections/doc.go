@@ -1,6 +1,9 @@
 // Package connections owns per-user app accounts: the admin-registered
-// vendor apps (one per vendor, two for Google; client secrets envelope
-// encrypted), the generic OAuth 2.0 connect flow (server-side state +
+// vendor apps (one per vendor, two for Google; the client secret and the
+// vendor's extra secrets such as Slack's bot token and signing secret
+// envelope encrypted as one bundle, read back through VendorSecrets), the
+// Slack account id format and SlackIdentity lookup, the generic OAuth 2.0
+// connect flow (server-side state +
 // PKCE S256 in connect_flows, /connect/{vendor}/start and /callback), the
 // per-vendor Binder that turns a token into a permanent account ID, a
 // display name and a company|personal label, the personal-account policy
