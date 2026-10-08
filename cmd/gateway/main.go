@@ -5,7 +5,8 @@
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
 // mounts the portal and company sign-in routes when a database is
-// configured, mounts the token and admin role pages and the /mcp endpoint
+// configured, mounts the token, connection and admin role / vendor app
+// pages and the /mcp endpoint
 // (stateless Streamable HTTP behind the token authenticator's
 // BearerMiddleware, tools from the connector registry filtered and
 // decided by the compiled policy), and shuts down gracefully on
@@ -27,6 +28,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
@@ -76,7 +78,8 @@ func run() error {
 	if st != nil {
 		defer st.Close()
 	}
-	if err := openKeyProvider(readiness, log); err != nil {
+	keys, err := openKeyProvider(readiness, log)
+	if err != nil {
 		return err
 	}
 	metrics := observability.NewMetrics()
@@ -99,12 +102,27 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("policy: %w", err)
 		}
+		var connSvc *connections.Service
+		if keys != nil {
+			connSvc, err = connections.New(connections.Config{BaseURL: cfg.BaseURL}, connections.NewPostgresStore(st), keys, connections.Options{
+				Audit: rec, Policy: connections.PolicyAllowance{Service: policySvc}, Metrics: metrics, Log: log,
+			})
+			if err != nil {
+				return fmt.Errorf("connections: %w", err)
+			}
+			// TODO(orchestrator): register connSvc.KeepAliveJob() (Name,
+			// Interval, Run) with the jobs runner from internal/jobs once it
+			// lands; it refreshes tokens idle for 30 days and sweeps expired
+			// connect flows, daily, on one replica.
+		} else {
+			log.Warn("no key provider: app connections are not mounted (tokens cannot be encrypted)")
+		}
 		registry := connectors.NewRegistry()
-		accounts, err := registerConnectors(cfg, registry, log)
+		accounts, err := registerConnectors(cfg, registry, connSvc, log)
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, registry, log)
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, connSvc, registry, log)
 		if err != nil {
 			return err
 		}
@@ -171,20 +189,21 @@ func openStore(ctx context.Context, cfg config.Config, readiness *observability.
 // openKeyProvider builds the envelope-encryption key provider selected by
 // GATEWAY_KEY_PROVIDER / GATEWAY_KEY_FILE and registers the "key-provider"
 // readiness check. With neither variable set the gateway runs without one
-// (foundation-only mode, mirroring openStore); modules that need encryption
-// are not wired yet, so nothing else depends on the provider here.
-func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error {
+// (foundation-only mode, mirroring openStore) and returns (nil, nil): the
+// connections module, which encrypts vendor secrets and tokens, is then
+// not mounted.
+func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (crypto.KeyProvider, error) {
 	if os.Getenv(crypto.EnvKeyProvider) == "" && os.Getenv(crypto.EnvKeyFile) == "" {
 		log.Warn("no GATEWAY_KEY_PROVIDER or GATEWAY_KEY_FILE: running without a key provider")
-		return nil
+		return nil, nil
 	}
 	kp, err := crypto.NewProviderFromEnv(os.Getenv)
 	if err != nil {
-		return fmt.Errorf("key provider: %w", err)
+		return nil, fmt.Errorf("key provider: %w", err)
 	}
 	readiness.Register("key-provider", crypto.ReadinessCheck(kp))
 	log.Info("key provider ready", "provider", os.Getenv(crypto.EnvKeyProvider))
-	return nil
+	return kp, nil
 }
 
 // newPortal builds the identity service and the portal over the given
@@ -193,7 +212,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, connSvc *connections.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -234,6 +253,13 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	}
 	policy.NewPortal(policySvc, registry, adminSession, log).Mount(p.MountAdmin)
 	svc.OnDisable(tokenSvc.DisableHook())
+	if connSvc != nil {
+		cp := connections.NewPortal(connSvc, adminSession, log)
+		cp.MountUser(p.MountUser)    // /connections, /connections/{id}/disconnect
+		cp.MountConnect(p.MountUser) // /connect/{vendor}/start, /connect/{vendor}/callback
+		cp.MountAdmin(p.MountAdmin)  // /admin/vendor-apps...
+		svc.OnDisable(connSvc.DisableHook())
+	}
 	return p.Handler(), nil
 }
 
@@ -280,23 +306,42 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 
 // registerConnectors fills the registry (which the admin role editor also
 // reads for its tool grid) and returns the account source the account
-// stage consults. Today that source is a static, in-memory one (the
-// connections task replaces it with the connections table); the fake
-// connector, when enabled, seeds one company account per user on first
-// use so a local harness can call its tools right away. The fake
-// connector is registered only when GATEWAY_ENABLE_FAKE_CONNECTOR=true;
-// the real connectors register here too.
-func registerConnectors(cfg config.Config, registry *connectors.Registry, log *slog.Logger) (connectors.AccountSource, error) {
-	static := connectors.NewStaticAccountSource()
-	if !cfg.EnableFakeConnector {
-		return static, nil
+// stage consults: the connections service (accounts are the user's
+// connections rows) when it is available, else a static, in-memory one.
+// The fake connector, registered only when GATEWAY_ENABLE_FAKE_CONNECTOR=true,
+// keeps its own source that seeds one company account per user on first
+// use so a local harness can call its tools right away; the composite
+// source routes app "fake" to it and every other app to the connections
+// table. The real connectors register here too, with their vendor's
+// Binder (connSvc.RegisterBinder) and app mapping (connSvc.MapApp).
+func registerConnectors(cfg config.Config, registry *connectors.Registry, connSvc *connections.Service, log *slog.Logger) (connectors.AccountSource, error) {
+	sources := routedAccountSource{byApp: map[string]connectors.AccountSource{}, fallback: connectors.NewStaticAccountSource()}
+	if connSvc != nil {
+		sources.fallback = connSvc
 	}
-	f := fake.New(fake.Options{Accounts: static, AutoAccount: true})
-	if err := connectors.RegisterConnector(registry, f, f.Accounts()); err != nil {
-		return nil, err
+	if cfg.EnableFakeConnector {
+		f := fake.New(fake.Options{AutoAccount: true})
+		if err := connectors.RegisterConnector(registry, f, f.Accounts()); err != nil {
+			return nil, err
+		}
+		sources.byApp[fake.App] = f.Accounts()
+		log.Warn("fake connector registered (GATEWAY_ENABLE_FAKE_CONNECTOR=true): development only", "app", fake.App)
 	}
-	log.Warn("fake connector registered (GATEWAY_ENABLE_FAKE_CONNECTOR=true): development only", "app", fake.App)
-	return f.Accounts(), nil
+	return sources, nil
+}
+
+// routedAccountSource sends each app to its own account source and
+// everything else to the fallback.
+type routedAccountSource struct {
+	byApp    map[string]connectors.AccountSource
+	fallback connectors.AccountSource
+}
+
+func (r routedAccountSource) ListAccounts(ctx context.Context, userID, app string) ([]connectors.Account, error) {
+	if src, ok := r.byApp[app]; ok {
+		return src.ListAccounts(ctx, userID, app)
+	}
+	return r.fallback.ListAccounts(ctx, userID, app)
 }
 
 // newMux builds the public HTTP routes. Health endpoints are unauthenticated
