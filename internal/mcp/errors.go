@@ -1,0 +1,48 @@
+package mcp
+
+import "fmt"
+
+// JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
+// and CodeInvalidParams reuse the standard "invalid params" code (the SDK
+// does the same for unknown tools); the others are in the server-defined
+// range.
+const (
+	CodeInvalidParams   int64 = -32602
+	CodeToolNotFound    int64 = -32602
+	CodeUnauthenticated int64 = -32001
+	CodeDenied          int64 = -32003
+	CodeRateLimited     int64 = -32029
+)
+
+// ToolError is a failure of the gateway's own pipeline (not of the tool):
+// unknown tool, bad injected argument, rate limit, policy denial. The
+// endpoint reports it as a JSON-RPC error with Code and Message, byte for
+// byte the same for every caller that hits the same condition. Errors a
+// tool Handler returns are not ToolErrors; they become tool results with
+// IsError set so the model can see and react to them.
+type ToolError struct {
+	Code    int64
+	Message string
+	// class is the short audit error class (ErrorClass column).
+	class string
+}
+
+func (e *ToolError) Error() string { return e.Message }
+
+// Class returns the audit error class for this error.
+func (e *ToolError) Class() string { return e.class }
+
+// NewToolError builds a ToolError with an audit class.
+func NewToolError(code int64, class, message string) *ToolError {
+	return &ToolError{Code: code, Message: message, class: class}
+}
+
+// ErrToolNotFound is the one error for a tool that does not exist or that
+// the caller may not see (decisions t109ks1d, 490o45d0): the message never
+// says which.
+func ErrToolNotFound(name string) *ToolError {
+	return NewToolError(CodeToolNotFound, "tool_not_found", fmt.Sprintf("unknown tool %q", name))
+}
+
+// errUnauthenticated is returned when no principal reached the pipeline.
+var errUnauthenticated = NewToolError(CodeUnauthenticated, "unauthenticated", "authentication required")

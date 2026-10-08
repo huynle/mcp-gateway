@@ -5,10 +5,12 @@
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
 // mounts the portal and company sign-in routes when a database is
-// configured, mounts the token pages and wires the token authenticator
-// (whose BearerMiddleware the /mcp endpoint will use), and shuts down
-// gracefully on SIGTERM/SIGINT, draining in-flight requests for the
-// configured period. Later tasks mount /mcp and OAuth on the same mux.
+// configured, mounts the token pages and the /mcp endpoint (stateless
+// Streamable HTTP behind the token authenticator's BearerMiddleware, tools
+// from the connector registry), and shuts down gracefully on
+// SIGTERM/SIGINT, draining in-flight requests for the configured period.
+// Later tasks register connectors on the registry, insert pipeline stages
+// and mount OAuth on the same mux.
 package main
 
 import (
@@ -24,8 +26,10 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
@@ -79,29 +83,27 @@ func run() error {
 		}
 	}()
 
-	var recorder audit.Recorder = audit.NopRecorder{}
-	var portalHandler http.Handler
-	var authenticator tokens.Authenticator
+	var portalHandler, mcpHandler http.Handler
 	if st != nil {
 		rec := audit.NewStoreRecorder(st)
-		recorder = rec
 		tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokens.NewPostgresStore(st), metrics, rec, log)
 		if err != nil {
 			return fmt.Errorf("tokens: %w", err)
 		}
-		authenticator = tokenSvc
 		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, log)
 		if err != nil {
 			return err
 		}
+		mcpHandler, err = newMCP(cfg, tokenSvc, rec, metrics, log)
+		if err != nil {
+			return err
+		}
 	} else {
-		log.Warn("no database: portal, sign-in and tokens are not mounted")
+		log.Warn("no database: portal, sign-in, tokens and /mcp are not mounted")
 	}
-	_ = recorder      // handed to the MCP pipeline once it exists
-	_ = authenticator // /mcp wraps itself in tokens.BearerMiddleware(authenticator, ...) once it exists
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler)))
+	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler)))
 	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	switch {
@@ -205,13 +207,50 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	return p.Handler(), nil
 }
 
+// newMCP builds the /mcp endpoint: the connector registry (empty until the
+// connector tasks register their tools), the default pipeline with the
+// store-backed audit recorder, and the token authenticator with the
+// production failure limiter. Later tasks obtain the pipeline here to
+// insert their stages.
+func newMCP(cfg config.Config, auth tokens.Authenticator, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
+	registry := connectors.NewRegistry()
+	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{Registry: registry, Audit: rec, Log: log})
+	if err != nil {
+		return nil, fmt.Errorf("mcp: %w", err)
+	}
+	h, err := mcp.Handler(mcp.Options{
+		Registry:      registry,
+		Pipeline:      pipeline,
+		Authenticator: auth,
+		Auth: tokens.MiddlewareOptions{
+			Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow),
+			Metrics: metrics,
+			Log:     log,
+		},
+		BaseURL: cfg.BaseURL,
+		MaxBody: cfg.MCPMaxBody,
+		Log:     log,
+		Version: version,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mcp: %w", err)
+	}
+	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "body_limit", cfg.MCPMaxBody)
+	return h, nil
+}
+
 // newMux builds the public HTTP routes. Health endpoints are unauthenticated
-// and stay outside the portal; the portal (when mounted) owns everything
-// else, including /auth/ and /static/.
-func newMux(readiness *observability.Readiness, portalHandler http.Handler) http.Handler {
+// and stay outside the portal; /mcp (when mounted) takes every method so
+// the SDK can answer 405 for the ones a stateless server does not serve;
+// the portal (when mounted) owns everything else, including /auth/ and
+// /static/.
+func newMux(readiness *observability.Readiness, portalHandler, mcpHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("GET /readyz", readiness)
+	if mcpHandler != nil {
+		mux.Handle("/mcp", mcpHandler)
+	}
 	if portalHandler != nil {
 		mux.Handle("/", portalHandler)
 	}

@@ -26,7 +26,7 @@ func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRec
 }
 
 func TestMuxRoutes(t *testing.T) {
-	mux := newMux(observability.NewReadiness(time.Second), nil)
+	mux := newMux(observability.NewReadiness(time.Second), nil, nil)
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", rec.Code)
@@ -53,9 +53,12 @@ func TestMuxRoutes(t *testing.T) {
 	if rec := do(t, mux, http.MethodGet, "/nope"); rec.Code != http.StatusNotFound {
 		t.Errorf("GET /nope = %d, want 404", rec.Code)
 	}
-	// Without a database there is no portal: the root is a plain 404.
+	// Without a database there is no portal and no /mcp: plain 404s.
 	if rec := do(t, mux, http.MethodGet, "/"); rec.Code != http.StatusNotFound {
 		t.Errorf("GET / without a portal = %d, want 404", rec.Code)
+	}
+	if rec := do(t, mux, http.MethodPost, "/mcp"); rec.Code != http.StatusNotFound {
+		t.Errorf("POST /mcp without a database = %d, want 404", rec.Code)
 	}
 }
 
@@ -73,10 +76,25 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
-	mux := newMux(observability.NewReadiness(time.Second), portalHandler)
+	mcpHandler, err := newMCP(cfg, tokenSvc, audit.NopRecorder{}, observability.NewMetrics(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("newMCP: %v", err)
+	}
+	mux := newMux(observability.NewReadiness(time.Second), portalHandler, mcpHandler)
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200 (health stays outside the portal)", rec.Code)
+	}
+	// /mcp is mounted behind the bearer middleware for every method, with
+	// the RFC 9728 pointer in the challenge; health stays public.
+	for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodDelete} {
+		rec := do(t, mux, method, "/mcp")
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("anonymous %s /mcp = %d, want 401", method, rec.Code)
+		}
+		if got := rec.Header().Get("WWW-Authenticate"); !strings.Contains(got, `resource_metadata="`+cfg.BaseURL+`/.well-known/oauth-protected-resource"`) {
+			t.Errorf("%s /mcp WWW-Authenticate = %q", method, got)
+		}
 	}
 	rec := do(t, mux, http.MethodGet, "/")
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/signin" {
