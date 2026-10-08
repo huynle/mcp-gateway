@@ -17,4 +17,4 @@ Before adapting anything: confirm the upstream license at the exact commit you c
 
 | Path in this repository | Upstream project | Upstream path / commit | License | Modifications |
 |---|---|---|---|---|
-| _none yet_ | | | | |
+| `internal/portal/static/htmx.min.js` (+ `htmx.LICENSE`) | [htmx](https://htmx.org) | `dist/htmx.min.js` from the v2.0.8 release (unpkg `htmx.org@2.0.8`) | Zero-Clause BSD | unmodified, embedded into the gateway binary and served at `/static/htmx.min.js` |

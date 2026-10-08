@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -21,7 +23,7 @@ func do(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRec
 }
 
 func TestMuxRoutes(t *testing.T) {
-	mux := newMux(observability.NewReadiness(time.Second))
+	mux := newMux(observability.NewReadiness(time.Second), nil)
 
 	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
 		t.Errorf("GET /healthz = %d, want 200", rec.Code)
@@ -47,6 +49,41 @@ func TestMuxRoutes(t *testing.T) {
 	}
 	if rec := do(t, mux, http.MethodGet, "/nope"); rec.Code != http.StatusNotFound {
 		t.Errorf("GET /nope = %d, want 404", rec.Code)
+	}
+	// Without a database there is no portal: the root is a plain 404.
+	if rec := do(t, mux, http.MethodGet, "/"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET / without a portal = %d, want 404", rec.Code)
+	}
+}
+
+func TestMuxMountsPortal(t *testing.T) {
+	cfg := config.Default()
+	cfg.OIDCProviders = []config.OIDCProvider{{
+		Name: "dex", DisplayName: "Local dex", Issuer: "http://localhost:15556/dex",
+		ClientID: "gateway", ClientSecret: "s", AllowedDomains: []string{"example.com"},
+	}}
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("newPortal: %v", err)
+	}
+	mux := newMux(observability.NewReadiness(time.Second), portalHandler)
+
+	if rec := do(t, mux, http.MethodGet, "/healthz"); rec.Code != http.StatusOK {
+		t.Errorf("GET /healthz = %d, want 200 (health stays outside the portal)", rec.Code)
+	}
+	rec := do(t, mux, http.MethodGet, "/")
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/signin" {
+		t.Errorf("GET / = %d %q, want redirect to /signin", rec.Code, rec.Header().Get("Location"))
+	}
+	rec = do(t, mux, http.MethodGet, "/signin")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Local dex") {
+		t.Errorf("GET /signin = %d, want the sign-in page with the dex button", rec.Code)
+	}
+	if rec := do(t, mux, http.MethodGet, "/auth/dex/callback?code=1&state=2"); rec.Code != http.StatusBadRequest {
+		t.Errorf("GET /auth/dex/callback = %d, want 400 (auth routes mounted)", rec.Code)
+	}
+	if rec := do(t, mux, http.MethodPost, "/auth/signout"); rec.Code != http.StatusForbidden {
+		t.Errorf("anonymous POST /auth/signout = %d, want 403 (CSRF)", rec.Code)
 	}
 }
 

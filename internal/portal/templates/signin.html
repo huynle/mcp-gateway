@@ -1,0 +1,12 @@
+{{define "title"}}Sign in{{end}}
+{{define "content"}}
+<h1>Sign in</h1>
+<p class="muted">Use your company account. Your user is created on first sign-in.</p>
+<div class="stack">
+  {{range .Data.Providers}}
+  <a class="btn primary" href="{{.StartURL}}">Continue with {{.DisplayName}}</a>
+  {{else}}
+  <p class="error">No identity provider is configured. Set <code>GATEWAY_OIDC_PROVIDERS</code> (see .env.example).</p>
+  {{end}}
+</div>
+{{end}}

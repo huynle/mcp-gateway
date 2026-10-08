@@ -4,9 +4,10 @@
 // YAML file), sets up structured logging, opens the PostgreSQL store when
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
-// and shuts down gracefully on SIGTERM/SIGINT, draining in-flight requests
-// for the configured period. Later tasks mount /mcp, OAuth, the portal and
-// metrics on the same mux.
+// mounts the portal and company sign-in routes when a database is
+// configured, and shuts down gracefully on SIGTERM/SIGINT, draining
+// in-flight requests for the configured period. Later tasks mount /mcp,
+// OAuth and metrics on the same mux.
 package main
 
 import (
@@ -22,7 +23,9 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -66,9 +69,18 @@ func run() error {
 	if err := openKeyProvider(readiness, log); err != nil {
 		return err
 	}
+	var portalHandler http.Handler
+	if st != nil {
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), log)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Warn("no database: portal and sign-in are not mounted")
+	}
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	srv := server.New(newMux(readiness), cfg.DrainTimeout, log)
+	srv := server.New(newMux(readiness, portalHandler), cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	switch {
 	case err == nil:
@@ -130,10 +142,36 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 	return nil
 }
 
-// newMux builds the public HTTP routes. Health endpoints are unauthenticated.
-func newMux(readiness *observability.Readiness) http.Handler {
+// newPortal builds the identity service and the portal over the given
+// store. Providers come from GATEWAY_OIDC_PROVIDERS; with none configured
+// the sign-in page says so instead of failing startup.
+func newPortal(cfg config.Config, st identity.Store, log *slog.Logger) (http.Handler, error) {
+	svc, err := identity.New(identity.FromConfig(cfg), st, log)
+	if err != nil {
+		return nil, fmt.Errorf("identity: %w", err)
+	}
+	if len(cfg.OIDCProviders) == 0 {
+		log.Warn("no GATEWAY_OIDC_PROVIDERS configured: nobody can sign in")
+	}
+	for _, p := range svc.Providers() {
+		log.Info("identity provider configured", "provider", p.Name, "display_name", p.DisplayName)
+	}
+	p, err := portal.New(svc, log)
+	if err != nil {
+		return nil, fmt.Errorf("portal: %w", err)
+	}
+	return p.Handler(), nil
+}
+
+// newMux builds the public HTTP routes. Health endpoints are unauthenticated
+// and stay outside the portal; the portal (when mounted) owns everything
+// else, including /auth/ and /static/.
+func newMux(readiness *observability.Readiness, portalHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("GET /readyz", readiness)
+	if portalHandler != nil {
+		mux.Handle("/", portalHandler)
+	}
 	return mux
 }

@@ -1,0 +1,72 @@
+package portal
+
+import (
+	"crypto/subtle"
+	"net/http"
+
+	"github.com/huynle/mcp-gateway/internal/identity"
+)
+
+// CSRF protection for every state-changing request (anything but GET,
+// HEAD, OPTIONS, TRACE):
+//
+//  1. the request must belong to a session (anonymous writes are refused);
+//  2. the token in the "_csrf" form field or the X-CSRF-Token header must
+//     equal the session's token (identity derives it from the session
+//     secret, so no extra server state: synchronizer token pattern);
+//  3. a browser that labels the request cross-site (Sec-Fetch-Site) is
+//     refused regardless, as defence in depth.
+//
+// Failures are 403 and never reach the handler.
+
+const (
+	csrfField  = "_csrf"
+	csrfHeader = "X-CSRF-Token"
+	// maxFormBytes bounds form bodies parsed for the token check.
+	maxFormBytes = 1 << 20
+)
+
+func safeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	return false
+}
+
+func (p *Portal) csrf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if safeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		principal := identity.PrincipalFrom(r.Context())
+		if principal == nil {
+			p.forbidden(w, r, "Sign in before submitting this form.")
+			return
+		}
+		if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" {
+			p.forbidden(w, r, "Cross-site form submissions are not accepted.")
+			return
+		}
+		token := r.Header.Get(csrfHeader)
+		if token == "" {
+			r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+			if err := r.ParseForm(); err != nil {
+				p.forbidden(w, r, "The form could not be read.")
+				return
+			}
+			token = r.PostForm.Get(csrfField)
+		}
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(principal.CSRFToken)) != 1 {
+			p.log.Warn("request rejected", "event", "portal.csrf_rejected", "user_id", principal.UserID, "path", r.URL.Path)
+			p.forbidden(w, r, "The form token is missing or expired. Reload the page and try again.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (p *Portal) forbidden(w http.ResponseWriter, r *http.Request, message string) {
+	p.errorPage(w, r, http.StatusForbidden, "Request refused", message)
+}

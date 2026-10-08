@@ -52,11 +52,13 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # Mock company identity provider (OIDC). Static user dev@example.com /
-  # "password", static client "gateway". The issuer is
+  # Mock company identity provider (OIDC). Static users dev@example.com,
+  # alice@example.com (allowed) and mallory@evil.test (rejected), all with
+  # password "password"; static client "gateway". The issuer is
   # http://localhost:15556/dex so browser redirects and discovery match from
   # the host; dex listens on 15556 inside the container too so the same URL
-  # also works for a gateway running on the host with `go run`.
+  # works for a gateway running on the host with `go run`. The gateway
+  # container reaches it through the "localhost" alias below.
   dex:
     image: ghcr.io/dexidp/dex:v2.41.1
     command: ["dex", "serve", "/etc/dex/config.yaml"]
@@ -82,8 +84,25 @@ services:
       GATEWAY_LOG_FORMAT: "text"
       GATEWAY_DATABASE_URL: "postgres://gateway_app:gateway-app-dev@postgres:5432/gateway?sslmode=disable"
       GATEWAY_JOBS_DATABASE_URL: "postgres://gateway_jobs:gateway-jobs-dev@postgres:5432/gateway?sslmode=disable"
+      # Company sign-in through the Compose dex (see deploy/dex/config.yaml).
+      GATEWAY_BASE_URL: "http://localhost:18080"
+      GATEWAY_SESSION_COOKIE_SECURE: "false" # plain http on localhost
+      GATEWAY_OIDC_PROVIDERS: "dex"
+      GATEWAY_OIDC_DEX_DISPLAY_NAME: "Local dex"
+      GATEWAY_OIDC_DEX_ISSUER: "http://localhost:15556/dex"
+      GATEWAY_OIDC_DEX_CLIENT_ID: "gateway"
+      GATEWAY_OIDC_DEX_CLIENT_SECRET: "gateway-dev-secret"
+      GATEWAY_OIDC_DEX_ALLOWED_DOMAINS: "example.com"
+      GATEWAY_BOOTSTRAP_ADMINS: "http://localhost:15556/dex|CiQwOGE4Njg0Yi1kYjg4LTRiNzMtOTBhOS0zY2QxNjYxZjU0NjYSBWxvY2Fs"
     ports:
       - "18080:18080"
+    # The OIDC issuer must be one URL for both the browser (host) and the
+    # gateway (container): dex's issuer is http://localhost:15556/dex, so
+    # inside the container "localhost" also resolves to the Docker host,
+    # where Compose publishes dex on 15556. Go tries 127.0.0.1 first (refused
+    # immediately, nothing listens there in the container) and then the host.
+    extra_hosts:
+      - "localhost:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
