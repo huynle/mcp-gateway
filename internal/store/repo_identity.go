@@ -181,10 +181,10 @@ type policyVersionRepo struct{ q Querier }
 
 func (r policyVersionRepo) Create(ctx context.Context, p *PolicyVersion) error {
 	err := r.q.QueryRow(ctx, `
-		INSERT INTO policy_versions (version_hash, cedar, source)
-		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb))
+		INSERT INTO policy_versions (version_hash, cedar, source, created_by)
+		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb), $4)
 		RETURNING id, source, created_at`,
-		p.VersionHash, p.Cedar, p.Source,
+		p.VersionHash, p.Cedar, p.Source, p.CreatedBy,
 	).Scan(&p.ID, &p.Source, &p.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create policy version: %w", err)
@@ -195,9 +195,9 @@ func (r policyVersionRepo) Create(ctx context.Context, p *PolicyVersion) error {
 func (r policyVersionRepo) Get(ctx context.Context, id string) (*PolicyVersion, error) {
 	var p PolicyVersion
 	err := r.q.QueryRow(ctx, `
-		SELECT id, version_hash, cedar, source, created_at
+		SELECT id, version_hash, cedar, source, created_by, created_at
 		FROM policy_versions WHERE id = $1`, id,
-	).Scan(&p.ID, &p.VersionHash, &p.Cedar, &p.Source, &p.CreatedAt)
+	).Scan(&p.ID, &p.VersionHash, &p.Cedar, &p.Source, &p.CreatedBy, &p.CreatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

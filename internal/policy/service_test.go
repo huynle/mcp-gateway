@@ -172,11 +172,11 @@ func TestServiceSaveRoleCreatesVersionAndAudits(t *testing.T) {
 		t.Errorf("saved role = %+v", saved)
 	}
 	d, _ := f.svc.Decide(ctx, policy.Input{UserID: "u-alice", Tool: connectors.Tool{App: "fake", Name: "get_item", Kind: connectors.KindRead}, AccountLabel: "company"})
-	if d.Outcome != policy.OutcomeAllow || d.Version != after.Version {
+	if d.Outcome != policy.OutcomeAllow || d.Version != after.Version || d.VersionID != after.ID {
 		t.Errorf("get_item after save = %+v", d)
 	}
 	ev := f.rec.last()
-	if ev.UserID != "u-admin" || ev.ResourceIdentity["action"] != "role_saved" || ev.ResourceIdentity["role"] != "member" || ev.PolicyVersion != after.Version || ev.Outcome != "succeeded" || ev.Tool != "" {
+	if ev.UserID != "u-admin" || ev.ResourceIdentity["action"] != "role_saved" || ev.ResourceIdentity["role"] != "member" || ev.PolicyVersion != after.ID || ev.Outcome != "succeeded" || ev.Tool != "" {
 		t.Errorf("audit event = %+v", ev)
 	}
 }

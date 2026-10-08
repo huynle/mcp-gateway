@@ -29,12 +29,15 @@ type Input struct {
 }
 
 // Decision is the answer: the outcome, the policy version that produced
-// it and a short reason naming the deciding policy (for logs and audit,
-// never for the harness).
+// it (Version is the hash; VersionID the policy_versions row, which is
+// what audit, approval and ledger rows reference, and empty when the
+// policy was never persisted) and a short reason naming the deciding
+// policy (for logs and audit, never for the harness).
 type Decision struct {
-	Outcome Outcome
-	Version string
-	Reason  string
+	Outcome   Outcome
+	Version   string
+	VersionID string
+	Reason    string
 }
 
 // Decide evaluates in against the compiled set in the order decision
@@ -43,18 +46,23 @@ type Decision struct {
 // allow into confirm.
 func (c *Compiled) Decide(in Input) Decision {
 	ents, req := c.request(in)
+	d := Decision{Version: c.Version, VersionID: c.ID}
 	if ok, diag := c.authorize(ents, req, ActionList); !ok {
-		return Decision{Outcome: OutcomeHidden, Version: c.Version, Reason: c.reason("not visible: forbidden by", diag, "not visible: no rule lists it")}
+		d.Outcome, d.Reason = OutcomeHidden, c.reason("not visible: forbidden by", diag, "not visible: no rule lists it")
+		return d
 	}
 	ok, diag := c.authorize(ents, req, ActionCall)
 	if !ok {
-		return Decision{Outcome: OutcomeDeny, Version: c.Version, Reason: c.reason("forbidden by", diag, "denied: no rule permits the call")}
+		d.Outcome, d.Reason = OutcomeDeny, c.reason("forbidden by", diag, "denied: no rule permits the call")
+		return d
 	}
 	callReason := c.reason("permitted by", diag, "")
 	if ok, diag := c.authorize(ents, req, ActionConfirm); ok {
-		return Decision{Outcome: OutcomeConfirm, Version: c.Version, Reason: c.reason("confirm required by", diag, "")}
+		d.Outcome, d.Reason = OutcomeConfirm, c.reason("confirm required by", diag, "")
+		return d
 	}
-	return Decision{Outcome: OutcomeAllow, Version: c.Version, Reason: callReason}
+	d.Outcome, d.Reason = OutcomeAllow, callReason
+	return d
 }
 
 // Visible reports whether the tool appears in tools/list for the user and

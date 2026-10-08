@@ -328,7 +328,7 @@ func (s *Service) afterChange(ctx context.Context, actorID, action, role string)
 		UserID:           actorID,
 		ResourceIdentity: map[string]string{"action": action, "role": role},
 		Decision:         "allow",
-		PolicyVersion:    c.Version,
+		PolicyVersion:    c.ID, // the row id: audit_events.policy_version_id is a uuid
 		Outcome:          "succeeded",
 		RequestID:        observability.RequestIDFromContext(ctx),
 	}
