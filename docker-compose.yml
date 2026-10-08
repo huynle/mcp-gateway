@@ -86,6 +86,7 @@ services:
       GATEWAY_JOBS_DATABASE_URL: "postgres://gateway_jobs:gateway-jobs-dev@postgres:5432/gateway?sslmode=disable"
       # Company sign-in through the Compose dex (see deploy/dex/config.yaml).
       GATEWAY_BASE_URL: "http://localhost:18080"
+      GATEWAY_MCP_MAX_BODY: "1048576" # /mcp request body limit in bytes
       GATEWAY_SESSION_COOKIE_SECURE: "false" # plain http on localhost
       GATEWAY_OIDC_PROVIDERS: "dex"
       GATEWAY_OIDC_DEX_DISPLAY_NAME: "Local dex"

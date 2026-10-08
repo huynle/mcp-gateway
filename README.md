@@ -4,7 +4,7 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 ## Status
 
-Foundation, data layer and sign-in: Go module, configuration, structured logging, `/healthz`, `/readyz` (`database` and `schema` checks), graceful shutdown, the full v1 PostgreSQL schema as goose migrations, a repository layer scoped per user, row-level security as the second isolation layer, the envelope-encryption key provider, company sign-in through any configured OIDC provider (dex locally; Google, Entra, Okta) with just-in-time users, server-side sessions, the embedded portal shell (sign-in, my account, admin users, activity, audit search), and generated harness tokens (`mgw_...`) with their authenticator. `/mcp`, OAuth for harnesses and connectors land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
+Foundation, data layer and sign-in: Go module, configuration, structured logging, `/healthz`, `/readyz` (`database` and `schema` checks), graceful shutdown, the full v1 PostgreSQL schema as goose migrations, a repository layer scoped per user, row-level security as the second isolation layer, the envelope-encryption key provider, company sign-in through any configured OIDC provider (dex locally; Google, Entra, Okta) with just-in-time users, server-side sessions, the embedded portal shell (sign-in, my account, admin users, activity, audit search), generated harness tokens (`mgw_...`) with their authenticator, and the `/mcp` endpoint: stateless Streamable HTTP on the official Go SDK behind bearer authentication, a tool registry, per-token `tools/list`, and a staged `tools/call` pipeline (authenticate, audit, resolve, strip, rate-limit hook, dispatch). The registry is empty until the connector tasks register tools; OAuth for harnesses, policy, approvals and the ledger land in the tasks that follow (Brain feature `team-mcp-gateway-v1`).
 
 ## Run locally
 
@@ -104,6 +104,63 @@ mgw_[A-Za-z0-9]{8}_[A-Za-z0-9]{43}
 
 (`tokens.ScanPattern`; a unit test keeps it in sync with the generator.) A leaked token is bounded by its expiry and the 30-day freshness rule and can be revoked on `/tokens`.
 
+## Connecting a harness
+
+`/mcp` is a stateless [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports) MCP endpoint (official [Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0, `StreamableHTTPOptions{Stateless: true}`, decision `ysorv868`): every POST is authenticated and routed on its own, no `Mcp-Session-Id` is issued, any replica can serve any request, and `GET`/`DELETE` answer `405`. Responses are plain JSON (`JSONResponse: true`); the SDK client and every harness that speaks Streamable HTTP accept that. Server-initiated notifications are not used: a harness picks up new tools on its next `tools/list`.
+
+Create a token at `/tokens` (see [Harness tokens](#harness-tokens)); the one-time page shows these snippets with the token filled in:
+
+```jsonc
+// OpenCode: opencode.json
+{ "$schema": "https://opencode.ai/config.json",
+  "mcp": { "gateway": { "type": "remote", "url": "https://gw.example.com/mcp", "enabled": true,
+                        "headers": { "Authorization": "Bearer mgw_<id>_<secret>" } } } }
+```
+
+```jsonc
+// Claude Code: .mcp.json
+{ "mcpServers": { "gateway": { "type": "http", "url": "https://gw.example.com/mcp",
+                               "headers": { "Authorization": "Bearer mgw_<id>_<secret>" } } } }
+```
+
+```bash
+claude mcp add --transport http gateway https://gw.example.com/mcp --header "Authorization: Bearer mgw_<id>_<secret>"
+curl -sS https://gw.example.com/mcp -H "Authorization: Bearer mgw_<id>_<secret>" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+What a harness sees:
+
+- **401 without a token**, with `WWW-Authenticate: Bearer realm="mcp-gateway", resource_metadata="<GATEWAY_BASE_URL>/.well-known/oauth-protected-resource"` (RFC 9728; the metadata document itself ships with the OAuth task) so OAuth-capable harnesses can discover sign-in. A rejected token adds `error="invalid_token"` and the reason; the per-IP failure budget gives `429` + `Retry-After`.
+- **`tools/list`** returns only the tools the token may use (`tokens.Scope` allow-list; a read-only token sees no write tools; the policy task replaces this with the compiled role). Every tool's schema gains two optional string properties the gateway owns: `account` (which connected account to use when the user has several; decision `dovthftx`) and `approval_id` (retry a call after an approval; decision `s0p05diu`). They are stripped before the connector sees the arguments. The list is marked `cacheScope: private`.
+- **`tools/call`** of a hidden or nonexistent tool returns the same JSON-RPC error (`-32602`, `unknown tool "<name>"`), byte for byte. Pipeline failures (not found, bad injected argument, rate limited) are JSON-RPC errors; errors a connector returns come back as tool results with `isError: true` after secret redaction, so the model can react. Read results carry `_meta["mcp-gateway/read"] = {"empty"|"partial"|"unavailable": true}` when the connector says so, which tells "no results" from "could not look".
+- Request bodies above `GATEWAY_MCP_MAX_BODY` (default 1 MiB) get `413`.
+- Every call is one `tool_call` audit event (`/activity`): tool, user, token, resource identity from the connector's hook, decision, outcome, latency, request ID, a short error class, never arguments or results.
+
+The SDK's localhost DNS-rebinding guard is disabled on `/mcp`: the bearer token is the boundary (a browser cannot attach it), and the guard would `403` every request a reverse proxy on the same host forwards to `127.0.0.1` with the public `Host`.
+
+### Extending the pipeline
+
+`internal/connectors.Registry` holds `Tool{App, Name, Description, InputSchema, Kind (read|write), RequiredScopes, ResourceIdentity, Handler}`; `Register` enforces unique lower-case `app.tool` names and an object schema. `internal/mcp.DefaultPipeline` builds the ordered stages `authenticate, audit, resolve, strip, ratelimit, dispatch` (audit is second so it wraps every later outcome); a `Stage` is `Name() string` + `Run(ctx, *CallContext, next)` and later modules add theirs with `pipeline.Insert(mcp.Before|mcp.After, mcp.StageDispatch, stage)` in `cmd/gateway/newMCP`, filling `CallContext` fields (`AccountID`, `Decision`, `PolicyVersion`, `ApprovalID`, `OperationID`) that the audit stage records. `mcp.Visibility` (`Visible(ctx, principal, tool)`) filters `tools/list` and resolve; `mcp.RateLimiter` (`Allow(ctx, userID, tool)`) is the per-user hook, no-op by default.
+
+### Local /mcp smoke
+
+Verified against `bin/gateway` and a token minted through the tokens service (the same code path as `/tokens`):
+
+```bash
+make build && export GATEWAY_DATABASE_URL=... GATEWAY_JOBS_DATABASE_URL=... GATEWAY_BASE_URL=http://localhost:18080
+./bin/gateway &
+T=mgw_...   # from /tokens
+curl -s -D - -o /dev/null -X POST localhost:18080/mcp                      # 401 + WWW-Authenticate ... resource_metadata=...
+curl -s localhost:18080/mcp -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+#  {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"tools":{}},"protocolVersion":"2025-11-25","serverInfo":{"name":"mcp-gateway","version":"..."}}}
+curl ... -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'               # {"tools":[]} until connectors register
+curl ... -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"github.list_issues","arguments":{}}}'
+#  {"error":{"code":-32602,"message":"unknown tool \"github.list_issues\""}}; log: event=mcp.tool_call decision=deny outcome=denied error_class=tool_not_found
+curl -s -o /dev/null -w '%{http_code}' localhost:18080/mcp -H "Authorization: Bearer $T"   # 405
+```
+
 ## Repository layout
 
 ```
@@ -119,12 +176,12 @@ internal/policy/        structured roles compiled to versioned Cedar
 internal/approvals/     durable confirmations with bounded wait
 internal/ledger/        write intent, idempotency, outcomes, reconciler
 internal/connections/   per-user app accounts, envelope-encrypted tokens
-internal/connectors/    connector interface; fake, github, slack, atlassian, google, microsoft
+internal/connectors/    tool registry (Tool/Call/Result) and connector interface; fake, github, slack, atlassian, google, microsoft
 internal/audit/         append-only audit events
 internal/store/         pgx pools, WithUser / WithJobs scopes, repositories, schema check
 internal/store/migrations/  embedded goose SQL migrations and their runner
 internal/crypto/        key provider interface, envelope encryption
-internal/mcp/           /mcp stateless Streamable HTTP endpoint and the call pipeline
+internal/mcp/           /mcp stateless Streamable HTTP endpoint (go-sdk), Visibility, the staged tools/call pipeline
 internal/portal/        embedded server-rendered portal (templates/ + static/htmx, CSRF, role gating)
 internal/jobs/          single-replica background workers
 deploy/dex/             dex configuration for Compose
@@ -140,8 +197,8 @@ Each `internal/*` package has a `doc.go` stating what it owns and which design s
 - `make migrate` / `make migrate-down` / `make migrate-status` wrap `cmd/migrate`; migrations run as a pre-upgrade job, the service never migrates itself. Adding a migration means adding `internal/store/migrations/NNNNN_name.sql` **and** bumping `store.ExpectedSchemaVersion`; a unit test fails if they disagree.
 - Expected-failure assertions against PostgreSQL (an RLS violation, a bad enum) must run in their own `WithUser` transaction: PostgreSQL aborts the transaction on the first error.
 - Lookups that precede user resolution (identity by issuer+subject, session by hash, just-in-time user creation, admin actions) run through `store.WithJobs`; self-service reads run through `store.WithUser`. Package-level helpers for these live in `internal/store/repo_identity_lookup.go`.
-- The identity, audit and tokens integration tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, created on demand) so they never race the store tests' `TRUNCATE`.
-- Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
+- The identity, audit, tokens and mcp integration tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, `gateway_mcp_test`, created on demand) so they never race the store tests' `TRUNCATE`.
+- Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0 and prometheus/client_golang v1.25.0); modelcontextprotocol/go-sdk v1.8.0 (declares `go 1.25.0`; check the directive before bumping); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
 - CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests against a PostgreSQL 16 service container and a container image smoke test.
