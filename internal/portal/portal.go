@@ -14,9 +14,10 @@ import (
 
 // Portal serves the web UI and the sign-in routes.
 type Portal struct {
-	svc *identity.Service
-	log *slog.Logger
-	tpl *templates
+	svc    *identity.Service
+	log    *slog.Logger
+	tpl    *templates
+	mounts []mount
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -50,6 +51,18 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /static/...               embedded assets
 func (p *Portal) Handler() http.Handler {
 	mux := http.NewServeMux()
+	for _, m := range p.mounts {
+		h := m.handler
+		if m.admin {
+			h = p.requireAdmin(h)
+		} else {
+			h = p.requireUser(h)
+		}
+		if m.csrf {
+			h = p.csrf(h)
+		}
+		mux.Handle(m.pattern, h)
+	}
 	mux.HandleFunc("GET /{$}", p.home)
 	mux.HandleFunc("GET /signin", p.signIn)
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))
@@ -64,6 +77,27 @@ func (p *Portal) Handler() http.Handler {
 	mux.Handle("GET /static/", p.static())
 	mux.HandleFunc("/", p.notFound)
 	return p.svc.Middleware(mux)
+}
+
+// mount is an extra route registered by another module before Handler runs.
+type mount struct {
+	pattern string
+	handler http.Handler
+	admin   bool
+	csrf    bool
+}
+
+// MountUser registers an extra route behind the signed-in check (and the
+// CSRF check for non-GET methods). Call before Handler.
+func (p *Portal) MountUser(pattern string, h http.Handler) {
+	p.mounts = append(p.mounts, mount{pattern: pattern, handler: h, csrf: !strings.HasPrefix(pattern, "GET ")})
+}
+
+// MountAdmin registers an extra route behind the admin check: non-admins get
+// the portal's 404. The CSRF check applies to non-GET methods. Call before
+// Handler.
+func (p *Portal) MountAdmin(pattern string, h http.Handler) {
+	p.mounts = append(p.mounts, mount{pattern: pattern, handler: h, admin: true, csrf: !strings.HasPrefix(pattern, "GET ")})
 }
 
 // static serves the embedded assets without directory listings.

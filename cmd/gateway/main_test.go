@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -62,7 +63,7 @@ func TestMuxMountsPortal(t *testing.T) {
 		Name: "dex", DisplayName: "Local dex", Issuer: "http://localhost:15556/dex",
 		ClientID: "gateway", ClientSecret: "s", AllowedDomains: []string{"example.com"},
 	}}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), slog.New(slog.DiscardHandler))
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
@@ -113,4 +114,14 @@ func TestOpenStoreRefusesUnreachableDatabase(t *testing.T) {
 	if err == nil {
 		t.Fatal("openStore with an unreachable database returned no error")
 	}
+}
+
+// noReader is an audit.Reader with nothing to show.
+type noReader struct{}
+
+func (noReader) ListForUser(context.Context, string, audit.Filter, audit.Page) ([]audit.Record, error) {
+	return nil, nil
+}
+func (noReader) AdminSearch(context.Context, audit.Filter, audit.Page) ([]audit.Record, error) {
+	return nil, nil
 }

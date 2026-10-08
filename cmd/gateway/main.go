@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
@@ -69,18 +70,30 @@ func run() error {
 	if err := openKeyProvider(readiness, log); err != nil {
 		return err
 	}
+	metrics := observability.NewMetrics()
+	go func() {
+		if err := observability.ServeMetrics(ctx, "", metrics.Handler()); err != nil {
+			log.Error("metrics listener stopped", "error", err)
+		}
+	}()
+
+	var recorder audit.Recorder = audit.NopRecorder{}
 	var portalHandler http.Handler
 	if st != nil {
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), log)
+		rec := audit.NewStoreRecorder(st)
+		recorder = rec
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, log)
 		if err != nil {
 			return err
 		}
 	} else {
 		log.Warn("no database: portal and sign-in are not mounted")
 	}
+	_ = recorder // handed to the MCP pipeline once it exists
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	srv := server.New(newMux(readiness, portalHandler), cfg.DrainTimeout, log)
+	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler)))
+	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	switch {
 	case err == nil:
@@ -145,7 +158,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) error
 // newPortal builds the identity service and the portal over the given
 // store. Providers come from GATEWAY_OIDC_PROVIDERS; with none configured
 // the sign-in page says so instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, log *slog.Logger) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, log *slog.Logger) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -160,6 +173,15 @@ func newPortal(cfg config.Config, st identity.Store, log *slog.Logger) (http.Han
 	if err != nil {
 		return nil, fmt.Errorf("portal: %w", err)
 	}
+	who := func(r *http.Request) (string, bool) {
+		pr := identity.PrincipalFrom(r.Context())
+		if pr == nil {
+			return "", false
+		}
+		return pr.UserID, pr.IsAdmin()
+	}
+	p.MountUser("GET /activity", audit.ActivityHandler(reader, who))
+	p.MountAdmin("GET /admin/audit", audit.AdminSearchHandler(reader, who))
 	return p.Handler(), nil
 }
 

@@ -344,3 +344,46 @@ func firstN(s string, n int) string {
 	}
 	return s[:n]
 }
+
+func TestMountedRoutesAreGated(t *testing.T) {
+	st := identitytest.NewMemStore()
+	cfg := identity.Config{
+		BaseURL:         "http://localhost:18080",
+		Providers:       []config.OIDCProvider{{Name: "dex", DisplayName: "Local dex", Issuer: issuer, ClientID: "gateway", ClientSecret: "s", AllowedDomains: []string{"example.com"}}},
+		DefaultRole:     defaultRole,
+		BootstrapAdmins: []string{issuer + "|" + adminSub},
+		IdleTimeout:     12 * time.Hour,
+		AbsoluteTimeout: 7 * 24 * time.Hour,
+	}
+	svc, err := identity.New(cfg, st, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := portal.New(svc, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("mounted")) })
+	p.MountUser("GET /activity", ok)
+	p.MountAdmin("GET /admin/audit", ok)
+	p.MountUser("POST /activity/clear", ok)
+	h := &harness{h: p.Handler(), svc: svc, st: st}
+	member, _ := h.session(t, memberSub, "Member")
+	admin, _ := h.session(t, adminSub, "Admin")
+
+	if rec := h.do(t, request{method: http.MethodGet, path: "/activity"}); rec.Code != http.StatusSeeOther {
+		t.Errorf("anonymous GET /activity = %d, want redirect", rec.Code)
+	}
+	if rec := h.do(t, request{method: http.MethodGet, path: "/activity", cookie: member}); rec.Code != http.StatusOK || rec.Body.String() != "mounted" {
+		t.Errorf("member GET /activity = %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := h.do(t, request{method: http.MethodGet, path: "/admin/audit", cookie: member}); rec.Code != http.StatusNotFound {
+		t.Errorf("member GET /admin/audit = %d, want 404", rec.Code)
+	}
+	if rec := h.do(t, request{method: http.MethodGet, path: "/admin/audit", cookie: admin}); rec.Code != http.StatusOK {
+		t.Errorf("admin GET /admin/audit = %d, want 200", rec.Code)
+	}
+	if rec := h.do(t, request{method: http.MethodPost, path: "/activity/clear", cookie: member}); rec.Code != http.StatusForbidden {
+		t.Errorf("member POST without CSRF token = %d, want 403", rec.Code)
+	}
+}
