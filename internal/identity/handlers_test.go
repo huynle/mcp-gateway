@@ -15,6 +15,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 )
 
 // gateway is a test gateway: the identity routes plus a /whoami endpoint
@@ -23,7 +24,7 @@ import (
 type gateway struct {
 	srv *httptest.Server
 	svc *identity.Service
-	st  *memStore
+	st  *identitytest.MemStore
 	idp *fakeIDP
 }
 
@@ -39,7 +40,7 @@ type whoami struct {
 func newGateway(t *testing.T) *gateway {
 	t.Helper()
 	idp := newFakeIDP(t)
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
 
@@ -164,8 +165,8 @@ func TestFullSignInFlow(t *testing.T) {
 	if w.Anonymous || w.DisplayName != "dev" || !slices.Equal(w.Roles, []string{"member"}) || w.CSRFToken == "" {
 		t.Errorf("whoami after sign-in = %+v", w)
 	}
-	if g.st.userCount() != 1 {
-		t.Errorf("users = %d, want 1", g.st.userCount())
+	if g.st.UserCount() != 1 {
+		t.Errorf("users = %d, want 1", g.st.UserCount())
 	}
 	auth := g.idp.lastAuthRequest()
 	if auth.method != "S256" || auth.challenge == "" || auth.nonce == "" || auth.state == "" {
@@ -191,8 +192,8 @@ func TestFullSignInFlow(t *testing.T) {
 	if w.SessionID == first {
 		t.Error("session should be rotated on sign-in")
 	}
-	if g.st.userCount() != 1 || g.st.liveSessions(w.UserID) != 1 {
-		t.Errorf("users = %d, live sessions = %d; want 1 and 1 (old session revoked)", g.st.userCount(), g.st.liveSessions(w.UserID))
+	if g.st.UserCount() != 1 || g.st.LiveSessions(w.UserID) != 1 {
+		t.Errorf("users = %d, live sessions = %d; want 1 and 1 (old session revoked)", g.st.UserCount(), g.st.LiveSessions(w.UserID))
 	}
 }
 
@@ -214,7 +215,7 @@ func TestSignInRejectsStateMismatch(t *testing.T) {
 	if b := resp.Text; resp.StatusCode != http.StatusBadRequest || !strings.Contains(b, "sign-in") {
 		t.Errorf("tampered state = %d %q, want 400 with a sign-in error page", resp.StatusCode, b)
 	}
-	if g.st.userCount() != 0 {
+	if g.st.UserCount() != 0 {
 		t.Error("no user must be created on a state mismatch")
 	}
 	if g.whoami(t, c).Anonymous != true {
@@ -230,7 +231,7 @@ func TestSignInRejectsNonceMismatch(t *testing.T) {
 	if b := resp.Text; resp.StatusCode != http.StatusUnauthorized || !strings.Contains(b, "sign-in") {
 		t.Errorf("nonce mismatch = %d %q, want 401", resp.StatusCode, b)
 	}
-	if g.st.userCount() != 0 || !g.whoami(t, c).Anonymous {
+	if g.st.UserCount() != 0 || !g.whoami(t, c).Anonymous {
 		t.Error("no user or session on a nonce mismatch")
 	}
 }
@@ -243,7 +244,7 @@ func TestSignInRejectsPKCEMismatch(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("PKCE mismatch = %d, want 401", resp.StatusCode)
 	}
-	if g.st.userCount() != 0 || !g.whoami(t, c).Anonymous {
+	if g.st.UserCount() != 0 || !g.whoami(t, c).Anonymous {
 		t.Error("no user or session on a PKCE failure")
 	}
 }
@@ -269,7 +270,7 @@ func TestCallbackAfterLoginCookieExpired(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("stale login cookie = %d, want 400", resp.StatusCode)
 	}
-	if g.st.userCount() != 0 {
+	if g.st.UserCount() != 0 {
 		t.Error("no user on a stale login")
 	}
 }
@@ -293,7 +294,7 @@ func TestSignInRejectsDisallowedDomainOverHTTP(t *testing.T) {
 	if b := resp.Text; resp.StatusCode != http.StatusForbidden || !strings.Contains(b, "not allowed") {
 		t.Errorf("disallowed domain = %d %q, want 403", resp.StatusCode, b)
 	}
-	if g.st.userCount() != 0 {
+	if g.st.UserCount() != 0 {
 		t.Error("no user for a disallowed domain")
 	}
 }
@@ -374,7 +375,7 @@ func TestSignOut(t *testing.T) {
 	if !g.whoami(t, c).Anonymous {
 		t.Error("session must be gone after sign-out")
 	}
-	if g.st.liveSessions(w.UserID) != 0 {
+	if g.st.LiveSessions(w.UserID) != 0 {
 		t.Error("the session row must be revoked")
 	}
 	// Sign-out without a session is harmless.

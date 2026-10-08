@@ -1,4 +1,6 @@
-package identity_test
+// Package identitytest provides an in-memory identity.Store for tests in
+// this and other packages (the portal).
+package identitytest
 
 import (
 	"bytes"
@@ -11,11 +13,11 @@ import (
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
-// memStore is an in-memory identity.Store for unit tests. It is not a
+// MemStore is an in-memory identity.Store for unit tests. It is not a
 // faithful PostgreSQL (no row-level security): every transaction sees every
 // row, which is what the identity service relies on for its bypass-scope
 // lookups. The Postgres adapter is covered by the integration tests.
-type memStore struct {
+type MemStore struct {
 	mu          sync.Mutex
 	seq         int
 	users       map[string]*store.User
@@ -25,8 +27,9 @@ type memStore struct {
 	sessions    map[string]*store.Session
 }
 
-func newMemStore() *memStore {
-	return &memStore{
+// NewMemStore returns an empty store.
+func NewMemStore() *MemStore {
+	return &MemStore{
 		users:       map[string]*store.User{},
 		identities:  map[string]*store.Identity{},
 		roles:       map[string]*store.Role{},
@@ -35,19 +38,19 @@ func newMemStore() *memStore {
 	}
 }
 
-func (m *memStore) id(prefix string) string {
+func (m *MemStore) id(prefix string) string {
 	m.seq++
 	// uuid-shaped so store.WithUser-style validation would accept it.
 	return fmt.Sprintf("%08x-0000-4000-8000-%012x", len(prefix), m.seq)
 }
 
-func (m *memStore) Bypass(_ context.Context, fn func(identity.Tx) error) error {
+func (m *MemStore) Bypass(_ context.Context, fn func(identity.Tx) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return fn(&memTx{m: m})
 }
 
-func (m *memStore) AsUser(_ context.Context, userID string, fn func(identity.Tx) error) error {
+func (m *MemStore) AsUser(_ context.Context, userID string, fn func(identity.Tx) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.users[userID]; !ok {
@@ -58,13 +61,15 @@ func (m *memStore) AsUser(_ context.Context, userID string, fn func(identity.Tx)
 
 // Test helpers (callers hold no lock).
 
-func (m *memStore) userCount() int {
+// UserCount returns how many users exist.
+func (m *MemStore) UserCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.users)
 }
 
-func (m *memStore) roleNames(userID string) []string {
+// RoleNames returns the names of the roles assigned to userID (unordered).
+func (m *MemStore) RoleNames(userID string) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var names []string
@@ -74,7 +79,8 @@ func (m *memStore) roleNames(userID string) []string {
 	return names
 }
 
-func (m *memStore) liveSessions(userID string) int {
+// LiveSessions counts the unrevoked sessions of userID.
+func (m *MemStore) LiveSessions(userID string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := 0
@@ -86,7 +92,7 @@ func (m *memStore) liveSessions(userID string) int {
 	return n
 }
 
-type memTx struct{ m *memStore }
+type memTx struct{ m *MemStore }
 
 func (t *memTx) Raw() store.Tx { return nil }
 

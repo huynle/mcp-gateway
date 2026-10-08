@@ -12,6 +12,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -60,7 +61,7 @@ func devClaims() identity.Claims {
 }
 
 func TestSignInCreatesUserWithDefaultRole(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, logs := newService(t, testConfig(dexProvider()), st)
 
 	res, err := svc.SignIn(context.Background(), "dex", devClaims())
@@ -73,7 +74,7 @@ func TestSignInCreatesUserWithDefaultRole(t *testing.T) {
 	if res.Principal.DisplayName != "dev" {
 		t.Errorf("DisplayName = %q, want dev", res.Principal.DisplayName)
 	}
-	if got := st.roleNames(res.Principal.UserID); !slices.Equal(got, []string{"member"}) {
+	if got := st.RoleNames(res.Principal.UserID); !slices.Equal(got, []string{"member"}) {
 		t.Errorf("roles = %v, want [member]", got)
 	}
 	if !slices.Equal(res.Principal.Roles, []string{"member"}) {
@@ -85,8 +86,8 @@ func TestSignInCreatesUserWithDefaultRole(t *testing.T) {
 	if res.Cookie == nil || res.Cookie.Value == "" || !res.Cookie.HttpOnly {
 		t.Errorf("session cookie = %+v, want a set HttpOnly cookie", res.Cookie)
 	}
-	if st.liveSessions(res.Principal.UserID) != 1 {
-		t.Errorf("live sessions = %d, want 1", st.liveSessions(res.Principal.UserID))
+	if st.LiveSessions(res.Principal.UserID) != 1 {
+		t.Errorf("live sessions = %d, want 1", st.LiveSessions(res.Principal.UserID))
 	}
 	if !strings.Contains(logs.String(), `"event":"identity.signin"`) {
 		t.Errorf("expected a structured sign-in event, got logs:\n%s", logs.String())
@@ -97,7 +98,7 @@ func TestSignInCreatesUserWithDefaultRole(t *testing.T) {
 }
 
 func TestSecondSignInReusesUserAndRotatesSession(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)
 	ctx := context.Background()
 
@@ -127,10 +128,10 @@ func TestSecondSignInReusesUserAndRotatesSession(t *testing.T) {
 	if second.Principal.UserID != first.Principal.UserID {
 		t.Errorf("second sign-in user %s != first %s", second.Principal.UserID, first.Principal.UserID)
 	}
-	if st.userCount() != 1 {
-		t.Errorf("user count = %d, want 1", st.userCount())
+	if st.UserCount() != 1 {
+		t.Errorf("user count = %d, want 1", st.UserCount())
 	}
-	if got := st.roleNames(first.Principal.UserID); !slices.Equal(got, []string{"reviewer"}) {
+	if got := st.RoleNames(first.Principal.UserID); !slices.Equal(got, []string{"reviewer"}) {
 		t.Errorf("roles after second sign-in = %v, want [reviewer] (default role must only apply on create)", got)
 	}
 	if second.Principal.DisplayName != "Dev Renamed" {
@@ -139,13 +140,13 @@ func TestSecondSignInReusesUserAndRotatesSession(t *testing.T) {
 	if second.Cookie.Value == first.Cookie.Value {
 		t.Error("session must be rotated on sign-in")
 	}
-	if st.liveSessions(first.Principal.UserID) != 2 {
-		t.Errorf("live sessions = %d, want 2 (a new browser sign-in does not revoke other browsers)", st.liveSessions(first.Principal.UserID))
+	if st.LiveSessions(first.Principal.UserID) != 2 {
+		t.Errorf("live sessions = %d, want 2 (a new browser sign-in does not revoke other browsers)", st.LiveSessions(first.Principal.UserID))
 	}
 }
 
 func TestSignInRecordsLastCompanySignIn(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)
 	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	svc.SetClock(func() time.Time { return at })
@@ -167,7 +168,7 @@ func TestSignInRecordsLastCompanySignIn(t *testing.T) {
 }
 
 func TestSignInRejectsDisallowedDomain(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, logs := newService(t, testConfig(dexProvider()), st)
 
 	claims := devClaims()
@@ -176,7 +177,7 @@ func TestSignInRejectsDisallowedDomain(t *testing.T) {
 	if !errors.Is(err, identity.ErrNotAllowed) {
 		t.Fatalf("SignIn = %v, want ErrNotAllowed", err)
 	}
-	if st.userCount() != 0 {
+	if st.UserCount() != 0 {
 		t.Error("a rejected sign-in must not create a user")
 	}
 	if !strings.Contains(logs.String(), `"event":"identity.signin_rejected"`) || !strings.Contains(logs.String(), `"reason":"domain_not_allowed"`) {
@@ -248,7 +249,7 @@ func TestSignInAllowRules(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			svc, _ := newService(t, testConfig(tc.provider), newMemStore())
+			svc, _ := newService(t, testConfig(tc.provider), identitytest.NewMemStore())
 			_, err := svc.SignIn(context.Background(), tc.provider.Name, tc.claims)
 			if tc.allowed && err != nil {
 				t.Errorf("SignIn = %v, want success", err)
@@ -261,14 +262,14 @@ func TestSignInAllowRules(t *testing.T) {
 }
 
 func TestSignInUnknownProvider(t *testing.T) {
-	svc, _ := newService(t, testConfig(dexProvider()), newMemStore())
+	svc, _ := newService(t, testConfig(dexProvider()), identitytest.NewMemStore())
 	if _, err := svc.SignIn(context.Background(), "nope", devClaims()); !errors.Is(err, identity.ErrUnknownProvider) {
 		t.Fatalf("SignIn = %v, want ErrUnknownProvider", err)
 	}
 }
 
 func TestBootstrapAdminGetsAdminRole(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	cfg := testConfig(dexProvider())
 	cfg.BootstrapAdmins = []string{dexIssuer + "|" + devClaims().Subject}
 	svc, _ := newService(t, cfg, st)
@@ -277,7 +278,7 @@ func TestBootstrapAdminGetsAdminRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := st.roleNames(res.Principal.UserID)
+	got := st.RoleNames(res.Principal.UserID)
 	slices.Sort(got)
 	if !slices.Equal(got, []string{"admin", "member"}) {
 		t.Errorf("roles = %v, want [admin member]", got)
@@ -300,7 +301,7 @@ func TestBootstrapAdminGetsAdminRole(t *testing.T) {
 }
 
 func TestDisabledUserCannotSignIn(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)
 	ctx := context.Background()
 	res, err := svc.SignIn(ctx, "dex", devClaims())
@@ -316,7 +317,7 @@ func TestDisabledUserCannotSignIn(t *testing.T) {
 }
 
 func TestDisableRevokesSessionsAndRunsHooks(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)
 	ctx := context.Background()
 	res, err := svc.SignIn(ctx, "dex", devClaims())
@@ -334,8 +335,8 @@ func TestDisableRevokesSessionsAndRunsHooks(t *testing.T) {
 	if err := svc.DisableUser(ctx, "", res.Principal.UserID); err != nil {
 		t.Fatalf("DisableUser: %v", err)
 	}
-	if st.liveSessions(res.Principal.UserID) != 0 {
-		t.Errorf("live sessions after disable = %d, want 0", st.liveSessions(res.Principal.UserID))
+	if st.LiveSessions(res.Principal.UserID) != 0 {
+		t.Errorf("live sessions after disable = %d, want 0", st.LiveSessions(res.Principal.UserID))
 	}
 	if !slices.Equal(hooked, []string{res.Principal.UserID}) {
 		t.Errorf("hooks called with %v, want [%s]", hooked, res.Principal.UserID)
@@ -362,7 +363,7 @@ func TestDisableRevokesSessionsAndRunsHooks(t *testing.T) {
 }
 
 func TestSetUserRole(t *testing.T) {
-	st := newMemStore()
+	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)
 	ctx := context.Background()
 	res, err := svc.SignIn(ctx, "dex", devClaims())
@@ -379,7 +380,7 @@ func TestSetUserRole(t *testing.T) {
 	if err := svc.SetUserRole(ctx, res.Principal.UserID, res.Principal.UserID, "admin"); err != nil {
 		t.Fatalf("SetUserRole: %v", err)
 	}
-	if got := st.roleNames(res.Principal.UserID); !slices.Equal(got, []string{"admin"}) {
+	if got := st.RoleNames(res.Principal.UserID); !slices.Equal(got, []string{"admin"}) {
 		t.Errorf("roles = %v, want [admin]", got)
 	}
 	roles, err := svc.ListRoles(ctx)
@@ -390,7 +391,7 @@ func TestSetUserRole(t *testing.T) {
 
 func TestProvidersAreListedInConfigOrder(t *testing.T) {
 	google := config.OIDCProvider{Name: "google", DisplayName: "Google", Issuer: "https://accounts.google.com", ClientID: "c", ClientSecret: "s", AllowedDomains: []string{"example.com"}}
-	svc, _ := newService(t, testConfig(dexProvider(), google), newMemStore())
+	svc, _ := newService(t, testConfig(dexProvider(), google), identitytest.NewMemStore())
 	got := svc.Providers()
 	if len(got) != 2 || got[0].Name != "dex" || got[0].DisplayName != "Local dex" || got[1].Name != "google" {
 		t.Errorf("Providers = %+v", got)

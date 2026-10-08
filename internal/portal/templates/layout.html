@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{block "title" .}}MCP Gateway{{end}} · MCP Gateway</title>
+  <script src="/static/htmx.min.js" defer></script>
+  <style>
+    :root { color-scheme: light dark; --fg: #1b1b1b; --bg: #fafafa; --muted: #6b6b6b; --line: #d9d9d9; --accent: #2457c5; --danger: #b3261e; --ok: #1b7f3b; }
+    @media (prefers-color-scheme: dark) { :root { --fg: #e8e8e8; --bg: #141414; --muted: #9a9a9a; --line: #333; --accent: #7aa2ff; } }
+    body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+    header { border-bottom: 1px solid var(--line); padding: .75rem 1.25rem; display: flex; gap: 1.5rem; align-items: center; }
+    header .brand { font-weight: 600; text-decoration: none; color: inherit; }
+    header nav a { margin-right: 1rem; color: var(--accent); text-decoration: none; }
+    header .who { margin-left: auto; color: var(--muted); display: flex; gap: .75rem; align-items: center; }
+    main { max-width: 64rem; margin: 2rem auto; padding: 0 1.25rem; }
+    h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { color: var(--muted); font-weight: 500; font-size: .85rem; }
+    .btn { display: inline-block; padding: .4rem .9rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: none; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { color: var(--danger); border-color: var(--danger); }
+    .btn + .btn { margin-left: .4rem; }
+    .muted { color: var(--muted); }
+    .pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .8rem; border: 1px solid var(--line); }
+    .pill.disabled { color: var(--danger); border-color: var(--danger); }
+    .pill.active { color: var(--ok); border-color: var(--ok); }
+    .stack { display: grid; gap: .75rem; max-width: 28rem; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1.25rem; }
+    dt { color: var(--muted); }
+    dd { margin: 0; }
+    form.inline { display: inline; }
+    select { font: inherit; padding: .3rem; }
+    .error { border: 1px solid var(--danger); border-radius: 6px; padding: 1rem; }
+  </style>
+</head>
+<body{{if .Principal}} hx-headers='{"X-CSRF-Token": "{{.Principal.CSRFToken}}"}'{{end}}>
+<header>
+  <a class="brand" href="/">MCP Gateway</a>
+  {{if .Principal}}
+  <nav>
+    <a href="/account">My account</a>
+    {{if .Principal.IsAdmin}}<a href="/admin/users">Users</a>{{end}}
+  </nav>
+  <div class="who">
+    <span>{{.Principal.DisplayName}}</span>
+    <form method="post" action="/auth/signout">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <button class="btn" type="submit">Sign out</button>
+    </form>
+  </div>
+  {{end}}
+</header>
+<main>
+{{template "content" .}}
+</main>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{{define "title"}}My account{{end}}
+{{define "content"}}
+<h1>My account</h1>
+<dl>
+  <dt>Name</dt><dd>{{.Principal.DisplayName}}</dd>
+  <dt>Roles</dt><dd>{{range $i, $r := .Principal.Roles}}{{if $i}}, {{end}}<span class="pill">{{$r}}</span>{{else}}<span class="muted">none</span>{{end}}</dd>
+  <dt>User ID</dt><dd><code>{{.Principal.UserID}}</code></dd>
+  <dt>Session</dt><dd><code>{{.Principal.SessionID}}</code></dd>
+</dl>
+<p class="muted">Tokens, app connections and approvals appear here as those features land.</p>
+{{end}}
