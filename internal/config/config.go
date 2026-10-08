@@ -63,6 +63,12 @@ type Config struct {
 	// MCPMaxBody bounds the size of one /mcp request body in bytes
 	// (GATEWAY_MCP_MAX_BODY, default 1 MiB); larger requests get 413.
 	MCPMaxBody int64 `yaml:"mcp_max_body"`
+	// PolicyReloadInterval is how long a compiled policy is used before
+	// roles, assignments and restrictions are read again
+	// (GATEWAY_POLICY_RELOAD_INTERVAL, default 15s). Admin edits through
+	// the portal apply at once on the replica that made them; this bounds
+	// how long other replicas and role assignments take to catch up.
+	PolicyReloadInterval time.Duration `yaml:"policy_reload_interval"`
 	// RateUserPerMin is each user's tools/call budget per minute across
 	// every app (GATEWAY_RATE_USER_PER_MIN, default 60; decision dovthftx).
 	RateUserPerMin int `yaml:"rate_user_per_min"`
@@ -119,6 +125,7 @@ func Default() Config {
 		SessionAbsoluteTimeout: 7 * 24 * time.Hour,
 		SessionCookieSecure:    true,
 		TokenSignInMaxAge:      30 * 24 * time.Hour,
+		PolicyReloadInterval:   15 * time.Second,
 		MCPMaxBody:             1 << 20,
 		RateUserPerMin:         60,
 		RateAppPerMin:          600,
@@ -217,6 +224,13 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sTOKEN_SIGNIN_MAX_AGE: %w", EnvPrefix, err)
 		}
 		cfg.TokenSignInMaxAge = d
+	}
+	if v := getenv(EnvPrefix + "POLICY_RELOAD_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("%sPOLICY_RELOAD_INTERVAL: %w", EnvPrefix, err)
+		}
+		cfg.PolicyReloadInterval = d
 	}
 	if v := getenv(EnvPrefix + "MCP_MAX_BODY"); v != "" {
 		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
@@ -368,6 +382,9 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.MCPMaxBody <= 0 {
 		errs = append(errs, fmt.Errorf("mcp_max_body must be positive, got %d", c.MCPMaxBody))
+	}
+	if c.PolicyReloadInterval <= 0 {
+		errs = append(errs, fmt.Errorf("policy_reload_interval must be positive, got %v", c.PolicyReloadInterval))
 	}
 	if c.RateUserPerMin <= 0 {
 		errs = append(errs, fmt.Errorf("rate_user_per_min must be positive, got %d", c.RateUserPerMin))

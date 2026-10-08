@@ -52,14 +52,17 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 func (p *Portal) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, m := range p.mounts {
+		// Gating wraps the CSRF check (same order as the built-in admin
+		// routes below): a non-admin's POST is the 404 of an unknown page,
+		// not a 403 that reveals the route.
 		h := m.handler
+		if m.csrf {
+			h = p.csrf(h)
+		}
 		if m.admin {
 			h = p.requireAdmin(h)
 		} else {
 			h = p.requireUser(h)
-		}
-		if m.csrf {
-			h = p.csrf(h)
 		}
 		mux.Handle(m.pattern, h)
 	}

@@ -85,7 +85,7 @@ func newTestEnv(ctx context.Context, superURL string) (*testEnv, error) {
 		"ALTER ROLE gateway_app LOGIN PASSWORD '" + testAppPassword + "'",
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + testJobsPassword + "'",
 	} {
-		if _, err := super.Exec(ctx, stmt); err != nil {
+		if err := execRetryingConcurrentUpdate(ctx, super, stmt); err != nil {
 			return nil, err
 		}
 	}
@@ -353,4 +353,19 @@ func TestIntegrationRecordRejectsBadIDs(t *testing.T) {
 	if err := rec.Record(t.Context(), audit.Event{UserID: alice, Tool: "t", Decision: "allow", TokenID: "junk"}); err == nil {
 		t.Error("expected an error for a non-uuid token ID")
 	}
+}
+
+// execRetryingConcurrentUpdate runs stmt, retrying when PostgreSQL reports
+// "tuple concurrently updated" (SQLSTATE XX000): every package's
+// integration bootstrap ALTERs the same cluster-global roles and `go test`
+// runs packages in parallel.
+func execRetryingConcurrentUpdate(ctx context.Context, conn *pgxpool.Pool, stmt string) error {
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if _, err = conn.Exec(ctx, stmt); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
 }

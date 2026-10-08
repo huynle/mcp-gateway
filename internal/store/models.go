@@ -81,6 +81,7 @@ type PolicyVersion struct {
 	VersionHash string
 	Cedar       string
 	Source      json.RawMessage
+	CreatedBy   *string
 	CreatedAt   time.Time
 }
 

@@ -97,6 +97,19 @@ func TestSignInCreatesUserWithDefaultRole(t *testing.T) {
 	}
 }
 
+func TestSignInPrefersTheFlaggedDefaultRole(t *testing.T) {
+	st := identitytest.NewMemStore()
+	st.SetDefaultRole("guest")
+	svc, _ := newService(t, testConfig(dexProvider()), st)
+	res, err := svc.SignIn(context.Background(), "dex", devClaims())
+	if err != nil {
+		t.Fatalf("SignIn: %v", err)
+	}
+	if got := st.RoleNames(res.Principal.UserID); !slices.Equal(got, []string{"guest"}) {
+		t.Errorf("roles = %v, want [guest] (the flagged default, not the configured one)", got)
+	}
+}
+
 func TestSecondSignInReusesUserAndRotatesSession(t *testing.T) {
 	st := identitytest.NewMemStore()
 	svc, _ := newService(t, testConfig(dexProvider()), st)

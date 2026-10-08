@@ -38,6 +38,18 @@ func NewMemStore() *MemStore {
 	}
 }
 
+// SetDefaultRole flags the named role as the default (creating it when
+// missing), as the admin default-role page does in PostgreSQL.
+func (m *MemStore) SetDefaultRole(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	tx := &memTx{m: m}
+	r, _ := tx.EnsureRole(context.Background(), name, "")
+	for id, role := range m.roles {
+		role.IsDefault = id == r.ID
+	}
+}
+
 func (m *MemStore) id(prefix string) string {
 	m.seq++
 	// uuid-shaped so store.WithUser-style validation would accept it.
@@ -149,6 +161,16 @@ func (t *memTx) RecordSignIn(_ context.Context, userID, identityID, displayName 
 func (t *memTx) FindRoleByName(_ context.Context, name string) (*store.Role, error) {
 	for _, r := range t.m.roles {
 		if r.Name == name {
+			c := *r
+			return &c, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (t *memTx) FindDefaultRole(context.Context) (*store.Role, error) {
+	for _, r := range t.m.roles {
+		if r.IsDefault {
 			c := *r
 			return &c, nil
 		}

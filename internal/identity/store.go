@@ -36,6 +36,9 @@ type Tx interface {
 	RecordSignIn(ctx context.Context, userID, identityID, displayName string, at time.Time) error
 
 	FindRoleByName(ctx context.Context, name string) (*store.Role, error)
+	// FindDefaultRole returns the role admins flagged as the default in
+	// the portal (store.ErrNotFound when none is flagged).
+	FindDefaultRole(ctx context.Context) (*store.Role, error)
 	EnsureRole(ctx context.Context, name, description string) (*store.Role, error)
 	ListRoles(ctx context.Context) ([]store.Role, error)
 	AssignRole(ctx context.Context, userID, roleID string, assignedBy *string) error
@@ -100,6 +103,10 @@ func (t pgTx) RecordSignIn(ctx context.Context, userID, identityID, displayName 
 
 func (t pgTx) FindRoleByName(ctx context.Context, name string) (*store.Role, error) {
 	return store.FindRoleByName(ctx, t.tx, name)
+}
+
+func (t pgTx) FindDefaultRole(ctx context.Context) (*store.Role, error) {
+	return store.FindDefaultRole(ctx, t.tx)
 }
 
 func (t pgTx) EnsureRole(ctx context.Context, name, description string) (*store.Role, error) {

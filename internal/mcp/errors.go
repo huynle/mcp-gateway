@@ -16,8 +16,12 @@ const (
 	CodeDenied          int64 = -32003
 	// CodeNoAccount: the user has no connected account for the tool's app;
 	// changing the arguments cannot fix it, connecting one can.
-	CodeNoAccount   int64 = -32004
-	CodeRateLimited int64 = -32029
+	CodeNoAccount int64 = -32004
+	// CodeApprovalRequired: policy says confirm and the call has no
+	// granted approval yet (decision 490o45d0; the approvals task adds
+	// the approval id and the retry contract to this error).
+	CodeApprovalRequired int64 = -32005
+	CodeRateLimited      int64 = -32029
 	// CodeInternal is the JSON-RPC internal error, used when a gateway
 	// dependency (the account source) failed; the message never carries
 	// the cause.

@@ -15,6 +15,8 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
+	"github.com/huynle/mcp-gateway/internal/policy/policytest"
 	"github.com/huynle/mcp-gateway/internal/tokens"
 	"github.com/huynle/mcp-gateway/internal/tokens/tokenstest"
 )
@@ -73,11 +75,20 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, slog.New(slog.DiscardHandler))
+	policySvc, err := policy.New(policytest.NewMemStore(), policy.Options{Log: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := connectors.NewRegistry()
+	accounts, err := registerConnectors(cfg, registry, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, registry, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
-	mcpHandler, err := newMCP(cfg, tokenSvc, audit.NopRecorder{}, observability.NewMetrics(), slog.New(slog.DiscardHandler))
+	mcpHandler, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, audit.NopRecorder{}, observability.NewMetrics(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newMCP: %v", err)
 	}
@@ -196,11 +207,23 @@ func TestNewMCPBuildsPipelineWithAccountStage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := newMCP(cfg, tokenSvc, audit.NopRecorder{}, observability.NewMetrics(), log)
+	registry := connectors.NewRegistry()
+	accounts, err := registerConnectors(cfg, registry, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policySvc, err := policy.New(policytest.NewMemStore(), policy.Options{Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := newMCP(cfg, registry, accounts, tokenSvc, policySvc, audit.NopRecorder{}, observability.NewMetrics(), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if h == nil {
 		t.Fatal("nil handler")
+	}
+	if len(registry.List()) == 0 {
+		t.Error("fake connector not registered")
 	}
 }

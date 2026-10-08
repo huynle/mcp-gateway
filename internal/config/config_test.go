@@ -222,6 +222,9 @@ func TestIdentityDefaults(t *testing.T) {
 	if cfg.TokenSignInMaxAge != 30*24*time.Hour {
 		t.Errorf("TokenSignInMaxAge = %v, want 720h", cfg.TokenSignInMaxAge)
 	}
+	if cfg.PolicyReloadInterval != 15*time.Second {
+		t.Errorf("PolicyReloadInterval = %v, want 15s", cfg.PolicyReloadInterval)
+	}
 	if cfg.MCPMaxBody != 1<<20 {
 		t.Errorf("MCPMaxBody = %d, want 1 MiB", cfg.MCPMaxBody)
 	}
@@ -243,6 +246,7 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 		"GATEWAY_SESSION_ABSOLUTE_TIMEOUT":    "48h",
 		"GATEWAY_SESSION_COOKIE_SECURE":       "false",
 		"GATEWAY_TOKEN_SIGNIN_MAX_AGE":        "240h",
+		"GATEWAY_POLICY_RELOAD_INTERVAL":      "5s",
 		"GATEWAY_MCP_MAX_BODY":                " 4096 ",
 		"GATEWAY_DEFAULT_ROLE":                "staff",
 		"GATEWAY_BOOTSTRAP_ADMINS":            "http://localhost:15556/dex|08a8684b, https://accounts.google.com|1234",
@@ -266,6 +270,9 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 	}
 	if cfg.TokenSignInMaxAge != 240*time.Hour {
 		t.Errorf("TokenSignInMaxAge = %v, want 240h", cfg.TokenSignInMaxAge)
+	}
+	if cfg.PolicyReloadInterval != 5*time.Second {
+		t.Errorf("PolicyReloadInterval = %v, want 5s", cfg.PolicyReloadInterval)
 	}
 	if cfg.MCPMaxBody != 4096 {
 		t.Errorf("MCPMaxBody = %d, want 4096", cfg.MCPMaxBody)
@@ -344,6 +351,8 @@ func TestIdentityValidation(t *testing.T) {
 		"empty default role":    {"GATEWAY_DEFAULT_ROLE": " "},
 		"bad bootstrap admin":   {"GATEWAY_BOOTSTRAP_ADMINS": "no-pipe"},
 		"zero token max age":    {"GATEWAY_TOKEN_SIGNIN_MAX_AGE": "0s"},
+		"zero policy reload":    {"GATEWAY_POLICY_RELOAD_INTERVAL": "0s"},
+		"bad policy reload":     {"GATEWAY_POLICY_RELOAD_INTERVAL": "soon"},
 		"bad token max age":     {"GATEWAY_TOKEN_SIGNIN_MAX_AGE": "30 days"},
 		"zero mcp max body":     {"GATEWAY_MCP_MAX_BODY": "0"},
 		"bad mcp max body":      {"GATEWAY_MCP_MAX_BODY": "1MiB"},

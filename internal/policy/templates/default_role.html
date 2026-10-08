@@ -1,0 +1,17 @@
+{{template "head" .}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Saved}}<p class="ok">Default role saved.</p>{{end}}
+<p class="muted">The role every new user receives on first sign-in. Without a choice here the configured <code>GATEWAY_DEFAULT_ROLE</code> applies.</p>
+<form method="post" action="/admin/settings/default-role" class="stack">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <label>Default role
+    <select name="default_role">
+      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Current}} selected{{end}}>{{.Name}}{{if .Description}} — {{.Description}}{{end}}</option>{{end}}
+    </select>
+  </label>
+  <div>
+    <button class="btn primary" type="submit">Save</button>
+    <a class="btn" href="/admin/roles">Back to roles</a>
+  </div>
+</form>
+{{template "foot" .}}
