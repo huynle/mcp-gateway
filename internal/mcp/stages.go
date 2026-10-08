@@ -312,6 +312,8 @@ func auditEvent(ctx context.Context, cc *CallContext, res connectors.Result, err
 	default:
 		ev.Outcome = "succeeded"
 		switch {
+		case cc.replayed:
+			ev.ErrorClass = "replayed"
 		case res.Unavailable:
 			ev.ErrorClass = "unavailable"
 		case res.Partial:

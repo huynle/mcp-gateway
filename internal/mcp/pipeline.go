@@ -57,6 +57,10 @@ type CallContext struct {
 	AccountLabel  string
 	ApprovalID    string
 	OperationID   string
+
+	// replayed marks a result the ledger stage served from a prior
+	// operation; the audit row's error class says so.
+	replayed bool
 }
 
 // Next continues the pipeline from the current stage. A stage that answers

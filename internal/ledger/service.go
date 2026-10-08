@@ -134,11 +134,14 @@ type ApprovalBinding struct {
 	ApprovalID      string
 }
 
-// ConsumedApproval is a successful consume: the approval and its stored
-// arguments.
+// ConsumedApproval is a successful consume: the approval, its stored
+// arguments and the resource identity recorded with it (which the ledger
+// stores on the operation in place of the intent's, since the stored
+// arguments are what runs).
 type ConsumedApproval struct {
-	ID   string
-	Args map[string]any
+	ID               string
+	Args             map[string]any
+	ResourceIdentity map[string]string
 }
 
 // ApprovalConsumer consumes an approval inside the ledger's transaction
@@ -294,11 +297,15 @@ func (s *Service) Begin(ctx context.Context, in Intent) (*Operation, Prior, erro
 				return nil
 			}
 		}
+		resource := in.ResourceIdentity
+		if consumed != nil && consumed.ResourceIdentity != nil {
+			resource = consumed.ResourceIdentity
+		}
 		row := &store.LedgerOperation{
 			UserID: in.UserID, ConnectionID: in.AccountID, Tool: in.Tool, State: StateInProgress,
 			IdempotencyKey: key, WindowStart: now, WindowEnd: now.Add(s.cfg.IdempotencyWindow),
 			Digest: in.Digest, PolicyVersionID: in.PolicyVersionID,
-			Resource: encodeResource(in.ResourceIdentity), TokenID: optional(in.TokenID),
+			Resource: encodeResource(resource), TokenID: optional(in.TokenID),
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if consumed != nil {
