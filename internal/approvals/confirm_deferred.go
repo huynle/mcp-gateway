@@ -25,6 +25,9 @@ import (
 // and the approval is never used.
 func (h *ConfirmHandler) DeferConsumption(v bool) { h.deferred = v }
 
+// Deferred reports whether consumption is left to the ledger stage.
+func (h *ConfirmHandler) Deferred() bool { return h.deferred }
+
 // confirmDeferred is Confirm for the deferred mode.
 func (h *ConfirmHandler) confirmDeferred(ctx context.Context, cc *mcp.CallContext, next mcp.Next, b Binding) (connectors.Result, error) {
 	if cc.Call.ApprovalID != "" {
