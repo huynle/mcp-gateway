@@ -64,13 +64,18 @@ type Options struct {
 //   - while the job runs a heartbeat renews the lease every Lease/3; a
 //     renewal that fails (the lease was lost or taken) cancels the job's
 //     context;
-//   - after the run the lease is kept, by this replica, until the next
-//     interval, so no other replica runs the job before then and the job
-//     stays on one replica while that replica is healthy; when it dies
-//     the lease expires and any other replica picks the job up.
+//   - after the run the lease is kept, by this replica, for Interval +
+//     Lease: no other replica runs the job before the interval has
+//     passed, and since this replica's next attempt comes one interval
+//     after the run ended (plus a little latency, covered by the Lease
+//     margin), the job stays on one replica while that replica is
+//     healthy; when it dies the lease expires and any other replica picks
+//     the job up within Interval + Lease.
 //
-// Jobs are independent: one failing or panicking does not affect others,
-// and failures are logged and retried next interval.
+// Runs are spaced Interval apart from the end of one to the start of the
+// next, so a run longer than the interval never piles up. Jobs are
+// independent: one failing or panicking does not affect others, and
+// failures are logged and retried next interval.
 type Runner struct {
 	locker Locker
 	holder string
@@ -162,14 +167,14 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 func (r *Runner) loop(ctx context.Context, j Job) {
-	ticker := time.NewTicker(j.Interval())
-	defer ticker.Stop()
 	for {
 		r.try(ctx, j)
+		pause := time.NewTimer(j.Interval())
 		select {
 		case <-ctx.Done():
+			pause.Stop()
 			return
-		case <-ticker.C:
+		case <-pause.C:
 		}
 	}
 }
@@ -205,9 +210,10 @@ func (r *Runner) try(ctx context.Context, j Job) {
 	if ctx.Err() != nil {
 		return
 	}
-	// Keep the lease until the next interval so no other replica runs the
-	// job before then; our own ticker re-acquires it (holder match).
-	if _, err := r.locker.Renew(ctx, name, r.holder, j.Interval()); err != nil {
+	// Keep the lease past the next interval so no other replica runs the
+	// job before then; our own next attempt re-acquires it (holder match)
+	// within the Lease margin.
+	if _, err := r.locker.Renew(ctx, name, r.holder, j.Interval()+r.lease); err != nil {
 		r.log.Warn("job lease not extended", "event", "jobs.lease_failed", "job", name, "error", observability.RedactError(err))
 	}
 }

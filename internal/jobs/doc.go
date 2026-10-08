@@ -5,8 +5,8 @@
 // a heartbeat (see Runner): a replica takes the job's lease for
 // Options.Lease when it is free, expired or its own, renews it every
 // Lease/3 while the job runs (a lost lease cancels the run), and keeps
-// it until the next interval afterwards, so a healthy replica keeps a job
-// and a dead one hands it over after at most one lease. Advisory locks
+// it for Interval + Lease afterwards, so a healthy replica keeps a job
+// and a dead one hands it over within Interval + Lease. Advisory locks
 // were not used because they are bound to a session and pooled
 // connections make that fragile.
 //
