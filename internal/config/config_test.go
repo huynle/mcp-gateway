@@ -196,3 +196,178 @@ func TestDatabaseURLValidation(t *testing.T) {
 		t.Errorf("validation error leaks the password: %v", err)
 	}
 }
+
+// --- identity / sessions / OIDC ---------------------------------------------
+
+func TestIdentityDefaults(t *testing.T) {
+	cfg, err := config.Load(envFrom(nil))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BaseURL != "http://localhost:18080" {
+		t.Errorf("BaseURL = %q, want http://localhost:18080", cfg.BaseURL)
+	}
+	if cfg.SessionIdleTimeout != 12*time.Hour {
+		t.Errorf("SessionIdleTimeout = %v, want 12h", cfg.SessionIdleTimeout)
+	}
+	if cfg.SessionAbsoluteTimeout != 7*24*time.Hour {
+		t.Errorf("SessionAbsoluteTimeout = %v, want 168h", cfg.SessionAbsoluteTimeout)
+	}
+	if !cfg.SessionCookieSecure {
+		t.Error("SessionCookieSecure should default to true")
+	}
+	if cfg.DefaultRole != "member" {
+		t.Errorf("DefaultRole = %q, want member", cfg.DefaultRole)
+	}
+	if len(cfg.OIDCProviders) != 0 || len(cfg.BootstrapAdmins) != 0 {
+		t.Errorf("no providers or admins expected by default, got %+v", cfg)
+	}
+}
+
+func TestOIDCProvidersFromEnv(t *testing.T) {
+	cfg, err := config.Load(envFrom(map[string]string{
+		"GATEWAY_BASE_URL":                    "https://gw.example.com/",
+		"GATEWAY_SESSION_IDLE_TIMEOUT":        "1h",
+		"GATEWAY_SESSION_ABSOLUTE_TIMEOUT":    "48h",
+		"GATEWAY_SESSION_COOKIE_SECURE":       "false",
+		"GATEWAY_DEFAULT_ROLE":                "staff",
+		"GATEWAY_BOOTSTRAP_ADMINS":            "http://localhost:15556/dex|08a8684b, https://accounts.google.com|1234",
+		"GATEWAY_OIDC_PROVIDERS":              "dex, google",
+		"GATEWAY_OIDC_DEX_ISSUER":             "http://localhost:15556/dex",
+		"GATEWAY_OIDC_DEX_CLIENT_ID":          "gateway",
+		"GATEWAY_OIDC_DEX_CLIENT_SECRET":      "gateway-dev-secret",
+		"GATEWAY_OIDC_DEX_ALLOWED_DOMAINS":    "Example.com, other.test",
+		"GATEWAY_OIDC_DEX_DISPLAY_NAME":       "Local dex",
+		"GATEWAY_OIDC_GOOGLE_ISSUER":          "https://accounts.google.com",
+		"GATEWAY_OIDC_GOOGLE_CLIENT_ID":       "cid",
+		"GATEWAY_OIDC_GOOGLE_CLIENT_SECRET":   "sec",
+		"GATEWAY_OIDC_GOOGLE_ALLOWED_TENANTS": "tenant-1",
+		"GATEWAY_OIDC_GOOGLE_DOMAIN_CLAIM":    "hd",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BaseURL != "https://gw.example.com" {
+		t.Errorf("BaseURL = %q, want trailing slash trimmed", cfg.BaseURL)
+	}
+	if cfg.SessionIdleTimeout != time.Hour || cfg.SessionAbsoluteTimeout != 48*time.Hour || cfg.SessionCookieSecure {
+		t.Errorf("session settings not applied: %+v", cfg)
+	}
+	if cfg.DefaultRole != "staff" {
+		t.Errorf("DefaultRole = %q", cfg.DefaultRole)
+	}
+	wantAdmins := []string{"http://localhost:15556/dex|08a8684b", "https://accounts.google.com|1234"}
+	if strings.Join(cfg.BootstrapAdmins, ",") != strings.Join(wantAdmins, ",") {
+		t.Errorf("BootstrapAdmins = %q, want %q", cfg.BootstrapAdmins, wantAdmins)
+	}
+	if len(cfg.OIDCProviders) != 2 {
+		t.Fatalf("OIDCProviders = %+v, want 2", cfg.OIDCProviders)
+	}
+	dex := cfg.OIDCProviders[0]
+	if dex.Name != "dex" || dex.Issuer != "http://localhost:15556/dex" || dex.ClientID != "gateway" || dex.ClientSecret != "gateway-dev-secret" || dex.DisplayName != "Local dex" {
+		t.Errorf("dex provider = %+v", dex)
+	}
+	if strings.Join(dex.AllowedDomains, ",") != "example.com,other.test" {
+		t.Errorf("dex AllowedDomains = %q, want lower-cased, trimmed", dex.AllowedDomains)
+	}
+	google := cfg.OIDCProviders[1]
+	if google.Name != "google" || strings.Join(google.AllowedTenants, ",") != "tenant-1" || google.DomainClaim != "hd" {
+		t.Errorf("google provider = %+v", google)
+	}
+	if google.DisplayName != "google" {
+		t.Errorf("DisplayName should default to the name, got %q", google.DisplayName)
+	}
+}
+
+func TestOIDCProvidersFromFile(t *testing.T) {
+	p := writeFile(t, `
+base_url: http://localhost:18080
+oidc_providers:
+  - name: dex
+    issuer: http://localhost:15556/dex
+    client_id: gateway
+    client_secret: s
+    allowed_domains: [example.com]
+`)
+	cfg, err := config.Load(envFrom(map[string]string{"GATEWAY_CONFIG_FILE": p}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.OIDCProviders) != 1 || cfg.OIDCProviders[0].Name != "dex" {
+		t.Fatalf("OIDCProviders = %+v", cfg.OIDCProviders)
+	}
+}
+
+func TestIdentityValidation(t *testing.T) {
+	good := map[string]string{
+		"GATEWAY_OIDC_PROVIDERS":           "dex",
+		"GATEWAY_OIDC_DEX_ISSUER":          "http://localhost:15556/dex",
+		"GATEWAY_OIDC_DEX_CLIENT_ID":       "gateway",
+		"GATEWAY_OIDC_DEX_CLIENT_SECRET":   "s",
+		"GATEWAY_OIDC_DEX_ALLOWED_DOMAINS": "example.com",
+	}
+	if _, err := config.Load(envFrom(good)); err != nil {
+		t.Fatalf("baseline should load: %v", err)
+	}
+	cases := map[string]map[string]string{
+		"missing issuer":        {"GATEWAY_OIDC_DEX_ISSUER": ""},
+		"issuer not a URL":      {"GATEWAY_OIDC_DEX_ISSUER": "dex"},
+		"missing client id":     {"GATEWAY_OIDC_DEX_CLIENT_ID": ""},
+		"missing client secret": {"GATEWAY_OIDC_DEX_CLIENT_SECRET": ""},
+		"no allow-list":         {"GATEWAY_OIDC_DEX_ALLOWED_DOMAINS": ""},
+		"bad provider name":     {"GATEWAY_OIDC_PROVIDERS": "my provider"},
+		"bad base url":          {"GATEWAY_BASE_URL": "localhost:18080"},
+		"base url with query":   {"GATEWAY_BASE_URL": "http://localhost:18080/?x=1"},
+		"zero idle":             {"GATEWAY_SESSION_IDLE_TIMEOUT": "0s"},
+		"idle above absolute":   {"GATEWAY_SESSION_IDLE_TIMEOUT": "200h"},
+		"bad secure flag":       {"GATEWAY_SESSION_COOKIE_SECURE": "yes"},
+		"empty default role":    {"GATEWAY_DEFAULT_ROLE": " "},
+		"bad bootstrap admin":   {"GATEWAY_BOOTSTRAP_ADMINS": "no-pipe"},
+	}
+	for name, overrides := range cases {
+		t.Run(name, func(t *testing.T) {
+			env := map[string]string{}
+			for k, v := range good {
+				env[k] = v
+			}
+			for k, v := range overrides {
+				env[k] = v
+			}
+			if _, err := config.Load(envFrom(env)); err == nil {
+				t.Errorf("expected validation error for %v", overrides)
+			}
+		})
+	}
+}
+
+func TestOIDCProviderNamesMustBeUnique(t *testing.T) {
+	p := writeFile(t, `
+oidc_providers:
+  - {name: dex, issuer: http://a, client_id: a, client_secret: a, allowed_domains: [x.com]}
+  - {name: dex, issuer: http://b, client_id: b, client_secret: b, allowed_domains: [x.com]}
+`)
+	if _, err := config.Load(envFrom(map[string]string{"GATEWAY_CONFIG_FILE": p})); err == nil || !strings.Contains(err.Error(), "dex") {
+		t.Fatalf("expected duplicate-name error, got %v", err)
+	}
+}
+
+func TestEnvProviderListReplacesFileProviders(t *testing.T) {
+	p := writeFile(t, `
+oidc_providers:
+  - {name: file, issuer: http://a, client_id: a, client_secret: a, allowed_domains: [x.com]}
+`)
+	cfg, err := config.Load(envFrom(map[string]string{
+		"GATEWAY_CONFIG_FILE":              p,
+		"GATEWAY_OIDC_PROVIDERS":           "dex",
+		"GATEWAY_OIDC_DEX_ISSUER":          "http://localhost:15556/dex",
+		"GATEWAY_OIDC_DEX_CLIENT_ID":       "gateway",
+		"GATEWAY_OIDC_DEX_CLIENT_SECRET":   "s",
+		"GATEWAY_OIDC_DEX_ALLOWED_DOMAINS": "example.com",
+	}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.OIDCProviders) != 1 || cfg.OIDCProviders[0].Name != "dex" {
+		t.Fatalf("env provider list should replace the file's, got %+v", cfg.OIDCProviders)
+	}
+}
