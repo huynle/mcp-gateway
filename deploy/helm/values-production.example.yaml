@@ -1,0 +1,91 @@
+# Production stub. Everything secret comes from pre-created Secrets; nothing
+# here is a secret. Replace example.com, the OIDC client, the Vault address
+# and the network CIDRs/selectors with your cluster's values.
+image:
+  repository: ghcr.io/huynle/mcp-gateway
+  tag: "" # pin a release tag in CD
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+gateway:
+  baseURL: https://mcp-gateway.example.com
+  logLevel: info
+  logFormat: json
+  drainTimeoutSeconds: 25 # terminationGracePeriodSeconds = 35
+  approvals:
+    ttl: 15m
+    wait: 30s
+  bootstrapAdmins: []
+  # - "https://accounts.google.com|<sub of the first admin>"
+  enableFakeConnector: false # never true here
+
+oidc:
+  providers:
+    - name: google
+      displayName: Google
+      issuer: https://accounts.google.com
+      clientID: REPLACE-ME.apps.googleusercontent.com
+      clientSecret:
+        secretName: mcp-gateway-oidc
+        secretKey: google-client-secret
+      allowedDomains: [example.com]
+
+database:
+  existingSecret: mcp-gateway-database
+  appURLKey: app-url
+  jobsURLKey: jobs-url
+  migrateURLKey: migrate-url
+
+keyProvider:
+  type: vault
+  vault:
+    addr: https://vault.internal.example.com:8200
+    transitKey: mcp-gateway
+    mount: transit
+    token:
+      existingSecret: mcp-gateway-vault
+      secretKey: token
+
+logSalt:
+  existingSecret: mcp-gateway-app
+  secretKey: log-salt
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+  tls:
+    secretName: mcp-gateway-tls
+
+networkPolicy:
+  ingress:
+    http:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+    metrics:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  egress:
+    postgres:
+      cidrs: ["10.20.0.0/16"] # the managed PostgreSQL subnet
+    keyProvider:
+      cidrs: ["10.30.0.0/24"] # Vault
+
+podDisruptionBudget:
+  minAvailable: 1
+
+antiAffinity:
+  type: hard # >= 2 nodes
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    memory: 1Gi

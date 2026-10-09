@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration test-e2e test-attack lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
+.PHONY: all build test test-integration test-e2e test-attack lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down helm-lint test-helm kind-smoke clean
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -78,6 +78,35 @@ compose-up:
 ## compose-down: stop the local stack and drop its volumes
 compose-down:
 	docker compose down -v --remove-orphans
+
+## helm-lint: helm lint (strict) + helm template of deploy/helm/mcp-gateway
+## with the default values and each example values file (needs helm).
+HELM          ?= helm
+HELM_CHART     = deploy/helm/mcp-gateway
+HELM_EXAMPLES  = $(wildcard deploy/helm/values-*.example.yaml)
+helm-lint:
+	$(HELM) lint --strict $(HELM_CHART)
+	$(HELM) template mcp-gateway $(HELM_CHART) --namespace mcp-gateway > /dev/null
+	@for f in $(HELM_EXAMPLES); do \
+		echo "== $$f"; \
+		$(HELM) lint --strict $(HELM_CHART) -f $$f || exit 1; \
+		$(HELM) template mcp-gateway $(HELM_CHART) --namespace mcp-gateway -f $$f > /dev/null || exit 1; \
+	done
+
+## test-helm: render the chart with every example values file, check the
+## safety properties (2 replicas, migrate hook, private metrics, network
+## policy, PDB, non-root read-only pods) and compare with
+## deploy/helm/testdata/*.golden. Skipped when helm is not on PATH.
+## `make test-helm UPDATE=1` rewrites the golden files after review.
+test-helm:
+	$(GO) test -tags helm -count=1 ./deploy/helm/ $(if $(UPDATE),-update)
+
+## kind-smoke: build the image, create a kind cluster, install PostgreSQL and
+## the chart with deploy/helm/values-local.example.yaml, wait for 2 replicas,
+## curl /healthz, /readyz and an MCP initialize, then upgrade with a new
+## migration to prove the hook runs first (deploy/smoke/kind-smoke.sh).
+kind-smoke:
+	deploy/smoke/kind-smoke.sh
 
 clean:
 	rm -rf bin dist coverage.out

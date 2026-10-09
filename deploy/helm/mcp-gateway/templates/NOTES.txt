@@ -1,0 +1,46 @@
+{{ .Chart.Name }} {{ .Chart.Version }} (image {{ include "mcp-gateway.image" . }}) released as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+Replicas: {{ .Values.replicaCount }}  key provider: {{ .Values.keyProvider.type }}  base URL: {{ .Values.gateway.baseURL }}
+{{- if .Values.gateway.enableFakeConnector }}
+
+  !! gateway.enableFakeConnector=true: the make-believe "fake" app is registered.
+  !! Never run this in a staging or production cluster.
+{{- end }}
+{{- if eq .Values.keyProvider.type "file" }}
+
+  !! keyProvider.type=file: anyone who can read Secret {{ .Values.keyProvider.file.existingSecret }}
+  !! can decrypt every stored token. Use vault outside local clusters.
+{{- end }}
+{{- if eq .Values.gateway.baseURL "https://mcp-gateway.example.com" }}
+
+  !! gateway.baseURL is still the placeholder; set it to the real public origin.
+{{- end }}
+{{- if not .Values.oidc.providers }}
+
+  !! No oidc.providers configured: nobody can sign in.
+{{- end }}
+
+Secrets this release expects to exist (created by you, never by the chart):
+  {{ .Values.database.existingSecret }}: keys {{ .Values.database.appURLKey }}, {{ .Values.database.jobsURLKey }}, {{ .Values.database.migrateURLKey }}
+{{- if eq .Values.keyProvider.type "vault" }}
+  {{ .Values.keyProvider.vault.token.existingSecret }}: key {{ .Values.keyProvider.vault.token.secretKey }}
+{{- else }}
+  {{ .Values.keyProvider.file.existingSecret }}: key {{ .Values.keyProvider.file.secretKey }}
+{{- end }}
+{{- range .Values.oidc.providers }}
+  {{ .clientSecret.secretName }}: key {{ .clientSecret.secretKey | default (printf "%s-client-secret" .name) }}
+{{- end }}
+{{- if .Values.logSalt.existingSecret }}
+  {{ .Values.logSalt.existingSecret }}: key {{ .Values.logSalt.secretKey }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
+  {{ .Values.ingress.tls.secretName }}: TLS certificate for {{ include "mcp-gateway.ingressHost" . }}
+{{- end }}
+
+Check the rollout:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "mcp-gateway.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mcp-gateway.fullname" . }} 18080:{{ .Values.service.port }}
+  curl -fsS localhost:18080/readyz
+
+Metrics are on Service {{ include "mcp-gateway.fullname" . }}-metrics:{{ .Values.gateway.metricsPort }} (cluster-private; not on the Ingress).
+Migrations ran as the pre-upgrade Job {{ include "mcp-gateway.fullname" . }}-migrate; they are forward-only (docs/deploy.md).

@@ -1,0 +1,57 @@
+# Local cluster (kind / minikube): plain http through port-forward, the file
+# key provider, the fake connector and a dex running in the cluster or on
+# the host. Secrets to create first (see docs/deploy.md and
+# deploy/smoke/kind-smoke.sh, which does all of this):
+#   mcp-gateway-database  app-url / jobs-url / migrate-url
+#   mcp-gateway-keys      keys.json (crypto.GenerateKeyFile)
+#   mcp-gateway-oidc      dex-client-secret
+image:
+  repository: mcp-gateway
+  tag: local
+  pullPolicy: Never # loaded with `kind load docker-image`
+
+gateway:
+  baseURL: http://localhost:18080
+  logLevel: debug
+  logFormat: text
+  session:
+    cookieSecure: false
+  enableFakeConnector: true # make-believe "fake" app for harness smoke tests; never production
+  bootstrapAdmins:
+    - "http://localhost:15556/dex|CiQwOGE4Njg0Yi1kYjg4LTRiNzMtOTBhOS0zY2QxNjYxZjU0NjYSBWxvY2Fs"
+
+oidc:
+  providers:
+    - name: dex
+      displayName: Local dex
+      issuer: http://localhost:15556/dex
+      clientID: gateway
+      clientSecret:
+        secretName: mcp-gateway-oidc
+        secretKey: dex-client-secret
+      allowedDomains: [example.com]
+
+keyProvider:
+  type: file
+  file:
+    existingSecret: mcp-gateway-keys
+    secretKey: keys.json
+
+ingress:
+  enabled: false
+
+networkPolicy:
+  enabled: false # kind's default CNI does not enforce policies
+
+podDisruptionBudget:
+  enabled: false
+
+antiAffinity:
+  enabled: false # single-node cluster
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

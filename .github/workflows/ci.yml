@@ -132,3 +132,39 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test-attack
+
+  helm:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: make helm-lint
+      - run: make test-helm
+      # Optional kind smoke: installs the chart on a throwaway cluster with
+      # a plain PostgreSQL, waits for 2 replicas, probes /healthz, /readyz,
+      # the MCP endpoint and the metrics Service, then rolls a migration back
+      # and upgrades to prove the pre-upgrade Job runs before the new pods.
+      # It does not block the build (continue-on-error).
+      - uses: docker/setup-buildx-action@v3
+        continue-on-error: true
+      - uses: docker/build-push-action@v6
+        continue-on-error: true
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-gateway:ci
+          build-args: VERSION=${{ github.sha }}
+      - uses: helm/kind-action@v1
+        continue-on-error: true
+        with:
+          install_only: true
+      - name: kind smoke
+        continue-on-error: true
+        run: IMAGE=mcp-gateway:ci BUILD=0 deploy/smoke/kind-smoke.sh

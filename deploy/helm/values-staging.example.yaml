@@ -1,0 +1,74 @@
+# Staging stub: separate vendor apps and OIDC client, Vault transit, a
+# cluster-issued certificate. Replace every example.com and every selector
+# with your cluster's values. No secret values live here; create the Secrets
+# named below first (docs/deploy.md).
+image:
+  repository: ghcr.io/huynle/mcp-gateway
+  tag: "" # the chart's appVersion; pin a release tag in CD
+
+gateway:
+  baseURL: https://mcp-gateway-staging.example.com
+  logLevel: debug
+  bootstrapAdmins: []
+  # - "https://accounts.google.com|<sub of the first admin>"
+
+oidc:
+  providers:
+    - name: google
+      displayName: Google
+      issuer: https://accounts.google.com
+      clientID: REPLACE-ME.apps.googleusercontent.com
+      clientSecret:
+        secretName: mcp-gateway-oidc
+        secretKey: google-client-secret
+      allowedDomains: [example.com]
+
+database:
+  existingSecret: mcp-gateway-database
+
+keyProvider:
+  type: vault
+  vault:
+    addr: https://vault.staging.example.com:8200
+    transitKey: mcp-gateway-staging
+    mount: transit
+    token:
+      existingSecret: mcp-gateway-vault
+      secretKey: token
+
+logSalt:
+  existingSecret: mcp-gateway-app
+  secretKey: log-salt
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+  tls:
+    secretName: mcp-gateway-staging-tls
+
+networkPolicy:
+  ingress:
+    http:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+    metrics:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  egress:
+    postgres:
+      cidrs: ["10.20.0.0/16"] # the managed PostgreSQL subnet
+    keyProvider:
+      cidrs: ["10.30.0.0/24"] # Vault
+
+metrics:
+  serviceMonitor:
+    enabled: false
+
+antiAffinity:
+  type: soft

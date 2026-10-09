@@ -1,0 +1,22 @@
+# Private: scraped inside the cluster, never referenced by the Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mcp-gateway.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+  {{- with .Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "mcp-gateway.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ int .Values.gateway.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
