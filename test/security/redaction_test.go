@@ -107,7 +107,10 @@ func TestSecurityRedactionUnderLoad(t *testing.T) {
 			if c.tool == "github.create_issue" {
 				args["title"] = fmt.Sprintf("load %d", i) // distinct digests: no idempotent replay
 			}
-			status, _, body := w.rawCall(alice, c.tool, args)
+			status, h, body := w.rawCall(alice, c.tool, args)
+			if ct := h.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("call %d: Content-Type %q (a vendor HTML page must never become the answer's type)", i, ct)
+			}
 			answers[i] = answer{status, string(body)}
 		}(i)
 	}
@@ -170,7 +173,7 @@ func TestSecurityRedactionUnderLoad(t *testing.T) {
 		// A read against an unreachable vendor is a succeeded call whose
 		// result says "could not look" (class unavailable); everything
 		// else failed with a class.
-		if ev.Outcome != "failed" && !(ev.Outcome == "succeeded" && ev.ErrorClass == "unavailable") {
+		if ev.Outcome != "failed" && (ev.Outcome != "succeeded" || ev.ErrorClass != "unavailable") {
 			t.Errorf("audit %s: outcome %q class %q", ev.Tool, ev.Outcome, ev.ErrorClass)
 		}
 		if !classRE.MatchString(ev.ErrorClass) {
@@ -195,6 +198,9 @@ func TestSecurityRedactionUnderLoad(t *testing.T) {
 	}
 	if writes == 0 {
 		t.Error("no ledger rows for the failed writes")
+	}
+	if w.opFor(w.alice, "github.create_issue", "unknown") == nil {
+		t.Error("no write against a 5xx vendor ended unknown (awaiting reconciliation)")
 	}
 	// Portal pages, as alice and as the admin.
 	for _, page := range []struct {

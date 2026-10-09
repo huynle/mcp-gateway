@@ -286,8 +286,9 @@ func newWorld(t *testing.T, opts options) *world {
 	w.forbid("slack-client-secret-sec", "slack client secret")
 	w.aliceGH = w.connect(w.alice, ghApp.ID, "github:1001", "alice-gh", nil)
 	w.bobGH = w.connect(w.bob, ghApp.ID, "github:1002", "bob-gh", nil)
-	w.aliceSlack = w.connect(w.alice, slApp.ID, connections.SlackAccountID("TACME", "UALICE"), "alice@acme", nil)
-	w.bobSlack = w.connect(w.bob, slApp.ID, connections.SlackAccountID("TACME", "UBOB"), "bob@acme", nil)
+	slackScopes := []string{"channels:read", "groups:read", "chat:write", "users:read"}
+	w.aliceSlack = w.connect(w.alice, slApp.ID, connections.SlackAccountID("TACME", "UALICE"), "alice@acme", slackScopes)
+	w.bobSlack = w.connect(w.bob, slApp.ID, connections.SlackAccountID("TACME", "UBOB"), "bob@acme", slackScopes)
 
 	w.approval, err = approvals.New(approvals.Config{TTL: 15 * time.Minute, Wait: opts.approvalWait, BaseURL: baseURL}, approvals.NewPostgresStore(st), keys, approvals.Options{
 		Audit: w.rec, Metrics: metrics, Notifier: approvals.PortalNotifier{}, Log: log,

@@ -25,10 +25,10 @@ const randomID = "9b2d1c1e-0d5b-4f8a-9a1c-5b9f3d2e1a00"
 // sameAnswer asserts two wire answers are identical once the ids they
 // were asked about are normalised: a foreign id must be answered exactly
 // like a nonexistent one (no existence leak).
-func sameAnswer(t *testing.T, what string, a, idA, b, idB string) {
+func sameAnswer(t *testing.T, what string, a, idA, b string) {
 	t.Helper()
 	na := strings.ReplaceAll(a, idA, "<id>")
-	nb := strings.ReplaceAll(b, idB, "<id>")
+	nb := strings.ReplaceAll(b, randomID, "<id>")
 	if na != nb {
 		t.Errorf("%s: foreign id and random id answered differently:\n%s\n%s", what, a, b)
 	}
@@ -68,7 +68,7 @@ func TestSecurityCrossUserThroughConnectors(t *testing.T) {
 		if !strings.Contains(string(gotF), "unknown account") {
 			t.Errorf("%s with %s: %s", tc.tool, tc.foreign, gotF)
 		}
-		sameAnswer(t, tc.tool+" foreign account", stripID(gotF), tc.foreign, stripID(gotR), randomID)
+		sameAnswer(t, tc.tool+" foreign account", stripID(gotF), tc.foreign, stripID(gotR))
 		if w.github.count() != ghBefore || w.slack.count() != slBefore {
 			t.Errorf("%s with a foreign account reached a vendor", tc.tool)
 		}
@@ -102,7 +102,7 @@ func TestSecurityCrossUserThroughConnectors(t *testing.T) {
 	if !strings.Contains(string(gotF), "does not match") {
 		t.Errorf("bob with alice's pending approval: %s", gotF)
 	}
-	sameAnswer(t, "pending approval", stripID(gotF), pending, stripID(gotR), randomID)
+	sameAnswer(t, "pending approval", stripID(gotF), pending, stripID(gotR))
 	// bob approves / denies it in the portal: 404, same as a random id.
 	for _, action := range []string{"approve", "deny"} {
 		codeF, _, bodyF := w.post(w.bob, "/approvals/"+pending+"/"+action, nil)
@@ -110,7 +110,7 @@ func TestSecurityCrossUserThroughConnectors(t *testing.T) {
 		if codeF != http.StatusNotFound || codeR != http.StatusNotFound {
 			t.Errorf("bob %s alice's approval: %d, random %d", action, codeF, codeR)
 		}
-		sameAnswer(t, "portal "+action, bodyF, pending, bodyR, randomID)
+		sameAnswer(t, "portal "+action, bodyF, pending, bodyR)
 	}
 	if a, err := w.approval.Get(t.Context(), w.alice.id, pending); err != nil || a.Status != approvals.StatusPending {
 		t.Errorf("alice's approval after bob's attempts: %+v %v", a, err)
@@ -141,7 +141,7 @@ func TestSecurityCrossUserThroughConnectors(t *testing.T) {
 	// "already used", which would confirm it exists).
 	_, _, gotF = w.rawCall(bobTok, "github.create_issue", map[string]any{"owner": "acme", "repo": "web", "title": "alice's", "approval_id": pending})
 	_, _, gotR = w.rawCall(bobTok, "github.create_issue", map[string]any{"owner": "acme", "repo": "web", "title": "alice's", "approval_id": randomID})
-	sameAnswer(t, "consumed approval", stripID(gotF), pending, stripID(gotR), randomID)
+	sameAnswer(t, "consumed approval", stripID(gotF), pending, stripID(gotR))
 
 	// --- ledger: alice's operation and result are not bob's ---------------
 	aliceOp := w.opFor(w.alice, "github.create_issue", store.LedgerSucceeded)
@@ -208,7 +208,7 @@ func TestSecurityCrossUserThroughConnectors(t *testing.T) {
 		if codeF != http.StatusNotFound || codeR != http.StatusNotFound {
 			t.Errorf("bob %s: foreign %d, random %d", tc.what, codeF, codeR)
 		}
-		sameAnswer(t, "portal "+tc.what, bodyF, tc.foreign, bodyR, randomID)
+		sameAnswer(t, "portal "+tc.what, bodyF, tc.foreign, bodyR)
 	}
 	// Nothing of alice's was touched.
 	if _, err := w.tokens.Authenticate(t.Context(), aliceToken.Raw); err != nil {
@@ -248,7 +248,9 @@ func (w *world) oauthFamily(u user) string {
 	w.t.Helper()
 	const redirect = "http://127.0.0.1:9/cb"
 	reg, _ := json.Marshal(map[string]any{"client_name": "sec-harness", "redirect_uris": []string{redirect}, "token_endpoint_auth_method": "none"})
-	res, err := http.Post(w.srv.URL+"/oauth/register", "application/json", bytes.NewReader(reg))
+	req, _ := http.NewRequestWithContext(w.t.Context(), http.MethodPost, w.srv.URL+"/oauth/register", bytes.NewReader(reg))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -285,10 +287,12 @@ func (w *world) oauthFamily(u user) string {
 		w.t.Fatalf("no code in %s", loc)
 	}
 	w.forbid(authCode, "authorization code")
-	res, err = http.PostForm(w.srv.URL+"/oauth/token", url.Values{
+	req, _ = http.NewRequestWithContext(w.t.Context(), http.MethodPost, w.srv.URL+"/oauth/token", strings.NewReader(url.Values{
 		"grant_type": {"authorization_code"}, "code": {authCode}, "redirect_uri": {redirect},
 		"client_id": {client.ClientID}, "code_verifier": {verifier}, "resource": {baseURL + "/mcp"},
-	})
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		w.t.Fatal(err)
 	}
