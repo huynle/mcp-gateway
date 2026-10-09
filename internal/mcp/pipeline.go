@@ -57,6 +57,10 @@ type CallContext struct {
 	AccountLabel  string
 	ApprovalID    string
 	OperationID   string
+	// AccountScopes are the scopes recorded for the resolved account
+	// (nil when the source recorded none); the scope stage checks them
+	// against the tool's RequiredScopes.
+	AccountScopes []string
 
 	// replayed marks a result the ledger stage served from a prior
 	// operation; the audit row's error class says so.

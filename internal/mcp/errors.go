@@ -8,7 +8,7 @@ import (
 // JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
 // and CodeInvalidParams reuse the standard "invalid params" code (the SDK
 // does the same for unknown tools); the others are in the server-defined
-// range (-32000..-32099), in the gateway's own block -32029..-32034.
+// range (-32000..-32099), in the gateway's own block -32029..-32035.
 //
 // The block avoids the codes the official Go SDK reserves for its own
 // signalling (-32001..-32005: ErrUnknown, CodeResourceNotFound,
@@ -35,6 +35,11 @@ const (
 	// not run it again yet (decision dovthftx; the ledger stage).
 	CodePendingVerification int64 = -32033
 	CodeUnauthenticated     int64 = -32034
+	// CodeScopeRequired: the resolved account has not granted a scope the
+	// tool needs; error.data carries app, account, missing_scopes and
+	// portal_url. Changing the arguments cannot fix it, granting more
+	// access to the account on the portal can (the scope stage).
+	CodeScopeRequired int64 = -32035
 	// CodeInternal is the JSON-RPC internal error, used when a gateway
 	// dependency (the account source) failed; the message never carries
 	// the cause.

@@ -12,7 +12,7 @@ import (
 // pages, error pages, the sign-in page and the static assets) carries
 // the anti-framing, nosniff and referrer headers and a CSP baseline
 // that still lets the embedded htmx run; the OAuth consent and
-// harnesses pages keep their own stricter set.
+// harnesses pages keep the baseline and add their own no-store.
 func TestSecurityPortalHeaders(t *testing.T) {
 	w := newWorld(t, options{})
 	check := func(t *testing.T, path string, status int, h http.Header) {
@@ -29,9 +29,6 @@ func TestSecurityPortalHeaders(t *testing.T) {
 		csp := h.Get("Content-Security-Policy")
 		if !strings.Contains(csp, "frame-ancestors 'none'") {
 			t.Errorf("%s (%d): CSP %q lacks frame-ancestors 'none'", path, status, csp)
-		}
-		if strings.Contains(path, "/oauth/") || strings.HasPrefix(path, "/harnesses") {
-			return // the authorization server's own header set
 		}
 		for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "base-uri 'self'"} {
 			if !strings.Contains(csp, want) {

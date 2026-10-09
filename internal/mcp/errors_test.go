@@ -36,6 +36,7 @@ var gatewayCodes = map[string]int64{
 	"approval_required":    mcp.CodeApprovalRequired,
 	"pending_verification": mcp.CodePendingVerification,
 	"rate_limited":         mcp.CodeRateLimited,
+	"scope_required":       mcp.CodeScopeRequired,
 }
 
 func TestGatewayErrorCodesDoNotCollideWithTheSDKsInternalCodes(t *testing.T) {

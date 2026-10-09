@@ -366,7 +366,7 @@ func newWorld(t *testing.T, opts options) *world {
 	w.limiter = mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: rateUser, AppPerMinute: rateApp})
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
 		Registry: w.reg, Visibility: visibility, RateLimiter: w.limiter, Accounts: w.conn, Policy: w.policy, Confirm: confirm,
-		Audit: w.rec, Metrics: metrics, Log: log,
+		Audit: w.rec, Metrics: metrics, Log: log, BaseURL: baseURL,
 	})
 	if err != nil {
 		t.Fatal(err)

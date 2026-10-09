@@ -76,7 +76,7 @@ func TestSecurityScopeRequiredEnforcedInPipeline(t *testing.T) {
 		t.Fatalf("bob list_channels with differently cased scopes: err=%v res=%+v", err, res)
 	}
 	// No recorded scopes: not blocked (the vendor decides).
-	w.exec(`UPDATE connections SET scopes = NULL WHERE id = $1`, w.bobSlack)
+	w.exec(`UPDATE connections SET scopes = '{}' WHERE id = $1`, w.bobSlack)
 	if res, err := w.call(bob, "slack.list_channels", map[string]any{}); err != nil || res.IsError {
 		t.Fatalf("bob list_channels without recorded scopes: err=%v res=%+v", err, res)
 	}

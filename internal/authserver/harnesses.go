@@ -228,11 +228,16 @@ func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 // pageHeaders hardens every page the authorization server renders: the
 // consent page must not be framed (clickjacking, RFC 9700 section 4.16),
 // nothing on it may be cached, and the URL (which carries the client's
-// state) must not leak through the Referer header.
+// state) must not leak through the Referer header. A Content-Security-
+// Policy already set by an outer layer (the portal's baseline, which
+// includes frame-ancestors 'none') is kept rather than narrowed to the
+// framing directive alone.
 func pageHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	if h.Get("Content-Security-Policy") == "" {
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	}
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "no-store")

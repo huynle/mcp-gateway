@@ -126,6 +126,35 @@ func runFor(t *testing.T, d time.Duration, runners ...*jobs.Runner) {
 	wg.Wait()
 }
 
+// runUntil runs the runners until cond holds (polled every millisecond)
+// or the deadline passes, then stops them. Condition-based waiting keeps
+// the test independent of the scheduler's load: a fixed budget made
+// TestJobErrorsAndPanicsDoNotStopTheRunner flake under a full -race
+// suite.
+func runUntil(t *testing.T, deadline time.Duration, cond func() bool, runners ...*jobs.Runner) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), deadline)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, r := range runners {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := r.Run(ctx); err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		}()
+	}
+	for !cond() && ctx.Err() == nil {
+		time.Sleep(time.Millisecond)
+	}
+	if ctx.Err() != nil {
+		t.Errorf("condition not met within %s", deadline)
+	}
+	cancel()
+	wg.Wait()
+}
+
 func TestRegisterValidatesJobs(t *testing.T) {
 	r := jobs.NewRunner(newMemLocker(), jobs.Options{Log: slog.New(slog.DiscardHandler)})
 	if err := r.Register(&countingJob{name: "a", interval: time.Second}); err != nil {
@@ -247,7 +276,7 @@ func TestJobErrorsAndPanicsDoNotStopTheRunner(t *testing.T) {
 	if err := r.Register(panicking); err != nil {
 		t.Fatal(err)
 	}
-	runFor(t, 120*time.Millisecond, r)
+	runUntil(t, 10*time.Second, func() bool { return failing.runs.Load() >= 3 && panicking.runs.Load() >= 3 }, r)
 	if failing.runs.Load() < 3 || panicking.runs.Load() < 3 {
 		t.Errorf("runs after errors: fail=%d panic=%d", failing.runs.Load(), panicking.runs.Load())
 	}

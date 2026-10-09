@@ -332,6 +332,30 @@ func TestPagesCarryHardeningHeaders(t *testing.T) {
 			t.Errorf("%s page headers = %v", name, h)
 		}
 	}
+	// Mounted behind the portal, whose middleware already set a stricter
+	// CSP baseline (script-src, object-src, frame-ancestors, ...), the
+	// pages keep that baseline instead of replacing it with the bare
+	// frame-ancestors directive.
+	const baseline = "default-src 'self'; script-src 'self'; frame-ancestors 'none'"
+	for name, serve := range map[string]func(http.ResponseWriter, *http.Request){
+		"consent":   f.svc.ServeAuthorize,
+		"harnesses": f.svc.ServeHarnesses,
+	} {
+		path := authserver.AuthorizePath + "?" + f.authorizeParams().Encode()
+		if name == "harnesses" {
+			path = authserver.HarnessesPath
+		}
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		rec.Header().Set("Content-Security-Policy", baseline)
+		serve(rec, req)
+		if got := rec.Header().Get("Content-Security-Policy"); got != baseline {
+			t.Errorf("%s page under the portal baseline: CSP = %q, want %q kept", name, got, baseline)
+		}
+		if rec.Header().Get("X-Frame-Options") != "DENY" || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s page under the portal baseline lost its other headers: %v", name, rec.Header())
+		}
+	}
 }
 
 func TestAuthorizeRedirectsProtocolErrors(t *testing.T) {

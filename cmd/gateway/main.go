@@ -336,7 +336,7 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 	}
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
 		Registry: registry, Visibility: visibility, RateLimiter: limiter, Accounts: accounts,
-		Policy: policySvc, Confirm: confirm, Audit: rec, Metrics: metrics, Log: log,
+		Policy: policySvc, Confirm: confirm, Audit: rec, Metrics: metrics, Log: log, BaseURL: cfg.BaseURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)

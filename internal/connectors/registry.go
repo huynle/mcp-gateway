@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -134,13 +135,66 @@ func (t Tool) FullName() string { return t.App + "." + t.Name }
 // is safe for concurrent use: connectors register at start-up and the /mcp
 // endpoint reads on every request.
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
+	mu       sync.RWMutex
+	tools    map[string]Tool
+	coverage map[string]ScopeCoverage
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Tool{}}
+	return &Registry{tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}}
+}
+
+// ScopeCoverage reports whether one of an account's granted scopes
+// covers a tool's required scope. Vendors differ: Microsoft Graph's
+// Mail.ReadWrite covers Mail.Read, Google's broader scopes imply
+// narrower ones, Slack and Atlassian compare names. The default
+// (ScopeEquals) is a case-insensitive comparison; connectors with
+// richer semantics register theirs with SetScopeCoverage.
+type ScopeCoverage func(granted []string, required string) bool
+
+// ScopeEquals is the default ScopeCoverage: required is covered when
+// one of the granted scopes equals it, ignoring case and surrounding
+// space.
+func ScopeEquals(granted []string, required string) bool {
+	required = strings.TrimSpace(required)
+	for _, g := range granted {
+		if strings.EqualFold(strings.TrimSpace(g), required) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetScopeCoverage installs the coverage function for app's tools; nil
+// restores ScopeEquals.
+func (r *Registry) SetScopeCoverage(app string, fn ScopeCoverage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if fn == nil {
+		delete(r.coverage, app)
+		return
+	}
+	r.coverage[app] = fn
+}
+
+// MissingScopes returns the tool's RequiredScopes that granted does not
+// cover under the app's coverage function, in declaration order; nil
+// when every required scope is covered or the tool requires none.
+func (r *Registry) MissingScopes(t Tool, granted []string) []string {
+	r.mu.RLock()
+	fn := r.coverage[t.App]
+	r.mu.RUnlock()
+	if fn == nil {
+		fn = ScopeEquals
+	}
+	var missing []string
+	for _, req := range t.RequiredScopes {
+		if !fn(granted, req) {
+			missing = append(missing, req)
+		}
+	}
+	return missing
 }
 
 // Register adds t. The full name must be unique (ErrDuplicateTool) and the

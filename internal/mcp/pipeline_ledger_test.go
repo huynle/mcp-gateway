@@ -158,7 +158,7 @@ func (f *ledgerFixture) callCount() int {
 
 func TestLedgerStageSitsBeforeRateLimitAndSkipsReads(t *testing.T) {
 	f := newLedgerFixture(t, nil)
-	if names := strings.Join(f.pipeline.Names(), ","); names != "authenticate,audit,resolve,strip,account,policy,ledger,ratelimit,dispatch" {
+	if names := strings.Join(f.pipeline.Names(), ","); names != "authenticate,audit,resolve,strip,account,scope,policy,ledger,ratelimit,dispatch" {
 		t.Errorf("stages = %s", names)
 	}
 	cc, _, err := f.run(t, t.Context(), "github.list_issues", map[string]any{"repo": "acme/web"})
