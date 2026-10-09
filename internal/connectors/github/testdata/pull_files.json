@@ -1,0 +1,22 @@
+[
+  {
+    "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "filename": "internal/auth/login.go",
+    "status": "modified",
+    "additions": 10,
+    "deletions": 3,
+    "changes": 13,
+    "blob_url": "https://github.example.test/example-org/widgets/blob/0123456/internal/auth/login.go",
+    "patch": "@@ -10,7 +10,14 @@ func Login(w http.ResponseWriter, r *http.Request) {\n-\tpw := r.FormValue(\"password\")\n+\tpw := r.FormValue(\"password\")\n+\tif pw == \"\" {\n+\t\thttp.Error(w, \"password required\", http.StatusBadRequest)\n+\t\treturn\n+\t}"
+  },
+  {
+    "sha": "b2c3d4e5f60718293a4b5c6d7e8f901234567890",
+    "filename": "internal/auth/login_test.go",
+    "status": "added",
+    "additions": 2,
+    "deletions": 0,
+    "changes": 2,
+    "blob_url": "https://github.example.test/example-org/widgets/blob/0123456/internal/auth/login_test.go",
+    "patch": "@@ -0,0 +1,2 @@\n+package auth\n+"
+  }
+]
