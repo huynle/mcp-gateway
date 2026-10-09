@@ -97,17 +97,17 @@ func query(t *testing.T, srv *apiServer, path string) url.Values {
 
 // --- tool metadata ----------------------------------------------------------
 
-func TestToolsAreTheFiveReads(t *testing.T) {
+func TestToolsStartWithTheFiveReads(t *testing.T) {
 	c, _ := newConnector(t, newAPIServer(t, nil), connectors.Bounds{})
 	if c.App() != "github" {
 		t.Errorf("App() = %q", c.App())
 	}
 	var names []string
 	for _, tool := range c.Tools() {
-		names = append(names, tool.Name)
 		if tool.Kind != connectors.KindRead {
-			t.Errorf("%s: Kind = %q, want read", tool.Name, tool.Kind)
+			continue
 		}
+		names = append(names, tool.Name)
 		if tool.Reconcile.Kind != "" || tool.ResultIDs != nil {
 			t.Errorf("%s: a read must not declare reconciliation or ResultIDs", tool.Name)
 		}
@@ -117,7 +117,10 @@ func TestToolsAreTheFiveReads(t *testing.T) {
 	}
 	want := []string{"get_me", "search_issues", "get_issue", "get_pull_request", "list_pull_request_files"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Errorf("tools = %v, want %v", names, want)
+		t.Errorf("read tools = %v, want %v", names, want)
+	}
+	if got := len(c.Tools()); got != len(want)+4 {
+		t.Errorf("Tools() = %d tools, want the %d reads and 4 writes", got, len(want))
 	}
 }
 

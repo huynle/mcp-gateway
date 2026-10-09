@@ -24,13 +24,13 @@ func TestRegisterConnectorsRegistersGitHubWithConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"get_me", "search_issues", "get_issue", "get_pull_request", "list_pull_request_files", "list_accounts"} {
+	for _, name := range []string{"get_me", "search_issues", "get_issue", "get_pull_request", "list_pull_request_files", "create_issue", "add_issue_comment", "create_pull_request", "create_branch", "list_accounts"} {
 		if _, ok := registry.Get("github." + name); !ok {
 			t.Errorf("github.%s missing from the registry", name)
 		}
 	}
-	if n := len(registry.List()); n != 6 {
-		t.Errorf("registry has %d tools, want the 6 github tools (fake flag off)", n)
+	if n := len(registry.List()); n != 10 {
+		t.Errorf("registry has %d tools, want the 10 github tools (fake flag off)", n)
 	}
 	accts, err := src.ListAccounts(ctx, userAlice, github.App)
 	if err != nil || len(accts) != 0 {
