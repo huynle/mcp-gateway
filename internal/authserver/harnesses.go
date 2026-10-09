@@ -60,10 +60,13 @@ type harnessesData struct {
 	MCPURL    string
 }
 
-// errorData is the error page.
+// errorData is the error page. CSRFToken is always empty: the layout
+// shows the sign-out form only when it is set, and an error page carries
+// no form.
 type errorData struct {
-	Title   string
-	Message string
+	Title     string
+	Message   string
+	CSRFToken string
 }
 
 // ServeHarnesses is GET /harnesses.

@@ -199,6 +199,66 @@ func TestAuthorizeRefusesBadClientWithoutRedirecting(t *testing.T) {
 	}
 }
 
+// Regression (attack suite cjedpxp6): the error page is the HTML template,
+// not the text/plain fallback (the layout references CSRFToken).
+func TestAuthorizeErrorPageIsHTML(t *testing.T) {
+	f := newFlow(t)
+	q := f.authorizeParams()
+	q.Set("redirect_uri", "https://evil.test/cb")
+	rec := f.authorize(q)
+	if ct := rec.Header().Get("Content-Type"); rec.Code != http.StatusBadRequest || !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("status %d Content-Type %q; want 400 text/html", rec.Code, ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<!doctype html>") || !strings.Contains(rec.Body.String(), "not one the client registered") {
+		t.Errorf("error page body: %s", rec.Body.String())
+	}
+}
+
+// Regression (attack suite cjedpxp6, OAuth 2.1 section 8.4.2): an http
+// loopback redirect URI matches the registration on any port, nothing
+// else may differ, and the code is bound to the port actually used.
+func TestAuthorizeLoopbackRedirectPortMayDiffer(t *testing.T) {
+	f := newFlow(t) // registered: http://localhost:45678/callback
+	used := "http://localhost:51234/callback"
+	q := f.authorizeParams()
+	q.Set("redirect_uri", used)
+	if rec := f.authorize(q); rec.Code != http.StatusOK {
+		t.Fatalf("authorize with another loopback port: %d %s", rec.Code, rec.Body.String())
+	}
+	loc := redirect(t, f.consent(q, "approve", csrf))
+	if loc.Host != "localhost:51234" || loc.Query().Get("code") == "" {
+		t.Fatalf("approve redirected to %s", loc)
+	}
+	code := loc.Query().Get("code")
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
+		"client_id": {f.clientID}, "code_verifier": {verifier},
+	}
+	if status, out := f.token(form); status != http.StatusBadRequest || out["error"] != "invalid_grant" {
+		t.Errorf("exchange with the registered port instead of the used one: %d %v", status, out)
+	}
+	for name, uri := range map[string]string{
+		"other path":     "http://localhost:51234/other",
+		"https":          "https://localhost:51234/callback",
+		"query":          "http://localhost:51234/callback?x=1",
+		"other loopback": "http://127.0.0.1:51234/callback",
+		"lookalike host": "http://localhost.evil.test:51234/callback",
+		"userinfo":       "http://localhost@evil.test:51234/callback",
+	} {
+		q := f.authorizeParams()
+		q.Set("redirect_uri", uri)
+		if rec := f.authorize(q); rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Errorf("%s (%s): %d %q; want 400 and no redirect", name, uri, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	// https registrations get no port tolerance.
+	q = f.authorizeParams()
+	q.Set("redirect_uri", "https://app.example.com:444/cb")
+	if rec := f.authorize(q); rec.Code != http.StatusBadRequest {
+		t.Errorf("https with another port: %d", rec.Code)
+	}
+}
+
 func TestAuthorizeRedirectsProtocolErrors(t *testing.T) {
 	f := newFlow(t)
 	cases := map[string]struct {

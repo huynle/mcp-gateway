@@ -183,7 +183,7 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 		return nil, err
 	}
 	redirectURI := q.Get("redirect_uri")
-	if redirectURI == "" || !slices.Contains(client.RedirectURIs, redirectURI) {
+	if redirectURI == "" || !redirectURIRegistered(client.RedirectURIs, redirectURI) {
 		return nil, &clientError{"The redirect URI is missing or is not one the client registered."}
 	}
 	req := &authorizeRequest{client: client, redirectURI: redirectURI, state: q.Get("state")}
@@ -281,6 +281,33 @@ func (s *Service) identity(r *http.Request) (string, string) {
 		return "", ""
 	}
 	return s.who(r)
+}
+
+// redirectURIRegistered reports whether requested is one of the client's
+// registered redirect URIs: an exact string match (OAuth 2.1 section
+// 4.1.3, MCP spec "Open Redirection"), or, for an http URI on the
+// loopback interface, a match in everything but the port (OAuth 2.1
+// section 8.4.2, RFC 8252 section 7.3: native harnesses bind an
+// ephemeral port per run). The code is then bound to the URI actually
+// used, so the token request must repeat it.
+func redirectURIRegistered(registered []string, requested string) bool {
+	if slices.Contains(registered, requested) {
+		return true
+	}
+	u, err := url.Parse(requested)
+	if err != nil || u.Scheme != "http" || !isLoopbackHost(u.Hostname()) || u.User != nil || u.Opaque != "" || u.Fragment != "" || strings.Contains(requested, "#") {
+		return false
+	}
+	for _, raw := range registered {
+		r, err := url.Parse(raw)
+		if err != nil || r.Scheme != "http" || !isLoopbackHost(r.Hostname()) {
+			continue
+		}
+		if r.Hostname() == u.Hostname() && r.EscapedPath() == u.EscapedPath() && r.RawQuery == u.RawQuery && r.User == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // sameResource compares a requested resource indicator with the canonical
