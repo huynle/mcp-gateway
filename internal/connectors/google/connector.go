@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/tasks/v1"
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -76,7 +77,7 @@ type Connector struct {
 	timeout   time.Duration
 
 	calendar, tasks, gmail *App
-	drive, docs            *App
+	drive, docs, sheets    *App
 }
 
 // New builds the Google connector.
@@ -119,20 +120,26 @@ func New(opts Options) (*Connector, error) {
 	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
+	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs. Each is registered with
+// calendar, tasks, gmail, drive, docs, sheets. Each is registered with
 // connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
-func (c *Connector) Apps() []*App { return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs} }
+func (c *Connector) Apps() []*App {
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets}
+}
 
 // Drive returns the "drive" app.
 func (c *Connector) Drive() *App { return c.drive }
 
 // Docs returns the "docs" app.
 func (c *Connector) Docs() *App { return c.docs }
+
+// Sheets returns the "sheets" app.
+func (c *Connector) Sheets() *App { return c.sheets }
 
 // Calendar returns the "calendar" app.
 func (c *Connector) Calendar() *App { return c.calendar }
@@ -345,6 +352,18 @@ func (cl *client) docs(ctx context.Context) (*docs.Service, error) {
 	svc, err := docs.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "docs client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// sheets builds the Sheets API service.
+func (cl *client) sheets(ctx context.Context) (*sheets.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := sheets.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "sheets client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

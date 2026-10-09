@@ -35,6 +35,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppGmail:    {"search", "get_message", "list_labels", "send", "create_draft"},
 		google.AppDrive:    {"search", "get_file_metadata", "create_folder"},
 		google.AppDocs:     {"get_text", "create", "append_text"},
+		google.AppSheets:   {"read_range", "append_rows"},
 	}
 	for app, names := range want {
 		var got []string

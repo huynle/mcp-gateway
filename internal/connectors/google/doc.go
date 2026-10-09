@@ -66,7 +66,7 @@ const (
 )
 
 // Apps lists the apps in registration order.
-var Apps = []string{AppCalendar, AppTasks, AppGmail, AppDrive, AppDocs}
+var Apps = []string{AppCalendar, AppTasks, AppGmail, AppDrive, AppDocs, AppSheets}
 
 // userAgent identifies the gateway to Google.
 const userAgent = "mcp-gateway"
