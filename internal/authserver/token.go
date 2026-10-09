@@ -140,6 +140,10 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 		return nil, nil, badRequest("invalid_request", "the form could not be read")
 	}
 	form := r.PostForm
+	// OAuth 2.1 section 3.2.2: no parameter may appear more than once.
+	if duplicated(form, "grant_type", "client_id", "client_secret", "code", "redirect_uri", "code_verifier", "refresh_token", "resource", "scope", "token") {
+		return nil, nil, badRequest("invalid_request", "a parameter is repeated")
+	}
 	clientID, secret := form.Get("client_id"), form.Get("client_secret")
 	viaBasic := false
 	if user, pass, ok := r.BasicAuth(); ok {

@@ -166,6 +166,13 @@ func (s *Service) issueCode(ctx context.Context, userID string, req *authorizeRe
 // parseAuthorize validates the request parameters (query or posted form)
 // in the order the standard requires.
 func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeRequest, error) {
+	// OAuth 2.1 section 4.1.1: a parameter must not appear more than
+	// once. A duplicated client_id or redirect_uri makes the destination
+	// ambiguous (parameter pollution), so it is an error page; the rest
+	// are reported to the client once it is known.
+	if duplicated(q, "client_id", "redirect_uri") {
+		return nil, &clientError{"The request repeats client_id or redirect_uri."}
+	}
 	clientID := q.Get("client_id")
 	if clientID == "" {
 		return nil, &clientError{"The request does not name a client."}
@@ -188,6 +195,9 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 	}
 	req := &authorizeRequest{client: client, redirectURI: redirectURI, state: q.Get("state")}
 	meta := clientMeta(client)
+	if duplicated(q, "response_type", "state", "code_challenge", "code_challenge_method", "scope") {
+		return req, &protocolError{"invalid_request", "a parameter is repeated"}
+	}
 	switch rt := q.Get("response_type"); {
 	case rt == "":
 		return req, &protocolError{"invalid_request", "response_type is required"}
@@ -221,6 +231,9 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 	switch {
 	case resource == "":
 		return req, &protocolError{"invalid_target", "resource is required and must be " + s.cfg.Resource()}
+	case len(q["resource"]) > 1:
+		// RFC 8707 allows several targets; this server has exactly one.
+		return req, &protocolError{"invalid_target", "resource must be exactly one value: " + s.cfg.Resource()}
 	case !sameResource(resource, s.cfg.Resource()):
 		return req, &protocolError{"invalid_target", "resource must be " + s.cfg.Resource()}
 	}
@@ -281,6 +294,17 @@ func (s *Service) identity(r *http.Request) (string, string) {
 		return "", ""
 	}
 	return s.who(r)
+}
+
+// duplicated reports whether any of the named parameters appears more
+// than once in q.
+func duplicated(q url.Values, names ...string) bool {
+	for _, n := range names {
+		if len(q[n]) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // redirectURIRegistered reports whether requested is one of the client's

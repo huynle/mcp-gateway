@@ -376,6 +376,72 @@ func (g *gateway) newDecoy(t *testing.T, shareKeys bool) *decoy {
 	return d
 }
 
+// register registers a public client at the decoy.
+func (d *decoy) register(t *testing.T, redirectURIs ...string) client {
+	t.Helper()
+	b, _ := json.Marshal(map[string]any{"client_name": "Decoy harness", "redirect_uris": redirectURIs, "token_endpoint_auth_method": "none"})
+	r := postJSON(t, noRedirect, d.base+"/oauth/register", string(b))
+	if r.status != http.StatusCreated {
+		t.Fatalf("decoy register: %d %s", r.status, r.body)
+	}
+	return client{id: r.json()["client_id"].(string), redirect: redirectURIs[0]}
+}
+
+// code drives the decoy's consent handler directly (it has no portal) as
+// alice and returns a code bound to the decoy's resource.
+func (d *decoy) code(t *testing.T, g *gateway, c client, p pkce) string {
+	t.Helper()
+	d.svc.SetIdentity(func(*http.Request) (string, string) { return g.alice, "decoy-csrf" })
+	form := url.Values{
+		"client_id": {c.id}, "redirect_uri": {c.redirect}, "response_type": {"code"},
+		"code_challenge": {p.challenge}, "code_challenge_method": {"S256"}, "state": {"d"},
+		"scope": {"mcp"}, "resource": {d.resource}, "action": {"approve"}, "_csrf": {"decoy-csrf"},
+	}
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, authserver.ConsentPath, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	d.svc.ServeConsent(rec, req)
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	if rec.Code != http.StatusSeeOther || loc == nil || loc.Query().Get("code") == "" {
+		t.Fatalf("decoy consent: %d %s %s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	return loc.Query().Get("code")
+}
+
+// mint signs an access token at the decoy for alice and the decoy's
+// resource with the decoy's keys.
+func (d *decoy) mint(t *testing.T, g *gateway, c client) string {
+	t.Helper()
+	grant := g.grant()
+	grant.ClientID, grant.Resource = c.id, d.resource
+	return mintOver(t, d.svc.Config(), d.svc, grant)
+}
+
+// mintOver signs grant with cfg over svc's keys at the gateway clock.
+func mintOver(t *testing.T, cfg authserver.Config, svc *authserver.Service, grant authserver.Grant) string {
+	t.Helper()
+	m := authserver.NewMinter(cfg, svc.Keys())
+	raw, _, err := m.Mint(context.Background(), grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// decodeSegment decodes one base64url JWT segment into JSON.
+func decodeSegment(t *testing.T, seg string) map[string]any {
+	t.Helper()
+	b, err := base64.RawURLEncoding.DecodeString(seg)
+	if err != nil {
+		t.Fatalf("segment %q: %v", seg, err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("segment %q: %v", seg, err)
+	}
+	return out
+}
+
 // mintWith signs an access token with the given minter config over the
 // gateway's own keys at the given time (what the AS's own bug, or another
 // resource of the same AS, could produce).

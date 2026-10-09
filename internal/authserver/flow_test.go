@@ -259,6 +259,42 @@ func TestAuthorizeLoopbackRedirectPortMayDiffer(t *testing.T) {
 	}
 }
 
+// Regression (attack suite cjedpxp6, OAuth 2.1 sections 4.1.1 and
+// 3.2.2): a repeated parameter is refused rather than silently resolved
+// to its first value (parameter pollution). client_id / redirect_uri
+// repeats are an error page, the others redirect with invalid_request,
+// resource with invalid_target; the token endpoint answers invalid_request.
+func TestRepeatedParametersAreRefused(t *testing.T) {
+	f := newFlow(t)
+	for _, name := range []string{"client_id", "redirect_uri"} {
+		q := f.authorizeParams()
+		q[name] = append(q[name], q.Get(name))
+		if rec := f.authorize(q); rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Errorf("repeated %s: %d %q; want 400 and no redirect", name, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	for name, want := range map[string]string{"state": "invalid_request", "code_challenge": "invalid_request", "scope": "invalid_request", "resource": "invalid_target"} {
+		q := f.authorizeParams()
+		q[name] = append(q[name], q.Get(name))
+		loc := redirect(t, f.authorize(q))
+		if got := loc.Query().Get("error"); got != want || loc.Query().Get("code") != "" {
+			t.Errorf("repeated %s: error %q (%s), want %s", name, got, loc.Query().Get("error_description"), want)
+		}
+	}
+	code := f.code()
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code, code}, "redirect_uri": {redirectURI},
+		"client_id": {f.clientID}, "code_verifier": {verifier},
+	}
+	if status, out := f.token(form); status != http.StatusBadRequest || out["error"] != "invalid_request" {
+		t.Errorf("repeated code at the token endpoint: %d %v", status, out)
+	}
+	// Refused before the code was consumed: it still exchanges.
+	if status, out := f.exchange(code); status != http.StatusOK {
+		t.Errorf("exchange after a refused duplicate: %d %v", status, out)
+	}
+}
+
 func TestAuthorizeRedirectsProtocolErrors(t *testing.T) {
 	f := newFlow(t)
 	cases := map[string]struct {
