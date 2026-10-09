@@ -20,14 +20,21 @@ import (
 // Bound is what a Binder learned about the account a token belongs to:
 // the vendor's permanent account ID (Google sub, Entra object ID +
 // tenant, Atlassian account ID, GitHub user ID, Slack user + team), a name
-// the user recognises, whether it is a company or a personal account, and
-// the scopes the vendor says were granted (nil means "what was
-// requested").
+// the user recognises, whether it is a company or a personal account, the
+// scopes the vendor says were granted (nil means "what was requested"),
+// and optionally the token the connection should store.
 type Bound struct {
 	ExternalAccountID string
 	DisplayName       string
 	Label             connectors.AccountLabel
 	Scopes            []string
+	// Token replaces the exchanged token as the connection's stored token
+	// bundle (access token, refresh token, ExpiresIn or Expiry, type) when
+	// the vendor's answer carries the user's token somewhere else than
+	// the top level (Slack: authed_user.access_token next to the bot
+	// token). Nil keeps the exchanged token. Its "scope" extra, if any,
+	// is consulted only when Scopes is nil.
+	Token *oauth2.Token
 }
 
 // BindInput is what a Binder gets after the code exchange.
