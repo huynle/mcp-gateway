@@ -5,7 +5,7 @@ What a real MCP harness must see from the gateway, scenario by scenario, against
 - **automated: pass** — proven by `make test-e2e` (`test/e2e`, the safety-core gate: the whole gateway in-process over PostgreSQL, driven by the official Go SDK client; Brain task `sougju69`, decision `bt8ukyrd`). CI runs it on every push (`.github/workflows/ci.yml`, job *end-to-end gate*).
 - **not yet run** — needs a person at the keyboard with OpenCode or Claude Code. The exact commands and the expected result are given; tick the row and note the harness version when you run it.
 
-The JSON-RPC codes a harness sees (decision `xi9gyo82`; the gateway's own block, clear of the go-sdk's reserved `-32001..-32005`): `-32602` unknown/hidden tool or bad injected argument, `-32029` rate limited, `-32030` denied by policy (also approval mismatch / used / denied / expired), `-32031` no connected account, `-32032` approval required, `-32033` pending verification, `-32034` unauthenticated.
+The JSON-RPC codes a harness sees (decision `xi9gyo82`; the gateway's own block, clear of the go-sdk's reserved `-32001..-32005`): `-32602` unknown/hidden tool or bad injected argument, `-32029` rate limited, `-32030` denied by policy (also approval mismatch / used / denied / expired), `-32031` no connected account, `-32032` approval required, `-32033` pending verification, `-32034` unauthenticated, `-32035` scope required (the resolved account has not granted a scope the tool needs; `error.data.missing_scopes`, `portal_url`).
 
 ## Setup (both harnesses)
 
