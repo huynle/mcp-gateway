@@ -537,7 +537,7 @@ func TestIntegrationApproveDuringWaitCompletesInOneRoundTrip(t *testing.T) {
 	}
 }
 
-// approvalRequired asserts err is the -32005 answer and returns the id
+// approvalRequired asserts err is the -32032 answer and returns the id
 // and the data object.
 func approvalRequired(t *testing.T, err error) (string, map[string]any) {
 	t.Helper()

@@ -721,7 +721,7 @@ func TestIntegrationStaleSweepOnBackdatedInProgress(t *testing.T) {
 	}
 }
 
-// approvalRequired asserts err is the -32005 answer and returns the id.
+// approvalRequired asserts err is the -32032 answer and returns the id.
 func approvalRequired(t *testing.T, err error) string {
 	t.Helper()
 	var je *jsonrpc.Error
