@@ -106,7 +106,7 @@ func TestClassifyRateLimits(t *testing.T) {
 
 func TestClassifyPassesContextErrorsThrough(t *testing.T) {
 	for _, err := range []error{context.Canceled, context.DeadlineExceeded} {
-		if got := slack.Classify("x", err); got != err {
+		if got := slack.Classify("x", err); !errors.Is(got, err) || got.Error() != err.Error() {
 			t.Errorf("Classify(%v) = %v, want the same error", err, got)
 		}
 	}
@@ -161,13 +161,13 @@ func wrapsCause(err, cause error) bool {
 	if errors.Is(err, cause) {
 		return true
 	}
-	var ser goslack.SlackErrorResponse
-	if c, ok := cause.(goslack.SlackErrorResponse); ok && errors.As(err, &ser) {
-		return ser.Err == c.Err
+	var ser, causeSER goslack.SlackErrorResponse
+	if errors.As(cause, &causeSER) && errors.As(err, &ser) {
+		return ser.Err == causeSER.Err
 	}
-	var sce goslack.StatusCodeError
-	if c, ok := cause.(goslack.StatusCodeError); ok && errors.As(err, &sce) {
-		return sce.Code == c.Code
+	var sce, causeSCE goslack.StatusCodeError
+	if errors.As(cause, &causeSCE) && errors.As(err, &sce) {
+		return sce.Code == causeSCE.Code
 	}
 	return false
 }

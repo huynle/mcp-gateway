@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "channels": [
+    {
+      "id": "C0ENGGEN01",
+      "name": "eng-general",
+      "is_channel": true,
+      "is_group": false,
+      "is_im": false,
+      "is_mpim": false,
+      "is_private": false,
+      "created": 1700000000,
+      "is_archived": false,
+      "is_general": false,
+      "name_normalized": "eng-general",
+      "is_member": true,
+      "topic": {"value": "Engineering chatter", "creator": "U0ALICE001", "last_set": 1700000100},
+      "purpose": {"value": "Everything engineering", "creator": "U0ALICE001", "last_set": 1700000100},
+      "num_members": 42
+    },
+    {
+      "id": "G0SECRET01",
+      "name": "eng-leads",
+      "is_channel": false,
+      "is_group": true,
+      "is_im": false,
+      "is_mpim": false,
+      "is_private": true,
+      "created": 1700000200,
+      "is_archived": false,
+      "is_general": false,
+      "name_normalized": "eng-leads",
+      "is_member": true,
+      "topic": {"value": "", "creator": "", "last_set": 0},
+      "purpose": {"value": "Leads only", "creator": "U0ALICE001", "last_set": 1700000200},
+      "num_members": 5
+    }
+  ],
+  "response_metadata": {"next_cursor": "dXNlcjpVMEc5V0ZYTlo="}
+}

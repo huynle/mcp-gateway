@@ -217,18 +217,6 @@ func ClassifyWrite(action string, err error) error {
 	return classified
 }
 
-// classifyWrite is ClassifyWrite for the package's own use.
-func classifyWrite(action string, err error) error { return ClassifyWrite(action, err) }
-
-// statusOf returns the HTTP status behind a classified error, 0 when none.
-func statusOf(err error) int {
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Status
-	}
-	return 0
-}
-
 // classOf returns the Class behind a classified error, "" when none.
 func classOf(err error) string {
 	var e *Error
