@@ -1,0 +1,104 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $eg := $np.egress }}
+# Default deny in both directions for the gateway pods, then: ingress to the
+# http port (ingress controller) and the metrics port (scrapers); egress to
+# DNS, PostgreSQL, the key provider (Vault) and the vendor APIs over HTTPS.
+# Core NetworkPolicy cannot match hostnames: the vendor host list is recorded
+# in the annotation and, without explicit CIDRs, egress on the vendor port
+# is allowed to every public address (private ranges excluded).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mcp-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+  annotations:
+    mcp-gateway/vendor-api-hosts: {{ join "," $eg.vendorAPIs.hosts | quote }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mcp-gateway.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: {{ int .Values.gateway.httpPort }}
+          protocol: TCP
+      {{- with $np.ingress.http.from }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - port: {{ int .Values.gateway.metricsPort }}
+          protocol: TCP
+      {{- with $np.ingress.metrics.from }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    {{- if $eg.dns.enabled }}
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+      {{- with $eg.dns.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    - ports:
+        - port: {{ int $eg.postgres.port }}
+          protocol: TCP
+      {{- include "mcp-gateway.egressTo" $eg.postgres | trim | nindent 6 }}
+    {{- if eq .Values.keyProvider.type "vault" }}
+    - ports:
+        - port: {{ int $eg.keyProvider.port }}
+          protocol: TCP
+      {{- include "mcp-gateway.egressTo" $eg.keyProvider | trim | nindent 6 }}
+    {{- end }}
+    - ports:
+        - port: {{ int $eg.vendorAPIs.port }}
+          protocol: TCP
+      to:
+        {{- if $eg.vendorAPIs.cidrs }}
+        {{- range $eg.vendorAPIs.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+        {{- else }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            {{- with $eg.vendorAPIs.except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
+    {{- with $eg.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+
+{{/*
+Peers for one egress rule: CIDRs and/or a namespace+pod selector. Nothing
+given means any peer on that port.
+*/}}
+{{- define "mcp-gateway.egressTo" -}}
+{{- $peers := list }}
+{{- range .cidrs }}
+{{- $peers = append $peers (dict "ipBlock" (dict "cidr" .)) }}
+{{- end }}
+{{- if or .namespaceSelector .podSelector }}
+{{- $sel := dict }}
+{{- with .namespaceSelector }}{{ $_ := set $sel "namespaceSelector" . }}{{ end }}
+{{- with .podSelector }}{{ $_ := set $sel "podSelector" . }}{{ end }}
+{{- $peers = append $peers $sel }}
+{{- end }}
+{{- if $peers }}
+to:
+{{ toYaml $peers | indent 2 }}
+{{- end }}
+{{- end }}

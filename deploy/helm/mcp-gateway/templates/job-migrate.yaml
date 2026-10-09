@@ -1,0 +1,73 @@
+{{- if .Values.migrate.enabled }}
+# Pre-install / pre-upgrade hook: applies the embedded goose migrations as
+# the database owner before Helm touches the Deployment. The weight orders it
+# before any other hook; the delete policy (before-hook-creation) keeps the
+# last Job around for `kubectl logs` and replaces it on the next run. The
+# gateway refuses to start on a schema mismatch, so a failed migration
+# leaves the previous pods serving. The pod labels deliberately differ from
+# the Deployment's selector so the Service, PDB and NetworkPolicy never
+# match the migrate pod.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mcp-gateway.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    helm.sh/chart: {{ include "mcp-gateway.chart" . }}
+    app.kubernetes.io/name: {{ include "mcp-gateway.name" . }}-migrate
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ include "mcp-gateway.imageTag" . | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: {{ .Values.migrate.hookWeight | quote }}
+    helm.sh/hook-delete-policy: {{ .Values.migrate.hookDeletePolicy }}
+spec:
+  backoffLimit: {{ int .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ int .Values.migrate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mcp-gateway.name" . }}-migrate
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: migrate
+      {{- with .Values.migrate.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # No serviceAccountName: the chart's ServiceAccount does not exist yet
+      # during pre-install, and the Job never talks to the API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "mcp-gateway.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/migrate", "up"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: GATEWAY_MIGRATE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret | quote }}
+                  key: {{ .Values.database.migrateURLKey | quote }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+{{- end }}

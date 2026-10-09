@@ -1,0 +1,174 @@
+{{- include "mcp-gateway.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mcp-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+spec:
+  replicas: {{ int .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "mcp-gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mcp-gateway.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mcp-gateway.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      # Must exceed GATEWAY_DRAIN_TIMEOUT so in-flight calls finish before
+      # the kubelet kills the process (decision dovthftx).
+      terminationGracePeriodSeconds: {{ include "mcp-gateway.terminationGracePeriodSeconds" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if eq .Values.keyProvider.type "file" }}
+      initContainers:
+        # Secret volumes cannot yield a file that is 0600 and owned by the
+        # gateway user; the file provider refuses group/world-readable keys.
+        # Copy it into a private emptyDir with the right mode.
+        - name: key-file
+          image: "{{ .Values.keyProvider.file.initImage.repository }}:{{ .Values.keyProvider.file.initImage.tag }}"
+          imagePullPolicy: {{ .Values.keyProvider.file.initImage.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              umask 077
+              cp /keys-secret/{{ .Values.keyProvider.file.secretKey }} {{ include "mcp-gateway.keyFilePath" . }}
+              chmod 0600 {{ include "mcp-gateway.keyFilePath" . }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.podSecurityContext.runAsUser }}
+            runAsGroup: {{ .Values.podSecurityContext.runAsGroup }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: key-secret
+              mountPath: /keys-secret
+              readOnly: true
+            - name: keys
+              mountPath: {{ .Values.keyProvider.file.mountPath }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ include "mcp-gateway.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ int .Values.gateway.httpPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ int .Values.gateway.metricsPort }}
+              protocol: TCP
+          env:
+            {{- include "mcp-gateway.env" . | nindent 12 }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if or (eq .Values.keyProvider.type "file") .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- if eq .Values.keyProvider.type "file" }}
+            - name: keys
+              mountPath: {{ .Values.keyProvider.file.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+      {{- if or (eq .Values.keyProvider.type "file") .Values.extraVolumes }}
+      volumes:
+        {{- if eq .Values.keyProvider.type "file" }}
+        - name: key-secret
+          secret:
+            secretName: {{ required "keyProvider.file.existingSecret is required" .Values.keyProvider.file.existingSecret | quote }}
+            defaultMode: 0400
+        - name: keys
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- $affinity := deepCopy .Values.affinity }}
+      {{- if .Values.antiAffinity.enabled }}
+      {{- $term := dict "labelSelector" (dict "matchLabels" (include "mcp-gateway.selectorLabels" . | fromYaml)) "topologyKey" .Values.antiAffinity.topologyKey }}
+      {{- if eq .Values.antiAffinity.type "hard" }}
+      {{- $_ := set $affinity "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (list $term)) }}
+      {{- else }}
+      {{- $_ := set $affinity "podAntiAffinity" (dict "preferredDuringSchedulingIgnoredDuringExecution" (list (dict "weight" 100 "podAffinityTerm" $term))) }}
+      {{- end }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
