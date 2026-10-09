@@ -1,0 +1,15 @@
+{
+  "id": "12345",
+  "status": "current",
+  "title": "Mock Confluence page",
+  "spaceId": "98765",
+  "parentId": "12000",
+  "parentType": "page",
+  "position": 100,
+  "authorId": "5b10ac8d82e05b22cc7d4ef5",
+  "ownerId": "5b10ac8d82e05b22cc7d4ef5",
+  "createdAt": "2026-09-30T12:00:00.000Z",
+  "version": {"number": 3, "message": "", "minorEdit": false, "authorId": "5b10ac8d82e05b22cc7d4ef5", "createdAt": "2026-10-03T09:15:00.000Z"},
+  "body": {"storage": {"representation": "storage", "value": "<p>Mock Confluence page body</p><ul><li>one</li><li>two</li></ul>"}},
+  "_links": {"webui": "/spaces/DOCS/pages/12345/Mock+Confluence+page", "editui": "/pages/resumedraft.action?draftId=12345", "tinyui": "/x/AQAB"}
+}

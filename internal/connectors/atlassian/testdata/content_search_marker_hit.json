@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "id": "12400",
+      "type": "page",
+      "status": "current",
+      "title": "Release checklist",
+      "space": {"id": 98765, "key": "DOCS"},
+      "body": {"storage": {"value": "<p>Check everything.</p><p>mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11</p>", "representation": "storage"}},
+      "_links": {"webui": "/spaces/DOCS/pages/12400/Release+checklist"}
+    }
+  ],
+  "start": 0, "limit": 10, "size": 1, "_links": {}
+}

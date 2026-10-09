@@ -1,0 +1,9 @@
+{
+  "startAt": 0,
+  "maxResults": 2,
+  "total": 4,
+  "comments": [
+    {"id": "20004", "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "newest comment"}]}]}, "created": "2026-10-06T12:00:00.000+0000"},
+    {"id": "20003", "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "mcp-gateway op:another-operation"}]}]}, "created": "2026-10-06T11:00:00.000+0000"}
+  ]
+}

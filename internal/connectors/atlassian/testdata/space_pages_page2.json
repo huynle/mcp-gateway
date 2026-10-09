@@ -1,0 +1,6 @@
+{
+  "results": [
+    {"id": "12400", "status": "current", "title": "Release checklist", "spaceId": "98765", "body": {"storage": {"value": "<p>Check everything.</p><p>mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11</p>"}}, "_links": {"webui": "/spaces/DOCS/pages/12400/Release+checklist"}}
+  ],
+  "_links": {}
+}

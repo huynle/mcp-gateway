@@ -1,0 +1,6 @@
+{
+  "results": [
+    {"id": "12300", "status": "current", "title": "Old", "spaceId": "98765", "body": {"storage": {"value": "<p>old page</p>"}}, "_links": {"webui": "/spaces/DOCS/pages/12300/Old"}}
+  ],
+  "_links": {}
+}

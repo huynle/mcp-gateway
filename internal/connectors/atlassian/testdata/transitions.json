@@ -1,0 +1,8 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {"id": "11", "name": "To Do", "to": {"id": "10000", "name": "To Do", "statusCategory": {"key": "new"}}, "hasScreen": false, "isGlobal": true, "isInitial": false, "isAvailable": true},
+    {"id": "21", "name": "In Progress", "to": {"id": "3", "name": "In Progress", "statusCategory": {"key": "indeterminate"}}, "hasScreen": false, "isGlobal": true},
+    {"id": "31", "name": "Done", "to": {"id": "10001", "name": "Done", "statusCategory": {"key": "done"}}, "hasScreen": true, "isGlobal": true}
+  ]
+}
