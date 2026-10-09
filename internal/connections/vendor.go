@@ -109,16 +109,32 @@ const (
 	// ExtraCompanyOrgs lists the organizations (comma separated) whose
 	// members get company accounts; read by the GitHub binder.
 	ExtraCompanyOrgs = "company_orgs"
+	// ExtraCompanySites lists the Atlassian sites (comma separated) whose
+	// accounts are company accounts; read by the Atlassian binder.
+	ExtraCompanySites = "company_sites"
+	// ExtraCompanyTenants lists the Entra tenant ids (comma separated)
+	// whose accounts are company accounts; read by the Microsoft binder.
+	ExtraCompanyTenants = "company_tenants"
+	// ExtraCompanyTeamID and ExtraCompanyTeamDomain name the company
+	// Slack workspace (team id, or the "acme" of acme.slack.com); read by
+	// the Slack binder.
+	ExtraCompanyTeamID     = "company_team_id"
+	ExtraCompanyTeamDomain = "company_team_domain"
+	// ExtraMarkerReconcile ("true") opts the Slack message writes into
+	// marker reconciliation; read by cmd/gateway at start-up.
+	ExtraMarkerReconcile = "marker_reconcile"
 )
 
 // reservedExtra are the Extra keys the gateway consumes itself (flow
 // settings and binder hints); they are never sent as authorization
 // request parameters (quirk sxbr5or5). A binder that reads a new hint
-// from Extra adds its key here.
+// from Extra adds its key here; TestAuthParamsExcludeEveryReservedKey
+// walks every connector's Extra constants against this map.
 var reservedExtra = map[string]bool{
 	ExtraScopeParam: true, ExtraCompanyDomains: true, ExtraDefaultLabel: true,
 	ExtraIDField: true, ExtraNameField: true, ExtraEmailField: true,
-	ExtraCompanyOrgs: true,
+	ExtraCompanyOrgs: true, ExtraCompanySites: true, ExtraCompanyTenants: true,
+	ExtraCompanyTeamID: true, ExtraCompanyTeamDomain: true, ExtraMarkerReconcile: true,
 }
 
 // AuthParams returns the Extra entries that are sent as authorization

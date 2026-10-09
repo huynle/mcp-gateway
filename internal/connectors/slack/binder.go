@@ -14,22 +14,20 @@ import (
 )
 
 // Vendor app Extra keys the binder reads. They are binder hints, not
-// authorization parameters; connections.reservedExtra does not know them
-// yet (that file is outside this connector's ownership), so until it
-// does they are also sent to Slack's authorize URL, which ignores
-// unknown parameters.
+// authorization parameters: connections reserves them, so they never
+// reach Slack's authorize URL.
 const (
 	// ExtraCompanyTeamID is the Slack team (workspace) id whose accounts
 	// are company accounts ("T0..."; case-insensitive).
-	ExtraCompanyTeamID = "company_team_id"
+	ExtraCompanyTeamID = connections.ExtraCompanyTeamID
 	// ExtraCompanyTeamDomain is the company workspace's domain, the
 	// "acme" of acme.slack.com (a full host is accepted too), used when
 	// the team id is unknown. Either match makes the account company.
-	ExtraCompanyTeamDomain = "company_team_domain"
+	ExtraCompanyTeamDomain = connections.ExtraCompanyTeamDomain
 	// ExtraMarkerReconcile, when "true", opts post_message and
 	// reply_in_thread into marker reconciliation (Options.MarkerReconcile;
 	// read at start-up by cmd/gateway).
-	ExtraMarkerReconcile = "marker_reconcile"
+	ExtraMarkerReconcile = connections.ExtraMarkerReconcile
 )
 
 // DefaultAPIBase is Slack's Web API root.
