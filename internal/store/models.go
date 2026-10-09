@@ -236,6 +236,12 @@ type LedgerOperation struct {
 	ReconcileAttempts    int
 	CreatedAt, UpdatedAt time.Time
 	FinishedAt           *time.Time
+	// Resource is the connector's resource identity for the call (keys and
+	// short values, never arguments; migration 00012): what the reconciler
+	// hands Reconciliation.Check. TokenID is the token the call came
+	// through (no foreign key, like audit_events).
+	Resource json.RawMessage
+	TokenID  *string
 }
 
 // Ledger attempt kinds.

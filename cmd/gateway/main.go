@@ -34,7 +34,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
-	"github.com/huynle/mcp-gateway/internal/jobs"
+	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/policy"
@@ -92,6 +92,7 @@ func run() error {
 	}()
 
 	var portalHandler, mcpHandler, slackHandler http.Handler
+	var ledgerSvc *ledger.Service
 	if st != nil {
 		rec := audit.NewStoreRecorder(st)
 		tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokens.NewPostgresStore(st), metrics, rec, log)
@@ -135,15 +136,19 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log)
+		ledgerSvc, err = newLedger(cfg, ledger.NewPostgresStore(st), registry, approvalSvc, rec, metrics, getenv, log)
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, approvalSvc, rec, metrics, log)
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc))
 		if err != nil {
 			return err
 		}
-		var jobList []jobs.Job
+		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
+		if err != nil {
+			return err
+		}
+		jobList := ledgerJobs(ledgerSvc)
 		if approvalSvc != nil {
 			jobList = append(jobList, approvalSvc.ExpiryJob(0))
 		}
@@ -170,13 +175,14 @@ func run() error {
 	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler)))
 	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
+	markInFlightUnknown(ledgerSvc, log)
 	switch {
 	case err == nil:
 		log.Info("gateway stopped")
 		return nil
 	case errors.Is(err, server.ErrDrainTimeout):
 		// The process did what it was asked; the cut-off calls are visible in
-		// the warn log and, once the ledger exists, as stale in_progress rows.
+		// the warn log and as unknown ledger operations (markInFlightUnknown).
 		log.Warn("gateway stopped with requests cut off", "error", err)
 		return nil
 	default:
@@ -236,7 +242,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, log *slog.Logger) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -287,8 +293,19 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 		cp.MountAdmin(p.MountAdmin)  // /admin/vendor-apps...
 		svc.OnDisable(connSvc.DisableHook())
 	}
+	for _, extra := range extras {
+		extra(p.MountUser, session, log)
+	}
 	return p.Handler(), nil
 }
+
+// portalExtra mounts a module's user pages (the ledger's /operations).
+type portalExtra func(mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger)
+
+// mcpExtra adjusts the /mcp pipeline after the default stages are built
+// (the ledger stage, which also switches the confirm handler to deferred
+// consumption).
+type mcpExtra func(p *mcp.Pipeline, confirm mcp.ConfirmHandler) error
 
 // newMCP builds the /mcp endpoint over the connector registry and account
 // source: the per-user / per-app rate limiter, policy-driven visibility,
@@ -298,7 +315,7 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 // which only answers "approval required", when approvals are not
 // available), and the token authenticator with the production failure
 // limiter. Later tasks obtain the pipeline here to insert their stages.
-func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger) (http.Handler, error) {
+func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, extras ...mcpExtra) (http.Handler, error) {
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
 	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
 	confirm := mcp.DefaultConfirmHandler()
@@ -311,6 +328,11 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
+	}
+	for _, extra := range extras {
+		if err := extra(pipeline, confirm); err != nil {
+			return nil, fmt.Errorf("mcp: %w", err)
+		}
 	}
 	h, err := mcp.Handler(mcp.Options{
 		Registry:      registry,

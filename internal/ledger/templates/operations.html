@@ -1,0 +1,21 @@
+{{template "head" .}}
+<p>Your last {{.Limit}} writes through the gateway and what became of them. The gateway keeps only identifiers of what a write produced, never its content. A write marked <span class="pill unresolved">unresolved</span> could not be verified: <strong>verify in the app</strong> whether it took effect before trying again.</p>
+<table>
+  <thead><tr><th>Started</th><th>Tool</th><th>Resource</th><th>State</th><th>Result</th><th>Finished</th><th>Id</th></tr></thead>
+  <tbody>
+  {{range .Operations}}
+  <tr>
+    <td>{{fmtTime .CreatedAt}}</td>
+    <td><code>{{.Tool}}</code></td>
+    <td>{{range $k, $v := .ResourceIdentity}}<span>{{$k}}={{$v}}</span> {{end}}</td>
+    <td><span class="pill {{.State}}">{{.State}}</span>{{if .ErrorClass}} <span class="muted">{{.ErrorClass}}</span>{{end}}</td>
+    <td>{{if eq .State "unresolved"}}<span class="notice-inline">verify in the app</span>{{else}}{{range $k, $v := .ResultIDs}}<span>{{$k}}={{if isURL $v}}<a href="{{$v}}" rel="noreferrer">{{$v}}</a>{{else}}{{$v}}{{end}}</span> {{end}}{{end}}</td>
+    <td>{{if .FinishedAt}}{{fmtTime .FinishedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+    <td><code>{{shortID .ID}}</code></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="7" class="muted">No writes yet.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{template "foot" .}}

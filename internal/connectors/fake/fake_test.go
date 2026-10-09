@@ -481,3 +481,77 @@ func toolNamed(t *testing.T, c *fake.Connector, name string) connectors.Tool {
 	t.Fatalf("tool %q not declared", name)
 	return connectors.Tool{}
 }
+
+// The ledger never stores arguments, so the reconciler hands Check only
+// the resource identity the write produced plus the operation id. The
+// fake derives its stable id / marker from those exactly as it did from
+// the arguments.
+func TestFakeReconcilesFromResourceIdentityWithoutArguments(t *testing.T) {
+	c := newFake(t)
+	ctx := context.Background()
+	create := toolNamed(t, c, "create_item")
+	if _, err := c.Call(ctx, call("create_item", acct, map[string]any{"id": "it-rid", "name": "n"})); err != nil {
+		t.Fatal(err)
+	}
+	bare := connectors.Call{Principal: connectors.Principal{UserID: alice}, Tool: "fake.create_item", Account: acct}
+	r, err := create.Reconcile.Check(ctx, connectors.ReconcileInput{Call: bare, OperationID: "op-x", ResourceIdentity: map[string]string{"id": "it-rid"}})
+	if err != nil || r.Outcome != connectors.ReconcileFound || r.ResourceID != "it-rid" {
+		t.Errorf("create_item from resource identity: %+v %v", r, err)
+	}
+	// Without the client id in the identity the operation-derived id applies.
+	r, err = create.Reconcile.Check(ctx, connectors.ReconcileInput{Call: bare, OperationID: "op-x", ResourceIdentity: map[string]string{}})
+	if err != nil || r.Outcome != connectors.ReconcileNotFound {
+		t.Errorf("create_item derived from operation: %+v %v", r, err)
+	}
+
+	flaky := toolNamed(t, c, "flaky_write")
+	if _, err := c.Call(ctx, call("flaky_write", acct, map[string]any{"marker": "m-rid"})); err != nil {
+		t.Fatal(err)
+	}
+	bare.Tool = "fake.flaky_write"
+	r, err = flaky.Reconcile.Check(ctx, connectors.ReconcileInput{Call: bare, OperationID: "op-y", ResourceIdentity: map[string]string{"marker": "m-rid"}})
+	if err != nil || r.Outcome != connectors.ReconcileFound || r.ResourceID != "m-rid" {
+		t.Errorf("flaky_write from resource identity: %+v %v", r, err)
+	}
+}
+
+// Every fake write declares ResultIDs: the identifiers of what it
+// created, which the ledger stores (and replays) instead of the content.
+func TestFakeWritesDeclareResultIDs(t *testing.T) {
+	c := newFake(t)
+	ctx := context.Background()
+	cases := []struct {
+		tool string
+		args map[string]any
+		key  string
+	}{
+		{"create_item", map[string]any{"id": "it-r", "name": "n", "body": "SECRET"}, "id"},
+		{"post_note", map[string]any{"text": "SECRET NOTE"}, "id"},
+		{"flaky_write", map[string]any{"marker": "mk-1", "payload": "SECRET"}, "marker"},
+	}
+	for _, tc := range cases {
+		tool := toolNamed(t, c, tc.tool)
+		if tool.ResultIDs == nil {
+			t.Errorf("%s: no ResultIDs hook", tc.tool)
+			continue
+		}
+		res, err := c.Call(ctx, call(tc.tool, acct, tc.args))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.tool, err)
+		}
+		ids := tool.ResultIDs(res)
+		if len(ids) != 1 || ids[tc.key] == "" {
+			t.Errorf("%s: result ids = %v, want one %q", tc.tool, ids, tc.key)
+		}
+		for _, v := range ids {
+			if strings.Contains(v, "SECRET") {
+				t.Errorf("%s: result ids carry content: %v", tc.tool, ids)
+			}
+		}
+	}
+	for _, name := range []string{"list_items", "get_item"} {
+		if toolNamed(t, c, name).ResultIDs != nil {
+			t.Errorf("%s: a read declares ResultIDs", name)
+		}
+	}
+}

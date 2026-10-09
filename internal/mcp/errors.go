@@ -21,7 +21,11 @@ const (
 	// granted approval yet (decision 490o45d0; the approvals task adds
 	// the approval id and the retry contract to this error).
 	CodeApprovalRequired int64 = -32005
-	CodeRateLimited      int64 = -32029
+	// CodePendingVerification: an earlier attempt of the same write is
+	// still in progress or awaiting reconciliation, so the gateway will
+	// not run it again yet (decision dovthftx; the ledger stage).
+	CodePendingVerification int64 = -32006
+	CodeRateLimited         int64 = -32029
 	// CodeInternal is the JSON-RPC internal error, used when a gateway
 	// dependency (the account source) failed; the message never carries
 	// the cause.
@@ -61,7 +65,7 @@ func (e *ToolError) Class() string { return e.class }
 func (e *ToolError) Denial() bool {
 	switch e.class {
 	case "tool_not_found", "denied", "rate_limited", "vendor_rate_limited", "unauthenticated",
-		"approval_mismatch", "approval_denied", "approval_used", "approval_expired":
+		"approval_mismatch", "approval_denied", "approval_used", "approval_expired", "pending_verification":
 		return true
 	}
 	return false

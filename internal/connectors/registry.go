@@ -111,6 +111,12 @@ type Tool struct {
 	// Every write must set Kind explicitly (ReconcileNone is allowed);
 	// reads leave it empty.
 	Reconcile Reconciliation
+	// ResultIDs extracts the identifiers of what a successful write
+	// produced (issue number, message timestamp, item id, URL) from its
+	// Result. The ledger stores and replays only these, never the
+	// content (decision dovthftx). nil means nothing is kept; reads leave
+	// it nil.
+	ResultIDs func(res Result) map[string]string
 	// Bounds caps page size and result size.
 	Bounds Bounds
 	// NoAccount marks a tool that runs without a connected account; the

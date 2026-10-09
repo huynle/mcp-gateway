@@ -44,6 +44,7 @@ type pipelineFixture struct {
 	fake     *fake.Connector
 	acct     connectors.Account
 	decider  *stubDecider
+	confirm  *approvals.ConfirmHandler
 	pipeline *mcp.Pipeline
 }
 
@@ -66,14 +67,15 @@ func newPipeline(t *testing.T, wait time.Duration) *pipelineFixture {
 		t.Fatal(err)
 	}
 	d := &stubDecider{versionID: policyV1}
+	confirm := approvals.NewConfirmHandler(svc, nil, slog.New(slog.DiscardHandler))
 	p, err := mcp.DefaultPipeline(mcp.PipelineDeps{
-		Registry: reg, Accounts: fc.Accounts(), Policy: d, Confirm: approvals.NewConfirmHandler(svc, nil, slog.New(slog.DiscardHandler)),
+		Registry: reg, Accounts: fc.Accounts(), Policy: d, Confirm: confirm,
 		Metrics: f.metrics, Log: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &pipelineFixture{fixture: f, fake: fc, acct: acct, decider: d, pipeline: p}
+	return &pipelineFixture{fixture: f, fake: fc, acct: acct, decider: d, confirm: confirm, pipeline: p}
 }
 
 func (p *pipelineFixture) call(t *testing.T, tool string, args map[string]any) (*mcp.CallContext, connectors.Result, error) {
