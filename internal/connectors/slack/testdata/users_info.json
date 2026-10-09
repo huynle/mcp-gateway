@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "user": {
+    "id": "U0BOB00002",
+    "team_id": "T0EXAMPLE1",
+    "name": "bob",
+    "deleted": false,
+    "color": "9f69e7",
+    "real_name": "Bob Example",
+    "tz": "America/New_York",
+    "tz_label": "Eastern Standard Time",
+    "tz_offset": -18000,
+    "profile": {
+      "title": "Site Reliability",
+      "real_name": "Bob Example",
+      "display_name": "bobby",
+      "status_text": "deploying",
+      "status_emoji": ":rocket:",
+      "image_72": "https://avatars.example.test/bob_72.png"
+    },
+    "is_admin": false,
+    "is_owner": false,
+    "is_bot": false,
+    "is_app_user": false,
+    "updated": 1700000000
+  }
+}

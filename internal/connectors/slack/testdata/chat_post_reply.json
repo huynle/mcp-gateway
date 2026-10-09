@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "channel": "C0ENGGEN01",
+  "ts": "1700004100.000200",
+  "message": {
+    "type": "message",
+    "user": "U0ALICE001",
+    "text": "echoed by slack; never read by the connector",
+    "ts": "1700004100.000200",
+    "thread_ts": "1700002000.000100"
+  }
+}

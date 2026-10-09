@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "user": "U0ALICE001",
+      "text": "Starting the deploy now",
+      "thread_ts": "1700002000.000100",
+      "ts": "1700002000.000100",
+      "reply_count": 2,
+      "subscribed": true,
+      "last_read": "1700002500.000300"
+    },
+    {
+      "type": "message",
+      "user": "U0BOB00002",
+      "text": "Watching the dashboards",
+      "thread_ts": "1700002000.000100",
+      "parent_user_id": "U0ALICE001",
+      "ts": "1700002100.000200"
+    },
+    {
+      "type": "message",
+      "user": "U0ALICE001",
+      "text": "All green",
+      "thread_ts": "1700002000.000100",
+      "parent_user_id": "U0ALICE001",
+      "ts": "1700002500.000300"
+    }
+  ],
+  "has_more": false,
+  "response_metadata": {"next_cursor": ""}
+}
