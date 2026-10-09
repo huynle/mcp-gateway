@@ -1,0 +1,7 @@
+{
+  "id": "20001",
+  "self": "https://api.atlassian.example.test/ex/jira/11111111-2222-4333-8444-555555555555/rest/api/3/issue/10042/comment/20001",
+  "author": {"accountId": "5b10ac8d82e05b22cc7d4ef5", "displayName": "Alice Example"},
+  "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Looks good."}]}]},
+  "created": "2026-10-06T10:00:00.000+0000"
+}

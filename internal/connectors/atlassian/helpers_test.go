@@ -36,7 +36,9 @@ const (
 // headers and a body (a testdata file name, or inline JSON when it starts
 // with "{" or "["). delay holds the answer back (until the client gives
 // up when it exceeds the connector's timeout); pages, when set, picks the
-// answer by the value of the pageParam query parameter ("" when absent).
+// answer by the value of the pageParam query parameter ("" when absent),
+// and the chosen answer may itself have pages (selection by a second
+// parameter).
 type route struct {
 	status    int
 	headers   map[string]string
@@ -80,10 +82,11 @@ func newAPIServer(t *testing.T, routes map[string]route) *apiServer {
 			http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
 			return
 		}
-		if rt.pages != nil {
-			page := r.URL.Query().Get(rt.pageParam)
+		for rt.pages != nil {
+			param := rt.pageParam
+			page := r.URL.Query().Get(param)
 			if rt, ok = rt.pages[page]; !ok {
-				t.Errorf("unexpected page %q of %s %s", page, r.Method, r.URL.Path)
+				t.Errorf("unexpected %s=%q of %s %s", param, page, r.Method, r.URL.Path)
 				http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
 				return
 			}

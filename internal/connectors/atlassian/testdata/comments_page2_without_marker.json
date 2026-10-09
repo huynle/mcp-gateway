@@ -1,0 +1,9 @@
+{
+  "startAt": 2,
+  "maxResults": 2,
+  "total": 4,
+  "comments": [
+    {"id": "20002", "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Looks good."}]}]}},
+    {"id": "20001", "body": "a v2 style string body"}
+  ]
+}
