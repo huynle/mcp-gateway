@@ -1,0 +1,28 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/calendarView",
+  "value": [
+    {
+      "id": "AAMkAGE1-evt-1",
+      "subject": "Sprint planning",
+      "isAllDay": false,
+      "isCancelled": false,
+      "start": {"dateTime": "2026-10-08T09:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-10-08T10:00:00.0000000", "timeZone": "UTC"},
+      "location": {"displayName": "Room 4"},
+      "organizer": {"emailAddress": {"name": "Bob Example", "address": "bob@example.test"}},
+      "attendees": [{"emailAddress": {"name": "Alice Example", "address": "alice@example.test"}, "type": "required", "status": {"response": "accepted"}}],
+      "webLink": "https://outlook.example.test/owa/?itemid=AAMkAGE1-evt-1"
+    },
+    {
+      "id": "AAMkAGE1-evt-2",
+      "subject": "Company holiday",
+      "isAllDay": true,
+      "isCancelled": false,
+      "start": {"dateTime": "2026-10-09T00:00:00.0000000", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-10-10T00:00:00.0000000", "timeZone": "UTC"},
+      "location": {"displayName": ""},
+      "organizer": {"emailAddress": {"name": "HR", "address": "hr@example.test"}},
+      "webLink": "https://outlook.example.test/owa/?itemid=AAMkAGE1-evt-2"
+    }
+  ]
+}

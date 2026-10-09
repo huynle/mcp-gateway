@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/messages",
+  "value": [
+    {"id": "AAMkAGE1-sent-1", "internetMessageId": "<op-0f1e2d3c-4b5a-4968-8777-66554433aa11@mcp-gateway>", "webLink": "https://outlook.example.test/owa/?ItemID=AAMkAGE1-sent-1"}
+  ]
+}

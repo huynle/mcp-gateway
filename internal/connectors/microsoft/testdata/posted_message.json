@@ -1,0 +1,7 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#teams('team-1')/channels('19:chan-general@thread.tacv2')/messages/$entity",
+  "id": "1728390000003",
+  "createdDateTime": "2026-10-08T09:00:00.003Z",
+  "webUrl": "https://teams.example.test/l/message/1728390000003",
+  "body": {"contentType": "text", "content": "Deploy done."}
+}

@@ -1,0 +1,7 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#teams",
+  "value": [
+    {"id": "team-1", "displayName": "Engineering", "description": "All engineers"},
+    {"id": "team-2", "displayName": "Finance", "description": "Money"}
+  ]
+}
