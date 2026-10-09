@@ -194,9 +194,3 @@ func (c *Connector) getEvent(ctx context.Context, cl *client, call connectors.Ca
 	fitBody(&out.Description, &out.Truncated, c.bounds.MaxResultBytes, func() any { return out })
 	return connectors.Result{Content: out, Partial: out.Truncated}, nil
 }
-
-// --- writes (next increment) ---------------------------------------------------
-
-func (c *Connector) calendarWriteTools() []connectors.Tool { return nil }
-
-func (c *Connector) calendarWriteHandlers() map[string]handler { return map[string]handler{} }

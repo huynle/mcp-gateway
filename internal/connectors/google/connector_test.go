@@ -30,9 +30,9 @@ func TestAppsAndToolNames(t *testing.T) {
 		t.Errorf("Apps() = %v, want %v", apps, google.Apps)
 	}
 	want := map[string][]string{
-		google.AppCalendar: {"list_events", "get_event"},
-		google.AppTasks:    {"list"},
-		google.AppGmail:    {"search", "get_message", "list_labels"},
+		google.AppCalendar: {"list_events", "get_event", "create_event"},
+		google.AppTasks:    {"list", "create"},
+		google.AppGmail:    {"search", "get_message", "list_labels", "send", "create_draft"},
 	}
 	for app, names := range want {
 		var got []string
@@ -57,9 +57,6 @@ func TestAppsAndToolNames(t *testing.T) {
 func TestEveryAppPassesContract(t *testing.T) {
 	c, _ := newConnector(t, newAPIServer(t, nil), connectors.Bounds{})
 	for _, a := range c.Apps() {
-		if len(a.Tools()) == 0 {
-			continue // apps filled in by later increments
-		}
 		t.Run(a.App(), func(t *testing.T) { connectortest.ContractTest(t, a) })
 	}
 }

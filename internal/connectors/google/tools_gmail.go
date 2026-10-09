@@ -419,9 +419,3 @@ func hasLabel(labels []string, label string) bool {
 	}
 	return false
 }
-
-// --- writes (next increment) ---------------------------------------------------
-
-func (c *Connector) gmailWriteTools() []connectors.Tool { return nil }
-
-func (c *Connector) gmailWriteHandlers() map[string]handler { return map[string]handler{} }

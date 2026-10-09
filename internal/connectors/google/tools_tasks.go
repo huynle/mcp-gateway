@@ -164,9 +164,3 @@ func (c *Connector) listTasks(ctx context.Context, cl *client, call connectors.C
 	res.Content = out
 	return res, nil
 }
-
-// --- writes (next increment) ---------------------------------------------------
-
-func (c *Connector) tasksWriteTools() []connectors.Tool { return nil }
-
-func (c *Connector) tasksWriteHandlers() map[string]handler { return map[string]handler{} }
