@@ -455,23 +455,16 @@ func (c *Connector) resolveChannel(ctx context.Context, api *goslack.Client, id,
 	if id != "" {
 		return id, "", nil
 	}
-	params := &goslack.GetConversationsForUserParameters{Types: defaultChanType, Limit: resolveLimit}
-	for page := 1; page <= MaxResolvePages; page++ {
-		channels, next, err := api.GetConversationsForUserContext(ctx, params)
-		if err := classify("resolve channel", err); err != nil {
-			return "", "", err
-		}
-		for _, ch := range channels {
-			if strings.EqualFold(ch.Name, name) || strings.EqualFold(ch.NameNormalized, name) {
-				return ch.ID, ch.Name, nil
-			}
-		}
-		if next == "" {
-			break
-		}
-		params.Cursor = next
+	ch, err := c.findConversation(ctx, api, defaultChanType, func(ch goslack.Channel) bool {
+		return strings.EqualFold(ch.Name, name) || strings.EqualFold(ch.NameNormalized, name)
+	})
+	if err != nil {
+		return "", "", err
 	}
-	return "", "", &Error{Class: ClassNotFound, Message: fmt.Sprintf("channel #%s not found among the channels this account is a member of (first %d pages); pass the channel id instead", name, MaxResolvePages)}
+	if ch == nil {
+		return "", "", &Error{Class: ClassNotFound, Message: fmt.Sprintf("channel #%s not found among the channels this account is a member of (first %d pages); pass the channel id instead", name, MaxResolvePages)}
+	}
+	return ch.ID, ch.Name, nil
 }
 
 // fit drops trailing items (never below one) until the page built by

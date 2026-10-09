@@ -51,7 +51,9 @@ type Options struct {
 }
 
 // Connector is the Slack connector. Safe for concurrent use: it holds no
-// per-call state and builds one slack-go client per call.
+// per-call state beyond the identity-resolution cache (identity.go) and
+// builds one slack-go client per call. It implements
+// connectors.IdentityResolver.
 type Connector struct {
 	tokens    TokenSourceFunc
 	transport http.RoundTripper
@@ -59,6 +61,7 @@ type Connector struct {
 	bounds    connectors.Bounds
 	timeout   time.Duration
 	marker    bool
+	names     *nameCache
 }
 
 // New builds a Slack connector.
@@ -95,7 +98,8 @@ func New(opts Options) (*Connector, error) {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	return &Connector{tokens: opts.Tokens, transport: transport, baseURL: u.String(), bounds: bounds, timeout: timeout, marker: opts.MarkerReconcile}, nil
+	return &Connector{tokens: opts.Tokens, transport: transport, baseURL: u.String(), bounds: bounds, timeout: timeout, marker: opts.MarkerReconcile,
+		names: newNameCache(IdentityCacheTTL, IdentityCacheMax)}, nil
 }
 
 // App implements connectors.Connector.

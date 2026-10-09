@@ -32,6 +32,13 @@
 // known (5xx, timeout, dropped connection after the request was sent)
 // are connectors.ErrOutcomeUnknown (decisions dovthftx, enlsy40f).
 //
+// The connector also implements connectors.IdentityResolver
+// (identity.go): before policy decides, a channel given by id (or as a
+// <#C...|name> mention) is resolved to its name through the account's
+// conversations, cached per account and id for a few minutes, so a
+// "deny when channel equals ..." rule holds whichever form the harness
+// used; a failed resolution makes the policy stage deny the call.
+//
 // Channel and message handling is adapted from korotovsky/slack-mcp-server
 // (MIT; see THIRD_PARTY_NOTICES.md).
 //
