@@ -121,6 +121,29 @@ func TestGrantsAppliesScopeImplication(t *testing.T) {
 		{[]string{google.ScopeGmailLabels}, google.ScopeGmailReadonly, false},
 		{[]string{"openid", "https://www.googleapis.com/auth/userinfo.email"}, google.ScopeGmailReadonly, false},
 		{nil, google.ScopeGmailReadonly, false},
+		// Increment 2: Drive, Docs, Sheets, Contacts (the methods' accepted
+		// scope lists: drive covers every Drive, Docs and Sheets scope;
+		// drive.readonly covers the read-only ones).
+		{[]string{google.ScopeDrive}, google.ScopeDriveFile, true},
+		{[]string{google.ScopeDrive}, google.ScopeDriveMetadataReadonly, true},
+		{[]string{google.ScopeDrive}, google.ScopeDocuments, true},
+		{[]string{google.ScopeDrive}, google.ScopeSpreadsheetsReadonly, true},
+		{[]string{google.ScopeDriveReadonly}, google.ScopeDriveMetadataReadonly, true},
+		{[]string{google.ScopeDriveReadonly}, google.ScopeDocumentsReadonly, true},
+		{[]string{google.ScopeDriveReadonly}, google.ScopeSpreadsheetsReadonly, true},
+		{[]string{google.ScopeDriveReadonly}, google.ScopeDriveFile, false},
+		{[]string{google.ScopeDriveReadonly}, google.ScopeDocuments, false},
+		{[]string{google.ScopeDriveMetadata}, google.ScopeDriveMetadataReadonly, true},
+		{[]string{google.ScopeDriveMetadataReadonly}, google.ScopeDriveReadonly, false},
+		{[]string{google.ScopeDriveFile}, google.ScopeDriveMetadataReadonly, false},
+		{[]string{google.ScopeDriveFile}, google.ScopeDocuments, false},
+		{[]string{google.ScopeDocuments}, google.ScopeDocumentsReadonly, true},
+		{[]string{google.ScopeDocumentsReadonly}, google.ScopeDocuments, false},
+		{[]string{google.ScopeSpreadsheets}, google.ScopeSpreadsheetsReadonly, true},
+		{[]string{google.ScopeSpreadsheetsReadonly}, google.ScopeSpreadsheets, false},
+		{[]string{google.ScopeContacts}, google.ScopeContactsReadonly, true},
+		{[]string{google.ScopeContactsReadonly}, google.ScopeContacts, false},
+		{[]string{google.ScopeContacts}, google.ScopeDriveFile, false},
 	}
 	for _, tc := range cases {
 		if got := google.Grants(tc.granted, tc.required); got != tc.want {
@@ -184,4 +207,34 @@ func TestUnknownScopesAreNotBlockedLocally(t *testing.T) {
 	}
 	_, err = run(t, c, call("calendar.list_events", nil))
 	wantClass(t, err, google.ClassScopeRequired, 403)
+}
+
+// PerFile says which required scopes drive.file stands in for: the
+// Drive, Docs and Sheets methods accept it, limited to the files the
+// gateway created or the user opened with it, so an account that granted
+// only drive.file may run those tools on that subset (Google decides per
+// file). Contacts and the increment-1 scopes are not Drive files.
+func TestPerFileScopes(t *testing.T) {
+	for scope, want := range map[string]bool{
+		google.ScopeDriveMetadataReadonly: true, google.ScopeDriveReadonly: true, google.ScopeDriveFile: true,
+		google.ScopeDocumentsReadonly: true, google.ScopeDocuments: true,
+		google.ScopeSpreadsheetsReadonly: true, google.ScopeSpreadsheets: true,
+		google.ScopeDrive: false, google.ScopeContactsReadonly: false, google.ScopeGmailReadonly: false, google.ScopeCalendarEvents: false,
+	} {
+		if got := google.PerFile(scope); got != want {
+			t.Errorf("PerFile(%s) = %v, want %v", scope, got, want)
+		}
+	}
+	if !google.GrantsOrPerFile([]string{google.ScopeDriveFile}, google.ScopeDocumentsReadonly) {
+		t.Error("drive.file should admit documents.readonly per file")
+	}
+	if google.GrantsOrPerFile([]string{google.ScopeDriveFile}, google.ScopeContactsReadonly) {
+		t.Error("drive.file must not admit contacts.readonly")
+	}
+	if google.GrantsOrPerFile([]string{google.ScopeDriveReadonly}, google.ScopeDriveFile) {
+		t.Error("drive.readonly must not admit drive.file (it cannot create)")
+	}
+	if !google.GrantsOrPerFile([]string{google.ScopeDriveReadonly}, google.ScopeDriveMetadataReadonly) {
+		t.Error("GrantsOrPerFile must still apply the implication table")
+	}
 }

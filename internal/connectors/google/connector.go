@@ -208,8 +208,11 @@ func (a *App) finish(write bool, res connectors.Result, err error) (connectors.R
 
 // checkScopes is the local granular-consent gate: with an account
 // source, the account's recorded scopes must cover the tool's
-// RequiredScopes (Grants). An account the source does not list, or one
-// without recorded scopes, is not blocked here (Google decides).
+// RequiredScopes (Grants), or the tool must be one drive.file admits on
+// the files the gateway created or the user opened with it
+// (GrantsOrPerFile; Google answers not_found for the rest). An account
+// the source does not list, or one without recorded scopes, is not
+// blocked here (Google decides).
 func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connectors.Tool) error {
 	if a.c.accounts == nil || len(tool.RequiredScopes) == 0 {
 		return nil
@@ -223,7 +226,7 @@ func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connec
 			continue
 		}
 		for _, required := range tool.RequiredScopes {
-			if !Grants(acct.Scopes, required) {
+			if !GrantsOrPerFile(acct.Scopes, required) {
 				return &Error{Class: ClassScopeRequired, Message: fmt.Sprintf(
 					"%s needs the Google scope %s, which this account did not grant; grant more access on the portal (Connections) by reconnecting the account with that scope",
 					call.Tool, required)}

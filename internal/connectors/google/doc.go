@@ -52,11 +52,17 @@ package google
 // three apps are mapped to it with connections.Service.MapApp.
 const Vendor = "google"
 
-// The connector apps; every tool is "<app>.<name>".
+// The connector apps; every tool is "<app>.<name>". Increment 1 is
+// calendar, tasks and gmail; increment 2 adds drive, docs, sheets and
+// contacts over the same account binding.
 const (
 	AppCalendar = "calendar"
 	AppTasks    = "tasks"
 	AppGmail    = "gmail"
+	AppDrive    = "drive"
+	AppDocs     = "docs"
+	AppSheets   = "sheets"
+	AppContacts = "contacts"
 )
 
 // Apps lists the apps in registration order.
