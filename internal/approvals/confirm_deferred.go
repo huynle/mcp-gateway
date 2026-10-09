@@ -50,8 +50,11 @@ func (h *ConfirmHandler) confirmDeferred(ctx context.Context, cc *mcp.CallContex
 	case !errors.Is(err, ErrNotFound):
 		return h.refuse(ctx, cc, err, "")
 	}
-	var resource map[string]string
-	if cc.Tool.ResourceIdentity != nil {
+	// Prefer the identity the policy stage evaluated (after any connector
+	// resolution, e.g. a Slack channel id resolved to its name) so the
+	// approval shows the user what policy actually judged.
+	resource := cc.ResourceIdentity
+	if resource == nil && cc.Tool.ResourceIdentity != nil {
 		resource = cc.Tool.ResourceIdentity(cc.Call.Args)
 	}
 	a, err := h.svc.Create(ctx, Request{
