@@ -172,6 +172,15 @@ Slack requires **HTTPS** for every redirect URL, so `localhost` cannot be regist
 Optional, only if DMs/group DMs should be readable through the gateway: `im:read`,
 `mpim:read`, `im:history`, `mpim:history`. Not in v1 by default.
 
+**Token shape.** The code exchange (`oauth.v2.access`) of an app with bot *and* user
+scopes answers with the bot token as the top-level `access_token` and the user's own
+token under `authed_user.access_token`; a user-scope-only app answers with no top-level
+`access_token` at all. The gateway's connect flow reads the answer itself for vendor
+`slack` and stores the **user token** (`authed_user`) in the connection; the bot token
+the approval notifier uses is the one the admin pastes (2.6), never the one from a
+user's connect. Token rotation (off in the manifest) would add `refresh_token` /
+`expires_in` under `authed_user`; the flow keeps those too.
+
 ### 2.3 Bot token scopes (approval bot)
 
 | Scope | Purpose |
@@ -241,6 +250,12 @@ settings:
    three secrets are write-only and stored encrypted together; leave a field blank
    to keep the stored value). Without the bot token no approval DM is sent; without
    the signing secret `/slack/interactions` answers 401 to everything.
+   In **Extra parameters**, `scope_param=user_scope` (default) makes the flow send the
+   user scopes as `user_scope`; `company_team_id=T0...` and/or `company_team_domain=acme`
+   label the company workspace's accounts *company*; `marker_reconcile=true` is the
+   opt-in of `docs/connectors/slack.md`. These four are gateway hints: they are never
+   forwarded to Slack's authorize URL. Any other key is sent as an authorization
+   parameter.
 4. For local work, developers create a personal dev Slack app from the same manifest in
    a sandbox workspace with a tunnel URL. Never point a dev app at the company workspace.
 
