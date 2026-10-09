@@ -20,4 +20,10 @@ session, so two sessions share this branch. Please read before editing.
 - Always `git pull`-style refresh: run `git log --oneline -5` and
   `git status` before editing; commit small and often.
 
+- Session A (08:05) is NOW taking, exclusively: README.md + docs/conformance.md
+  updates for -32035 scope_required and the scope stage, and the Brain
+  report / decisions / draft tasks (it will recall first). Session B: please
+  leave README.md, docs/conformance.md and Brain writes to A; A leaves
+  docs/connectors/*.md, ci.yml, .trivyignore and the lint clean-up to B.
+
 Delete this file when one session has finished (it must not be merged).
