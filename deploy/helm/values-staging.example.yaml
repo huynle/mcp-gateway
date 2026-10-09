@@ -1,16 +1,22 @@
-# Staging stub: separate vendor apps and OIDC client, Vault transit, a
-# cluster-issued certificate. Replace every example.com and every selector
-# with your cluster's values. No secret values live here; create the Secrets
-# named below first (docs/deploy.md).
+# Staging values: separate vendor apps and OIDC client, Vault transit with
+# its own key, a cluster-issued certificate, the same alert rules as
+# production so they are exercised before the pilot. Replace every
+# example.com and every selector with your cluster's values. No secret
+# values live here; create the Secrets named below first (docs/deploy.md).
+# Staging is where the runbooks are drilled (docs/runbooks/README.md) and
+# where the real-harness conformance rows get ticked (docs/conformance.md).
 image:
   repository: ghcr.io/huynle/mcp-gateway
   tag: "" # the chart's appVersion; pin a release tag in CD
+
+replicaCount: 2
 
 gateway:
   baseURL: https://mcp-gateway-staging.example.com
   logLevel: debug
   bootstrapAdmins: []
   # - "https://accounts.google.com|<sub of the first admin>"
+  enableFakeConnector: false # staging runs the real connectors against staging vendor apps
 
 oidc:
   providers:
@@ -68,7 +74,16 @@ networkPolicy:
 
 metrics:
   serviceMonitor:
-    enabled: false
+    enabled: true
+    labels: {}
+  prometheusRule:
+    enabled: true
+    labels: {}
+    selector: 'job="mcp-gateway-metrics"'
+    kubeStateMetrics: true
+
+podDisruptionBudget:
+  minAvailable: 1
 
 antiAffinity:
   type: soft

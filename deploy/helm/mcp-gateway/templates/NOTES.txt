@@ -43,4 +43,9 @@ Check the rollout:
   curl -fsS localhost:18080/readyz
 
 Metrics are on Service {{ include "mcp-gateway.fullname" . }}-metrics:{{ .Values.gateway.metricsPort }} (cluster-private; not on the Ingress).
+{{- if .Values.metrics.prometheusRule.enabled }}
+Alert rules: PrometheusRule {{ include "mcp-gateway.fullname" . }} (unresolved writes, refresh failures, auth failure spikes, vendor 429s, scrape/readiness down); runbooks under {{ .Values.metrics.prometheusRule.runbookBaseURL }}.
+{{- else }}
+No alert rules rendered (metrics.prometheusRule.enabled=false); production should enable them (docs/runbooks/).
+{{- end }}
 Migrations ran as the pre-upgrade Job {{ include "mcp-gateway.fullname" . }}-migrate; they are forward-only (docs/deploy.md).

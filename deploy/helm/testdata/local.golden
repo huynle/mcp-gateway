@@ -6,7 +6,7 @@ metadata:
   name: mcp-gateway
   namespace: mcp-gateway
   labels:
-    helm.sh/chart: mcp-gateway-0.1.0
+    helm.sh/chart: mcp-gateway-0.2.0
     app.kubernetes.io/name: mcp-gateway
     app.kubernetes.io/instance: mcp-gateway
     app.kubernetes.io/version: "local"
@@ -22,7 +22,7 @@ metadata:
   name: mcp-gateway-metrics
   namespace: mcp-gateway
   labels:
-    helm.sh/chart: mcp-gateway-0.1.0
+    helm.sh/chart: mcp-gateway-0.2.0
     app.kubernetes.io/name: mcp-gateway
     app.kubernetes.io/instance: mcp-gateway
     app.kubernetes.io/version: "local"
@@ -51,7 +51,7 @@ metadata:
   name: mcp-gateway
   namespace: mcp-gateway
   labels:
-    helm.sh/chart: mcp-gateway-0.1.0
+    helm.sh/chart: mcp-gateway-0.2.0
     app.kubernetes.io/name: mcp-gateway
     app.kubernetes.io/instance: mcp-gateway
     app.kubernetes.io/version: "local"
@@ -75,7 +75,7 @@ metadata:
   name: mcp-gateway
   namespace: mcp-gateway
   labels:
-    helm.sh/chart: mcp-gateway-0.1.0
+    helm.sh/chart: mcp-gateway-0.2.0
     app.kubernetes.io/name: mcp-gateway
     app.kubernetes.io/instance: mcp-gateway
     app.kubernetes.io/version: "local"
@@ -309,7 +309,7 @@ metadata:
   name: mcp-gateway-migrate
   namespace: mcp-gateway
   labels:
-    helm.sh/chart: mcp-gateway-0.1.0
+    helm.sh/chart: mcp-gateway-0.2.0
     app.kubernetes.io/name: mcp-gateway-migrate
     app.kubernetes.io/instance: mcp-gateway
     app.kubernetes.io/version: "local"

@@ -1,0 +1,102 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- $r := .Values.metrics.prometheusRule }}
+{{- $sel := $r.selector }}
+{{- /* $m is the full matcher block ({job="..."}) and $and the ",job=..." tail for selectors that already have a label. */}}
+{{- $m := "" }}{{ $and := "" }}
+{{- if $sel }}{{ $m = printf "{%s}" $sel }}{{ $and = printf ",%s" $sel }}{{ end }}
+{{- $fullname := include "mcp-gateway.fullname" . }}
+{{- $ns := .Release.Namespace }}
+# Alert rules for the Prometheus Operator, over the gateway's own metric
+# catalogue (docs/observability.md): no user, token or account identifier
+# exists as a label, so no alert can name a person. The ledger counter has
+# no "currently unresolved" gauge, so the first rule fires on any write
+# that became unresolved inside the window; triage is on /operations and
+# in docs/runbooks/unresolved-operations.md. Values under
+# metrics.prometheusRule tune windows and thresholds.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+    {{- with $r.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: mcp-gateway
+      rules:
+        - alert: MCPGatewayUnresolvedOperations
+          expr: {{ printf `sum(increase(ledger_operations_total{state="unresolved"%s}[%s])) > 0` $and $r.unresolved.window | quote }}
+          for: {{ $r.unresolved.for | quote }}
+          labels:
+            severity: {{ $r.unresolved.severity | quote }}
+            service: mcp-gateway
+          annotations:
+            summary: {{ printf "Writes could not be verified in the last %s" $r.unresolved.window | quote }}
+            description: "{{ `{{ $value }}` }} write operation(s) became unresolved: the vendor did not confirm the outcome and reconciliation gave up. The owners were notified; an operator triages them on /admin/audit and the admin_ledger_operations view."
+            runbook_url: {{ printf "%s/unresolved-operations.md" $r.runbookBaseURL | quote }}
+        - alert: MCPGatewayConnectionRefreshFailures
+          expr: {{ printf "sum by (app) (rate(connection_refresh_failures_total%s[%s])) * 60 > %v" $m $r.refreshFailures.window $r.refreshFailures.perMinute | quote }}
+          for: {{ $r.refreshFailures.for | quote }}
+          labels:
+            severity: {{ $r.refreshFailures.severity | quote }}
+            service: mcp-gateway
+          annotations:
+            summary: "Vendor token refreshes failing for {{ `{{ $labels.app }}` }}"
+            description: "{{ `{{ $value | printf \"%.2f\" }}` }} refresh failures per minute for app {{ `{{ $labels.app }}` }} over {{ $r.refreshFailures.window }}. A burst across many users usually means the vendor app's client secret was rotated or revoked at the vendor; isolated failures mark single connections needs_reconnect and the user reconnects on /connections."
+            runbook_url: {{ printf "%s/vendor-app-secret-rotation.md" $r.runbookBaseURL | quote }}
+        - alert: MCPGatewayAuthFailureSpike
+          expr: {{ printf "sum(rate(auth_failures_total%s[%s])) * 60 > %v" $m $r.authFailures.window $r.authFailures.perMinute | quote }}
+          for: {{ $r.authFailures.for | quote }}
+          labels:
+            severity: {{ $r.authFailures.severity | quote }}
+            service: mcp-gateway
+          annotations:
+            summary: {{ printf "Bearer authentication failures above %v per minute" $r.authFailures.perMinute | quote }}
+            description: "{{ `{{ $value | printf \"%.1f\" }}` }} rejected bearer tokens per minute on /mcp over {{ $r.authFailures.window }}. Break it down by auth_failures_total{reason}: unknown/malformed is scanning or token guessing (the per-IP limiter answers 429), signin_stale is users past the 30-day sign-in rule, revoked/user_disabled right after an offboarding is expected."
+            runbook_url: {{ printf "%s/incident-redaction-check.md" $r.runbookBaseURL | quote }}
+        - alert: MCPGatewayVendorRateLimited
+          expr: {{ printf "sum by (app) (rate(vendor_rate_limited_total%s[%s])) * 60 > %v" $m $r.vendorRateLimited.window $r.vendorRateLimited.perMinute | quote }}
+          for: {{ $r.vendorRateLimited.for | quote }}
+          labels:
+            severity: {{ $r.vendorRateLimited.severity | quote }}
+            service: mcp-gateway
+          annotations:
+            summary: "{{ `{{ $labels.app }}` }} is rate limiting the gateway"
+            description: "{{ `{{ $value | printf \"%.2f\" }}` }} vendor 429 answers per minute for app {{ `{{ $labels.app }}` }}; the app is paused for every user until the vendor's Retry-After each time. Sustained limiting means gateway.rateLimits.appPerMinute is above what the vendor app is allowed: lower it or raise the vendor quota."
+            runbook_url: {{ printf "%s/deploy-and-rollback.md" $r.runbookBaseURL | quote }}
+        - alert: MCPGatewayScrapeDown
+          expr: {{ printf "absent(up%s == 1)" $m | quote }}
+          for: {{ $r.scrapeDown.for | quote }}
+          labels:
+            severity: {{ $r.scrapeDown.severity | quote }}
+            service: mcp-gateway
+          annotations:
+            summary: "No gateway replica is being scraped"
+            description: {{ printf "Prometheus has no healthy target for Service %s-metrics in %s: every replica is down, or the scrape configuration / NetworkPolicy (networkPolicy.ingress.metrics.from) no longer reaches the metrics port." $fullname $ns | quote }}
+            runbook_url: {{ printf "%s/deploy-and-rollback.md" $r.runbookBaseURL | quote }}
+{{- if $r.kubeStateMetrics }}
+        - alert: MCPGatewayNoReadyReplicas
+          expr: {{ printf `kube_deployment_status_replicas_available{namespace="%s",deployment="%s"} < 1` $ns $fullname | quote }}
+          for: {{ $r.scrapeDown.for | quote }}
+          labels:
+            severity: critical
+            service: mcp-gateway
+          annotations:
+            summary: "No ready gateway replica"
+            description: {{ printf "Deployment %s in %s has no available replica: /readyz fails on every pod (database unreachable, schema version behind the binary, or key provider down)." $fullname $ns | quote }}
+            runbook_url: {{ printf "%s/deploy-and-rollback.md" $r.runbookBaseURL | quote }}
+        - alert: MCPGatewayReplicasBelowMinimum
+          expr: {{ printf `kube_deployment_status_replicas_available{namespace="%s",deployment="%s"} < 2` $ns $fullname | quote }}
+          for: "15m"
+          labels:
+            severity: warning
+            service: mcp-gateway
+          annotations:
+            summary: "Fewer than two ready gateway replicas"
+            description: "The gateway runs as >= 2 identical replicas (background jobs move between them on a PostgreSQL lease, decision ysorv868); fewer than two have been available for 15 minutes."
+            runbook_url: {{ printf "%s/deploy-and-rollback.md" $r.runbookBaseURL | quote }}
+{{- end }}
+{{- end }}

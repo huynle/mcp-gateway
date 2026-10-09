@@ -168,6 +168,50 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
+  # Optional PrometheusRule (templates/prometheusrule.yaml) with the alerts
+  # the runbooks expect: unresolved write operations, vendor token refresh
+  # failures, bearer authentication failure spikes, vendor 429 rates and
+  # the scrape target going away; with kubeStateMetrics also "no ready
+  # replica" / "fewer than two replicas" from kube-state-metrics. Every
+  # expression is over the gateway's own metrics (docs/observability.md),
+  # which carry no user identifiers.
+  prometheusRule:
+    enabled: false
+    # Extra labels so the operator's Prometheus picks the rule up (e.g.
+    # release: kube-prometheus-stack).
+    labels: {}
+    # Label matcher added to every gateway metric selector. With the
+    # ServiceMonitor above the job label is the metrics Service name
+    # ("<release>-metrics"); set it to whatever your scrape config uses, or
+    # "" to match the metric names alone.
+    selector: 'job="mcp-gateway-metrics"'
+    # Where runbook_url annotations point (a file name is appended).
+    runbookBaseURL: https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks
+    # Render the kube_deployment_status_replicas_available alerts (needs
+    # kube-state-metrics).
+    kubeStateMetrics: true
+    unresolved:
+      window: 30m
+      for: 0m
+      severity: warning
+    refreshFailures:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    authFailures:
+      window: 5m
+      perMinute: 30
+      for: 10m
+      severity: warning
+    vendorRateLimited:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    scrapeDown:
+      for: 5m
+      severity: critical
 
 ingress:
   enabled: true
