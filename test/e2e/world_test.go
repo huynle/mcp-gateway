@@ -162,6 +162,9 @@ type options struct {
 	// approvalWait is Config.Wait of the approvals service (0: answer
 	// "approval required" at once).
 	approvalWait time.Duration
+	// register adds further connectors to the registry after the fake
+	// (the GitHub world registers the real connector against a stub API).
+	register func(reg *connectors.Registry) error
 }
 
 // world is the gateway wired like cmd/gateway, plus the handles the
@@ -303,6 +306,11 @@ func newWorld(t *testing.T, opts options) *world {
 	// The account source is the connections table, as in production.
 	if err := connectors.RegisterConnector(reg, w.fake, w.conn); err != nil {
 		t.Fatal(err)
+	}
+	if opts.register != nil {
+		if err := opts.register(reg); err != nil {
+			t.Fatal(err)
+		}
 	}
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL

@@ -1,0 +1,9 @@
+[
+  {
+    "id": 9001,
+    "html_url": "https://github.example.test/example-org/widgets/issues/42#issuecomment-9001",
+    "body": "Reproduced on main.\n\n<!-- mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11 -->",
+    "user": { "login": "octocat", "id": 583231 },
+    "created_at": "2024-03-05T10:00:00Z"
+  }
+]

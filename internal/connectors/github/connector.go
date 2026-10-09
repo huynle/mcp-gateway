@@ -94,7 +94,7 @@ func (c *Connector) App() string { return App }
 
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
-func (c *Connector) Tools() []connectors.Tool { return c.readTools() }
+func (c *Connector) Tools() []connectors.Tool { return append(c.readTools(), c.writeTools()...) }
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error)
@@ -104,9 +104,18 @@ type handler func(ctx context.Context, client *gh.Client, call connectors.Call) 
 // (5xx and network to Unavailable, rate limits to RateLimited, the rest
 // to *Error).
 func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.Result, error) {
-	run, ok := c.handlers()[shortName(call.Tool)]
+	name := shortName(call.Tool)
+	run, ok := c.handlers()[name]
+	write := false
+	if !ok {
+		run, ok = c.writeHandlers()[name]
+		write = true
+	}
 	if !ok {
 		return connectors.Result{}, fmt.Errorf("%w: %q", connectors.ErrUnknownTool, call.Tool)
+	}
+	if write && call.OperationID == "" {
+		return connectors.Result{}, ErrMissingOperation
 	}
 	if call.Account == "" {
 		return connectors.Result{}, &Error{Class: ClassNoAccount, Message: "no connected GitHub account: connect one on the portal (Connections)"}
@@ -123,7 +132,9 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 	res, err := run(ctx, client, call)
 	if err != nil {
 		var e *Error
-		if errors.As(err, &e) && e.Class == ClassUnavailable {
+		// Reads report an unreachable GitHub as Unavailable; a write never
+		// does (its error says whether the outcome is known).
+		if !write && errors.As(err, &e) && e.Class == ClassUnavailable {
 			return connectors.Result{Unavailable: true}, nil
 		}
 		return connectors.Result{}, err

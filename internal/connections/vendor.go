@@ -106,12 +106,19 @@ const (
 	ExtraIDField    = "id_field"
 	ExtraNameField  = "name_field"
 	ExtraEmailField = "email_field"
+	// ExtraCompanyOrgs lists the organizations (comma separated) whose
+	// members get company accounts; read by the GitHub binder.
+	ExtraCompanyOrgs = "company_orgs"
 )
 
-// reservedExtra are the Extra keys that are not authorization parameters.
+// reservedExtra are the Extra keys the gateway consumes itself (flow
+// settings and binder hints); they are never sent as authorization
+// request parameters (quirk sxbr5or5). A binder that reads a new hint
+// from Extra adds its key here.
 var reservedExtra = map[string]bool{
 	ExtraScopeParam: true, ExtraCompanyDomains: true, ExtraDefaultLabel: true,
 	ExtraIDField: true, ExtraNameField: true, ExtraEmailField: true,
+	ExtraCompanyOrgs: true,
 }
 
 // AuthParams returns the Extra entries that are sent as authorization

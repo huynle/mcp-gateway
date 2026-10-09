@@ -10,6 +10,7 @@ package github
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,6 +137,45 @@ type File struct {
 	PatchTruncated bool `json:"patch_truncated,omitempty"`
 }
 
+// CreatedIssue is create_issue's result: the identifiers of the new
+// issue, never its content (the ledger keeps number, id and url).
+type CreatedIssue struct {
+	Number int    `json:"number"`
+	ID     int64  `json:"id"`
+	URL    string `json:"url"`
+	Repo   string `json:"repo"`
+	State  string `json:"state,omitempty"`
+}
+
+// CreatedComment is add_issue_comment's result.
+type CreatedComment struct {
+	ID     int64  `json:"id"`
+	URL    string `json:"url"`
+	Repo   string `json:"repo"`
+	Number int    `json:"number"`
+}
+
+// CreatedPullRequest is create_pull_request's result.
+type CreatedPullRequest struct {
+	Number int    `json:"number"`
+	ID     int64  `json:"id"`
+	URL    string `json:"url"`
+	Repo   string `json:"repo"`
+	State  string `json:"state,omitempty"`
+	Draft  bool   `json:"draft"`
+	Head   string `json:"head,omitempty"`
+	Base   string `json:"base,omitempty"`
+}
+
+// CreatedBranch is create_branch's result.
+type CreatedBranch struct {
+	Ref    string `json:"ref"`
+	Branch string `json:"branch"`
+	SHA    string `json:"sha"`
+	URL    string `json:"url,omitempty"`
+	Repo   string `json:"repo"`
+}
+
 // FilesPage is list_pull_request_files's result.
 type FilesPage struct {
 	Page      int    `json:"page"`
@@ -200,6 +240,29 @@ func toPullRequest(pr *gh.PullRequest, repo string) PullRequest {
 	}
 	return out
 }
+
+func toCreatedIssue(is *gh.Issue, repo string) CreatedIssue {
+	return CreatedIssue{Number: is.GetNumber(), ID: is.GetID(), URL: is.GetHTMLURL(), Repo: repo, State: is.GetState()}
+}
+
+func toCreatedComment(cm *gh.IssueComment, repo string, number int) CreatedComment {
+	return CreatedComment{ID: cm.GetID(), URL: cm.GetHTMLURL(), Repo: repo, Number: number}
+}
+
+func toCreatedPullRequest(pr *gh.PullRequest, repo string) CreatedPullRequest {
+	return CreatedPullRequest{
+		Number: pr.GetNumber(), ID: pr.GetID(), URL: pr.GetHTMLURL(), Repo: repo, State: pr.GetState(), Draft: pr.GetDraft(),
+		Head: pr.GetHead().GetRef(), Base: pr.GetBase().GetRef(),
+	}
+}
+
+func toCreatedBranch(ref *gh.Reference, repo, branch string) CreatedBranch {
+	return CreatedBranch{Ref: ref.GetRef(), Branch: branch, SHA: ref.GetObject().GetSHA(), URL: ref.GetURL(), Repo: repo}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func i64toa(n int64) string { return strconv.FormatInt(n, 10) }
 
 func toFiles(files []*gh.CommitFile) []File {
 	out := make([]File, 0, len(files))

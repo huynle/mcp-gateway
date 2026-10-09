@@ -18,7 +18,7 @@ import (
 // GitHub organizations (comma separated, case-insensitive). An account
 // that is an active member of any of them is a company account; every
 // other account, and every account when the list is empty, is personal.
-const ExtraCompanyOrgs = "company_orgs"
+const ExtraCompanyOrgs = connections.ExtraCompanyOrgs
 
 // DefaultAPIBase is api.github.com; GHES deployments point the vendor
 // app's UserInfoURL at https://<host>/api/v3/user and the binder follows.

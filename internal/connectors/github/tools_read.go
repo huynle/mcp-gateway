@@ -218,15 +218,16 @@ func repoArgs(args map[string]any) (owner, repo string, err error) {
 	return owner, repo, nil
 }
 
-// numberArg reads a positive integer argument.
-func numberArg(args map[string]any, name string) (int, error) {
-	v, ok := args[name]
+// numberArg reads the positive integer "number" argument (an issue or
+// pull request number).
+func numberArg(args map[string]any) (int, error) {
+	v, ok := args["number"]
 	if !ok {
-		return 0, invalid("%s is required", name)
+		return 0, invalid("number is required")
 	}
 	n, err := toInt(v)
 	if err != nil || n < 1 {
-		return 0, invalid("%s must be a positive integer", name)
+		return 0, invalid("number must be a positive integer")
 	}
 	return n, nil
 }
@@ -339,7 +340,7 @@ func (c *Connector) getIssue(ctx context.Context, client *gh.Client, call connec
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	number, err := numberArg(call.Args, "number")
+	number, err := numberArg(call.Args)
 	if err != nil {
 		return connectors.Result{}, err
 	}
@@ -357,7 +358,7 @@ func (c *Connector) getPullRequest(ctx context.Context, client *gh.Client, call 
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	number, err := numberArg(call.Args, "number")
+	number, err := numberArg(call.Args)
 	if err != nil {
 		return connectors.Result{}, err
 	}
@@ -375,7 +376,7 @@ func (c *Connector) listPullRequestFiles(ctx context.Context, client *gh.Client,
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	number, err := numberArg(call.Args, "number")
+	number, err := numberArg(call.Args)
 	if err != nil {
 		return connectors.Result{}, err
 	}

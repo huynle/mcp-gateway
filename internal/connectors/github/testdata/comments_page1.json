@@ -1,0 +1,16 @@
+[
+  {
+    "id": 8001,
+    "html_url": "https://github.example.test/example-org/widgets/issues/42#issuecomment-8001",
+    "body": "First comment, long before the gateway.",
+    "user": { "login": "hubot", "id": 1 },
+    "created_at": "2024-03-01T10:00:00Z"
+  },
+  {
+    "id": 8002,
+    "html_url": "https://github.example.test/example-org/widgets/issues/42#issuecomment-8002",
+    "body": "Another operation's comment.\n\n<!-- mcp-gateway op:11111111-2222-4333-8444-555555555555 -->",
+    "user": { "login": "octocat", "id": 583231 },
+    "created_at": "2024-03-02T10:00:00Z"
+  }
+]

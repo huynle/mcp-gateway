@@ -1,0 +1,9 @@
+{
+  "id": 501,
+  "name": "widgets",
+  "full_name": "example-org/widgets",
+  "private": true,
+  "html_url": "https://github.example.test/example-org/widgets",
+  "default_branch": "develop",
+  "owner": { "login": "example-org", "id": 777 }
+}
