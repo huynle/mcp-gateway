@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "messages": [
+    {"type": "message", "user": "U0ALICE001", "text": "the post we are looking for", "ts": "1700004000.000100",
+     "metadata": {"event_type": "mcp_gateway_operation", "event_payload": {"operation_id": "0f1e2d3c-4b5a-4968-8777-66554433aa11"}}},
+    {"type": "message", "user": "U0BOB00002", "text": "older chatter", "ts": "1700003000.000200"}
+  ],
+  "has_more": false,
+  "response_metadata": {"next_cursor": ""}
+}

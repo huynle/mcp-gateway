@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "messages": [
+    {"type": "message", "user": "U0BOB00002", "text": "newer chatter", "ts": "1700005000.000100"},
+    {"type": "message", "user": "U0ALICE001", "text": "unrelated gateway post", "ts": "1700004900.000100",
+     "metadata": {"event_type": "mcp_gateway_operation", "event_payload": {"operation_id": "00000000-0000-4000-8000-00000000beef"}}}
+  ],
+  "has_more": true,
+  "response_metadata": {"next_cursor": "bmV4dF90czoxNzAwMDA0OTAwLjAwMDEwMA=="}
+}

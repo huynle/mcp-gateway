@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "type": "message",
+  "channel": "C0ENGGEN01",
+  "message": {
+    "type": "message",
+    "user": "U0BOB00002",
+    "text": "Deploy of widgets 2.3.1 is done",
+    "ts": "1700003000.000200",
+    "reactions": [
+      {"name": "tada", "users": ["U0CAROL003"], "count": 1}
+    ]
+  }
+}

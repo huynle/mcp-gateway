@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "type": "message",
+  "channel": "C0ENGGEN01",
+  "message": {"type": "message", "user": "U0BOB00002", "text": "Deploy of widgets 2.3.1 is done", "ts": "1700003000.000200"}
+}
