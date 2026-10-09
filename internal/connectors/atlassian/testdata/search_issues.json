@@ -1,0 +1,39 @@
+{
+  "issues": [
+    {
+      "id": "10001",
+      "key": "MOCK-1",
+      "self": "https://api.atlassian.example.test/ex/jira/11111111-2222-4333-8444-555555555555/rest/api/3/issue/10001",
+      "fields": {
+        "summary": "Mock issue from JQL search",
+        "status": {"name": "To Do", "statusCategory": {"key": "new", "name": "To Do"}},
+        "issuetype": {"name": "Task", "subtask": false},
+        "priority": {"name": "Medium"},
+        "assignee": {"accountId": "5b10ac8d82e05b22cc7d4ef5", "displayName": "Alice Example"},
+        "reporter": {"accountId": "5b10a2844c20165700ede21g", "displayName": "Bob Example"},
+        "labels": ["bug", "backend"],
+        "created": "2026-10-01T10:00:00.000+0000",
+        "updated": "2026-10-02T11:30:00.000+0000",
+        "project": {"id": "10000", "key": "MOCK", "name": "Mock Project"}
+      }
+    },
+    {
+      "id": "10002",
+      "key": "MOCK-2",
+      "self": "https://api.atlassian.example.test/ex/jira/11111111-2222-4333-8444-555555555555/rest/api/3/issue/10002",
+      "fields": {
+        "summary": "Second mock issue",
+        "status": {"name": "Done", "statusCategory": {"key": "done", "name": "Done"}},
+        "issuetype": {"name": "Bug", "subtask": false},
+        "priority": null,
+        "assignee": null,
+        "reporter": {"accountId": "5b10a2844c20165700ede21g", "displayName": "Bob Example"},
+        "labels": [],
+        "created": "2026-09-20T08:00:00.000+0000",
+        "updated": "2026-09-21T09:00:00.000+0000",
+        "project": {"id": "10000", "key": "MOCK", "name": "Mock Project"}
+      }
+    }
+  ],
+  "isLast": true
+}
