@@ -7,7 +7,7 @@ description: >-
   with a pre-upgrade migration Job (see docs/deploy.md).
 type: application
 # Chart version (packaging); bump on every chart change.
-version: 0.1.0
+version: 0.2.0
 # Default image tag; override with image.tag.
 appVersion: "0.1.0"
 kubeVersion: ">=1.25.0-0"

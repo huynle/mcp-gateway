@@ -5,8 +5,8 @@ The Helm chart in [`deploy/helm/mcp-gateway`](../deploy/helm/mcp-gateway) deploy
 ```
 deploy/helm/mcp-gateway/            the chart (Chart.yaml, values.yaml, values.schema.json, templates/)
 deploy/helm/values-local.example.yaml        kind / minikube: file key provider, fake connector, no ingress
-deploy/helm/values-staging.example.yaml      stub: Vault, nginx + cert-manager, CIDRs to replace
-deploy/helm/values-production.example.yaml   stub: same shape, hard anti-affinity, bigger resources
+deploy/helm/values-staging.example.yaml      Vault, nginx + cert-manager staging issuer, alert rules, CIDRs to replace
+deploy/helm/values-production.example.yaml   3 replicas, PDB 2, hard anti-affinity, Vault, IdP placeholders, ServiceMonitor + alerts
 deploy/helm/helm_test.go + testdata/*.golden  make test-helm (build tag helm)
 deploy/smoke/kind-smoke.sh + deploy/smoke/k8s/postgres.yaml   make kind-smoke
 ```
@@ -78,6 +78,7 @@ Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key unde
 | `podSecurityContext` / `containerSecurityContext` | non-root 65532, seccomp RuntimeDefault, read-only root, drop ALL, no privilege escalation | The schema refuses `runAsNonRoot: false`, `readOnlyRootFilesystem: false`, `allowPrivilegeEscalation: true`. |
 | `serviceAccount.automountServiceAccountToken` | `false` | The gateway never calls the Kubernetes API. |
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator `ServiceMonitor` on the metrics Service. |
+| `metrics.prometheusRule.enabled` | `false` | Prometheus Operator `PrometheusRule` with the alerts the runbooks expect (`templates/prometheusrule.yaml`): `MCPGatewayUnresolvedOperations` (any `ledger_operations_total{state="unresolved"}` increase in `unresolved.window`, 30m), `MCPGatewayConnectionRefreshFailures` (`refreshFailures.perMinute` per app over 15m), `MCPGatewayAuthFailureSpike` (`authFailures.perMinute`, 30/min over 5m for 10m), `MCPGatewayVendorRateLimited` (vendor 429s per app), `MCPGatewayScrapeDown` (`absent(up == 1)` for 5m) and, with `kubeStateMetrics`, `MCPGatewayNoReadyReplicas` / `MCPGatewayReplicasBelowMinimum`. `selector` is the label matcher of your scrape job (the ServiceMonitor's `job` label is the metrics Service name, `<release>-metrics`); `labels` makes the operator pick the rule up; `runbookBaseURL` is prefixed to each `runbook_url`. |
 | `extraEnv`, `extraEnvFrom`, `extraVolumes`, `extraVolumeMounts` | | Escape hatches (e.g. a CA bundle for a private Vault). |
 
 `values.schema.json` validates types, enums and formats (durations, CIDRs, provider names) before rendering.
@@ -117,7 +118,7 @@ Only do this when the `down` section of the migration is safe for the data writt
 
 ## Key rotation
 
-- **Vault** (`keyProvider.type=vault`): `vault write -f transit/keys/mcp-gateway/rotate`. New envelopes use the new version at once; old versions decrypt until `min_decryption_version` is raised. Run the re-wrap job, then raise it ([`docs/crypto.md`](crypto.md#root-key-rotation)). No pod restart is needed. Rotate the **Vault token** by updating Secret `mcp-gateway-vault` and restarting the pods (`kubectl rollout restart deploy/mcp-gateway`; env vars are read at start).
+- **Vault** (`keyProvider.type=vault`): `vault write -f transit/keys/mcp-gateway/rotate`. New envelopes use the new version at once; old versions decrypt until `min_decryption_version` is raised. **The re-wrap step does not exist yet** (`crypto.RewrapEach` has no caller; Brain draft task `nsyw7xml`), so do not raise `min_decryption_version` until it does; the full procedure and how to count envelopes per key version is in [`docs/runbooks/key-rotation.md`](runbooks/key-rotation.md). No pod restart is needed for the transit key. Rotate the **Vault token** by updating Secret `mcp-gateway-vault` and restarting the pods (`kubectl rollout restart deploy/mcp-gateway`; env vars are read at start).
 - **File** (`keyProvider.type=file`): add a key to `keys.json`, move `current`, update Secret `mcp-gateway-keys`, `kubectl rollout restart deploy/mcp-gateway` (the init container copies the file at pod start), re-wrap, then remove the old key.
 - **OAuth signing keys** rotate themselves (`gateway.oauth.keyRotation` / `keyGrace`); **database passwords**: update the Secret and restart; **OIDC client secrets**: same.
 
@@ -133,6 +134,28 @@ The gateway serves Prometheus metrics on `0.0.0.0:19090/metrics` inside the pod,
 - **Core `NetworkPolicy` cannot match hostnames.** `egress.vendorAPIs.hosts` (GitHub, Slack, Atlassian, Google, Microsoft; from [`docs/vendor-apps.md`](vendor-apps.md)) is recorded on the policy as an annotation. Without `egress.vendorAPIs.cidrs`, HTTPS egress is allowed to `0.0.0.0/0` **except** the private and link-local ranges (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`: no cloud metadata service, no internal services), which is the tightest cloud-neutral rule for a set of public SaaS endpoints whose addresses change. Clusters with an FQDN-aware CNI (Cilium `toFQDNs`, Calico `GlobalNetworkSet`, an egress proxy) should turn the host list into their own rule and set `cidrs` to the proxy; `egress.extra` appends raw rules.
 - Your OIDC issuers must be reachable too: public ones are covered by the vendor rule; a private IdP needs an `egress.extra` entry.
 
+## Production
+
+The production shape is `deploy/helm/values-production.example.yaml`; copy it into the deployment repository, replace every placeholder and keep it next to the release tag it was last applied with. What it sets, and why:
+
+| Setting | Value | Reason |
+|---|---|---|
+| `replicaCount` / `podDisruptionBudget.minAvailable` / `antiAffinity.type` | `3` / `2` / `hard` | one node can be drained or lost while two replicas serve and the background jobs keep a healthy holder; needs >= 3 nodes |
+| `keyProvider.type` | `vault`, its own transit key (`mcp-gateway`), never the staging key | `docs/crypto.md`; rotation in `docs/runbooks/key-rotation.md` |
+| `oidc.providers` | the production IdP client only, `allowedDomains` / `allowedTenants` set | nobody outside the company can sign in; the staging client is a different registration |
+| `gateway.bootstrapAdmins` | `issuer\|subject` pairs of the first admins | admins are identified by provider subject, never by email (decision `uamxx6ba`); copy the subject from the `identity.signin` log line of the first sign-in |
+| `gateway.enableFakeConnector` | `false` | the chart's NOTES shout if it is on; the fake app would give every user make-believe tools |
+| `networkPolicy` | enabled; `postgres.cidrs`, `keyProvider.cidrs`, `ingress.http.from` = the ingress controller namespace, `ingress.metrics.from` = the monitoring namespace | default deny; vendor HTTPS egress stays public-minus-private unless the CNI can match hostnames |
+| `resources` | 250m / 256Mi requests, 1Gi memory limit | measured headroom for 3 replicas; no CPU limit (latency over fairness) |
+| `metrics.serviceMonitor` + `metrics.prometheusRule` | enabled, `labels` matching your Prometheus | the alerts above; each `runbook_url` points at `docs/runbooks/` |
+| `gateway.approvals.*`, `gateway.ledger.*`, `gateway.rateLimits.*`, `gateway.tokens.signinMaxAge` | the defaults | the pilot-tunable set (`docs/pilot-checklist.md`); change them in values, never by hand on a pod |
+
+**Secrets** (all six, "Secrets to create" above) exist before `helm install`; the chart never renders one. Vendor app secrets (client secrets, the Slack bot token and signing secret) are **not** Secrets: they are entered once on `/admin/vendor-apps` and stored envelope-encrypted (`docs/vendor-apps.md`, rotation in `docs/runbooks/vendor-app-secret-rotation.md`).
+
+**Before the first production deploy**: database backups configured and a restore rehearsed (migrations are forward-only; `docs/runbooks/deploy-and-rollback.md`); the production vendor apps registered with the production callback URLs (`docs/vendor-apps.md` section 6 checklist); each runbook drilled once on staging (`docs/runbooks/README.md`, drill log); the pilot checklist agreed (`docs/pilot-checklist.md`).
+
+**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no re-wrap command for root key rotation (`nsyw7xml`), no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`).
+
 ## Environments
 
 | | local (kind / minikube) | staging | production |
@@ -145,7 +168,9 @@ The gateway serves Prometheus metrics on `0.0.0.0:19090/metrics` inside the pod,
 | ingress / TLS | off (port-forward), `cookieSecure: false` | nginx + cert-manager staging issuer | nginx + cert-manager production issuer |
 | network policy | off (kind has no enforcement) | on, CIDRs for the DB subnet and Vault | on |
 | fake connector | **on** | off | off |
-| anti-affinity / PDB | off (one node) | soft / `minAvailable: 1` | hard / `minAvailable: 1` |
+| replicas | 2 | 2 | 3 |
+| anti-affinity / PDB | off (one node) | soft / `minAvailable: 1` | hard / `minAvailable: 2` |
+| ServiceMonitor / alert rules | off | on / on | on / on |
 
 `make kind-smoke` runs the local environment end to end: builds the image, creates a kind cluster, applies `deploy/smoke/k8s/postgres.yaml`, creates the three Secrets, installs the chart, checks two ready replicas, `/healthz`, `/readyz`, the OAuth discovery document, an unauthenticated MCP `initialize` (401 + `WWW-Authenticate ... resource_metadata`), the in-cluster metrics Service, then rolls the schema back one version (`/migrate down`), sees the pods go not-ready, upgrades, and verifies the hook Job finished before the first new pod started and `/readyz` is ok again. CI runs it as a non-blocking step of the `helm` job.
 

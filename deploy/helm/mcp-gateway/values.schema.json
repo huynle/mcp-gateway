@@ -195,6 +195,21 @@
             "scrapeTimeout": { "type": "string" },
             "labels": { "type": "object" }
           }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "labels": { "type": "object" },
+            "selector": { "type": "string", "description": "PromQL label matchers added to every gateway metric selector, without braces; \"\" for none" },
+            "runbookBaseURL": { "type": "string", "pattern": "^https?://" },
+            "kubeStateMetrics": { "type": "boolean" },
+            "unresolved": { "$ref": "#/definitions/alertRule" },
+            "refreshFailures": { "$ref": "#/definitions/alertRule" },
+            "authFailures": { "$ref": "#/definitions/alertRule" },
+            "vendorRateLimited": { "$ref": "#/definitions/alertRule" },
+            "scrapeDown": { "$ref": "#/definitions/alertRule" }
+          }
         }
       }
     },
@@ -316,6 +331,15 @@
     "extraVolumeMounts": { "type": "array" }
   },
   "definitions": {
+    "alertRule": {
+      "type": "object",
+      "properties": {
+        "window": { "$ref": "#/definitions/duration" },
+        "perMinute": { "type": "number", "minimum": 0 },
+        "for": { "$ref": "#/definitions/duration" },
+        "severity": { "type": "string", "enum": ["info", "warning", "critical"] }
+      }
+    },
     "duration": { "type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$" },
     "cidr": { "type": "string", "pattern": "^[0-9a-fA-F.:]+/[0-9]+$" },
     "peerList": { "type": "object", "properties": { "from": { "type": "array" } } },

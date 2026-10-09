@@ -1,25 +1,60 @@
-# Production stub. Everything secret comes from pre-created Secrets; nothing
-# here is a secret. Replace example.com, the OIDC client, the Vault address
-# and the network CIDRs/selectors with your cluster's values.
+# Production values. Everything secret comes from pre-created Secrets
+# (docs/deploy.md "Secrets to create"); nothing here is a secret. Replace
+# every example.com, the OIDC client, the Vault address and the network
+# CIDRs / selectors with your cluster's values, then keep this file in the
+# deployment repository next to the release tag it was last applied with.
+#
+# What this shape gives you (docs/deploy.md "Environments", runbooks in
+# docs/runbooks/): three identical stateless replicas spread over nodes,
+# the pre-upgrade migration Job, Vault transit as the key provider, company
+# sign-in through the production IdP client only, the fake connector off,
+# a default-deny NetworkPolicy with the database and Vault pinned to their
+# subnets, a PodDisruptionBudget, production resources, and the Prometheus
+# Operator ServiceMonitor + alert rules the runbooks refer to.
 image:
   repository: ghcr.io/huynle/mcp-gateway
-  tag: "" # pin a release tag in CD
+  tag: "" # pin a release tag in CD (never latest; rollback = the previous tag)
   pullPolicy: IfNotPresent
 
-replicaCount: 2
+# Three replicas: one can be drained or lost while two keep serving and
+# the background jobs (reconciler, stale sweep, approval expiry, key
+# rotation, keep-alive) keep a healthy holder. Never below 2 (render fails).
+replicaCount: 3
 
 gateway:
   baseURL: https://mcp-gateway.example.com
   logLevel: info
   logFormat: json
   drainTimeoutSeconds: 25 # terminationGracePeriodSeconds = 35
+  session:
+    idleTimeout: 12h
+    absoluteTimeout: 168h
+    cookieSecure: true
+  tokens:
+    signinMaxAge: 720h # the 30-day sign-in rule for generated and OAuth tokens
+  # Pilot-tunable defaults (docs/pilot-checklist.md): approval expiry and
+  # bounded wait, idempotency window, reconciliation limits.
   approvals:
     ttl: 15m
     wait: 30s
+  ledger:
+    idempotencyWindow: 24h
+    staleAfter: 2m
+    maxReconcileAttempts: 6
+    maxReconcileAge: 24h
+  rateLimits:
+    userPerMinute: 60
+    appPerMinute: 600
+  # Admins by issuer|subject (never by email): copy the subject from the
+  # identity.signin log line of the first sign-in (README "Sign-in").
   bootstrapAdmins: []
   # - "https://accounts.google.com|<sub of the first admin>"
-  enableFakeConnector: false # never true here
+  # - "https://login.microsoftonline.com/<tenant id>/v2.0|<oid of the first admin>"
+  enableFakeConnector: false # never true here; NOTES.txt shouts if it is
 
+# The production client at the company identity provider (README "Sign-in,
+# users and the portal"; .env.example has the Entra and Okta variants).
+# Every provider needs allowedDomains and/or allowedTenants.
 oidc:
   providers:
     - name: google
@@ -30,6 +65,14 @@ oidc:
         secretName: mcp-gateway-oidc
         secretKey: google-client-secret
       allowedDomains: [example.com]
+    # - name: entra
+    #   displayName: Microsoft
+    #   issuer: https://login.microsoftonline.com/REPLACE-TENANT-ID/v2.0
+    #   clientID: REPLACE-APPLICATION-ID
+    #   clientSecret:
+    #     secretName: mcp-gateway-oidc
+    #     secretKey: entra-client-secret
+    #   allowedTenants: [REPLACE-TENANT-ID]
 
 database:
   existingSecret: mcp-gateway-database
@@ -37,6 +80,8 @@ database:
   jobsURLKey: jobs-url
   migrateURLKey: migrate-url
 
+# Vault / OpenBao transit (docs/crypto.md): its own key for production,
+# never shared with staging. Rotation: docs/runbooks/key-rotation.md.
 keyProvider:
   type: vault
   vault:
@@ -47,9 +92,15 @@ keyProvider:
       existingSecret: mcp-gateway-vault
       secretKey: token
 
+# Stable pseudonymous user hashes in the logs across replicas and restarts.
 logSalt:
   existingSecret: mcp-gateway-app
   secretKey: log-salt
+
+migrate:
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
 
 ingress:
   className: nginx
@@ -60,6 +111,7 @@ ingress:
     secretName: mcp-gateway-tls
 
 networkPolicy:
+  enabled: true
   ingress:
     http:
       from:
@@ -76,12 +128,16 @@ networkPolicy:
       cidrs: ["10.20.0.0/16"] # the managed PostgreSQL subnet
     keyProvider:
       cidrs: ["10.30.0.0/24"] # Vault
+    # vendorAPIs: HTTPS to the public internet minus private ranges by
+    # default; with an FQDN-aware CNI or an egress proxy set cidrs to it.
 
 podDisruptionBudget:
-  minAvailable: 1
+  enabled: true
+  minAvailable: 2 # of 3: one voluntary disruption at a time
 
 antiAffinity:
-  type: hard # >= 2 nodes
+  enabled: true
+  type: hard # >= 3 nodes with replicaCount 3
 
 resources:
   requests:
@@ -89,3 +145,41 @@ resources:
     memory: 256Mi
   limits:
     memory: 1Gi
+
+# Prometheus Operator: scrape the private metrics Service and load the
+# alert rules the runbooks expect. Set the labels to what your Prometheus
+# selects (kube-prometheus-stack: release: <its release name>).
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels: {}
+    #  release: kube-prometheus-stack
+  prometheusRule:
+    enabled: true
+    labels: {}
+    #  release: kube-prometheus-stack
+    selector: 'job="mcp-gateway-metrics"' # the ServiceMonitor's job label = the metrics Service name
+    runbookBaseURL: https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks
+    kubeStateMetrics: true
+    unresolved:
+      window: 30m
+      for: 0m
+      severity: warning
+    refreshFailures:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    authFailures:
+      window: 5m
+      perMinute: 30
+      for: 10m
+      severity: warning
+    vendorRateLimited:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    scrapeDown:
+      for: 5m
+      severity: critical

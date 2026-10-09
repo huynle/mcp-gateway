@@ -261,8 +261,13 @@ func TestReplicaCountAtLeastTwo(t *testing.T) {
 	if dep == nil {
 		t.Fatal("no Deployment named mcp-gateway")
 	}
+	if got := dig(dep.Spec, "replicas"); got != 3 {
+		t.Errorf("production replicas = %v, want 3", got)
+	}
+	out = mustRender(t, "")
+	dep = find(parse(t, out), "Deployment", "mcp-gateway")
 	if got := dig(dep.Spec, "replicas"); got != 2 {
-		t.Errorf("replicas = %v, want 2", got)
+		t.Errorf("default replicas = %v, want 2", got)
 	}
 	_, stderr, err := render(t, "values-production.example.yaml", "replicaCount=1")
 	if err == nil {
@@ -606,14 +611,88 @@ func TestPDBAndServiceAccount(t *testing.T) {
 	if pdb == nil {
 		t.Fatal("no PodDisruptionBudget")
 	}
-	if v := dig(pdb.Spec, "minAvailable"); v != 1 {
-		t.Errorf("minAvailable = %v, want 1", v)
+	if v := dig(pdb.Spec, "minAvailable"); v != 2 {
+		t.Errorf("production minAvailable = %v, want 2 (of 3 replicas: one voluntary disruption at a time)", v)
+	}
+	if pdb := find(parse(t, mustRender(t, "")), "PodDisruptionBudget", "mcp-gateway"); pdb == nil || dig(pdb.Spec, "minAvailable") != 1 {
+		t.Errorf("default PDB = %v, want minAvailable 1", pdb)
 	}
 	if sa := find(objs, "ServiceAccount", "mcp-gateway"); sa == nil {
 		t.Error("no ServiceAccount")
 	}
-	if sm := find(objs, "ServiceMonitor", ""); sm != nil {
+	// Operator resources are opt-in: absent from the default render, present
+	// in the production example (metrics.serviceMonitor / prometheusRule).
+	defaults := parse(t, mustRender(t, ""))
+	if sm := find(defaults, "ServiceMonitor", ""); sm != nil {
 		t.Error("ServiceMonitor rendered although disabled by default")
+	}
+	if pr := find(defaults, "PrometheusRule", ""); pr != nil {
+		t.Error("PrometheusRule rendered although disabled by default")
+	}
+	if sm := find(objs, "ServiceMonitor", "mcp-gateway"); sm == nil {
+		t.Error("production example does not render a ServiceMonitor")
+	}
+}
+
+func TestPrometheusRuleOptIn(t *testing.T) {
+	out := mustRender(t, "values-production.example.yaml")
+	pr := find(parse(t, out), "PrometheusRule", "mcp-gateway")
+	if pr == nil {
+		t.Fatal("no PrometheusRule in the production example (metrics.prometheusRule.enabled=true)")
+	}
+	groups, _ := dig(pr.Spec, "groups").([]any)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %d, want 1", len(groups))
+	}
+	rules, _ := dig(groups[0], "rules").([]any)
+	alerts := map[string]map[string]any{}
+	for _, r := range rules {
+		m, _ := r.(map[string]any)
+		name, _ := m["alert"].(string)
+		alerts[name] = m
+	}
+	for _, want := range []string{"MCPGatewayUnresolvedOperations", "MCPGatewayConnectionRefreshFailures", "MCPGatewayAuthFailureSpike", "MCPGatewayVendorRateLimited", "MCPGatewayScrapeDown", "MCPGatewayNoReadyReplicas"} {
+		a, ok := alerts[want]
+		if !ok {
+			t.Errorf("alert %s missing (have %v)", want, alerts)
+			continue
+		}
+		if dig(a, "labels", "severity") == nil {
+			t.Errorf("alert %s has no severity label", want)
+		}
+		if ru := fmt.Sprint(dig(a, "annotations", "runbook_url")); !strings.Contains(ru, "docs/runbooks/") {
+			t.Errorf("alert %s runbook_url = %q, want a docs/runbooks/ link", want, ru)
+		}
+	}
+	// The metric names must be the ones the gateway exports (docs/observability.md).
+	for alert, metric := range map[string]string{
+		"MCPGatewayUnresolvedOperations":      `ledger_operations_total{state="unresolved"`,
+		"MCPGatewayConnectionRefreshFailures": "connection_refresh_failures_total",
+		"MCPGatewayAuthFailureSpike":          "auth_failures_total",
+		"MCPGatewayVendorRateLimited":         "vendor_rate_limited_total",
+		"MCPGatewayScrapeDown":                "up{",
+		"MCPGatewayNoReadyReplicas":           `kube_deployment_status_replicas_available{namespace="mcp-gateway",deployment="mcp-gateway"}`,
+	} {
+		if expr := fmt.Sprint(dig(alerts[alert], "expr")); !strings.Contains(expr, metric) {
+			t.Errorf("%s expr = %q, want it to use %s", alert, expr, metric)
+		}
+	}
+	if expr := fmt.Sprint(dig(alerts["MCPGatewayUnresolvedOperations"], "expr")); !strings.Contains(expr, "[30m]") {
+		t.Errorf("unresolved window = %q, want 30m in the production example", expr)
+	}
+	if f := fmt.Sprint(dig(alerts["MCPGatewayScrapeDown"], "for")); f == "" || f == "<nil>" {
+		t.Errorf("MCPGatewayScrapeDown has no for duration")
+	}
+	// Without kube-state-metrics the Deployment-level alerts are left out.
+	out = mustRender(t, "values-production.example.yaml", "metrics.prometheusRule.kubeStateMetrics=false")
+	if strings.Contains(out, "MCPGatewayNoReadyReplicas") {
+		t.Errorf("kubeStateMetrics=false still renders the kube-state-metrics alerts")
+	}
+	// The rule must never be a hook and must carry the extra labels.
+	out = mustRender(t, "values-production.example.yaml", "metrics.prometheusRule.labels.release=kube-prometheus-stack")
+	pr = find(parse(t, out), "PrometheusRule", "mcp-gateway")
+	if labels, _ := pr.Metadata["labels"].(map[string]any); labels["release"] != "kube-prometheus-stack" {
+		t.Errorf("PrometheusRule labels = %v, want release=kube-prometheus-stack", labels)
 	}
 }
 
