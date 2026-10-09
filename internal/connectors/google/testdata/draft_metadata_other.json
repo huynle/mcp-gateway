@@ -1,0 +1,18 @@
+{
+  "id": "r-1",
+  "message": {
+    "id": "18f9d1",
+    "threadId": "18f9d1",
+    "labelIds": [
+      "DRAFT"
+    ],
+    "payload": {
+      "headers": [
+        {
+          "name": "Message-ID",
+          "value": "<other@example.test>"
+        }
+      ]
+    }
+  }
+}

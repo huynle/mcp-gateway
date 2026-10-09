@@ -1,0 +1,1 @@
+{"error":{"code":429,"message":"Quota exceeded for quota metric 'Queries' and limit 'Queries per minute per user' of service 'calendar-json.googleapis.com'.","errors":[{"domain":"global","reason":"rateLimitExceeded","message":"Quota exceeded"}],"status":"RESOURCE_EXHAUSTED"}}

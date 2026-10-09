@@ -397,6 +397,9 @@ func registerConnectors(cfg config.Config, registry *connectors.Registry, connSv
 		if err := registerSlack(cfg, registry, connSvc, log); err != nil {
 			return nil, err
 		}
+		if err := registerGoogle(cfg, registry, connSvc, log); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.EnableFakeConnector {
 		f := fake.New(fake.Options{AutoAccount: true})
