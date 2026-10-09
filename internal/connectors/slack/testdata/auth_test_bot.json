@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "url": "https://acme.slack.com/",
+  "team": "Acme Corp",
+  "user": "mcp_gateway",
+  "team_id": "T0EXAMPLE1",
+  "user_id": "U0GATEWAYB",
+  "bot_id": "B0GATEWAYB"
+}
