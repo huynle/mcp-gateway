@@ -391,6 +391,9 @@ func registerConnectors(cfg config.Config, registry *connectors.Registry, connSv
 		if err := registerAtlassian(cfg, registry, connSvc, log); err != nil {
 			return nil, err
 		}
+		if err := registerMicrosoft(cfg, registry, connSvc, log); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.EnableFakeConnector {
 		f := fake.New(fake.Options{AutoAccount: true})

@@ -1,0 +1,7 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users/$entity",
+  "id": "11111111-2222-4333-8444-555555555555",
+  "displayName": "Alice Example",
+  "userPrincipalName": "alice@example.test",
+  "mail": "alice@example.test"
+}

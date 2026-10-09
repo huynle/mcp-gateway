@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#organization",
+  "value": [
+    {"id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "displayName": "Example Corp", "verifiedDomains": [{"name": "example.test", "isDefault": true}]}
+  ]
+}

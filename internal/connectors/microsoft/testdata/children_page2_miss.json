@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/drive/root/children",
+  "value": [
+    {"id": "01DRIVE-folder-other", "name": "Other", "folder": {"childCount": 0}}
+  ]
+}

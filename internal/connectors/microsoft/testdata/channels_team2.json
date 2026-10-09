@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#teams('team-2')/channels",
+  "value": [
+    {"id": "19:chan-fin@thread.tacv2", "displayName": "General", "description": "", "membershipType": "standard", "webUrl": "https://teams.example.test/l/channel/fin"}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/messages(id,subject,from,receivedDateTime,bodyPreview,isRead,hasAttachments,webLink)",
+  "value": [
+    {
+      "id": "AAMkAGE1-msg-1",
+      "subject": "Q3 budget review",
+      "from": {"emailAddress": {"name": "Bob Example", "address": "bob@example.test"}},
+      "receivedDateTime": "2026-10-07T09:15:00Z",
+      "bodyPreview": "Hi Alice, attached is the Q3 budget for review before Friday.",
+      "isRead": false,
+      "hasAttachments": true,
+      "webLink": "https://outlook.example.test/owa/?ItemID=AAMkAGE1-msg-1"
+    },
+    {
+      "id": "AAMkAGE1-msg-2",
+      "subject": "Re: lunch",
+      "from": {"emailAddress": {"name": "Carol Example", "address": "carol@example.test"}},
+      "receivedDateTime": "2026-10-06T12:01:00Z",
+      "bodyPreview": "Sounds good, see you at noon.",
+      "isRead": true,
+      "hasAttachments": false,
+      "webLink": "https://outlook.example.test/owa/?ItemID=AAMkAGE1-msg-2"
+    }
+  ]
+}

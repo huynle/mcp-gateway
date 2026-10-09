@@ -1,0 +1,8 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/drive/root/children",
+  "@odata.nextLink": "https://graph.example.test/v1.0/me/drive/root/children?$skiptoken=page2",
+  "value": [
+    {"id": "01DRIVE-folder-finance", "name": "Finance", "folder": {"childCount": 12}},
+    {"id": "01DRIVE-item-notes", "name": "Q4 planning", "file": {"mimeType": "text/plain"}}
+  ]
+}
