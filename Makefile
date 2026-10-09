@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
+.PHONY: all build test test-integration test-e2e lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -28,6 +28,15 @@ test-integration:
 		echo "GATEWAY_TEST_DATABASE_URL is unset; integration tests will be skipped (run 'make compose-up' and export it)"; \
 	fi
 	$(GO) test -race -count=1 -p 1 -tags integration -run 'Integration' ./...
+
+## test-e2e: the safety-core end-to-end gate (test/e2e): the whole gateway
+## in-process against PostgreSQL, driven by the official MCP client. Needs
+## GATEWAY_TEST_DATABASE_URL like test-integration (skipped when unset).
+test-e2e:
+	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
+		echo "GATEWAY_TEST_DATABASE_URL is unset; end-to-end tests will be skipped (run 'make compose-up' and export it)"; \
+	fi
+	$(GO) test -race -count=1 -tags e2e -run 'E2E' ./test/e2e/...
 
 ## lint: run golangci-lint (install: https://golangci-lint.run/docs/welcome/install/)
 lint:
