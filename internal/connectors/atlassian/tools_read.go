@@ -274,6 +274,11 @@ func singleEquals(q, field string, valid func(string) bool, norm func(string) st
 		return ""
 	}
 	v := toks[idx+2]
+	// A personal Confluence space key starts with "~", which the tokenizer
+	// reads as the contains operator: glue it back to the word after it.
+	if !v.quoted && v.text == "~" && idx+3 < len(toks) && !toks[idx+3].quoted && !isOperator(toks[idx+3].text) {
+		v = token{text: "~" + toks[idx+3].text}
+	}
 	if v.text == "" || !valid(v.text) || (!v.quoted && isOperator(v.text)) {
 		return ""
 	}

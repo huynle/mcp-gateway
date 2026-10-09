@@ -96,10 +96,12 @@ func walkADF(b *strings.Builder, n adfNode) {
 	}
 }
 
-// isADFBlock reports whether the node type is a block that ends a line.
+// isADFBlock reports whether the node type is a leaf block that ends a
+// line. Containers (lists, list items, quotes, panels, tables) hold
+// paragraphs, which end their own lines, so they add none.
 func isADFBlock(t string) bool {
 	switch t {
-	case "paragraph", "heading", "listItem", "codeBlock", "blockquote", "rule", "tableRow", "mediaSingle", "panel":
+	case "paragraph", "heading", "codeBlock", "rule":
 		return true
 	}
 	return false

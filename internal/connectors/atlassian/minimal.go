@@ -208,12 +208,19 @@ type wireComments struct {
 	Comments   []wireComment `json:"comments"`
 }
 
+// wireSpaceRef is the space of a v1 content result (its id is a number
+// there, unlike everywhere else).
+type wireSpaceRef struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
 type wireContent struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-	Title  string `json:"title"`
-	Space  *named `json:"space"`
+	ID     string        `json:"id"`
+	Type   string        `json:"type"`
+	Status string        `json:"status"`
+	Title  string        `json:"title"`
+	Space  *wireSpaceRef `json:"space"`
 	Body   *struct {
 		Storage *struct {
 			Value string `json:"value"`

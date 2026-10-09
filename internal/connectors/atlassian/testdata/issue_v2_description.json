@@ -1,0 +1,10 @@
+{
+  "id": "10043",
+  "key": "MOCK-43",
+  "fields": {
+    "summary": "Plain description",
+    "description": "A plain string description",
+    "status": {"name": "To Do"},
+    "project": {"key": "MOCK"}
+  }
+}

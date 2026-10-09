@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "id": "12345",
+      "type": "page",
+      "status": "current",
+      "title": "Mock Confluence page",
+      "space": {"id": 98765, "key": "DOCS", "name": "Documentation", "type": "global"},
+      "version": {"number": 3, "when": "2026-10-03T09:15:00.000Z"},
+      "_links": {"webui": "/spaces/DOCS/pages/12345/Mock+Confluence+page", "self": "https://api.atlassian.example.test/ex/confluence/11111111-2222-4333-8444-555555555555/wiki/rest/api/content/12345"}
+    },
+    {
+      "id": "12346",
+      "type": "blogpost",
+      "status": "current",
+      "title": "Release notes 2026.10",
+      "space": {"id": 98765, "key": "DOCS", "name": "Documentation"},
+      "version": {"number": 1, "when": "2026-10-01T08:00:00.000Z"},
+      "_links": {"webui": "/spaces/DOCS/blog/2026/10/01/12346/Release+notes"}
+    }
+  ],
+  "start": 0,
+  "limit": 10,
+  "size": 2,
+  "cqlQuery": "type=page",
+  "_links": {"base": "https://example-site.atlassian.example.test/wiki", "context": "/wiki", "self": "https://api.atlassian.example.test/ex/confluence/11111111-2222-4333-8444-555555555555/wiki/rest/api/content/search?cql=type%3Dpage"}
+}
