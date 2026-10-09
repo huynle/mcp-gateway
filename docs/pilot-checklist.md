@@ -76,6 +76,6 @@ Open the gateway to the team only when all of these hold for the last pilot week
 - [ ] Runbooks: each drilled at least once; deltas fixed.
 - [ ] Defaults: the tuned values are in the production values file and recorded in Brain plan `36bakiw8` "Open items".
 - [ ] The team-wide default role and the per-app personal-account policy are agreed with whoever owns security.
-- [ ] Open follow-ups are Brain tasks with owners (at least: `nsyw7xml` re-wrap, `trpz0p16` audit export, `mjdzepbx` audit purge, `6br0isjh` Slack id→name, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run), and none of them is a blocker for the team.
+- [ ] Open follow-ups are Brain tasks with owners (at least: `nsyw7xml` re-wrap, `trpz0p16` audit export, `mjdzepbx` audit purge, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run; `6br0isjh` Slack id→name is landed), and none of them is a blocker for the team.
 
 Record the sign-off (date, pilot users count, tuned defaults, open items) as the outcome on Brain task `pn4voyen` and in the plan's open items.
