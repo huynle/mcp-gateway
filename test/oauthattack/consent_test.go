@@ -119,7 +119,7 @@ func TestConsentTampering(t *testing.T) {
 			f[k] = v
 		}
 		f.Set("client_id", attacker.id)
-		wantErrorPage(t, g.consent(t, br, f, "approve"), http.StatusBadRequest)
+		wantErrorPage(t, g.consent(t, br, f, "approve"))
 		wantLogEvent(t, g, "authserver.authorize_refused")
 	})
 	t.Run("client_swapped_with_own_redirect", func(t *testing.T) {
@@ -150,7 +150,7 @@ func TestConsentTampering(t *testing.T) {
 			f[k] = v
 		}
 		f.Set("client_id", "gwc_unknown")
-		body := wantErrorPage(t, g.consent(t, br, f, "approve"), http.StatusBadRequest)
+		body := wantErrorPage(t, g.consent(t, br, f, "approve"))
 		if !strings.Contains(body, "Unknown client") {
 			t.Errorf("body: %s", body)
 		}

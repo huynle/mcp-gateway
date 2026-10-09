@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -611,13 +612,13 @@ func (g *gateway) register(t *testing.T, redirectURIs ...string) client {
 }
 
 // registerDoc posts an arbitrary registration document.
-func (g *gateway) registerDoc(t *testing.T, doc map[string]any, headers ...string) reply {
+func (g *gateway) registerDoc(t *testing.T, doc map[string]any) reply {
 	t.Helper()
 	b, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return postJSON(t, noRedirect, g.base+"/oauth/register", string(b), headers...)
+	return postJSON(t, noRedirect, g.base+"/oauth/register", string(b))
 }
 
 // authorizeParams is a valid authorization request for c.
@@ -636,7 +637,7 @@ func (g *gateway) authorize(t *testing.T, br *http.Client, q url.Values) reply {
 }
 
 // consent posts the user's answer with the browser's CSRF token.
-func (g *gateway) consent(t *testing.T, br *http.Client, q url.Values, action string, headers ...string) reply {
+func (g *gateway) consent(t *testing.T, br *http.Client, q url.Values, action string) reply {
 	t.Helper()
 	form := url.Values{}
 	for k, v := range q {
@@ -644,7 +645,7 @@ func (g *gateway) consent(t *testing.T, br *http.Client, q url.Values, action st
 	}
 	form.Set("action", action)
 	form.Set("_csrf", g.csrf(t, br))
-	return postForm(t, br, g.base+"/oauth/authorize/consent", form, headers...)
+	return postForm(t, br, g.base+"/oauth/authorize/consent", form)
 }
 
 // code runs authorize + approve for c and returns the code.
@@ -767,11 +768,11 @@ func wantRedirectError(t *testing.T, r reply, redirectURI, code, state string) *
 	return loc
 }
 
-// wantErrorPage asserts an HTML error page (no redirect, no code).
-func wantErrorPage(t *testing.T, r reply, status int) string {
+// wantErrorPage asserts a 400 HTML error page (no redirect, no code).
+func wantErrorPage(t *testing.T, r reply) string {
 	t.Helper()
-	if r.status != status {
-		t.Fatalf("status %d, want %d; Location %q; body %s", r.status, status, r.header.Get("Location"), r.body)
+	if r.status != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400; Location %q; body %s", r.status, r.header.Get("Location"), r.body)
 	}
 	if loc := r.header.Get("Location"); loc != "" {
 		t.Fatalf("error page must not redirect, got Location %q", loc)
@@ -784,8 +785,8 @@ func wantErrorPage(t *testing.T, r reply, status int) string {
 }
 
 // wantMCPUnauthorized asserts /mcp answered 401 invalid_token with the
-// resource metadata challenge and returns the WWW-Authenticate value.
-func wantMCPUnauthorized(t *testing.T, g *gateway, r reply) string {
+// resource metadata challenge.
+func wantMCPUnauthorized(t *testing.T, g *gateway, r reply) {
 	t.Helper()
 	wa := r.header.Get("WWW-Authenticate")
 	if r.status != http.StatusUnauthorized {
@@ -798,7 +799,6 @@ func wantMCPUnauthorized(t *testing.T, g *gateway, r reply) string {
 		t.Fatalf("WWW-Authenticate = %q", wa)
 	}
 	noStackTrace(t, r.body)
-	return wa
 }
 
 // wantAuthFailed asserts the authorization server logged an access-token
@@ -881,3 +881,6 @@ func hashSecret(s string) []byte {
 	sum := sha256.Sum256([]byte(s))
 	return sum[:]
 }
+
+// errOutage simulates an unreachable store (MemStore.FailWith).
+var errOutage = errors.New("simulated outage: dial tcp 10.0.0.1:5432: connection refused")

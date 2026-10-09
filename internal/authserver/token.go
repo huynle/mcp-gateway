@@ -146,13 +146,22 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 	}
 	clientID, secret := form.Get("client_id"), form.Get("client_secret")
 	viaBasic := false
+	// RFC 6749 section 5.2: a client that tried the Authorization header
+	// gets the WWW-Authenticate challenge with its invalid_client.
+	invalidClient := func() (url.Values, *store.OAuthClient, *tokenError) {
+		if viaBasic {
+			w.Header().Set("WWW-Authenticate", `Basic realm="mcp-gateway"`)
+		}
+		s.log.Warn("client authentication failed", "event", "authserver.client_auth_failed", "client_id", clientID)
+		return nil, nil, errInvalidClient
+	}
 	if user, pass, ok := r.BasicAuth(); ok {
 		viaBasic = true
 		// RFC 6749 section 2.3.1: both parts are form-urlencoded.
 		u, err1 := url.QueryUnescape(user)
 		p, err2 := url.QueryUnescape(pass)
 		if err1 != nil || err2 != nil || (clientID != "" && clientID != u) {
-			return nil, nil, errInvalidClient
+			return invalidClient()
 		}
 		clientID, secret = u, p
 	}
@@ -167,21 +176,14 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 	})
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		if viaBasic {
-			w.Header().Set("WWW-Authenticate", `Basic realm="mcp-gateway"`)
-		}
-		return nil, nil, errInvalidClient
+		return invalidClient()
 	case err != nil:
 		s.log.Error("client lookup failed", "event", "authserver.client_lookup_failed", "error", observability.RedactError(err))
 		return nil, nil, &tokenError{status: http.StatusServiceUnavailable, code: "server_error", description: "temporarily unavailable"}
 	}
 	if len(client.ClientSecretHash) > 0 {
 		if secret == "" || subtle.ConstantTimeCompare(hashSecret(secret), client.ClientSecretHash) != 1 {
-			if viaBasic {
-				w.Header().Set("WWW-Authenticate", `Basic realm="mcp-gateway"`)
-			}
-			s.log.Warn("client authentication failed", "event", "authserver.client_auth_failed", "client_id", clientID)
-			return nil, nil, errInvalidClient
+			return invalidClient()
 		}
 	}
 	return form, client, nil

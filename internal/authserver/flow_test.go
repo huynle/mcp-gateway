@@ -735,6 +735,44 @@ func TestConfidentialClientMustAuthenticate(t *testing.T) {
 
 // --- revocation --------------------------------------------------------------
 
+// Regression (attack suite cjedpxp6, RFC 6749 section 5.2): every
+// invalid_client answered to a client that used the Authorization header
+// carries WWW-Authenticate: Basic, including an unknown client and a
+// client_id that disagrees with the header; the failure is logged.
+func TestBasicAuthFailuresCarryChallenge(t *testing.T) {
+	f := newFlow(t)
+	_, out := f.register(t, map[string]any{"client_name": "server app", "redirect_uris": []string{redirectURI}, "token_endpoint_auth_method": "client_secret_basic"})
+	confidential := out["client_id"].(string)
+	basic := func(id, secret string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret)))
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"gwr_x"}}
+	for name, c := range map[string]struct {
+		form   url.Values
+		header string
+	}{
+		"wrong secret":   {form, basic(confidential, "wrong")},
+		"unknown client": {form, basic("gwc_nope", "x")},
+		"id mismatch":    {url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"gwr_x"}, "client_id": {f.clientID}}, basic(confidential, "x")},
+		"not base64":     {form, "Basic !!!"},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, authserver.TokenPath, strings.NewReader(c.form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Authorization", c.header)
+		rec := httptest.NewRecorder()
+		f.svc.ServeToken(rec, req)
+		// An unparsable header is not an authentication attempt: without a
+		// client_id anywhere the request is invalid_request, no challenge.
+		wantStatus, wantChallenge := http.StatusUnauthorized, true
+		if c.header == "Basic !!!" {
+			wantStatus, wantChallenge = http.StatusBadRequest, false
+		}
+		if rec.Code != wantStatus || (rec.Header().Get("WWW-Authenticate") != "") != wantChallenge {
+			t.Errorf("%s: %d WWW-Authenticate %q", name, rec.Code, rec.Header().Get("WWW-Authenticate"))
+		}
+	}
+}
+
 func (f *flow) revoke(token, clientID string) int {
 	f.t.Helper()
 	form := url.Values{"token": {token}, "client_id": {clientID}, "token_type_hint": {"refresh_token"}}

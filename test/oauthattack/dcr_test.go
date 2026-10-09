@@ -69,7 +69,7 @@ func TestDCRFlooding(t *testing.T) {
 	// A pruned client is invalid_client at the token endpoint and an
 	// error page at authorize.
 	wantOAuthError(t, g.refresh(t, c, "gwr_x"), http.StatusUnauthorized, "invalid_client")
-	wantErrorPage(t, g.authorize(t, br, g.authorizeParams(c, newPKCE(t), "s")), http.StatusBadRequest)
+	wantErrorPage(t, g.authorize(t, br, g.authorizeParams(c, newPKCE(t), "s")))
 }
 
 // TestDCRBadMetadata: redirect URIs with dangerous schemes, oversized

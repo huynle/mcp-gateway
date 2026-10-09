@@ -3,6 +3,7 @@ package authserver
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"embed"
 	"errors"
 	"fmt"
@@ -107,7 +108,7 @@ func (s *Service) ServeHarnessRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	if err := r.ParseForm(); err != nil || r.PostForm.Get("_csrf") != csrfToken {
+	if err := r.ParseForm(); err != nil || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("_csrf")), []byte(csrfToken)) != 1 {
 		s.errorPage(w, http.StatusForbidden, "The form token is missing or expired. Reload the page and try again.")
 		return
 	}

@@ -49,7 +49,7 @@ func TestRedirectURITampering(t *testing.T) {
 			q := g.authorizeParams(c, newPKCE(t), nonce(t))
 			q.Set("redirect_uri", uri)
 			r := g.authorize(t, br, q)
-			body := wantErrorPage(t, r, http.StatusBadRequest)
+			body := wantErrorPage(t, r)
 			if !containsAny(body, "redirect URI") {
 				t.Errorf("error page does not explain the refusal: %s", body)
 			}
@@ -60,7 +60,7 @@ func TestRedirectURITampering(t *testing.T) {
 			// The consent POST re-validates: a tampered hidden field cannot
 			// obtain a code either.
 			r = g.consent(t, br, q, "approve")
-			wantErrorPage(t, r, http.StatusBadRequest)
+			wantErrorPage(t, r)
 			if len(g.astore.Codes()) != 0 {
 				t.Fatalf("a code was issued for redirect_uri %q", uri)
 			}
