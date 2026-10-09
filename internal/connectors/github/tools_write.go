@@ -184,13 +184,15 @@ func branchResultIDs(res connectors.Result) map[string]string {
 
 // --- markers and shared write helpers ------------------------------------------------
 
-// markerPrefix opens the hidden HTML comment a marker-reconciled write
-// appends to the body it creates; GitHub renders nothing for it.
-const markerPrefix = "<!-- mcp-gateway op:"
+// markerPhrase is the searchable text inside the marker; the HTML
+// comment delimiters around it hide it from readers.
+const markerPhrase = "mcp-gateway op:"
 
 // Marker returns the hidden comment for a ledger operation:
-// "<!-- mcp-gateway op:<operation id> -->".
-func Marker(operationID string) string { return markerPrefix + operationID + " -->" }
+// "<!-- mcp-gateway op:<operation id> -->". GitHub renders nothing for
+// an HTML comment, so the marker never shows on the issue, comment or
+// pull request, while the reconciler can search for it.
+func Marker(operationID string) string { return "<!-- " + markerPhrase + operationID + " -->" }
 
 // withMarker appends the operation's marker to body (on its own
 // paragraph; just the marker when body is empty).
@@ -200,6 +202,11 @@ func withMarker(body, operationID string) string {
 		return Marker(operationID)
 	}
 	return body + "\n\n" + Marker(operationID)
+}
+
+// hasMarker reports whether text carries the operation's marker.
+func hasMarker(text, operationID string) bool {
+	return operationID != "" && strings.Contains(text, Marker(operationID))
 }
 
 // requiredString reads a non-blank string argument.

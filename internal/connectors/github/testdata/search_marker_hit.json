@@ -1,0 +1,18 @@
+{
+  "total_count": 1,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 2001,
+      "number": 57,
+      "title": "Add a retry to the uploader",
+      "body": "The uploader gives up on the first timeout.\n\n<!-- mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11 -->",
+      "state": "open",
+      "html_url": "https://github.example.test/example-org/widgets/issues/57",
+      "repository_url": "https://api.github.example.test/repos/example-org/widgets",
+      "user": { "login": "octocat", "id": 583231 },
+      "created_at": "2024-03-05T10:00:00Z",
+      "updated_at": "2024-03-05T10:00:00Z"
+    }
+  ]
+}

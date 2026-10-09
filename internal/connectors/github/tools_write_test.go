@@ -340,7 +340,7 @@ func TestCreateIssueConnectionLostIsUnknown(t *testing.T) {
 }
 
 // toolNamed returns the connector's tool by short name.
-func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool {
+func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool { //nolint:unparam // the other writes' tests use it too
 	t.Helper()
 	for _, tool := range c.Tools() {
 		if tool.Name == name {
@@ -349,4 +349,175 @@ func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool {
 	}
 	t.Fatalf("tool %s not declared", name)
 	return connectors.Tool{}
+}
+
+// --- reconciliation: create_issue ------------------------------------------------------
+
+const (
+	searchPath = "GET /search/issues"
+	userPath   = "GET /user"
+	issuesPath = "GET /repos/example-org/widgets/issues"
+)
+
+// reconcile builds the input the ledger's reconciler hands to Check:
+// the principal and account, the operation id and the stored resource
+// identity; never arguments.
+func reconcile(tool string, identity map[string]string) connectors.ReconcileInput { //nolint:unparam // the other writes' tests use it too
+	return connectors.ReconcileInput{
+		Call:             connectors.Call{Principal: connectors.Principal{UserID: alice, TokenID: "tok"}, Tool: "github." + tool, Account: acct, OperationID: opID},
+		OperationID:      opID,
+		ResourceIdentity: identity,
+	}
+}
+
+var issueIdentity = map[string]string{"owner": "example-org", "repo": "example-org/widgets", "org": "example-org"}
+
+// byCreatorPages is the paginated fallback listing: page 1 without the
+// marker (and a next page), page 2 with it.
+func byCreatorPages(last string) route {
+	return route{pages: map[string]route{
+		"1": {status: 200, body: "issues_by_creator_page1.json", headers: map[string]string{"Link": `<https://api.github.example.test/repos/example-org/widgets/issues?page=2>; rel="next", <https://api.github.example.test/repos/example-org/widgets/issues?page=2>; rel="last"`}},
+		"2": {status: 200, body: last},
+	}}
+}
+
+func wantFound(t *testing.T, res connectors.ReconcileResult, err error, id string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if res.Outcome != connectors.ReconcileFound || res.ResourceID != id {
+		t.Fatalf("Check = %+v, want found %s", res, id)
+	}
+}
+
+func wantNotFound(t *testing.T, res connectors.ReconcileResult, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if res.Outcome != connectors.ReconcileNotFound || res.ResourceID != "" {
+		t.Fatalf("Check = %+v, want not_found", res)
+	}
+}
+
+func TestCheckIssueFoundBySearch(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{searchPath: {status: 200, body: "search_marker_hit.json"}})
+	c, tk := newConnector(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, "create_issue").Reconcile.Check(context.Background(), reconcile("create_issue", issueIdentity))
+	wantFound(t, res, err, "57")
+	q := query(t, srv, "/search/issues")
+	if got := q.Get("q"); got != `repo:example-org/widgets "mcp-gateway op:`+opID+`" in:body` {
+		t.Errorf("q = %q", got)
+	}
+	if len(tk.calls) != 1 || tk.calls[0] != alice+"/"+acct {
+		t.Errorf("token source calls = %v", tk.calls)
+	}
+	if srv.Count(userPath) != 0 || srv.Count(issuesPath) != 0 {
+		t.Error("the fallback listing ran although the search found the issue")
+	}
+}
+
+func TestCheckIssueSearchHitWithoutMarkerIsNotTrusted(t *testing.T) {
+	// The search index answered with an issue that does not carry this
+	// operation's marker (another operation's issue): the fallback decides.
+	srv := newAPIServer(t, map[string]route{
+		searchPath: {status: 200, body: "search_issues.json"},
+		userPath:   {status: 200, body: "user.json"},
+		issuesPath: byCreatorPages("issues_by_creator_page2.json"),
+	})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, "create_issue").Reconcile.Check(context.Background(), reconcile("create_issue", issueIdentity))
+	wantFound(t, res, err, "57")
+}
+
+func TestCheckIssueFallsBackToListingByCreator(t *testing.T) {
+	for name, search := range map[string]route{
+		"search empty": {status: 200, body: "search_issues_empty.json"},
+		"search 500":   {status: 500, body: "error_server.json"},
+		"search 403":   {status: 403, body: "error_forbidden.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{
+				searchPath: search,
+				userPath:   {status: 200, body: "user.json"},
+				issuesPath: byCreatorPages("issues_by_creator_page2.json"),
+			})
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, "create_issue").Reconcile.Check(context.Background(), reconcile("create_issue", issueIdentity))
+			wantFound(t, res, err, "57")
+			q := query(t, srv, "/repos/example-org/widgets/issues")
+			if q.Get("creator") != "octocat" || q.Get("state") != "all" || q.Get("sort") != "created" || q.Get("direction") != "desc" {
+				t.Errorf("listing query = %v, want creator=octocat state=all sort=created direction=desc", q)
+			}
+			if n := srv.Count(issuesPath); n != 2 {
+				t.Errorf("listing requests = %d, want 2 (the marker is on page 2)", n)
+			}
+		})
+	}
+}
+
+func TestCheckIssueNotFound(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{
+		searchPath: {status: 200, body: "search_issues_empty.json"},
+		userPath:   {status: 200, body: "user.json"},
+		issuesPath: byCreatorPages("[]"),
+	})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, "create_issue").Reconcile.Check(context.Background(), reconcile("create_issue", issueIdentity))
+	wantNotFound(t, res, err)
+}
+
+func TestCheckIssueCannotTell(t *testing.T) {
+	cases := map[string]map[string]route{
+		"listing 500": {
+			searchPath: {status: 200, body: "search_issues_empty.json"},
+			userPath:   {status: 200, body: "user.json"},
+			issuesPath: {status: 500, body: "error_server.json"},
+		},
+		"listing 401": {
+			searchPath: {status: 200, body: "search_issues_empty.json"},
+			userPath:   {status: 401, body: "error_bad_credentials.json"},
+		},
+		"listing rate limited": {
+			searchPath: {status: 200, body: "search_issues_empty.json"},
+			userPath:   {status: 200, body: "user.json"},
+			issuesPath: {status: 429, body: "error_secondary_rate_limit.json", headers: map[string]string{"Retry-After": "3"}},
+		},
+		"too many pages": {
+			searchPath: {status: 200, body: "search_issues_empty.json"},
+			userPath:   {status: 200, body: "user.json"},
+			issuesPath: {status: 200, body: "issues_by_creator_page1.json", headers: map[string]string{"Link": `<https://api.github.example.test/repos/example-org/widgets/issues?page=99>; rel="next"`}},
+		},
+	}
+	for name, routes := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, routes)
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, "create_issue").Reconcile.Check(context.Background(), reconcile("create_issue", issueIdentity))
+			if err == nil {
+				t.Fatalf("Check = %+v, want an error (cannot tell yet)", res)
+			}
+			if name == "too many pages" && srv.Count(issuesPath) > 5 {
+				t.Errorf("listing requests = %d, want at most 5", srv.Count(issuesPath))
+			}
+		})
+	}
+}
+
+func TestCheckIssueNeedsIdentityAndOperation(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	check := toolNamed(t, c, "create_issue").Reconcile.Check
+	if _, err := check(context.Background(), reconcile("create_issue", map[string]string{"owner": "example-org"})); err == nil {
+		t.Error("Check without a repo in the identity succeeded")
+	}
+	in := reconcile("create_issue", issueIdentity)
+	in.OperationID, in.Call.OperationID = "", ""
+	if _, err := check(context.Background(), in); err == nil {
+		t.Error("Check without an operation id succeeded")
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d requests sent", n)
+	}
 }
