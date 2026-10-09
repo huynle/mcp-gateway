@@ -45,7 +45,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 					{"body", "string", "Page body in Confluence storage format, or plain text.", nil},
 					{"parent_id", "string", "Optional id of the parent page.", nil},
 				}, []string{"space_key", "title", "body"}),
-				RequiredScopes:   []string{ScopePageWrite},
+				RequiredScopes:   []string{ScopePageWrite, ScopeSpaceRead},
 				ResourceIdentity: confluenceIdentity,
 				Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkPage},
 				ResultIDs:        pageResultIDs,

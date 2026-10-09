@@ -31,6 +31,7 @@ const (
 	ScopeConfluenceSearch = "search:confluence"
 	ScopePageRead         = "read:page:confluence"
 	ScopePageWrite        = "write:page:confluence"
+	ScopeSpaceRead        = "read:space:confluence"
 )
 
 // maxPageSize is the ceiling of maxResults / limit on the endpoints used.

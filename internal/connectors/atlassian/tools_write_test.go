@@ -701,7 +701,7 @@ func TestCreatePageToolMetadata(t *testing.T) {
 		props:    []string{"space_key", "title", "body", "parent_id"},
 		args:     map[string]any{"space_key": "DOCS", "title": "secret", "body": "<p>secret</p>", "parent_id": "12000"},
 		identity: map[string]string{"space": "DOCS"},
-		scopes:   []string{"write:page:confluence"},
+		scopes:   []string{"write:page:confluence", "read:space:confluence"},
 	})
 	tool := toolNamed(t, conf, "create_page")
 	if tool.Reconcile.Kind != connectors.ReconcileMarker || tool.Reconcile.Check == nil || tool.ResultIDs == nil {
