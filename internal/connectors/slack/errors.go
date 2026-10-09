@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	goslack "github.com/slack-go/slack"
@@ -161,11 +162,17 @@ func fromCode(action, code string, err error) error {
 		e.Class = ClassVendorError
 		e.Message = action + ": Slack error"
 	}
-	if code != "" {
+	if codeRE.MatchString(code) {
 		e.Message += " (" + code + ")"
 	}
 	return e
 }
+
+// codeRE is the shape of a Slack error code (snake_case identifier).
+// Anything else in the "error" field is not a code and is never
+// relayed to the model (security review kwcbub3k: a hostile or broken
+// vendor body must not reach clients verbatim).
+var codeRE = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 
 // fromStatus maps a non-200 HTTP status to a classified Error (Slack
 // normally answers 200 with ok:false; a status means the API itself

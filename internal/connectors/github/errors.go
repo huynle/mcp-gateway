@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v90/github"
 
 	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
+	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
 // Error classes a GitHub tool error carries (Error.Class). They are short
@@ -123,10 +125,33 @@ func fromStatus(action string, status int, vendorMessage string, err error) *Err
 		e.Class = ClassVendorError
 		e.Message = action + ": GitHub error"
 	}
-	if vendorMessage != "" {
-		e.Message += " (" + vendorMessage + ")"
+	if hint := vendorHint(status, vendorMessage); hint != "" {
+		e.Message += " (" + hint + ")"
 	}
 	return e
+}
+
+// maxVendorHint bounds the vendor text relayed to the model.
+const maxVendorHint = 120
+
+// vendorHint is the part of GitHub's error message worth showing the
+// model: only for client errors (a 4xx message says what was wrong with
+// the request; a 5xx body is a proxy page, a stack trace or an internal
+// hostname and says nothing the class does not), one line, without
+// markup or URLs, cut to maxVendorHint, and redacted (security review
+// kwcbub3k: vendor bodies must not reach clients verbatim).
+func vendorHint(status int, msg string) string {
+	if status >= 500 || msg == "" {
+		return ""
+	}
+	msg = strings.Join(strings.Fields(msg), " ")
+	if strings.ContainsAny(msg, "<>") || strings.Contains(msg, "://") {
+		return ""
+	}
+	if len(msg) > maxVendorHint {
+		msg = msg[:maxVendorHint] + "…"
+	}
+	return observability.Redact(msg)
 }
 
 // retryAfterReset is the wait until a rate-limit reset, at least one

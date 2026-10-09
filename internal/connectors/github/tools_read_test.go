@@ -794,3 +794,52 @@ func TestCustomHTTPClientIsUsed(t *testing.T) {
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Security review kwcbub3k: the vendor's message is relayed to the
+// model only when it is a short, plain client-error hint; markup, URLs,
+// internal hostnames and anything a 5xx says stay behind the class.
+func TestVendorMessageIsAHintNeverABody(t *testing.T) {
+	const soup = `Validation Failed: see https://api.vendor.internal/docs token=ghp_9f8e7d6c5b4a39281716151413121110aaBBcc`
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   []string // substrings of the message
+		absent []string
+	}{
+		{"422 plain hint", 422, `{"message":"Validation Failed: title is required"}`, []string{"GitHub rejected the request (Validation Failed: title is required)"}, nil},
+		{"422 with a URL is dropped", 422, `{"message":"` + soup + `"}`, []string{"GitHub rejected the request (http 422)"}, []string{"vendor.internal", "ghp_", "Validation"}},
+		{"422 with markup is dropped", 422, `{"message":"<html>upstream internal-api.vendor.internal</html>"}`, []string{"GitHub rejected the request"}, []string{"<", "vendor.internal"}},
+		{"422 long message is cut", 422, `{"message":"` + strings.Repeat("x", 300) + `"}`, []string{"(" + strings.Repeat("x", 120) + "…)"}, []string{strings.Repeat("x", 121)}},
+		{"422 multi-line is one line", 422, `{"message":"first\n\tsecond   third"}`, []string{"(first second third)"}, []string{"\n", "\t"}},
+		{"422 token in text is redacted", 422, `{"message":"bad token=ghp_9f8e7d6c5b4a39281716151413121110aaBBcc here"}`, []string{"[REDACTED]"}, []string{"ghp_9f8e"}},
+		{"403 hint kept", 403, `{"message":"Resource not accessible by integration"}`, []string{"(Resource not accessible by integration)"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{"POST /repos/example-org/widgets/issues": {status: tc.status, body: tc.body}})
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			_, err := c.Call(context.Background(), write("create_issue", map[string]any{"owner": "example-org", "repo": "widgets", "title": "t"}))
+			if err == nil {
+				t.Fatal("no error")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q lacks %q", err.Error(), want)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(err.Error(), absent) {
+					t.Errorf("error %q carries %q", err.Error(), absent)
+				}
+			}
+		})
+	}
+	// A 5xx on a write: the class only, whatever the body says.
+	srv := newAPIServer(t, map[string]route{"POST /repos/example-org/widgets/issues": {status: 503, body: `{"message":"` + soup + `"}`}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	_, err := c.Call(context.Background(), write("create_issue", map[string]any{"owner": "example-org", "repo": "widgets", "title": "t"}))
+	if err == nil || strings.Contains(err.Error(), "vendor.internal") || strings.Contains(err.Error(), "Validation") {
+		t.Errorf("5xx write error = %v, want the class only", err)
+	}
+}
