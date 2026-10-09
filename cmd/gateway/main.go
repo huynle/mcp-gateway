@@ -5,14 +5,15 @@
 // GATEWAY_DATABASE_URL is set (refusing to start on a schema version
 // mismatch; migrations are cmd/migrate's job), exposes /healthz and /readyz
 // mounts the portal and company sign-in routes when a database is
-// configured, mounts the token, connection and admin role / vendor app
-// pages and the /mcp endpoint
-// (stateless Streamable HTTP behind the token authenticator's
-// BearerMiddleware, tools from the connector registry filtered and
-// decided by the compiled policy), and shuts down gracefully on
-// SIGTERM/SIGINT, draining in-flight requests for the configured period.
-// Later tasks register connectors on the registry, insert pipeline stages
-// and mount OAuth on the same mux.
+// configured, mounts the token, connection, harness and admin role /
+// vendor app pages, the MCP OAuth authorization server (discovery,
+// registration, authorize, token, revoke, JWKS) and the /mcp endpoint
+// (stateless Streamable HTTP behind the composite bearer authenticator:
+// generated tokens and OAuth access tokens, tools from the connector
+// registry filtered and decided by the compiled policy), and shuts down
+// gracefully on SIGTERM/SIGINT, draining in-flight requests for the
+// configured period. Later tasks register connectors on the registry and
+// insert pipeline stages.
 package main
 
 import (
@@ -28,6 +29,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/approvals"
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/authserver"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -93,6 +95,7 @@ func run() error {
 
 	var portalHandler, mcpHandler, slackHandler http.Handler
 	var ledgerSvc *ledger.Service
+	var authSvc *authserver.Service
 	if st != nil {
 		rec := audit.NewStoreRecorder(st)
 		tokenSvc, err := tokens.New(tokens.Config{SignInMaxAge: cfg.TokenSignInMaxAge}, tokens.NewPostgresStore(st), metrics, rec, log)
@@ -140,15 +143,19 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc))
+		authSvc, err = newAuthServer(cfg, st, keys, rec, metrics, getenv, log)
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, registry, accounts, tokenSvc, policySvc, approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc))
 		if err != nil {
 			return err
 		}
-		jobList := ledgerJobs(ledgerSvc)
+		mcpHandler, err = newMCP(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), policySvc, approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
+		if err != nil {
+			return err
+		}
+		jobList := append(ledgerJobs(ledgerSvc), authServerJobs(authSvc)...)
 		if approvalSvc != nil {
 			jobList = append(jobList, approvalSvc.ExpiryJob(0))
 		}
@@ -172,7 +179,7 @@ func run() error {
 	}
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler)))
+	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler, withOAuthRoutes(authSvc))))
 	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	markInFlightUnknown(ledgerSvc, log)
@@ -294,13 +301,18 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 		svc.OnDisable(connSvc.DisableHook())
 	}
 	for _, extra := range extras {
-		extra(p.MountUser, session, log)
+		extra(svc, p.MountUser, session, log)
 	}
 	return p.Handler(), nil
 }
 
-// portalExtra mounts a module's user pages (the ledger's /operations).
-type portalExtra func(mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger)
+// portalExtra mounts a module's user pages (the ledger's /operations, the
+// authorization server's authorize / consent / harnesses pages) and may
+// register disable hooks on the identity service.
+type portalExtra func(idSvc *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger)
+
+// muxExtra registers public routes (the OAuth endpoints) on the top-level mux.
+type muxExtra func(*http.ServeMux)
 
 // mcpExtra adjusts the /mcp pipeline after the default stages are built
 // (the ledger stage, which also switches the confirm handler to deferred
@@ -403,10 +415,13 @@ func (r routedAccountSource) ListAccounts(ctx context.Context, userID, app strin
 // /slack/interactions (when mounted) is Slack's signed button-press
 // callback, outside the portal's session checks; the portal (when
 // mounted) owns everything else, including /auth/ and /static/.
-func newMux(readiness *observability.Readiness, portalHandler, mcpHandler, slackHandler http.Handler) http.Handler {
+func newMux(readiness *observability.Readiness, portalHandler, mcpHandler, slackHandler http.Handler, extras ...muxExtra) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("GET /readyz", readiness)
+	for _, extra := range extras {
+		extra(mux)
+	}
 	if mcpHandler != nil {
 		mux.Handle("/mcp", mcpHandler)
 	}

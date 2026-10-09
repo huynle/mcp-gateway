@@ -22,8 +22,9 @@ const (
 	verifier    = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 )
 
-func challenge(v string) string {
-	sum := sha256.Sum256([]byte(v))
+// challenge is S256(verifier).
+func challenge() string {
+	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
@@ -62,7 +63,7 @@ func (f *flow) authorizeParams() url.Values {
 		"client_id":             {f.clientID},
 		"redirect_uri":          {redirectURI},
 		"response_type":         {"code"},
-		"code_challenge":        {challenge(verifier)},
+		"code_challenge":        {challenge()},
 		"code_challenge_method": {"S256"},
 		"state":                 {"xyz"},
 		"scope":                 {"mcp"},
@@ -318,7 +319,7 @@ func TestConsentApproveIssuesBoundCode(t *testing.T) {
 		t.Fatalf("%d codes", len(rows))
 	}
 	c := rows[0]
-	if string(c.CodeHash) == code || c.UserID != alice || c.RedirectURI != redirectURI || c.Resource != f.cfg.Resource() || c.CodeChallenge != challenge(verifier) || c.Scope != "mcp" || !c.ExpiresAt.Equal(t0.Add(f.cfg.CodeTTL)) || c.ConsumedAt != nil {
+	if string(c.CodeHash) == code || c.UserID != alice || c.RedirectURI != redirectURI || c.Resource != f.cfg.Resource() || c.CodeChallenge != challenge() || c.Scope != "mcp" || !c.ExpiresAt.Equal(t0.Add(f.cfg.CodeTTL)) || c.ConsumedAt != nil {
 		t.Errorf("stored code = %+v", c)
 	}
 	if cl := f.st.Clients()[0]; cl.LastUsedAt == nil {
