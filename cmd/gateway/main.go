@@ -385,6 +385,9 @@ func registerConnectors(cfg config.Config, registry *connectors.Registry, connSv
 	sources := routedAccountSource{byApp: map[string]connectors.AccountSource{}, fallback: connectors.NewStaticAccountSource()}
 	if connSvc != nil {
 		sources.fallback = connSvc
+		if err := registerGitHub(cfg, registry, connSvc, log); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.EnableFakeConnector {
 		f := fake.New(fake.Options{AutoAccount: true})
