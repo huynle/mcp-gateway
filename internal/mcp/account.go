@@ -72,6 +72,7 @@ func AccountStage(src connectors.AccountSource, log *slog.Logger) Stage {
 		cc.Call.Account = chosen.ID
 		cc.AccountID = chosen.ID
 		cc.AccountLabel = string(chosen.Label)
+		cc.AccountScopes = chosen.Scopes
 		return next(ctx)
 	}}
 }

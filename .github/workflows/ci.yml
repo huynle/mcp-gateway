@@ -33,7 +33,7 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.12.2
+          version: v2.14.0
           args: --build-tags integration ./...
 
   test:
@@ -168,3 +168,68 @@ jobs:
       - name: kind smoke
         continue-on-error: true
         run: IMAGE=mcp-gateway:ci BUILD=0 deploy/smoke/kind-smoke.sh
+
+  # --- security scanning (task kwcbub3k) -------------------------------------
+  # Both jobs are permanent gates: a reachable vulnerable call in the
+  # module graph, or a fixable HIGH/CRITICAL finding in the container
+  # image, fails the build. Accepted image findings live in .trivyignore
+  # with a justification per entry; govulncheck has no allow-list (fix or
+  # upgrade; the Go toolchain itself is pinned by go.mod's toolchain line).
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: make vulncheck
+
+  image-scan:
+    name: container image scan (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-gateway:ci
+          build-args: VERSION=${{ github.sha }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: mcp-gateway:ci
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
+  test-security:
+    name: security acceptance suite (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gateway
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway-dev
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway -d gateway"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      GATEWAY_TEST_DATABASE_URL: postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-security

@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration test-e2e test-attack lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down helm-lint test-helm kind-smoke clean
+.PHONY: all build test test-integration test-e2e test-attack test-security vulncheck image-scan lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down helm-lint test-helm kind-smoke clean
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -43,6 +43,36 @@ test-e2e:
 ## in-process over in-memory stores (no PostgreSQL). Also part of `make test`.
 test-attack:
 	$(GO) test -race -count=1 ./test/oauthattack/...
+
+## test-security: the security acceptance suite (test/security): the whole
+## gateway in-process against PostgreSQL with the fake connector and stub
+## GitHub / Slack vendor servers; cross-user reach, redaction under load,
+## policy bypass attempts, rate limits, scope enforcement, portal
+## headers. Needs GATEWAY_TEST_DATABASE_URL like test-e2e (skipped when
+## unset).
+test-security:
+	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
+		echo "GATEWAY_TEST_DATABASE_URL is unset; security tests will be skipped (run 'make compose-up' and export it)"; \
+	fi
+	$(GO) test -race -count=1 -tags security -run 'Security' ./test/security/...
+
+## vulncheck: govulncheck over every package (install:
+## go install golang.org/x/vuln/cmd/govulncheck@latest). Fails when the
+## code reachably calls a vulnerable function; vulnerabilities that are
+## only in required modules but never called are reported, not fatal.
+## Known, accepted findings are documented in docs/security-scanning.md.
+GOVULNCHECK ?= govulncheck
+vulncheck:
+	$(GOVULNCHECK) ./...
+
+## image-scan: build the container image and scan it with trivy, failing
+## on HIGH / CRITICAL vulnerabilities that have a fix (install: brew
+## install trivy). .trivyignore lists accepted findings with a reason.
+TRIVY ?= trivy
+IMAGE ?= mcp-gateway:local
+image-scan:
+	docker build -t $(IMAGE) --build-arg VERSION=$(VERSION) .
+	$(TRIVY) image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --ignorefile .trivyignore $(IMAGE)
 
 ## lint: run golangci-lint (install: https://golangci-lint.run/docs/welcome/install/)
 lint:

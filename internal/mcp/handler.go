@@ -124,7 +124,7 @@ func Handler(opts Options) (http.Handler, error) {
 		p, err := DefaultPipeline(PipelineDeps{
 			Registry: opts.Registry, Visibility: opts.Visibility, RateLimiter: opts.RateLimiter,
 			Accounts: opts.Accounts, Policy: opts.Policy, Confirm: opts.Confirm,
-			Audit: opts.Audit, Metrics: opts.Metrics, Log: opts.Log,
+			Audit: opts.Audit, Metrics: opts.Metrics, Log: opts.Log, BaseURL: opts.BaseURL,
 		})
 		if err != nil {
 			return nil, err

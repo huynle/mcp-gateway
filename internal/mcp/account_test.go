@@ -28,7 +28,7 @@ func accountPipeline(t *testing.T, reg *connectors.Registry, src connectors.Acco
 
 func TestAccountStageSitsAfterStrip(t *testing.T) {
 	p := accountPipeline(t, newRegistry(t), connectors.NewStaticAccountSource(), nil)
-	want := []string{mcp.StageAuthenticate, mcp.StageAudit, mcp.StageResolve, mcp.StageStrip, mcp.StageAccount, mcp.StageRateLimit, mcp.StageDispatch}
+	want := []string{mcp.StageAuthenticate, mcp.StageAudit, mcp.StageResolve, mcp.StageStrip, mcp.StageAccount, mcp.StageScope, mcp.StageRateLimit, mcp.StageDispatch}
 	if got := p.Names(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Names = %v, want %v", got, want)
 	}

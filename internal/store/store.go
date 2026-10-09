@@ -129,8 +129,9 @@ func (s *Store) SchemaVersion(ctx context.Context) (int64, error) {
 	return v, nil
 }
 
-// SchemaVersionMatches is the "schema" readiness check and the startup gate:
-// it fails unless the database is at ExpectedSchemaVersion.
+// SchemaVersionMatches is the startup gate: it fails unless the database
+// is exactly at ExpectedSchemaVersion. A process must not start against a
+// schema it was not built for; migrating is cmd/migrate's job.
 func (s *Store) SchemaVersionMatches(ctx context.Context) error {
 	v, err := s.SchemaVersion(ctx)
 	if err != nil {
@@ -138,6 +139,24 @@ func (s *Store) SchemaVersionMatches(ctx context.Context) error {
 	}
 	if v != ExpectedSchemaVersion {
 		return fmt.Errorf("%w: database is at %d, this binary expects %d (run `migrate up` before starting the gateway)",
+			ErrSchemaVersionMismatch, v, ExpectedSchemaVersion)
+	}
+	return nil
+}
+
+// SchemaVersionReady is the "schema" readiness check: the database must
+// be at ExpectedSchemaVersion or newer. A rolling upgrade runs the next
+// release's migrations before the old pods are replaced (migrations are
+// additive and backward compatible within one release, docs/deploy.md),
+// so a database that is ahead keeps the running replicas ready; one that
+// is behind does not (quirk 6xxvsoyp, idea vv0vurcl).
+func (s *Store) SchemaVersionReady(ctx context.Context) error {
+	v, err := s.SchemaVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if v < ExpectedSchemaVersion {
+		return fmt.Errorf("%w: database is at %d, this binary expects at least %d (run `migrate up`)",
 			ErrSchemaVersionMismatch, v, ExpectedSchemaVersion)
 	}
 	return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
@@ -25,6 +26,7 @@ const (
 	StageAudit        = "audit"
 	StageResolve      = "resolve"
 	StageStrip        = "strip"
+	StageScope        = "scope"
 	StageRateLimit    = "ratelimit"
 	StageDispatch     = "dispatch"
 )
@@ -72,6 +74,9 @@ type PipelineDeps struct {
 	// counts nothing.
 	Metrics *observability.Metrics
 	Log     *slog.Logger
+	// BaseURL is GATEWAY_BASE_URL; the scope stage points the harness at
+	// BaseURL + "/connections" to grant more access. Optional.
+	BaseURL string
 }
 
 func (d *PipelineDeps) defaults() error {
@@ -98,8 +103,8 @@ func (d *PipelineDeps) defaults() error {
 }
 
 // DefaultPipeline builds the standard pipeline: authenticate, audit,
-// resolve, strip, account (when deps.Accounts is set), policy (when
-// deps.Policy is set), ratelimit, dispatch.
+// resolve, strip, account and scope (when deps.Accounts is set), policy
+// (when deps.Policy is set), ratelimit, dispatch.
 func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	if err := deps.defaults(); err != nil {
 		return nil, err
@@ -111,7 +116,7 @@ func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 		StripStage(),
 	}
 	if deps.Accounts != nil {
-		stages = append(stages, AccountStage(deps.Accounts, deps.Log))
+		stages = append(stages, AccountStage(deps.Accounts, deps.Log), ScopeStage(deps.Registry, deps.BaseURL))
 	}
 	if deps.Policy != nil {
 		stages = append(stages, PolicyStage(deps.Policy, deps.Confirm, deps.Log))
@@ -185,6 +190,44 @@ func StripStage() Stage {
 		}
 		cc.Call.Args = args
 		return next(ctx)
+	}}
+}
+
+// ScopeStage is the dispatch guard for vendor scopes: once the account
+// is resolved, a tool whose RequiredScopes the account's recorded scopes
+// do not cover (Registry.MissingScopes, per-app coverage semantics) is
+// refused with CodeScopeRequired, class scope_required, naming the app,
+// the account and the missing scopes in error.data, before policy runs
+// (so no approval is created for a call that cannot succeed), before
+// the ledger records anything and before any connector code runs. The
+// connectors' own checks stay as defence in depth.
+//
+// An account without recorded scopes is not refused: GitHub App user
+// tokens carry no scope list, and a vendor that reports none leaves the
+// decision to the vendor. tools/list is not filtered per account on
+// purpose: visibility is decided per principal before any account is
+// known, a user may hold several accounts of one app with different
+// grants, and hiding a tool would leave the harness with no way to
+// learn which account to re-grant; the call-time error says exactly
+// that.
+func ScopeStage(reg *connectors.Registry, baseURL string) Stage {
+	portal := strings.TrimRight(baseURL, "/") + "/connections"
+	return stage{StageScope, func(ctx context.Context, cc *CallContext, next Next) (connectors.Result, error) {
+		if cc.Tool == nil {
+			return connectors.Result{}, ErrToolNotFound(cc.Name)
+		}
+		if cc.Tool.NoAccount || len(cc.Tool.RequiredScopes) == 0 || len(cc.AccountScopes) == 0 || reg == nil {
+			return next(ctx)
+		}
+		missing := reg.MissingScopes(*cc.Tool, cc.AccountScopes)
+		if len(missing) == 0 {
+			return next(ctx)
+		}
+		te := NewToolError(CodeScopeRequired, "scope_required", fmt.Sprintf(
+			"%s needs the %s scope(s) %s, which account %s has not granted; grant more access on the portal (%s) and retry",
+			cc.Call.Tool, cc.Tool.App, strings.Join(missing, ", "), cc.AccountID, portal))
+		te.Data = map[string]any{"app": cc.Tool.App, "account": cc.AccountID, "missing_scopes": missing, "portal_url": portal}
+		return connectors.Result{}, te
 	}}
 }
 

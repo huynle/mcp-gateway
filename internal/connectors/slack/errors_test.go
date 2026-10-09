@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,4 +171,33 @@ func wrapsCause(err, cause error) bool {
 		return sce.Code == causeSCE.Code
 	}
 	return false
+}
+
+// Security review kwcbub3k: only a real error code (snake_case) is
+// relayed to the model; a hostile or broken "error" field (tokens,
+// hostnames, HTML) is dropped and the error stays class-level.
+func TestClassifyRelaysOnlyRealErrorCodes(t *testing.T) {
+	for _, hostile := range []string{
+		"xoxb-1234567890-0987654321-AbCdEfGhIjKlMnOpQrStUvWx",
+		"upstream internal-api-7f3a.vendor.internal:8443 failed",
+		"<html>502 Bad Gateway</html>",
+		"Not_A_Code", strings.Repeat("a", 65), "",
+	} {
+		err := slack.Classify("post", goslack.SlackErrorResponse{Err: hostile})
+		var e *slack.Error
+		if !errors.As(err, &e) || e.Class != slack.ClassVendorError {
+			t.Errorf("%q: err = %v, want class vendor_error", hostile, err)
+			continue
+		}
+		if hostile != "" && strings.Contains(e.Message, hostile) {
+			t.Errorf("%q relayed to the model: %q", hostile, e.Message)
+		}
+		if strings.Contains(e.Message, "(") {
+			t.Errorf("%q: message %q carries a hint", hostile, e.Message)
+		}
+	}
+	err := slack.Classify("post", goslack.SlackErrorResponse{Err: "channel_not_found"})
+	if err == nil || !strings.Contains(err.Error(), "(channel_not_found)") {
+		t.Errorf("real code dropped: %v", err)
+	}
 }

@@ -1,0 +1,6 @@
+# Accepted container-image findings for `make image-scan` / the CI
+# image-scan job (trivy, HIGH/CRITICAL, fixable only). One entry per
+# line: the vulnerability id, then a comment with the justification and
+# the date; remove the entry once the base image or module ships the fix.
+#
+# CVE-YYYY-NNNNN  # <package>: why it does not apply / mitigation; reviewed YYYY-MM-DD

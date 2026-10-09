@@ -34,6 +34,9 @@ func registerGoogle(_ config.Config, registry *connectors.Registry, connSvc *con
 			return fmt.Errorf("google: %s: %w", app.App(), err)
 		}
 		connSvc.MapApp(app.App(), connections.VendorGoogle)
+		// Google's broader scopes imply narrower ones (google.Grants);
+		// the pipeline's scope stage uses the same semantics.
+		registry.SetScopeCoverage(app.App(), google.Grants)
 		tools += len(app.Tools())
 	}
 	connSvc.RegisterBinder(connections.VendorGoogle, google.Binder{})

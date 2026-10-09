@@ -545,7 +545,11 @@ func postJSON(t *testing.T, c *http.Client, u, body string, headers ...string) r
 }
 
 // do sends one request; headers are key/value pairs, "Host" sets the
-// Host header (request target) and a header set to "" is removed.
+// Host header (request target) and a header set to "" is removed. A
+// browser that overrides Host still presents its session: since Go 1.26
+// http.Client withholds jar cookies when req.Host differs from the URL's
+// host, the jar's cookies are attached by hand (the attack is the
+// server reflecting Host, not the client's cookie hygiene).
 func do(t *testing.T, c *http.Client, method, u string, body io.Reader, headers ...string) reply {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, u, body)
@@ -560,6 +564,11 @@ func do(t *testing.T, c *http.Client, method, u string, body io.Reader, headers 
 			req.Header.Del(headers[i])
 		default:
 			req.Header.Set(headers[i], headers[i+1])
+		}
+	}
+	if req.Host != "" && req.Host != req.URL.Host && c.Jar != nil {
+		for _, ck := range c.Jar.Cookies(req.URL) {
+			req.AddCookie(ck)
 		}
 	}
 	return send(t, c, req)

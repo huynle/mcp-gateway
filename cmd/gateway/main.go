@@ -219,7 +219,7 @@ func openStore(ctx context.Context, cfg config.Config, readiness *observability.
 		return nil, fmt.Errorf("schema check: %w", err)
 	}
 	readiness.Register("database", st.Ping)
-	readiness.Register("schema", st.SchemaVersionMatches)
+	readiness.Register("schema", st.SchemaVersionReady)
 	log.Info("database ready", "schema_version", store.ExpectedSchemaVersion)
 	return st, nil
 }
@@ -336,7 +336,7 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 	}
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
 		Registry: registry, Visibility: visibility, RateLimiter: limiter, Accounts: accounts,
-		Policy: policySvc, Confirm: confirm, Audit: rec, Metrics: metrics, Log: log,
+		Policy: policySvc, Confirm: confirm, Audit: rec, Metrics: metrics, Log: log, BaseURL: cfg.BaseURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)

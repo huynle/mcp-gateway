@@ -79,7 +79,38 @@ func (p *Portal) Handler() http.Handler {
 	mux.Handle("/auth/", p.csrf(p.svc.Handler()))
 	mux.Handle("GET /static/", p.static())
 	mux.HandleFunc("/", p.notFound)
-	return p.svc.Middleware(mux)
+	return SecurityHeaders(p.svc.Middleware(mux))
+}
+
+// CSP is the Content-Security-Policy every portal response carries:
+// same-origin everything, the embedded htmx (script-src 'self'; htmx
+// needs no eval for the attributes the templates use), inline <style>
+// blocks and the few inline onsubmit confirmations the templates still
+// have ('unsafe-inline' on script-src and style-src; moving those to
+// hx-confirm would let script-src drop it), no plugins, no framing, no
+// <base> hijack. form-action is deliberately absent: the connect and
+// sign-in forms submit to a same-origin route that answers with a
+// redirect to the vendor or identity provider, and Chrome applies
+// form-action to such redirects. Handlers that need a stricter set (the
+// OAuth consent page) overwrite the header.
+const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+
+// SecurityHeaders sets the browser hardening headers on every response
+// before the handler runs (so a handler may override them): no framing
+// (clickjacking), no MIME sniffing, no Referer leaking the URL (ids of
+// approvals, tokens and operations live in paths and queries), and the
+// CSP baseline. Applied to the whole portal, including error pages and
+// the static assets.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", CSP)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mount is an extra route registered by another module before Handler runs.

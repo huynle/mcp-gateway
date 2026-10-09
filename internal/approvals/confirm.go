@@ -207,6 +207,12 @@ func (h *ConfirmHandler) refuse(ctx context.Context, cc *mcp.CallContext, err er
 	var te *mcp.ToolError
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrMismatch):
+		// The id is not one of the caller's approvals for this call (or
+		// not an approval at all): it is caller-supplied, unverified
+		// data and must not be recorded as the call's approval on the
+		// audit row, where it would correlate the caller's call with an
+		// approval that may belong to someone else.
+		cc.ApprovalID = ""
 		te = mcp.NewToolError(mcp.CodeDenied, "approval_mismatch", msgMismatch)
 	case errors.Is(err, ErrDenied):
 		te = mcp.NewToolError(mcp.CodeDenied, "approval_denied", msgDenied)

@@ -33,6 +33,10 @@ func registerMicrosoft(_ config.Config, registry *connectors.Registry, connSvc *
 	}
 	connSvc.RegisterBinder(connections.VendorMicrosoft, microsoft.Binder{})
 	connSvc.MapApp(microsoft.App, connections.VendorMicrosoft)
+	// Graph's ReadWrite / .All permissions cover their narrower forms
+	// (microsoft.ScopeCovered); the pipeline's scope stage uses the same
+	// semantics.
+	registry.SetScopeCoverage(microsoft.App, microsoft.ScopeCovered)
 	log.Info("microsoft connector registered", "app", microsoft.App, "tools", len(c.Tools()))
 	return nil
 }
