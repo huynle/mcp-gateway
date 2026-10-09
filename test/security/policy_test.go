@@ -52,11 +52,13 @@ func (w *world) outcome(token, tool string, args map[string]any) string {
 //     default), never allowed. GitHub exposes no repository-id
 //     alternative: owner/repo is the only identity.
 //   - Slack lower-cases channel names and strips "#"; a channel given by
-//     id (C...) or mention (<#C...|name>) yields channel_id, which never
-//     matches a name condition: allow/confirm-by-name rules cannot be
-//     widened by ids (denied). Deny-by-name rules are therefore
-//     bypassable by id: admins must grant by name (allow-list), not
-//     forbid by name; recorded as a follow-up to resolve ids to names.
+//     id (C...) or mention (<#C...|name>) is resolved to its name through
+//     the account's conversations before policy decides (task 6br0isjh),
+//     so name conditions hold whichever form the harness used: the id of
+//     #eng-deploys needs the same approval as the name, the id of #random
+//     is denied like the name, and an id the account cannot see is
+//     denied (identity_unresolved, fail closed). A mention's own name is
+//     never trusted: <#C0RANDOM01|eng-deploys> is #random.
 //   - The fake keeps ids as given: conditions are exact (SECRET-1 is a
 //     different, nonexistent item).
 func TestSecurityPolicyArgumentRuleEvasion(t *testing.T) {
@@ -92,11 +94,15 @@ func TestSecurityPolicyArgumentRuleEvasion(t *testing.T) {
 		t.Errorf("GitHub was called %d times, want 3", w.github.count())
 	}
 
-	// Slack: confirm for #eng-* by name; ids and mentions never match.
+	// Slack: confirm for #eng-* by name; ids and mentions resolve to the
+	// name and get the name's outcome; an id the account cannot see is
+	// denied.
 	post := func(channel string) map[string]any { return map[string]any{"channel": channel, "text": "x"} }
 	for _, c := range []struct{ channel, want string }{
 		{"#eng-deploys", "confirm"}, {"eng-deploys", "confirm"}, {"#ENG-Deploys", "confirm"}, {" #eng-deploys ", "confirm"},
-		{"#random", "deny"}, {"C0ENGDEP01", "deny"}, {"c0engdep01", "deny"}, {"<#C0ENGDEP01|eng-deploys>", "deny"},
+		{"#random", "deny"}, {"C0RANDOM01", "deny"}, {"<#C0RANDOM01|eng-deploys>", "deny"}, // the mention's name is not trusted
+		{"C0ENGDEP01", "confirm"}, {"c0engdep01", "confirm"}, {"<#C0ENGDEP01|eng-deploys>", "confirm"}, {"<#C0ENGDEP01|random>", "confirm"},
+		{"C0NOWHERE1", "deny"},            // not among the account's conversations: identity_unresolved
 		{"#eng\u2010deploys", "deny"},     // Unicode hyphen: no rule matches
 		{"#eng-deploys\u200b", "confirm"}, // a prefix rule matches; the connector later refuses the nonexistent name
 	} {
@@ -107,19 +113,55 @@ func TestSecurityPolicyArgumentRuleEvasion(t *testing.T) {
 	if n := len(w.slack.list()); n != 0 {
 		t.Errorf("Slack received %d posts without an approval", n)
 	}
-	// Deny-by-name is bypassable by id (documented; follow-up task):
-	// with "allow slack.post_message; deny when channel equals
-	// eng-secrets", the id of #eng-secrets is not denied.
+	var unresolved int
+	for _, ev := range w.events(w.alice) {
+		if ev.Tool == "slack.post_message" && ev.ErrorClass == "identity_unresolved" {
+			unresolved++
+			if ev.Decision != "deny" || ev.Outcome != "denied" || ev.ResourceIdentity["channel_id"] != "C0NOWHERE1" {
+				t.Errorf("identity_unresolved audit row = %+v", ev)
+			}
+		}
+	}
+	if unresolved != 1 {
+		t.Errorf("identity_unresolved audit rows = %d, want 1", unresolved)
+	}
+	// Deny-by-name holds for every form of the channel (the finding of
+	// the security review, closed by task 6br0isjh): with "allow
+	// slack.post_message; deny when channel equals eng-secrets", the
+	// name, the id of #eng-secrets and the mention are all denied and
+	// nothing reaches Slack; another channel by id is still allowed.
 	rules := append(memberRules(),
 		policy.ToolRule{App: slackconn.App, Tool: slackconn.ToolPostMessage, Outcome: policy.OutcomeAllow},
 		policy.ToolRule{App: slackconn.App, Tool: slackconn.ToolPostMessage, Outcome: policy.OutcomeDeny, Conditions: []policy.Condition{{Key: "channel", Op: policy.OpEquals, Value: "eng-secrets"}}},
 	)
 	w.setMemberRules(rules)
-	if got := w.outcome(alice, "slack.post_message", post("#eng-secrets")); got != "deny" {
-		t.Errorf("deny-by-name on #eng-secrets = %s", got)
+	posts := len(w.slack.list())
+	for _, channel := range []string{"#eng-secrets", "eng-secrets", "C0ENGSEC01", "c0engsec01", "<#C0ENGSEC01|eng-secrets>", "<#C0ENGSEC01|eng-deploys>"} {
+		if got := w.outcome(alice, "slack.post_message", post(channel)); got != "deny" {
+			t.Errorf("deny-by-name, channel %q = %s, want deny", channel, got)
+		}
 	}
-	if got := w.outcome(alice, "slack.post_message", post("C0ENGSEC01")); got != "allow" {
-		t.Logf("deny-by-name with the channel id = %s (the documented gap is closed if this is deny)", got)
+	if n := len(w.slack.list()); n != posts {
+		t.Errorf("Slack received %d posts to the denied channel", n-posts)
+	}
+	if got := w.outcome(alice, "slack.post_message", post("C0RANDOM01")); got != "allow" {
+		t.Errorf("deny-by-name, another channel by id = %s, want allow", got)
+	}
+	if list := w.slack.list(); len(list) != posts+1 || list[len(list)-1]["channel"] != "C0RANDOM01" {
+		t.Errorf("Slack posts after the allowed id = %+v", list)
+	}
+	// Audit rows of the denied forms carry the resolved name next to the id.
+	var byID int
+	for _, ev := range w.events(w.alice) {
+		if ev.Tool == "slack.post_message" && ev.ResourceIdentity["channel_id"] == "C0ENGSEC01" {
+			byID++
+			if ev.Decision != "deny" || ev.ResourceIdentity["channel"] != "eng-secrets" {
+				t.Errorf("audit row for the id of #eng-secrets = %+v", ev)
+			}
+		}
+	}
+	if byID != 4 {
+		t.Errorf("audit rows naming C0ENGSEC01 = %d, want 4", byID)
 	}
 	w.setMemberRules(memberRules())
 

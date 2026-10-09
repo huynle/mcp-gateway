@@ -30,6 +30,24 @@ type Connector interface {
 	Call(ctx context.Context, call Call) (Result, error)
 }
 
+// IdentityResolver is the optional hook a connector implements when a
+// tool's resource identity, as a pure function of the arguments, may
+// not be the form policy conditions are written against: Slack takes a
+// channel by id as well as by name, and a "deny when channel equals
+// eng-secrets" rule must hold for the id too. The policy stage calls
+// ResolveIdentity after the account is bound and before the decision,
+// with the call (principal, bound account, tool, arguments) and the
+// identity the tool's ResourceIdentity hook produced; the returned map
+// is what policy evaluates and audit records. The connector returns the
+// identity unchanged when there is nothing to resolve, and an error when
+// it could not resolve what it needed: the stage then fails closed (the
+// call is denied with class identity_unresolved and audited), never
+// evaluating the raw form as if it were resolved. Implementations must
+// not mutate the map they are given.
+type IdentityResolver interface {
+	ResolveIdentity(ctx context.Context, call Call, identity map[string]string) (map[string]string, error)
+}
+
 // ListAccountsName is the name of the read tool RegisterConnector adds to
 // every app ("<app>.list_accounts"): it lists the caller's connected
 // accounts (ID, label, display name; never tokens or scopes) so a harness
@@ -291,7 +309,13 @@ func RegisterConnector(reg *Registry, c Connector, accounts AccountSource) error
 			return err
 		}
 	}
-	return reg.registerAll(tools)
+	if err := reg.registerAll(tools); err != nil {
+		return err
+	}
+	if r, ok := c.(IdentityResolver); ok {
+		reg.SetIdentityResolver(app, r)
+	}
+	return nil
 }
 
 // validateContract applies the connector contract on top of Registry's

@@ -181,8 +181,10 @@ func (sw *slackWorld) postArgs(channel, text string) map[string]any {
 // #eng-deploys needs an approval; the approved retry resolves the name
 // to its id and posts, the ledger stores the result ids and the identity
 // carries the channel name; a post to #random is denied before the
-// connector runs; a post naming the channel by id does not match the
-// rule and is denied too.
+// connector runs, by name and by id alike (the id is resolved to its
+// name before policy decides); the id of #eng-deploys needs the same
+// approval as the name, and an id the account cannot see is denied
+// (identity_unresolved).
 func TestE2ESlackPostOnlyToEngChannels(t *testing.T) {
 	sw := newSlackWorld(t)
 	alice := sw.client(sw.alice)
@@ -236,8 +238,10 @@ func TestE2ESlackPostOnlyToEngChannels(t *testing.T) {
 		t.Errorf("metadata sent without marker reconciliation: %v", posts[0])
 	}
 
-	// #random: denied by policy, the connector never called.
-	for _, channel := range []string{"#random", "C0ENGDEP01"} {
+	// #random by name, by id and by mention, and an id that is not among
+	// the account's conversations: denied by policy, the connector never
+	// called.
+	for _, channel := range []string{"#random", "C0RANDOM01", "<#C0RANDOM01|eng-deploys>", "C0NOWHERE1"} {
 		_, err = sw.call(alice, "slack.post_message", sw.postArgs(channel, "This text must never be posted to "+channel))
 		if je := rpcError(t, err, mcp.CodeDenied); !strings.Contains(je.Message, "denied") {
 			t.Errorf("deny %s = %q", channel, je.Message)
@@ -246,14 +250,38 @@ func TestE2ESlackPostOnlyToEngChannels(t *testing.T) {
 	if n := len(sw.stub.list()); n != 1 {
 		t.Errorf("stub posts = %d after denied writes, want still 1", n)
 	}
-	var denied int
+	var denied, unresolved int
 	for _, ev := range sw.events(sw.alice) {
-		if ev.Tool == "slack.post_message" && ev.Decision == "deny" {
-			denied++
+		if ev.Tool != "slack.post_message" || ev.Decision != "deny" {
+			continue
+		}
+		denied++
+		switch ev.ErrorClass {
+		case "identity_unresolved":
+			unresolved++
+			if ev.ResourceIdentity["channel_id"] != "C0NOWHERE1" || ev.Outcome != "denied" {
+				t.Errorf("identity_unresolved audit row = %+v", ev)
+			}
+		case "denied":
+			if ev.ResourceIdentity["channel"] != "random" {
+				t.Errorf("denied audit row does not name #random: %+v", ev)
+			}
+		default:
+			t.Errorf("unexpected deny class %q: %+v", ev.ErrorClass, ev)
 		}
 	}
-	if denied != 2 {
-		t.Errorf("audit deny events = %d, want 2", denied)
+	if denied != 4 || unresolved != 1 {
+		t.Errorf("audit deny events = %d (identity_unresolved %d), want 4 (1)", denied, unresolved)
+	}
+
+	// The id of #eng-deploys gets the name's outcome: an approval is
+	// required and nothing is posted until it is granted.
+	_, err = sw.call(alice, "slack.post_message", sw.postArgs("C0ENGDEP01", "By id"))
+	if id := approvalRequired(t, err); id == "" {
+		t.Fatal("post by id: no approval required")
+	}
+	if n := len(sw.stub.list()); n != 1 {
+		t.Errorf("stub posts = %d after the post by id, want still 1 (awaiting approval)", n)
 	}
 }
 

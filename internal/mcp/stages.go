@@ -119,7 +119,7 @@ func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 		stages = append(stages, AccountStage(deps.Accounts, deps.Log), ScopeStage(deps.Registry, deps.BaseURL))
 	}
 	if deps.Policy != nil {
-		stages = append(stages, PolicyStage(deps.Policy, deps.Confirm, deps.Log))
+		stages = append(stages, PolicyStage(deps.Policy, deps.Confirm, deps.Registry, deps.Log))
 	}
 	stages = append(stages, RateLimitStage(deps.RateLimiter, deps.Metrics), DispatchStage())
 	return NewPipeline(stages...)
@@ -285,8 +285,8 @@ func DispatchStage() Stage {
 }
 
 // AuditStage records one audit.Event per call after every later stage
-// returned: tool, user, token, resolved account, resource identity from the
-// tool's hook, decision, policy version, approval, operation, outcome,
+// returned: tool, user, token, resolved account, resource identity (the
+// one the policy stage evaluated, else the tool's hook), decision, policy version, approval, operation, outcome,
 // latency, request ID and a short error class. Arguments and results are
 // never part of it (audit.Event has no field for them). A recorder failure
 // is logged and does not change the call's outcome. Calls with no principal
@@ -336,9 +336,7 @@ func auditEvent(ctx context.Context, cc *CallContext, res connectors.Result, err
 		Latency:       time.Since(cc.Started),
 		RequestID:     requestID,
 	}
-	if cc.Tool != nil && cc.Tool.ResourceIdentity != nil {
-		ev.ResourceIdentity = cc.Tool.ResourceIdentity(cc.Call.Args)
-	}
+	ev.ResourceIdentity = cc.resourceIdentity()
 	var te *ToolError
 	switch {
 	case errors.As(err, &te):
