@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
@@ -75,7 +76,7 @@ type Connector struct {
 	timeout   time.Duration
 
 	calendar, tasks, gmail *App
-	drive                  *App
+	drive, docs            *App
 }
 
 // New builds the Google connector.
@@ -117,17 +118,21 @@ func New(opts Options) (*Connector, error) {
 	c.tasks = c.newApp(AppTasks, c.tasksReadTools(), c.tasksWriteTools(), c.tasksReadHandlers(), c.tasksWriteHandlers())
 	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
+	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive. Each is registered with
+// calendar, tasks, gmail, drive, docs. Each is registered with
 // connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
-func (c *Connector) Apps() []*App { return []*App{c.calendar, c.tasks, c.gmail, c.drive} }
+func (c *Connector) Apps() []*App { return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs} }
 
 // Drive returns the "drive" app.
 func (c *Connector) Drive() *App { return c.drive }
+
+// Docs returns the "docs" app.
+func (c *Connector) Docs() *App { return c.docs }
 
 // Calendar returns the "calendar" app.
 func (c *Connector) Calendar() *App { return c.calendar }
@@ -328,6 +333,18 @@ func (cl *client) drive(ctx context.Context) (*drive.Service, error) {
 	svc, err := drive.NewService(ctx, cl.options("drive/v3/")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "drive client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// docs builds the Docs API service.
+func (cl *client) docs(ctx context.Context) (*docs.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := docs.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "docs client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

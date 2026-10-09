@@ -1,0 +1,9 @@
+{
+  "documentId": "1EmptyDoc000000000000000000000000000",
+  "title": "Empty",
+  "revisionId": "ALBJ4LtEmpty",
+  "body": {"content": [
+    {"endIndex": 1, "sectionBreak": {}},
+    {"startIndex": 1, "endIndex": 2, "paragraph": {"elements": [{"startIndex": 1, "endIndex": 2, "textRun": {"content": "\n", "textStyle": {}}}]}}
+  ]}
+}
