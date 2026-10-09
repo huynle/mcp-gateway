@@ -79,6 +79,54 @@ func TestBinderUsesTheAuthedUserToken(t *testing.T) {
 	}
 }
 
+// TestBinderReturnsTheAuthedUserToken: the binder hands the connect flow
+// the authed_user token as Bound.Token, so the connection stores the
+// USER token rather than the top-level bot token. It is a bearer token;
+// with token rotation on, authed_user carries its own refresh_token and
+// expires_in and the binder passes them along (Callback normalizes the
+// expiry). Without an authed_user token there is nothing to return and
+// the flow keeps the exchanged token.
+func TestBinderReturnsTheAuthedUserToken(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"auth.test": {byToken: map[string]route{
+		testToken: {body: "auth_test_user.json"},
+		botToken:  {body: "auth_test_bot.json"},
+	}}})
+	bound, err := (slack.Binder{}).Bind(context.Background(), bindInput(srv, nil, nil))
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	if bound.Token == nil || bound.Token.AccessToken != testToken || bound.Token.TokenType != "Bearer" {
+		t.Fatalf("Bound.Token = %+v, want the authed_user token as a bearer token", bound.Token)
+	}
+	if bound.Token.RefreshToken != "" || bound.Token.ExpiresIn != 0 || !bound.Token.Expiry.IsZero() {
+		t.Errorf("Bound.Token = %+v, want no refresh token and no expiry without rotation", bound.Token)
+	}
+
+	rotating := (&oauth2.Token{AccessToken: botToken, TokenType: "bot", RefreshToken: "xoxe-1-bot-refresh", ExpiresIn: 43200}).WithExtra(map[string]any{
+		"team": map[string]any{"id": "T0EXAMPLE1", "name": "Acme Corp"},
+		"authed_user": map[string]any{
+			"id": "U0ALICE001", "scope": "chat:write", "access_token": testToken, "token_type": "user",
+			"refresh_token": "xoxe-1-user-refresh", "expires_in": float64(43200),
+		},
+	})
+	bound, err = (slack.Binder{}).Bind(context.Background(), bindInput(srv, nil, rotating))
+	if err != nil {
+		t.Fatalf("Bind (rotation): %v", err)
+	}
+	if bound.Token == nil || bound.Token.AccessToken != testToken || bound.Token.RefreshToken != "xoxe-1-user-refresh" || bound.Token.ExpiresIn != 43200 {
+		t.Errorf("Bound.Token (rotation) = %+v, want the authed_user token with its own refresh token and expires_in", bound.Token)
+	}
+
+	plain := (&oauth2.Token{AccessToken: testToken}).WithExtra(map[string]any{"authed_user": map[string]any{"id": "U0ALICE001"}})
+	bound, err = (slack.Binder{}).Bind(context.Background(), bindInput(srv, nil, plain))
+	if err != nil {
+		t.Fatalf("Bind (no authed_user token): %v", err)
+	}
+	if bound.Token != nil {
+		t.Errorf("Bound.Token = %+v, want nil so the flow keeps the exchanged token", bound.Token)
+	}
+}
+
 func TestBinderCompanyByTeamID(t *testing.T) {
 	srv := newAPIServer(t, map[string]route{"auth.test": {body: "auth_test_user.json"}})
 	cases := map[string]map[string]string{

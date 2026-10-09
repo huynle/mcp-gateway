@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,22 +15,20 @@ import (
 )
 
 // Vendor app Extra keys the binder reads. They are binder hints, not
-// authorization parameters; connections.reservedExtra does not know them
-// yet (that file is outside this connector's ownership), so until it
-// does they are also sent to Slack's authorize URL, which ignores
-// unknown parameters.
+// authorization parameters: connections reserves them, so they never
+// reach Slack's authorize URL.
 const (
 	// ExtraCompanyTeamID is the Slack team (workspace) id whose accounts
 	// are company accounts ("T0..."; case-insensitive).
-	ExtraCompanyTeamID = "company_team_id"
+	ExtraCompanyTeamID = connections.ExtraCompanyTeamID
 	// ExtraCompanyTeamDomain is the company workspace's domain, the
 	// "acme" of acme.slack.com (a full host is accepted too), used when
 	// the team id is unknown. Either match makes the account company.
-	ExtraCompanyTeamDomain = "company_team_domain"
+	ExtraCompanyTeamDomain = connections.ExtraCompanyTeamDomain
 	// ExtraMarkerReconcile, when "true", opts post_message and
 	// reply_in_thread into marker reconciliation (Options.MarkerReconcile;
 	// read at start-up by cmd/gateway).
-	ExtraMarkerReconcile = "marker_reconcile"
+	ExtraMarkerReconcile = connections.ExtraMarkerReconcile
 )
 
 // DefaultAPIBase is Slack's Web API root.
@@ -49,14 +48,12 @@ const userAgent = "mcp-gateway"
 // connections.SlackAccountID(team, user) = "<team id>:<user id>" as the
 // external account id, "<team name> / <user name>" as the display name,
 // company when the team matches the vendor app's company_team_id or
-// company_team_domain, else personal, and the authed_user scopes (else
+// company_team_domain, else personal, the authed_user scopes (else
 // Slack's X-OAuth-Scopes header on the auth.test answer, else nil so the
-// flow records the requested scopes).
-//
-// Limitation: the connect flow stores the token it exchanged (the
-// top-level one); when that is a bot token the connection's tool calls
-// run with it and fail with missing_scope until the flow learns to keep
-// authed_user.access_token (see docs/connectors/slack.md).
+// flow records the requested scopes), and the authed_user token as
+// Bound.Token so the connection stores the USER token, never the bot's
+// (with token rotation on, authed_user's own refresh_token and
+// expires_in travel with it).
 type Binder struct {
 	// BaseURL overrides the API root (with trailing slash). Empty derives
 	// it from the vendor app's TokenURL, then DefaultAPIBase.
@@ -64,8 +61,21 @@ type Binder struct {
 }
 
 // authedUser is the authed_user object of a Slack OAuth v2 answer.
+// RefreshToken and ExpiresIn are set only when the app has token
+// rotation on.
 type authedUser struct {
-	ID, Scope, AccessToken string
+	ID, Scope, AccessToken, RefreshToken string
+	ExpiresIn                            int64
+}
+
+// token returns the user token the connection should store (nil without
+// an authed_user access token). Slack's token_type "user" is not an
+// HTTP scheme; the Web API takes the token as a bearer.
+func (a authedUser) token() *oauth2.Token {
+	if a.AccessToken == "" {
+		return nil
+	}
+	return &oauth2.Token{AccessToken: a.AccessToken, TokenType: "Bearer", RefreshToken: a.RefreshToken, ExpiresIn: a.ExpiresIn}
 }
 
 // Bind implements connections.Binder.
@@ -106,6 +116,7 @@ func (b Binder) Bind(ctx context.Context, in connections.BindInput) (connections
 		DisplayName:       teamName + " / " + userName,
 		Label:             connectors.LabelPersonal,
 		Scopes:            grantedScopes(authed, resp),
+		Token:             authed.token(),
 	}
 	if isCompanyTeam(in.App, teamID, resp.URL) {
 		bound.Label = connectors.LabelCompany
@@ -131,11 +142,19 @@ func (b Binder) APIBase(app connections.VendorApp) string {
 	return DefaultAPIBase
 }
 
-// authedUserOf reads authed_user from the token's extras.
+// authedUserOf reads authed_user from the token's extras (numbers are
+// float64 or json.Number depending on who decoded the answer).
 func authedUserOf(tok *oauth2.Token) authedUser {
 	m, _ := tok.Extra("authed_user").(map[string]any)
 	s := func(k string) string { v, _ := m[k].(string); return strings.TrimSpace(v) }
-	return authedUser{ID: s("id"), Scope: s("scope"), AccessToken: s("access_token")}
+	var expiresIn int64
+	switch v := m["expires_in"].(type) {
+	case float64:
+		expiresIn = int64(v)
+	case json.Number:
+		expiresIn, _ = v.Int64()
+	}
+	return authedUser{ID: s("id"), Scope: s("scope"), AccessToken: s("access_token"), RefreshToken: s("refresh_token"), ExpiresIn: expiresIn}
 }
 
 // teamOf reads team.id and team.name from the token's extras.

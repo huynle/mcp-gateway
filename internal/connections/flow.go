@@ -116,8 +116,10 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (string, error) {
 // Callback finishes a flow: it consumes the state (one use, same user),
 // exchanges the code with PKCE, asks the vendor's binder who the account
 // is, applies the personal-account policy, and stores the connection and
-// its encrypted token bundle. Reconnecting an account the user already
-// connected updates that connection with the union of scopes.
+// its encrypted token bundle: the binder's Bound.Token when it returned
+// one (Slack's authed_user token), else the exchanged token. Reconnecting
+// an account the user already connected updates that connection with the
+// union of scopes.
 func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, error) {
 	if req.State == "" || req.UserID == "" {
 		return Info{}, fmt.Errorf("%w: missing state", ErrFlowInvalid)
@@ -155,7 +157,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 	}
 	conf := s.oauthConfig(app, secret, flow.Scopes)
 	octx := s.oauthContext(ctx)
-	tok, err := conf.Exchange(octx, req.Code, oauth2.VerifierOption(flow.Verifier))
+	tok, err := s.exchange(ctx, app, conf, req.Code, flow.Verifier)
 	if err != nil {
 		code := vendorErrorCode(err)
 		s.log.Warn("code exchange failed", "event", "connections.exchange_failed", "user_id", req.UserID, "vendor", app.Vendor, "vendor_error", code)
@@ -176,9 +178,17 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 	if label != store.AccountCompany && label != store.AccountPersonal {
 		return Info{}, fmt.Errorf("%w: binder returned label %q", ErrFlowInvalid, label)
 	}
-	granted := bound.Scopes
-	if granted == nil {
-		granted = grantedScopes(tok, flow.Scopes)
+	stored := tok
+	if bound.Token != nil {
+		if bound.Token.AccessToken == "" {
+			return Info{}, fmt.Errorf("%w: binder returned a token without an access token", ErrFlowInvalid)
+		}
+		stored = bound.Token
+		s.normalizeExpiry(stored)
+	}
+	granted := unionScopes(bound.Scopes)
+	if bound.Scopes == nil {
+		granted = grantedScopes(stored, flow.Scopes)
 	}
 	if label == store.AccountPersonal {
 		allowed, err := s.personalAllowed(ctx, req.UserID, app.Vendor)
@@ -217,7 +227,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 		default:
 			return err
 		}
-		if err := s.putToken(ctx, tx, req.UserID, conn.ID, app.Vendor, tok); err != nil {
+		if err := s.putToken(ctx, tx, req.UserID, conn.ID, app.Vendor, stored); err != nil {
 			return err
 		}
 		if err := tx.TouchConnectionRefreshed(ctx, conn.ID, now); err != nil {
@@ -340,6 +350,9 @@ func vendorErrorCode(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
+	}
+	if errors.Is(err, errNoAccessToken) {
+		return "missing_access_token"
 	}
 	return "network"
 }
