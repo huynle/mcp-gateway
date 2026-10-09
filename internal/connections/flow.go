@@ -157,7 +157,7 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 	}
 	conf := s.oauthConfig(app, secret, flow.Scopes)
 	octx := s.oauthContext(ctx)
-	tok, err := conf.Exchange(octx, req.Code, oauth2.VerifierOption(flow.Verifier))
+	tok, err := s.exchange(ctx, app, conf, req.Code, flow.Verifier)
 	if err != nil {
 		code := vendorErrorCode(err)
 		s.log.Warn("code exchange failed", "event", "connections.exchange_failed", "user_id", req.UserID, "vendor", app.Vendor, "vendor_error", code)
@@ -350,6 +350,9 @@ func vendorErrorCode(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
+	}
+	if errors.Is(err, errNoAccessToken) {
+		return "missing_access_token"
 	}
 	return "network"
 }

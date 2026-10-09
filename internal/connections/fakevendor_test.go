@@ -39,13 +39,30 @@ type fakeVendor struct {
 	refreshDelay time.Duration
 	expiresIn    int
 	issued       atomic.Int32
+
+	// slack switches the token endpoint to Slack's oauth.v2.access
+	// shape (slackBotAndUser or slackUserOnly) and serves auth.test;
+	// slackRotation adds refresh_token/expires_in as token rotation does.
+	slack         slackShape
+	slackRotation bool
+	authTests     []string // the form token of every auth.test call
 }
+
+// slackShape selects how the fake answers a Slack code exchange.
+type slackShape int
+
+const (
+	slackOff        slackShape = iota
+	slackBotAndUser            // bot token at the top level, the user's under authed_user
+	slackUserOnly              // no top-level access_token at all (user_scope-only app)
+)
 
 type issuedCode struct {
 	account   string
 	challenge string
 	redirect  string
 	scope     string
+	userScope string
 }
 
 type userInfo struct {
@@ -70,6 +87,7 @@ func newFakeVendor(t *testing.T) *fakeVendor {
 	mux.HandleFunc("POST /token", v.tokenHandler)
 	mux.HandleFunc("GET /userinfo", v.userInfoHandler)
 	mux.HandleFunc("POST /revoke", v.revokeHandler)
+	mux.HandleFunc("POST /auth.test", v.authTestHandler)
 	v.srv = httptest.NewServer(mux)
 	t.Cleanup(v.srv.Close)
 	return v
@@ -89,7 +107,7 @@ func (v *fakeVendor) authorizeHandler(w http.ResponseWriter, r *http.Request) {
 		account = "acct-company"
 	}
 	code := fmt.Sprintf("code-%d", len(v.codes)+1)
-	v.codes[code] = issuedCode{account: account, challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), scope: q.Get("scope")}
+	v.codes[code] = issuedCode{account: account, challenge: q.Get("code_challenge"), redirect: q.Get("redirect_uri"), scope: q.Get("scope"), userScope: q.Get("user_scope")}
 	v.mu.Unlock()
 	if q.Get("code_challenge_method") != "S256" || q.Get("client_id") != v.clientID || q.Get("response_type") != "code" {
 		http.Error(w, "bad authorize request", http.StatusBadRequest)
@@ -126,7 +144,7 @@ func (v *fakeVendor) tokenHandler(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, http.StatusUnauthorized, "invalid_client", "bad client credentials")
 		return
 	}
-	var account, scope string
+	var account, scope, userScope string
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
 		v.mu.Lock()
@@ -134,6 +152,11 @@ func (v *fakeVendor) tokenHandler(w http.ResponseWriter, r *http.Request) {
 		delete(v.codes, r.PostForm.Get("code"))
 		v.mu.Unlock()
 		if !ok {
+			if v.slack != slackOff { // Slack answers 200 ok:false
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "invalid_code"})
+				return
+			}
 			oauthError(w, http.StatusBadRequest, "invalid_grant", "unknown code")
 			return
 		}
@@ -146,7 +169,7 @@ func (v *fakeVendor) tokenHandler(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri mismatch")
 			return
 		}
-		account, scope = c.account, c.scope
+		account, scope, userScope = c.account, c.scope, c.userScope
 	case "refresh_token":
 		v.refreshCalls.Add(1)
 		if v.refreshDelay > 0 {
@@ -171,6 +194,10 @@ func (v *fakeVendor) tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := v.issued.Add(1)
+	if v.slack != slackOff {
+		v.slackTokenResponse(w, n, account, userScope)
+		return
+	}
 	access, refresh := fmt.Sprintf("access-%d-%s", n, account), fmt.Sprintf("refresh-%d-%s", n, account)
 	v.mu.Lock()
 	v.accessOwner[access] = account
@@ -183,6 +210,67 @@ func (v *fakeVendor) tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// slackTokenResponse answers like Slack's oauth.v2.access for an app with
+// bot + user scopes (docs/vendor-apps.md 2.5): the BOT token at the top
+// level, the user's token, id and scopes under authed_user; or, for a
+// user_scope-only app, no top-level token at all. The user scopes echo
+// the user_scope parameter comma-separated, as Slack does.
+func (v *fakeVendor) slackTokenResponse(w http.ResponseWriter, n int32, account, userScope string) {
+	bot, user := fmt.Sprintf("xoxb-%d-bot", n), fmt.Sprintf("xoxp-%d-%s", n, account)
+	authed := map[string]any{"id": "U" + strings.ToUpper(account), "scope": strings.Join(strings.Fields(userScope), ","), "access_token": user, "token_type": "user"}
+	body := map[string]any{
+		"ok": true, "app_id": "A0FAKE", "team": map[string]any{"id": "TACME", "name": "Acme"},
+		"enterprise": nil, "is_enterprise_install": false, "authed_user": authed,
+	}
+	if v.slack == slackBotAndUser {
+		body["access_token"], body["token_type"], body["scope"], body["bot_user_id"] = bot, "bot", "chat:write,im:write", "UBOT"
+	}
+	issued := []string{user}
+	if v.slack == slackBotAndUser {
+		issued = append(issued, bot)
+	}
+	if v.slackRotation {
+		authed["refresh_token"], authed["expires_in"] = fmt.Sprintf("xoxe-1-user-%d", n), v.expiresIn
+		issued = append(issued, fmt.Sprintf("xoxe-1-user-%d", n))
+		if v.slack == slackBotAndUser {
+			body["refresh_token"], body["expires_in"] = fmt.Sprintf("xoxe-1-bot-%d", n), v.expiresIn
+			issued = append(issued, fmt.Sprintf("xoxe-1-bot-%d", n))
+		}
+	}
+	v.mu.Lock()
+	v.accessOwner[user] = account
+	v.ever = append(v.ever, issued...)
+	v.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// authTestHandler is Slack's auth.test for the user tokens the fake
+// issued (slack-go sends the token as a form field).
+func (v *fakeVendor) authTestHandler(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	token := r.PostForm.Get("token")
+	v.mu.Lock()
+	v.authTests = append(v.authTests, token)
+	account, ok := v.accessOwner[token]
+	v.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	if !ok || !strings.HasPrefix(token, "xoxp-") {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "invalid_auth"})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok": true, "url": "https://acme.slack.com/", "team": "Acme", "user": v.users[account].Login,
+		"team_id": "TACME", "user_id": "U" + strings.ToUpper(account),
+	})
+}
+
+func (v *fakeVendor) authTestTokens() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return append([]string(nil), v.authTests...)
 }
 
 func (v *fakeVendor) userInfoHandler(w http.ResponseWriter, r *http.Request) {

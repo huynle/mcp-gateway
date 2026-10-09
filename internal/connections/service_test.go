@@ -153,11 +153,17 @@ func registerFakeApp(t *testing.T, env *testEnv, v *fakeVendor) connections.Vend
 }
 
 // connect runs start + the vendor's authorize hop + callback for the user
-// and returns the connection.
+// on the fake vendor and returns the connection.
 func connect(t *testing.T, env *testEnv, userID, account string, scopes ...string) (connections.Info, error) {
 	t.Helper()
+	return connectVendor(t, env, connections.VendorFake, userID, account, scopes...)
+}
+
+// connectVendor is connect for any vendor whose app points at a fakeVendor.
+func connectVendor(t *testing.T, env *testEnv, vendor, userID, account string, scopes ...string) (connections.Info, error) {
+	t.Helper()
 	ctx := context.Background()
-	redirect, err := env.svc.Start(ctx, connections.StartRequest{UserID: userID, Vendor: connections.VendorFake, Scopes: scopes})
+	redirect, err := env.svc.Start(ctx, connections.StartRequest{UserID: userID, Vendor: vendor, Scopes: scopes})
 	if err != nil {
 		return connections.Info{}, err
 	}
@@ -182,10 +188,10 @@ func connect(t *testing.T, env *testEnv, userID, account string, scopes ...strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(back.String(), "http://gw.test/connect/fake/callback?") {
+	if !strings.HasPrefix(back.String(), "http://gw.test/connect/"+vendor+"/callback?") {
 		t.Fatalf("vendor redirected to %s", back)
 	}
-	return env.svc.Callback(ctx, connections.CallbackRequest{UserID: userID, Vendor: connections.VendorFake, State: back.Query().Get("state"), Code: back.Query().Get("code")})
+	return env.svc.Callback(ctx, connections.CallbackRequest{UserID: userID, Vendor: vendor, State: back.Query().Get("state"), Code: back.Query().Get("code")})
 }
 
 func TestConnectCompanyAccountStoresEncryptedTokens(t *testing.T) {
