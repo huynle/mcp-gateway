@@ -32,7 +32,7 @@ func TestWriteToolNames(t *testing.T) {
 		return out
 	}
 	wantEqual(t, "jira writes", names(jira), []string{"create_issue", "add_comment", "transition_issue"})
-	_ = conf
+	wantEqual(t, "confluence writes", names(conf), []string{"create_page"})
 }
 
 func TestWriteToolsMetadata(t *testing.T) {
@@ -677,4 +677,248 @@ func TestTransitionIssueValidationAndErrors(t *testing.T) {
 			checkWriteError(t, "jira", tc, res, err)
 		})
 	}
+}
+
+// --- confluence.create_page --------------------------------------------------------------
+
+const (
+	spacesPath     = "GET " + wikiBase + "/api/v2/spaces"
+	createPagePath = "POST " + wikiBase + "/api/v2/pages"
+	spacePagesPath = "GET " + wikiBase + "/api/v2/spaces/98765/pages"
+)
+
+func TestCreatePageToolMetadata(t *testing.T) {
+	conf, _ := newConfluence(t, newAPIServer(t, nil), connectors.Bounds{})
+	var names []string
+	for _, tool := range conf.Tools() {
+		if tool.Kind == connectors.KindWrite {
+			names = append(names, tool.Name)
+		}
+	}
+	wantEqual(t, "confluence writes", names, []string{"create_page"})
+	checkMetadata(t, metadataCase{
+		app: atlassian.ConfluenceApp, tool: "create_page", required: []string{"space_key", "title", "body"},
+		props:    []string{"space_key", "title", "body", "parent_id"},
+		args:     map[string]any{"space_key": "DOCS", "title": "secret", "body": "<p>secret</p>", "parent_id": "12000"},
+		identity: map[string]string{"space": "DOCS"},
+		scopes:   []string{"write:page:confluence"},
+	})
+	tool := toolNamed(t, conf, "create_page")
+	if tool.Reconcile.Kind != connectors.ReconcileMarker || tool.Reconcile.Check == nil || tool.ResultIDs == nil {
+		t.Errorf("create_page reconcile = %+v", tool.Reconcile)
+	}
+	srv := newAPIServer(t, nil)
+	if _, err := conf.Call(context.Background(), call(atlassian.ConfluenceApp, "create_page", map[string]any{"space_key": "DOCS", "title": "t", "body": "b"})); !errors.Is(err, atlassian.ErrMissingOperation) {
+		t.Errorf("create_page without an operation id: err = %v", err)
+	}
+	if len(srv.Requests()) != 0 {
+		t.Error("a request was sent without an operation id")
+	}
+}
+
+func TestCreatePage(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{spacesPath: {status: 200, body: "spaces_docs.json"}, createPagePath: {status: 200, body: "created_page.json"}})
+	c, tk := newConfluence(t, srv, connectors.Bounds{})
+	res, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", map[string]any{
+		"space_key": "DOCS", "title": "Release checklist", "body": "<p>Check everything.</p>", "parent_id": "12000",
+	}))
+	if err != nil {
+		t.Fatalf("create_page: %v", err)
+	}
+	created, ok := res.Content.(atlassian.CreatedPage)
+	if !ok || created.ID != "12400" || created.SpaceID != "98765" || created.Space != "DOCS" || created.URL != siteURL+"/wiki/spaces/DOCS/pages/12400/Release+checklist" {
+		t.Errorf("content = %#v", res.Content)
+	}
+	ids := toolNamed(t, c, "create_page").ResultIDs(res)
+	if ids["id"] != "12400" || ids["url"] != created.URL || len(ids) != 2 {
+		t.Errorf("ResultIDs = %v", ids)
+	}
+	if q := query(t, srv, wikiBase+"/api/v2/spaces"); q.Get("keys") != "DOCS" {
+		t.Errorf("space lookup query = %v", q)
+	}
+	body := jsonBody(t, srv.Last(t, createPagePath))
+	if body["spaceId"] != "98765" || body["title"] != "Release checklist" || body["parentId"] != "12000" || body["status"] != "current" {
+		t.Errorf("body = %v", body)
+	}
+	pb, _ := body["body"].(map[string]any)
+	if pb["representation"] != "storage" || pb["value"] != "<p>Check everything.</p>\n<p>"+marker+"</p>" {
+		t.Errorf("page body = %v, want the storage body followed by the marker paragraph", pb)
+	}
+	if len(tk.calls) != 1 {
+		t.Errorf("token source calls = %v, want one for both requests", tk.calls)
+	}
+}
+
+func TestCreatePagePlainTextBodyIsWrapped(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{spacesPath: {status: 200, body: "spaces_docs.json"}, createPagePath: {status: 200, body: "created_page.json"}})
+	c, _ := newConfluence(t, srv, connectors.Bounds{})
+	if _, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", map[string]any{"space_key": "DOCS", "title": "t", "body": "Just text & more"})); err != nil {
+		t.Fatal(err)
+	}
+	body := jsonBody(t, srv.Last(t, createPagePath))
+	pb, _ := body["body"].(map[string]any)
+	if pb["value"] != "<p>Just text &amp; more</p>\n<p>"+marker+"</p>" {
+		t.Errorf("page body = %q", pb["value"])
+	}
+	if _, ok := body["parentId"]; ok {
+		t.Errorf("parentId sent when none given: %v", body)
+	}
+}
+
+func TestCreatePageValidation(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConfluence(t, srv, connectors.Bounds{})
+	for name, args := range map[string]map[string]any{
+		"missing title":  {"space_key": "DOCS", "body": "b"},
+		"missing body":   {"space_key": "DOCS", "title": "t"},
+		"bad space key":  {"space_key": "no spaces", "title": "t", "body": "b"},
+		"bad parent id":  {"space_key": "DOCS", "title": "t", "body": "b", "parent_id": "abc"},
+		"body not a str": {"space_key": "DOCS", "title": "t", "body": 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", args))
+			wantClass(t, err, atlassian.ClassInvalidArgument, 0)
+		})
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d requests sent for invalid arguments", n)
+	}
+}
+
+func TestCreatePageSpaceLookupFailuresAreKnown(t *testing.T) {
+	t.Run("unknown space", func(t *testing.T) {
+		srv := newAPIServer(t, map[string]route{spacesPath: {status: 200, body: "spaces_empty.json"}})
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		_, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", map[string]any{"space_key": "DOCS", "title": "t", "body": "b"}))
+		wantClass(t, err, atlassian.ClassNotFound, 0)
+		if errors.Is(err, connectors.ErrOutcomeUnknown) || srv.Count(createPagePath) != 0 {
+			t.Errorf("err = %v, create requests = %d; a failed lookup is a known outcome and creates nothing", err, srv.Count(createPagePath))
+		}
+	})
+	t.Run("5xx on the lookup", func(t *testing.T) {
+		srv := newAPIServer(t, map[string]route{spacesPath: {status: 503, body: ""}})
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		res, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", map[string]any{"space_key": "DOCS", "title": "t", "body": "b"}))
+		wantClass(t, err, atlassian.ClassUnavailable, 503)
+		if errors.Is(err, connectors.ErrOutcomeUnknown) || res.Unavailable {
+			t.Errorf("res = %+v err = %v; the lookup failing before the write is known and never Unavailable", res, err)
+		}
+	})
+}
+
+func TestCreatePageErrors(t *testing.T) {
+	cases := writeErrorCases(route{status: 200, body: "created_page.json"})
+	cases[0].rt = route{status: 400, body: "error_confluence_title_exists.json"}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{spacesPath: {status: 200, body: "spaces_docs.json"}, createPagePath: tc.rt})
+			c := newWriter(t, atlassian.ConfluenceApp, srv)
+			res, err := c.Call(context.Background(), write(atlassian.ConfluenceApp, "create_page", map[string]any{"space_key": "DOCS", "title": "t", "body": "b"}))
+			checkWriteError(t, "confluence", tc, res, err)
+			if tc.name == "400 invalid argument" && !strings.Contains(err.Error(), "already exists") {
+				t.Errorf("err = %v, want Confluence's message", err)
+			}
+		})
+	}
+}
+
+// --- reconciliation: confluence.create_page -------------------------------------------
+
+var (
+	pageIdentity = map[string]string{"space": "DOCS"}
+	markerCQL    = `space = "DOCS" AND type = page AND text ~ "\"` + marker + `\""`
+)
+
+func pageRoutes(hit route, spacePages map[string]route) map[string]route {
+	routes := map[string]route{contentSearchPath: hit}
+	if spacePages != nil {
+		routes[spacesPath] = route{status: 200, body: "spaces_docs.json"}
+		routes[spacePagesPath] = route{pageParam: "cursor", pages: spacePages}
+	}
+	return routes
+}
+
+func TestCheckPageFoundBySearch(t *testing.T) {
+	srv := newAPIServer(t, pageRoutes(route{status: 200, body: "content_search_marker_hit.json"}, nil))
+	c, tk := newConfluence(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+	wantFound(t, res, err, "12400")
+	q := query(t, srv, wikiBase+"/rest/api/content/search")
+	if q.Get("cql") != markerCQL || !strings.Contains(q.Get("expand"), "body.storage") {
+		t.Errorf("query = %v", q)
+	}
+	if len(tk.calls) != 1 || tk.calls[0] != alice+"/"+acct {
+		t.Errorf("token source calls = %v", tk.calls)
+	}
+	if len(srv.Requests()) != 1 {
+		t.Error("the fallback listing ran although the search found the page")
+	}
+}
+
+func TestCheckPageFallsBackToTheSpacePages(t *testing.T) {
+	pages := map[string]route{"": {status: 200, body: "space_pages_page1.json"}, "CURSOR2": {status: 200, body: "space_pages_page2.json"}}
+	for name, hit := range map[string]route{
+		"hit without the marker": {status: 200, body: "content_search_hit_without_marker.json"},
+		"search error":           {status: 500, body: ""},
+		"search miss":            {status: 200, body: "content_search_empty.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, pageRoutes(hit, pages))
+			c, _ := newConfluence(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+			wantFound(t, res, err, "12400")
+			q := query(t, srv, wikiBase+"/api/v2/spaces/98765/pages")
+			if q.Get("cursor") != "CURSOR2" || q.Get("sort") != "-created-date" || q.Get("body-format") != "storage" || q.Get("limit") != "100" {
+				t.Errorf("last listing query = %v", q)
+			}
+		})
+	}
+}
+
+func TestCheckPageNotFoundAndCannotTell(t *testing.T) {
+	t.Run("not found at the end of the space", func(t *testing.T) {
+		srv := newAPIServer(t, pageRoutes(route{status: 200, body: "content_search_empty.json"},
+			map[string]route{"": {status: 200, body: "space_pages_page1.json"}, "CURSOR2": {status: 200, body: "space_pages_last_without_marker.json"}}))
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		res, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+		wantNotFound(t, res, err)
+	})
+	t.Run("space gone is cannot tell", func(t *testing.T) {
+		srv := newAPIServer(t, map[string]route{contentSearchPath: {status: 200, body: "content_search_empty.json"}, spacesPath: {status: 200, body: "spaces_empty.json"}})
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		_, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+		wantClass(t, err, atlassian.ClassNotFound, 0)
+	})
+	t.Run("listing error", func(t *testing.T) {
+		srv := newAPIServer(t, pageRoutes(route{status: 200, body: "content_search_empty.json"}, map[string]route{"": {status: 502, body: ""}}))
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		_, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+		wantClass(t, err, atlassian.ClassUnavailable, 502)
+	})
+	t.Run("too many pages", func(t *testing.T) {
+		pages := map[string]route{}
+		for i := 0; i <= atlassian.MaxReconcilePages; i++ {
+			cursor := ""
+			if i > 0 {
+				cursor = "C" + itoa(i)
+			}
+			pages[cursor] = route{status: 200, body: `{"results":[{"id":"1","body":{"storage":{"value":""}}}],"_links":{"next":"/wiki/api/v2/spaces/98765/pages?cursor=C` + itoa(i+1) + `"}}`}
+		}
+		srv := newAPIServer(t, pageRoutes(route{status: 200, body: "content_search_empty.json"}, pages))
+		c, _ := newConfluence(t, srv, connectors.Bounds{})
+		_, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", pageIdentity))
+		if err == nil || !strings.Contains(err.Error(), "cannot tell yet") {
+			t.Fatalf("Check err = %v, want cannot tell yet", err)
+		}
+		if n := srv.Count(spacePagesPath); n != atlassian.MaxReconcilePages {
+			t.Errorf("listing requests = %d, want %d", n, atlassian.MaxReconcilePages)
+		}
+	})
+	t.Run("needs the space", func(t *testing.T) {
+		c, _ := newConfluence(t, newAPIServer(t, nil), connectors.Bounds{})
+		_, err := toolNamed(t, c, "create_page").Reconcile.Check(context.Background(), reconcile(atlassian.ConfluenceApp, "create_page", map[string]string{}))
+		if !errors.Is(err, atlassian.ErrNotReconcilable) {
+			t.Errorf("err = %v, want ErrNotReconcilable", err)
+		}
+	})
 }

@@ -168,3 +168,85 @@ func (c *Connector) checkComment(ctx context.Context, in connectors.ReconcileInp
 	}
 	return connectors.ReconcileResult{}, fmt.Errorf("atlassian: reconcile: more than %d pages of comments on %s; cannot tell yet", MaxReconcilePages, key)
 }
+
+// --- confluence.create_page ----------------------------------------------------------
+
+// checkPage is create_page's marker reconciliation. A CQL text search
+// for the marker in the space is tried first: a hit whose storage body
+// carries the marker is the page. The search index lags, so a miss, a
+// hit without the marker or a search error falls back to the space's
+// pages (v2, newest created first, bodies included), bounded by
+// MaxReconcilePages: the marker on any page is found; the end of the
+// list without it is not_found; running out of pages, a space that can
+// no longer be resolved, or any listing error is "cannot tell yet".
+func (c *Connector) checkPage(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	space := in.ResourceIdentity["space"]
+	if !spaceKeyRE.MatchString(space) {
+		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no space", ErrNotReconcilable)
+	}
+	tg, err := c.target(ctx, in)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if id := tg.searchPageMarker(ctx, space); id != "" {
+		return found(id), nil
+	}
+	spaceID, err := c.spaceID(ctx, tg.session, space)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	cursor := ""
+	for page := 1; page <= MaxReconcilePages; page++ {
+		q := url.Values{"sort": {"-created-date"}, "limit": {strconv.Itoa(reconcilePageSize)}, "body-format": {"storage"}}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var res wirePages
+		if err := c.classify("reconcile: list pages", tg.getJSON(ctx, tg.wikiURL("api/v2/spaces/"+spaceID+"/pages", q), &res)); err != nil {
+			return connectors.ReconcileResult{}, err
+		}
+		for _, p := range res.Results {
+			if p.ID != "" && p.Body != nil && p.Body.Storage != nil && hasMarker(p.Body.Storage.Value, tg.operationID) {
+				return found(p.ID), nil
+			}
+		}
+		cursor = nextCursor(res.Links["next"])
+		if cursor == "" || len(res.Results) == 0 {
+			return notFound, nil
+		}
+	}
+	return connectors.ReconcileResult{}, fmt.Errorf("atlassian: reconcile: more than %d pages of recent pages in space %s; cannot tell yet", MaxReconcilePages, space)
+}
+
+// searchPageMarker asks CQL text search for the marker and returns the
+// id of the page whose body carries it, or "" (a miss, an error, or hits
+// without the marker: never trusted as absence).
+func (tg reconcileTarget) searchPageMarker(ctx context.Context, space string) string {
+	cql := fmt.Sprintf(`space = %q AND type = page AND text ~ "\"%s\""`, space, Marker(tg.operationID))
+	q := url.Values{"cql": {cql}, "limit": {"10"}, "expand": {"body.storage"}}
+	var res wireContentSearch
+	if err := tg.getJSON(ctx, tg.wikiURL("rest/api/content/search", q), &res); err != nil {
+		return ""
+	}
+	for _, ct := range res.Results {
+		if ct.ID != "" && ct.Body != nil && ct.Body.Storage != nil && hasMarker(ct.Body.Storage.Value, tg.operationID) {
+			return ct.ID
+		}
+	}
+	return ""
+}
+
+// nextCursor extracts the cursor of a v2 "next" link, "" when there is
+// none.
+func nextCursor(next string) string {
+	if next == "" {
+		return ""
+	}
+	u, err := url.Parse(next)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("cursor")
+}

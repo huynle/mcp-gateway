@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/url"
 	"regexp"
 	"strings"
@@ -16,6 +17,7 @@ const (
 	ToolCreateIssue     = "create_issue"
 	ToolAddComment      = "add_comment"
 	ToolTransitionIssue = "transition_issue"
+	ToolCreatePage      = "create_page"
 )
 
 // ErrMissingOperation is returned by every write called without
@@ -32,7 +34,24 @@ var transitionIDRE = regexp.MustCompile(`^[0-9]+$`)
 func (c *Connector) writeTools() []connectors.Tool {
 	single := connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes}
 	if c.app == ConfluenceApp {
-		return nil // confluence.create_page follows in the next increment
+		return []connectors.Tool{
+			{
+				App: ConfluenceApp, Name: ToolCreatePage, Kind: connectors.KindWrite,
+				Description: "Create a Confluence page in a space (by space key) with a title and a body in Confluence storage format " +
+					"(XHTML; plain text is accepted and wrapped in a paragraph), optionally under a parent page. Returns the new page's id and url.",
+				InputSchema: objectSchema([]property{
+					{"space_key", "string", "Key of the space to create the page in.", nil},
+					{"title", "string", "Page title (unique within the space).", nil},
+					{"body", "string", "Page body in Confluence storage format, or plain text.", nil},
+					{"parent_id", "string", "Optional id of the parent page.", nil},
+				}, []string{"space_key", "title", "body"}),
+				RequiredScopes:   []string{ScopePageWrite},
+				ResourceIdentity: confluenceIdentity,
+				Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkPage},
+				ResultIDs:        pageResultIDs,
+				Bounds:           single,
+			},
+		}
 	}
 	return []connectors.Tool{
 		{
@@ -85,7 +104,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 // writeHandlers maps the write tools' short names to their implementation.
 func (c *Connector) writeHandlers() map[string]handler {
 	if c.app == ConfluenceApp {
-		return nil
+		return map[string]handler{ToolCreatePage: c.createPage}
 	}
 	return map[string]handler{ToolCreateIssue: c.createIssue, ToolAddComment: c.addComment, ToolTransitionIssue: c.transitionIssue}
 }
@@ -102,6 +121,14 @@ func issueResultIDs(res connectors.Result) map[string]string {
 
 func commentResultIDs(res connectors.Result) map[string]string {
 	v, ok := res.Content.(CreatedComment)
+	if !ok || v.ID == "" {
+		return nil
+	}
+	return map[string]string{"id": v.ID, "url": v.URL}
+}
+
+func pageResultIDs(res connectors.Result) map[string]string {
+	v, ok := res.Content.(CreatedPage)
 	if !ok || v.ID == "" {
 		return nil
 	}
@@ -259,4 +286,87 @@ func (c *Connector) transitionIssue(ctx context.Context, s *session, call connec
 		return connectors.Result{}, err
 	}
 	return connectors.Result{Content: Transitioned{Issue: key, TransitionID: id}}, nil
+}
+
+// --- handlers: confluence -------------------------------------------------------------
+
+// looksLikeStorage reports whether body already is markup (storage
+// format); plain text is wrapped in a paragraph with its characters
+// escaped.
+func looksLikeStorage(body string) bool {
+	t := strings.TrimSpace(body)
+	return strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">")
+}
+
+// storageBody builds the page body: the harness's storage markup (or
+// its plain text wrapped in a paragraph) followed by the marker
+// paragraph.
+func storageBody(body, operationID string) string {
+	body = strings.TrimSpace(body)
+	if !looksLikeStorage(body) {
+		body = "<p>" + html.EscapeString(body) + "</p>"
+	}
+	return body + "\n<p>" + Marker(operationID) + "</p>"
+}
+
+// spaceID resolves a space key to the numeric id the v2 API takes (a
+// read: its failures are known outcomes). An unknown key is not_found.
+func (c *Connector) spaceID(ctx context.Context, s *session, key string) (string, error) {
+	var res wireSpaces
+	if err := c.classify("find space", s.getJSON(ctx, s.wikiURL("api/v2/spaces", url.Values{"keys": {key}, "limit": {"1"}}), &res)); err != nil {
+		return "", err
+	}
+	for _, sp := range res.Results {
+		if strings.EqualFold(sp.Key, key) && sp.ID != "" {
+			return sp.ID, nil
+		}
+	}
+	return "", &Error{Class: ClassNotFound, Message: "find space: no Confluence space with key " + key + ", or this account cannot see it"}
+}
+
+// createPage resolves the space id (a read: failures are known, nothing
+// is created) and posts the page; only the creation itself can be
+// unknown (classifyWrite).
+func (c *Connector) createPage(ctx context.Context, s *session, call connectors.Call) (connectors.Result, error) {
+	space, _ := call.Args["space_key"].(string)
+	if space = strings.TrimSpace(space); !spaceKeyRE.MatchString(space) {
+		return connectors.Result{}, invalid("space_key is required: a Confluence space key like DOCS")
+	}
+	title, err := requiredString(call.Args, "title")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	body, err := optionalString(call.Args, "body")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	if strings.TrimSpace(body) == "" {
+		return connectors.Result{}, invalid("body is required")
+	}
+	parent, err := optionalString(call.Args, "parent_id")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	if parent = strings.TrimSpace(parent); parent != "" && !pageIDRE.MatchString(parent) {
+		return connectors.Result{}, invalid("parent_id must be a page id (digits)")
+	}
+	spaceID, err := c.spaceID(ctx, s, space)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	req := map[string]any{
+		"spaceId": spaceID, "status": "current", "title": title,
+		"body": map[string]string{"representation": "storage", "value": storageBody(body, call.OperationID)},
+	}
+	if parent != "" {
+		req["parentId"] = parent
+	}
+	var created wirePage
+	if err := c.classifyWrite("create page", s.postJSON(ctx, s.wikiURL("api/v2/pages", nil), req, &created)); err != nil {
+		return connectors.Result{}, err
+	}
+	if created.ID == "" {
+		return connectors.Result{}, fmt.Errorf("%w: create page: Atlassian answered without a page id", connectors.ErrOutcomeUnknown)
+	}
+	return connectors.Result{Content: CreatedPage{ID: created.ID, SpaceID: spaceID, URL: wikiURL(s.site, created.Links["webui"]), Space: space}}, nil
 }

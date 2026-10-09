@@ -203,15 +203,6 @@ func vendorMessage(body []byte) string {
 	return s
 }
 
-// statusOf returns the HTTP status behind a classified error, 0 when none.
-func statusOf(err error) int {
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Status
-	}
-	return 0
-}
-
 // invalid builds a ClassInvalidArgument error.
 func invalid(format string, a ...any) error {
 	return &Error{Class: ClassInvalidArgument, Message: fmt.Sprintf(format, a...)}
