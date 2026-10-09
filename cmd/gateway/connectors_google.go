@@ -10,13 +10,14 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors/google"
 )
 
-// registerGoogle registers the Google connector's three apps (calendar,
-// tasks, gmail) on the registry with the connections service as their
+// registerGoogle registers the Google connector's apps (calendar, tasks,
+// gmail, drive, docs, sheets, contacts: google.Apps) on the registry with
+// the connections service as their
 // account source (also consulted for the account's granted scopes: a
 // tool whose scope was declined under granular consent answers
 // scope_required) and token source, installs the Google account binder
 // for vendor "google" (both the internal and the external app) and maps
-// each app to the vendor so one Google connection serves all three. It
+// each app to the vendor so one Google connection serves them all. It
 // runs whenever connections are mounted, whether or not an admin has
 // registered a Google vendor app yet: the tools are listed (so roles
 // can grant them) and answer "no connected account" until a user

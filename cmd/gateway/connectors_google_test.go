@@ -11,7 +11,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors/google"
 )
 
-// The Google connector's three apps (calendar, tasks, gmail) are
+// The Google connector's apps (calendar, tasks, gmail, drive, docs, sheets, contacts) are
 // registered whenever the connections service is mounted, before any
 // admin registers the Google vendor apps: their tools exist, list no
 // accounts for a user who has not connected, and fail with a clear "no

@@ -1,0 +1,34 @@
+{
+  "kind": "drive#fileList",
+  "nextPageToken": "files-page-two",
+  "incompleteSearch": false,
+  "files": [
+    {
+      "kind": "drive#file",
+      "id": "1fA0bC1dE2fG3hI4jK5lM6nO7pQ8rS9tU",
+      "name": "Q4 budget",
+      "mimeType": "application/vnd.google-apps.spreadsheet",
+      "createdTime": "2026-09-01T08:00:00.000Z",
+      "modifiedTime": "2026-10-07T18:30:00.123Z",
+      "webViewLink": "https://docs.google.com/spreadsheets/d/1fA0bC1dE2fG3hI4jK5lM6nO7pQ8rS9tU/edit?usp=drivesdk",
+      "parents": ["0AbCdEfGhIjKlMnOpQrStUv"],
+      "shared": true,
+      "ownedByMe": true,
+      "owners": [{"emailAddress": "alice@example.test"}]
+    },
+    {
+      "kind": "drive#file",
+      "id": "1gB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV",
+      "name": "Design notes.pdf",
+      "mimeType": "application/pdf",
+      "createdTime": "2026-08-15T10:00:00.000Z",
+      "modifiedTime": "2026-08-15T10:00:00.000Z",
+      "webViewLink": "https://drive.google.com/file/d/1gB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV/view?usp=drivesdk",
+      "size": "204800",
+      "parents": ["1Folder0000000000000000000000000"],
+      "driveId": "0ASharedDrive00000000PVA",
+      "description": "Scanned design notes from the offsite.",
+      "owners": []
+    }
+  ]
+}

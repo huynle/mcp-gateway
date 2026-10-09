@@ -377,8 +377,8 @@ Increment 2 (Drive, Docs, Sheets, Contacts):
 | `https://www.googleapis.com/auth/documents.readonly` | read | `docs.get_text` | sensitive |
 | `https://www.googleapis.com/auth/spreadsheets.readonly` | read | `sheets.read_range` | sensitive |
 | `https://www.googleapis.com/auth/contacts.readonly` | read | `contacts.search` | sensitive |
-| `https://www.googleapis.com/auth/drive.file` | write | `drive.create_folder` (per-file access: only folders/files the gateway created or the user opened with it) | non-sensitive |
-| `https://www.googleapis.com/auth/documents` | write | `docs.create`, `docs.append_text` | sensitive |
+| `https://www.googleapis.com/auth/drive.file` | write | `drive.create_folder`, `docs.create` (per-file access: only folders/files the gateway created or the user opened with it). Alone it also admits every `drive.*`, `docs.*` and `sheets.*` tool on those files, so a deployment may leave `drive.metadata.readonly` out (see `docs/connectors/google.md`, "Increment 2 notes") | non-sensitive |
+| `https://www.googleapis.com/auth/documents` | write | `docs.append_text` | sensitive |
 | `https://www.googleapis.com/auth/spreadsheets` | write | `sheets.append_rows` | sensitive |
 
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive

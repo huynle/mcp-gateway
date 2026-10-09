@@ -1,0 +1,11 @@
+{
+  "spreadsheetId": "1SheetAbCdEfGhIjKlMnOpQrStUvWxYz0123",
+  "tableRange": "Budget!A1:C4",
+  "updates": {
+    "spreadsheetId": "1SheetAbCdEfGhIjKlMnOpQrStUvWxYz0123",
+    "updatedRange": "Budget!A5:C6",
+    "updatedRows": 2,
+    "updatedColumns": 3,
+    "updatedCells": 6
+  }
+}

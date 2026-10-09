@@ -23,7 +23,8 @@ type property struct {
 }
 
 // objectSchema builds a closed object schema with the given properties
-// and required names. Array properties are arrays of strings.
+// and required names. Array properties are arrays of strings; a "matrix"
+// property is an array of arrays of strings (rows of cells).
 func objectSchema(props []property, required []string) json.RawMessage {
 	type schemaProp struct {
 		Type        string         `json:"type"`
@@ -38,6 +39,10 @@ func objectSchema(props []property, required []string) json.RawMessage {
 		sp := schemaProp{Type: p.Type, Description: p.Description, Enum: p.Enum}
 		if p.Type == "array" {
 			sp.Items = map[string]any{"type": "string"}
+		}
+		if p.Type == "matrix" {
+			sp.Type = "array"
+			sp.Items = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		}
 		if p.Name == "max_results" {
 			one, max := 1, maxPerPage

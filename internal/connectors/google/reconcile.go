@@ -26,6 +26,11 @@ const reconcilePerPage = 100
 // this many the check answers not_found.
 const MaxReconcileScan = 25
 
+// reconcileDrivePage bounds the Drive marker listing: the marker is
+// private to the gateway's OAuth client and names one operation, so one
+// hit is expected; a few more only if a retry ever created duplicates.
+const reconcileDrivePage = 10
+
 // ErrNotReconcilable says the ledger row lacks what the check needs (an
 // operation id, the account, the calendar or the tasklist in the
 // resource identity); the reconciler treats it as "cannot tell".
@@ -238,6 +243,40 @@ func (c *Connector) checkDraft(ctx context.Context, in connectors.ReconcileInput
 		}
 		if draft.Message != nil && strings.TrimSpace(headerOf(draft.Message.Payload, "Message-ID")) == want {
 			return found(draft.Id), nil
+		}
+	}
+	return notFound, nil
+}
+
+// --- drive.create_folder / docs.create -------------------------------------------------
+
+// checkDriveMarker is the marker reconciliation of the Drive creates:
+// files.list with the appProperties query of the operation
+// (DriveMarkerQuery) over every drive the account can see (corpora
+// allDrives, so a folder created in a shared drive is found too). A hit
+// is found (trashed or not: it was created); an empty answer is
+// not_found; any listing error (404, 5xx, rate limit, a token problem)
+// is "cannot tell yet". appProperties are private to the gateway's
+// OAuth client, so no other app's file can match.
+func (c *Connector) checkDriveMarker(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	tg, err := c.target(in)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	svc, err := tg.client.drive(ctx)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	list, err := svc.Files.List().Context(ctx).Q(DriveMarkerQuery(tg.operationID)).Corpora("allDrives").
+		IncludeItemsFromAllDrives(true).SupportsAllDrives(true).PageSize(reconcileDrivePage).Fields("files(id,mimeType,trashed)").Do()
+	if err := classify("reconcile: find the created file by its marker", err); err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	for _, f := range list.Files {
+		if f != nil && f.Id != "" {
+			return found(f.Id), nil
 		}
 	}
 	return notFound, nil

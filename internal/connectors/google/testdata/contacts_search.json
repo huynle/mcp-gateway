@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "person": {
+        "resourceName": "people/c1234567890123456789",
+        "etag": "%EgUBAj0JPhoEAQIFBw==",
+        "names": [{"metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890abcdef"}}, "displayName": "Bob Example", "familyName": "Example", "givenName": "Bob"}],
+        "emailAddresses": [
+          {"metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890abcdef"}}, "value": "bob@example.test", "type": "work"},
+          {"metadata": {"source": {"type": "CONTACT", "id": "1234567890abcdef"}}, "value": "bob.example@personal.example.test", "type": "home"}
+        ],
+        "organizations": [{"metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890abcdef"}}, "name": "Example Corp", "title": "Engineer", "department": "Platform"}]
+      }
+    },
+    {
+      "person": {
+        "resourceName": "people/c9876543210987654321",
+        "etag": "%EgUBAj0JPhoEAQIFBw==",
+        "emailAddresses": [{"metadata": {"primary": true, "source": {"type": "CONTACT", "id": "fedcba0987654321"}}, "value": "bobby@example.test"}]
+      }
+    }
+  ]
+}
