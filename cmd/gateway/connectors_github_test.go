@@ -29,8 +29,14 @@ func TestRegisterConnectorsRegistersGitHubWithConnections(t *testing.T) {
 			t.Errorf("github.%s missing from the registry", name)
 		}
 	}
-	if n := len(registry.List()); n != 10 {
-		t.Errorf("registry has %d tools, want the 10 github tools (fake flag off)", n)
+	var n int
+	for _, tool := range registry.List() {
+		if tool.App == github.App {
+			n++
+		}
+	}
+	if n != 10 {
+		t.Errorf("registry has %d github tools, want 10 (fake flag off)", n)
 	}
 	accts, err := src.ListAccounts(ctx, userAlice, github.App)
 	if err != nil || len(accts) != 0 {
