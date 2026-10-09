@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -181,7 +183,10 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 	return form, client, nil
 }
 
-// exchangeCode is the authorization_code grant.
+// exchangeCode is the authorization_code grant. Consuming the code, the
+// checks, the refresh-token row and the code's family are one
+// transaction, so a racing replay (which waits on the row lock) sees the
+// family it must revoke, and a failed check still burns the code.
 func (s *Service) exchangeCode(ctx context.Context, client *store.OAuthClient, form url.Values) (*tokenResponse, *tokenError) {
 	code, verifier := form.Get("code"), form.Get("code_verifier")
 	switch {
@@ -195,42 +200,8 @@ func (s *Service) exchangeCode(ctx context.Context, client *store.OAuthClient, f
 	now := s.now()
 	var row *store.OAuthCode
 	var consumed bool
-	err := s.st.Bypass(ctx, func(tx Tx) error {
-		var err error
-		row, consumed, err = tx.ConsumeCode(ctx, hashSecret(code), now)
-		return err
-	})
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.log.Warn("unknown authorization code", "event", "authserver.code_unknown", "client_id", client.ClientID)
-		return nil, badRequest("invalid_grant", "the authorization code is invalid")
-	case err != nil:
-		s.log.Error("code lookup failed", "event", "authserver.code_lookup_failed", "error", observability.RedactError(err))
-		return nil, &tokenError{status: http.StatusServiceUnavailable, code: "server_error", description: "temporarily unavailable"}
-	}
-	if !consumed {
-		// Replay: whoever holds the code now, the tokens it produced are
-		// not safe to keep.
-		s.revokeFamilyOnReplay(ctx, row, client)
-		return nil, badRequest("invalid_grant", "the authorization code was already used")
-	}
-	switch {
-	case row.ClientID != client.ID:
-		s.log.Warn("authorization code presented by another client", "event", "authserver.code_wrong_client", "client_id", client.ClientID, "user_id", row.UserID)
-		return nil, badRequest("invalid_grant", "the authorization code was not issued to this client")
-	case now.After(row.ExpiresAt):
-		return nil, badRequest("invalid_grant", "the authorization code has expired")
-	case form.Get("redirect_uri") != row.RedirectURI:
-		return nil, badRequest("invalid_grant", "redirect_uri does not match the authorization request")
-	case form.Get("resource") != "" && !sameResource(form.Get("resource"), row.Resource):
-		return nil, badRequest("invalid_target", "resource must be "+row.Resource)
-	case !pkceVerify(verifier, row.CodeChallenge):
-		s.log.Warn("PKCE verification failed", "event", "authserver.pkce_failed", "client_id", client.ClientID, "user_id", row.UserID)
-		return nil, badRequest("invalid_grant", "code_verifier does not match the code challenge")
-	}
-	if terr := s.checkOwner(ctx, row.UserID); terr != nil {
-		return nil, terr
-	}
+	var terr *tokenError
+	var refreshRaw, familyID string
 	meta := clientMeta(client)
 	wantRefresh := false
 	for _, g := range meta.GrantTypes {
@@ -238,18 +209,70 @@ func (s *Service) exchangeCode(ctx context.Context, client *store.OAuthClient, f
 			wantRefresh = true
 		}
 	}
-	resp, familyID, terr := s.issueTokens(ctx, issue{userID: row.UserID, client: client, scope: row.Scope, resource: row.Resource, refresh: wantRefresh})
+	err := s.st.Bypass(ctx, func(tx Tx) error {
+		var err error
+		row, consumed, err = tx.ConsumeCode(ctx, hashSecret(code), now)
+		if err != nil || !consumed {
+			return err
+		}
+		terr = s.checkCode(ctx, tx, client, row, form, verifier, now)
+		if terr != nil || !wantRefresh {
+			return nil
+		}
+		refreshRaw, familyID, err = s.createRefresh(ctx, tx, issue{userID: row.UserID, client: client, scope: row.Scope, resource: row.Resource}, now)
+		if err != nil {
+			return err
+		}
+		return tx.SetCodeFamily(ctx, row.ID, familyID)
+	})
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.log.Warn("unknown authorization code", "event", "authserver.code_unknown", "client_id", client.ClientID)
+		return nil, badRequest("invalid_grant", "the authorization code is invalid")
+	case err != nil:
+		return nil, s.serverError("exchange code", err)
+	case !consumed:
+		// Replay: whoever holds the code now, the tokens it produced are
+		// not safe to keep.
+		s.revokeFamilyOnReplay(ctx, row, client)
+		return nil, badRequest("invalid_grant", "the authorization code was already used")
+	case terr != nil:
+		return nil, terr
+	}
+	resp, terr := s.mintResponse(ctx, Grant{UserID: row.UserID, ClientID: client.ClientID, Scope: row.Scope, Resource: row.Resource, FamilyID: familyID}, refreshRaw, now)
 	if terr != nil {
 		return nil, terr
 	}
-	if familyID != "" {
-		err := s.st.Bypass(ctx, func(tx Tx) error { return tx.SetCodeFamily(ctx, row.ID, familyID) })
-		if err != nil {
-			s.log.Warn("code family not recorded", "event", "authserver.code_family_failed", "error", observability.RedactError(err))
-		}
-	}
 	s.log.Info("tokens issued", "event", "authserver.tokens_issued", "grant", GrantAuthorizationCode, "user_id", row.UserID, "client_id", client.ClientID, "family_id", familyID, "scope", row.Scope)
 	return resp, nil
+}
+
+// checkCode applies the code-binding checks and the owner check.
+func (s *Service) checkCode(ctx context.Context, tx Tx, client *store.OAuthClient, row *store.OAuthCode, form url.Values, verifier string, now time.Time) *tokenError {
+	switch {
+	case row.ClientID != client.ID:
+		s.log.Warn("authorization code presented by another client", "event", "authserver.code_wrong_client", "client_id", client.ClientID, "user_id", row.UserID)
+		return badRequest("invalid_grant", "the authorization code was not issued to this client")
+	case now.After(row.ExpiresAt):
+		return badRequest("invalid_grant", "the authorization code has expired")
+	case form.Get("redirect_uri") != row.RedirectURI:
+		return badRequest("invalid_grant", "redirect_uri does not match the authorization request")
+	case form.Get("resource") != "" && !sameResource(form.Get("resource"), row.Resource):
+		return badRequest("invalid_target", "resource must be "+row.Resource)
+	case !pkceVerify(verifier, row.CodeChallenge):
+		s.log.Warn("PKCE verification failed", "event", "authserver.pkce_failed", "client_id", client.ClientID, "user_id", row.UserID)
+		return badRequest("invalid_grant", "code_verifier does not match the code challenge")
+	}
+	facts, err := tx.FindUserAuthFacts(ctx, row.UserID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return badRequest("invalid_grant", "the user no longer exists")
+	case err != nil:
+		return s.serverError("user lookup", err)
+	case facts.Status != store.UserActive:
+		return badRequest("invalid_grant", "the user is disabled")
+	}
+	return nil
 }
 
 // revokeFamilyOnReplay revokes the refresh-token family a replayed code
@@ -311,7 +334,7 @@ func (s *Service) refreshTokens(ctx context.Context, client *store.OAuthClient, 
 	case form.Get("resource") != "" && !sameResource(form.Get("resource"), t.Resource):
 		return nil, badRequest("invalid_target", "resource must be "+t.Resource)
 	}
-	scope := string(t.Scope)
+	scope := scopeFromStore(t.Scope)
 	if requested := form.Get("scope"); requested != "" {
 		canonical, ok := ParseScope(requested)
 		if !ok || !scopeWithin(canonical, scope) {
@@ -319,7 +342,27 @@ func (s *Service) refreshTokens(ctx context.Context, client *store.OAuthClient, 
 		}
 		scope = canonical
 	}
-	resp, _, terr := s.issueTokens(ctx, issue{userID: t.UserID, client: client, scope: scope, resource: t.Resource, refresh: true, rotate: &t})
+	var refreshRaw string
+	err = s.st.Bypass(ctx, func(tx Tx) error {
+		rotated, err := tx.RotateRefreshToken(ctx, t.ID, now)
+		if err != nil {
+			return err
+		}
+		if !rotated {
+			return errRotatedConcurrently
+		}
+		refreshRaw, _, err = s.createRefresh(ctx, tx, issue{userID: t.UserID, client: client, scope: scope, resource: t.Resource, rotate: &t}, now)
+		return err
+	})
+	switch {
+	case errors.Is(err, errRotatedConcurrently):
+		// Two exchanges raced on the same token: the loser is the reuse case.
+		s.revokeFamilyOnReuse(ctx, &t, client)
+		return nil, badRequest("invalid_grant", "the refresh token was already used; sign in again")
+	case err != nil:
+		return nil, s.serverError("rotate refresh token", err)
+	}
+	resp, terr := s.mintResponse(ctx, Grant{UserID: t.UserID, ClientID: client.ClientID, Scope: scope, Resource: t.Resource, FamilyID: t.FamilyID}, refreshRaw, now)
 	if terr != nil {
 		return nil, terr
 	}
@@ -343,87 +386,46 @@ func (s *Service) revokeFamilyOnReuse(ctx context.Context, t *store.OAuthRefresh
 	s.record(ctx, t.UserID, t.FamilyID, "oauth_refresh_reuse", client, "deny", "denied")
 }
 
-// checkOwner refuses tokens for a user who is disabled or unknown.
-func (s *Service) checkOwner(ctx context.Context, userID string) *tokenError {
-	var facts *store.UserAuthFacts
-	err := s.st.Bypass(ctx, func(tx Tx) error {
-		var err error
-		facts, err = tx.FindUserAuthFacts(ctx, userID)
-		return err
-	})
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return badRequest("invalid_grant", "the user no longer exists")
-	case err != nil:
-		s.log.Error("user lookup failed", "event", "authserver.user_lookup_failed", "error", observability.RedactError(err))
-		return &tokenError{status: http.StatusServiceUnavailable, code: "server_error", description: "temporarily unavailable"}
-	case facts.Status != store.UserActive:
-		return badRequest("invalid_grant", "the user is disabled")
-	}
-	return nil
-}
-
-// issue describes the tokens to mint.
+// issue describes a refresh token to create.
 type issue struct {
 	userID   string
 	client   *store.OAuthClient
 	scope    string
 	resource string
-	// refresh asks for a refresh token; rotate is the token being
-	// exchanged (nil for a new family).
-	refresh bool
-	rotate  *store.OAuthRefreshToken
+	// rotate is the token being exchanged (nil for a new family).
+	rotate *store.OAuthRefreshToken
 }
 
-// issueTokens stores the refresh token (rotating the old one in the same
-// transaction) and mints the access token. It returns the family id when
-// a refresh token was issued.
-func (s *Service) issueTokens(ctx context.Context, in issue) (*tokenResponse, string, *tokenError) {
-	now := s.now()
-	resp := &tokenResponse{TokenType: "Bearer", Scope: in.scope}
-	var familyID string
-	if in.refresh {
-		raw, err := randomToken(32)
-		if err != nil {
-			return nil, "", s.serverError("refresh token", err)
-		}
-		raw = RefreshTokenPrefix + raw
-		row := &store.OAuthRefreshToken{UserID: in.userID, ClientID: in.client.ID, Resource: in.resource, TokenHash: hashSecret(raw), Scope: []byte(in.scope), ExpiresAt: now.Add(s.cfg.RefreshTokenTTL)}
-		if in.rotate != nil {
-			row.FamilyID = in.rotate.FamilyID
-			row.RotatedFrom = &in.rotate.ID
-		}
-		err = s.st.Bypass(ctx, func(tx Tx) error {
-			if in.rotate != nil {
-				rotated, err := tx.RotateRefreshToken(ctx, in.rotate.ID, now)
-				if err != nil {
-					return err
-				}
-				if !rotated {
-					return errRotatedConcurrently
-				}
-			}
-			return tx.CreateRefreshToken(ctx, row)
-		})
-		if errors.Is(err, errRotatedConcurrently) {
-			// Two exchanges raced on the same token: the loser is the
-			// reuse case.
-			s.revokeFamilyOnReuse(ctx, in.rotate, in.client)
-			return nil, "", badRequest("invalid_grant", "the refresh token was already used; sign in again")
-		}
-		if err != nil {
-			return nil, "", s.serverError("store refresh token", err)
-		}
-		resp.RefreshToken = raw
-		familyID = row.FamilyID
-	}
-	access, exp, err := s.mint.Mint(ctx, Grant{UserID: in.userID, ClientID: in.client.ClientID, Scope: in.scope, Resource: in.resource, FamilyID: familyID})
+// createRefresh stores a refresh token inside tx and returns the raw
+// token and its family id.
+func (s *Service) createRefresh(ctx context.Context, tx Tx, in issue, now time.Time) (raw, familyID string, err error) {
+	raw, err = randomToken(32)
 	if err != nil {
-		return nil, "", s.serverError("mint access token", err)
+		return "", "", fmt.Errorf("refresh token: %w", err)
 	}
-	resp.AccessToken = access
-	resp.ExpiresIn = int64(exp.Sub(now) / time.Second)
-	return resp, familyID, nil
+	raw = RefreshTokenPrefix + raw
+	scopeDoc, err := json.Marshal(in.scope) // the scope column is jsonb: a JSON string
+	if err != nil {
+		return "", "", err
+	}
+	row := &store.OAuthRefreshToken{UserID: in.userID, ClientID: in.client.ID, Resource: in.resource, TokenHash: hashSecret(raw), Scope: scopeDoc, ExpiresAt: now.Add(s.cfg.RefreshTokenTTL)}
+	if in.rotate != nil {
+		row.FamilyID = in.rotate.FamilyID
+		row.RotatedFrom = &in.rotate.ID
+	}
+	if err := tx.CreateRefreshToken(ctx, row); err != nil {
+		return "", "", err
+	}
+	return raw, row.FamilyID, nil
+}
+
+// mintResponse signs the access token and builds the token response.
+func (s *Service) mintResponse(ctx context.Context, g Grant, refreshRaw string, now time.Time) (*tokenResponse, *tokenError) {
+	access, exp, err := s.mint.Mint(ctx, g)
+	if err != nil {
+		return nil, s.serverError("mint access token", err)
+	}
+	return &tokenResponse{AccessToken: access, TokenType: "Bearer", ExpiresIn: int64(exp.Sub(now) / time.Second), RefreshToken: refreshRaw, Scope: g.Scope}, nil
 }
 
 var errRotatedConcurrently = errors.New("authserver: refresh token rotated concurrently")
@@ -443,4 +445,14 @@ func pkceVerify(verifier, challenge string) bool {
 	sum := sha256.Sum256([]byte(verifier))
 	computed := base64.RawURLEncoding.EncodeToString(sum[:])
 	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
+}
+
+// scopeFromStore decodes the jsonb scope column (a JSON string; rows
+// written before the authorization server existed hold '{}').
+func scopeFromStore(raw []byte) string {
+	var scope string
+	if err := json.Unmarshal(raw, &scope); err != nil || scope == "" {
+		return ScopeFull
+	}
+	return scope
 }

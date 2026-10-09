@@ -83,6 +83,7 @@ func (s *Service) ServeHarnesses(w http.ResponseWriter, r *http.Request) {
 	data := harnessesData{Title: "Connected harnesses", CSRFToken: csrfToken, Revoked: r.URL.Query().Get("revoked") == "1", MCPURL: s.cfg.Resource()}
 	for _, h := range list {
 		v := harnessView{Harness: h, Status: "active"}
+		v.Scope = scopeFromStore([]byte(h.Scope))
 		switch {
 		case h.RevokedAt != nil:
 			v.Status = "revoked"

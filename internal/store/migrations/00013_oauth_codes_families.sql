@@ -58,12 +58,14 @@ CREATE VIEW admin_oauth_refresh_tokens WITH (security_invoker = true) AS
     SELECT id, user_id, client_id, family_id, resource, scope, issued_at, expires_at,
            rotated_from, rotated_at, revoked_at, last_used_at
     FROM oauth_refresh_tokens;
+GRANT SELECT ON admin_oauth_refresh_tokens TO gateway_app, gateway_jobs;
 
 -- +goose Down
 DROP VIEW IF EXISTS admin_oauth_refresh_tokens;
 CREATE VIEW admin_oauth_refresh_tokens WITH (security_invoker = true) AS
     SELECT id, user_id, client_id, scope, issued_at, expires_at, rotated_from, revoked_at, last_used_at
     FROM oauth_refresh_tokens;
+GRANT SELECT ON admin_oauth_refresh_tokens TO gateway_app, gateway_jobs;
 ALTER TABLE oauth_refresh_tokens DROP CONSTRAINT oauth_refresh_tokens_client_id_fkey;
 ALTER TABLE oauth_refresh_tokens
     ADD CONSTRAINT oauth_refresh_tokens_client_id_fkey
