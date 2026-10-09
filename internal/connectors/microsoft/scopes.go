@@ -117,3 +117,15 @@ func missingScopes(granted, required []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// stripTeamsScopes returns scopes without the Teams and SharePoint
+// permissions (for personal accounts).
+func stripTeamsScopes(scopes []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !TeamsScope(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
