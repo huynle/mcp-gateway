@@ -39,13 +39,13 @@ func TestEveryResponseCarriesHardeningHeaders(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "base-uri 'self'", "frame-ancestors 'none'"} {
-		if !strings.Contains(portal.CSP, want) {
-			t.Errorf("CSP %q lacks %s", portal.CSP, want)
+		if csp := portal.CSP; !strings.Contains(csp, want) {
+			t.Errorf("CSP %q lacks %s", csp, want)
 		}
 	}
 	for _, forbidden := range []string{"unsafe-eval", "*", "http:", "https:"} {
-		if strings.Contains(portal.CSP, forbidden) {
-			t.Errorf("CSP %q allows %s", portal.CSP, forbidden)
+		if csp := portal.CSP; strings.Contains(csp, forbidden) {
+			t.Errorf("CSP %q allows %s", csp, forbidden)
 		}
 	}
 }

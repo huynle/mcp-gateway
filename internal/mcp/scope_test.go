@@ -30,7 +30,6 @@ func newScopeFixture(t *testing.T) *scopeFixture {
 	t.Helper()
 	f := &scopeFixture{fake: fake.New(fake.Options{}), reg: connectors.NewRegistry(), src: connectors.NewStaticAccountSource(), rec: &captureRecorder{}}
 	for _, tool := range f.fake.Tools() {
-		tool := tool
 		switch tool.Name {
 		case fake.ToolListItems:
 			tool.RequiredScopes = []string{"items:read", "items:list"}
@@ -179,9 +178,8 @@ func TestScopeStageDoesNotFilterToolsList(t *testing.T) {
 	f := newScopeFixture(t)
 	f.account("acc-1", "nothing")
 	_, err := f.run(t, "fake.list_items", nil)
-	scopeRequired(t, err)
-	var nf *mcp.ToolError
-	if errors.As(err, &nf) && nf.Code == mcp.CodeToolNotFound {
+	te := scopeRequired(t, err)
+	if te.Code == mcp.CodeToolNotFound {
 		t.Errorf("the tool was hidden instead of refused: %v", err)
 	}
 }
