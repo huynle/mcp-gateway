@@ -283,7 +283,9 @@ internal/portal/        embedded server-rendered portal (templates/ + static/htm
 internal/jobs/          single-replica background workers (runner + locker; ReconcilerJob, StaleSweepJob)
 deploy/dex/             dex configuration for Compose
 deploy/postgres/init/   Compose-only role bootstrap (dev passwords)
-deploy/smoke/           curl smoke of the fake connector's write path against the Compose stack
+deploy/helm/            Helm chart (mcp-gateway/), example values per environment, golden render test (make test-helm); see docs/deploy.md
+deploy/smoke/           curl smoke of the fake connector's write path against the Compose stack; kind-smoke.sh + k8s/ for the chart (make kind-smoke)
+docs/deploy.md          Kubernetes deployment: Secrets to create, install/upgrade/rollback, key rotation, metrics, network policy, environments
 docs/plans/             design documents
 docs/conformance.md     harness conformance checklist (automated rows from test/e2e, manual OpenCode / Claude Code rows)
 test/e2e/               the safety-core end-to-end gate (make test-e2e; build tag e2e or integration)
@@ -302,7 +304,7 @@ Each `internal/*` package has a `doc.go` stating what it owns and which design s
 - Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0 and prometheus/client_golang v1.25.0); modelcontextprotocol/go-sdk v1.8.0 (declares `go 1.25.0`; check the directive before bumping); cedar-policy/cedar-go v1.8.0 (declares `go 1.23.0`); golang.org/x/oauth2 v0.36.0 (v0.37.0 requires Go 1.26); slack-go/slack v0.29.0 (v0.30.0+ requires Go 1.26); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
-- CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests and the end-to-end gate against PostgreSQL 16 service containers, and a container image smoke test.
+- CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests and the end-to-end gate against PostgreSQL 16 service containers, a container image smoke test, and the Helm chart checks (`make helm-lint`, `make test-helm`, plus a non-blocking kind smoke; see [`docs/deploy.md`](docs/deploy.md)).
 
 ## History
 
