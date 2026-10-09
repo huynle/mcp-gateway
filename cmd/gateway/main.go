@@ -362,11 +362,13 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 // stage consults: the connections service (accounts are the user's
 // connections rows) when it is available, else a static, in-memory one.
 // The fake connector, registered only when GATEWAY_ENABLE_FAKE_CONNECTOR=true,
-// keeps its own source that seeds one company account per user on first
-// use so a local harness can call its tools right away; the composite
-// source routes app "fake" to it and every other app to the connections
-// table. The real connectors register here too, with their vendor's
-// Binder (connSvc.RegisterBinder) and app mapping (connSvc.MapApp).
+// gets one company account per user on first use so a local harness can
+// call its tools right away: a real connections row seeded through the
+// connections service when it is mounted (newFakeAccountSource, quirk
+// enqgtw5y), else the fake's own in-memory source; the composite source
+// routes app "fake" to it and every other app to the connections table.
+// The real connectors register here too, with their vendor's Binder
+// (connSvc.RegisterBinder) and app mapping (connSvc.MapApp).
 func registerConnectors(cfg config.Config, registry *connectors.Registry, connSvc *connections.Service, log *slog.Logger) (connectors.AccountSource, error) {
 	sources := routedAccountSource{byApp: map[string]connectors.AccountSource{}, fallback: connectors.NewStaticAccountSource()}
 	if connSvc != nil {
@@ -374,11 +376,12 @@ func registerConnectors(cfg config.Config, registry *connectors.Registry, connSv
 	}
 	if cfg.EnableFakeConnector {
 		f := fake.New(fake.Options{AutoAccount: true})
-		if err := connectors.RegisterConnector(registry, f, f.Accounts()); err != nil {
+		src := newFakeAccountSource(f, connSvc)
+		if err := connectors.RegisterConnector(registry, f, src); err != nil {
 			return nil, err
 		}
-		sources.byApp[fake.App] = f.Accounts()
-		log.Warn("fake connector registered (GATEWAY_ENABLE_FAKE_CONNECTOR=true): development only", "app", fake.App)
+		sources.byApp[fake.App] = src
+		log.Warn("fake connector registered (GATEWAY_ENABLE_FAKE_CONNECTOR=true): development only", "app", fake.App, "accounts_backed_by_connections", connSvc != nil)
 	}
 	return sources, nil
 }
