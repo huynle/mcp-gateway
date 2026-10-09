@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -324,6 +323,9 @@ func ValidateRedirectURI(raw string) error {
 	if u.Host == "" || u.Hostname() == "" {
 		return errors.New("must be an absolute URL with a host")
 	}
+	if u.User != nil || strings.Contains(raw, "@") {
+		return errors.New("must not carry userinfo")
+	}
 	switch u.Scheme {
 	case "https":
 		return nil
@@ -337,14 +339,13 @@ func ValidateRedirectURI(raw string) error {
 	}
 }
 
-// isLoopbackHost reports whether host is the loopback interface by name
-// or address.
+// isLoopbackHost reports whether host is the loopback interface as the
+// MCP authorization spec and OAuth 2.1 section 8.4.2 name it: localhost,
+// 127.0.0.1 or ::1 exactly (not the rest of 127.0.0.0/8, not an alias).
 func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	// Textual, not net.IP.Equal: "::ffff:127.0.0.1" and friends reach the
+	// loopback interface but are not the literals the specifications name.
+	return strings.EqualFold(host, "localhost") || host == "127.0.0.1" || strings.EqualFold(host, "::1")
 }
 
 func trim(s string, n int) string {

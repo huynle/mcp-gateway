@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration test-e2e lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
+.PHONY: all build test test-integration test-e2e test-attack lint fmt fmt-check migrate migrate-down migrate-status compose-up compose-down clean
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -37,6 +37,12 @@ test-e2e:
 		echo "GATEWAY_TEST_DATABASE_URL is unset; end-to-end tests will be skipped (run 'make compose-up' and export it)"; \
 	fi
 	$(GO) test -race -count=1 -tags e2e -run 'E2E' ./test/e2e/...
+
+## test-attack: the OAuth attack suite (test/oauthattack): adversarial
+## cases against the authorization server and /mcp token validation, run
+## in-process over in-memory stores (no PostgreSQL). Also part of `make test`.
+test-attack:
+	$(GO) test -race -count=1 ./test/oauthattack/...
 
 ## lint: run golangci-lint (install: https://golangci-lint.run/docs/welcome/install/)
 lint:

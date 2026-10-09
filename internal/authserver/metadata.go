@@ -50,6 +50,9 @@ type ASMetadata struct {
 	RevocationAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported"`
 	ScopesSupported                   []string `json:"scopes_supported"`
 	ServiceDocumentation              string   `json:"service_documentation"`
+	// IssParameterSupported: authorization responses carry iss (RFC 9207
+	// section 2.3), the MCP spec's mix-up defence.
+	IssParameterSupported bool `json:"authorization_response_iss_parameter_supported"`
 }
 
 // PRMetadata is the RFC 9728 document.
@@ -78,6 +81,7 @@ func AuthorizationServerMetadata(cfg Config) ASMetadata {
 		RevocationAuthMethodsSupported:    []string{"none", "client_secret_post", "client_secret_basic"},
 		ScopesSupported:                   ScopesSupported,
 		ServiceDocumentation:              cfg.URL(HarnessesPath),
+		IssParameterSupported:             true,
 	}
 }
 

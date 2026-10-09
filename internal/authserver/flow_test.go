@@ -199,6 +199,141 @@ func TestAuthorizeRefusesBadClientWithoutRedirecting(t *testing.T) {
 	}
 }
 
+// Regression (attack suite cjedpxp6): the error page is the HTML template,
+// not the text/plain fallback (the layout references CSRFToken).
+func TestAuthorizeErrorPageIsHTML(t *testing.T) {
+	f := newFlow(t)
+	q := f.authorizeParams()
+	q.Set("redirect_uri", "https://evil.test/cb")
+	rec := f.authorize(q)
+	if ct := rec.Header().Get("Content-Type"); rec.Code != http.StatusBadRequest || !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("status %d Content-Type %q; want 400 text/html", rec.Code, ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<!doctype html>") || !strings.Contains(rec.Body.String(), "not one the client registered") {
+		t.Errorf("error page body: %s", rec.Body.String())
+	}
+}
+
+// Regression (attack suite cjedpxp6, OAuth 2.1 section 8.4.2): an http
+// loopback redirect URI matches the registration on any port, nothing
+// else may differ, and the code is bound to the port actually used.
+func TestAuthorizeLoopbackRedirectPortMayDiffer(t *testing.T) {
+	f := newFlow(t) // registered: http://localhost:45678/callback
+	used := "http://localhost:51234/callback"
+	q := f.authorizeParams()
+	q.Set("redirect_uri", used)
+	if rec := f.authorize(q); rec.Code != http.StatusOK {
+		t.Fatalf("authorize with another loopback port: %d %s", rec.Code, rec.Body.String())
+	}
+	loc := redirect(t, f.consent(q, "approve", csrf))
+	if loc.Host != "localhost:51234" || loc.Query().Get("code") == "" {
+		t.Fatalf("approve redirected to %s", loc)
+	}
+	code := loc.Query().Get("code")
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI},
+		"client_id": {f.clientID}, "code_verifier": {verifier},
+	}
+	if status, out := f.token(form); status != http.StatusBadRequest || out["error"] != "invalid_grant" {
+		t.Errorf("exchange with the registered port instead of the used one: %d %v", status, out)
+	}
+	for name, uri := range map[string]string{
+		"other path":     "http://localhost:51234/other",
+		"https":          "https://localhost:51234/callback",
+		"query":          "http://localhost:51234/callback?x=1",
+		"other loopback": "http://127.0.0.1:51234/callback",
+		"lookalike host": "http://localhost.evil.test:51234/callback",
+		"userinfo":       "http://localhost@evil.test:51234/callback",
+	} {
+		q := f.authorizeParams()
+		q.Set("redirect_uri", uri)
+		if rec := f.authorize(q); rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Errorf("%s (%s): %d %q; want 400 and no redirect", name, uri, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	// https registrations get no port tolerance.
+	q = f.authorizeParams()
+	q.Set("redirect_uri", "https://app.example.com:444/cb")
+	if rec := f.authorize(q); rec.Code != http.StatusBadRequest {
+		t.Errorf("https with another port: %d", rec.Code)
+	}
+}
+
+// Regression (attack suite cjedpxp6, OAuth 2.1 sections 4.1.1 and
+// 3.2.2): a repeated parameter is refused rather than silently resolved
+// to its first value (parameter pollution). client_id / redirect_uri
+// repeats are an error page, the others redirect with invalid_request,
+// resource with invalid_target; the token endpoint answers invalid_request.
+func TestRepeatedParametersAreRefused(t *testing.T) {
+	f := newFlow(t)
+	for _, name := range []string{"client_id", "redirect_uri"} {
+		q := f.authorizeParams()
+		q[name] = append(q[name], q.Get(name))
+		if rec := f.authorize(q); rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Errorf("repeated %s: %d %q; want 400 and no redirect", name, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	for name, want := range map[string]string{"state": "invalid_request", "code_challenge": "invalid_request", "scope": "invalid_request", "resource": "invalid_target"} {
+		q := f.authorizeParams()
+		q[name] = append(q[name], q.Get(name))
+		loc := redirect(t, f.authorize(q))
+		if got := loc.Query().Get("error"); got != want || loc.Query().Get("code") != "" {
+			t.Errorf("repeated %s: error %q (%s), want %s", name, got, loc.Query().Get("error_description"), want)
+		}
+	}
+	code := f.code()
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {code, code}, "redirect_uri": {redirectURI},
+		"client_id": {f.clientID}, "code_verifier": {verifier},
+	}
+	if status, out := f.token(form); status != http.StatusBadRequest || out["error"] != "invalid_request" {
+		t.Errorf("repeated code at the token endpoint: %d %v", status, out)
+	}
+	// Refused before the code was consumed: it still exchanges.
+	if status, out := f.exchange(code); status != http.StatusOK {
+		t.Errorf("exchange after a refused duplicate: %d %v", status, out)
+	}
+}
+
+// Regression (attack suite cjedpxp6, RFC 9207 / MCP spec mix-up
+// defence): every authorization response, success or error, carries
+// iss = the issuer.
+func TestAuthorizationResponsesCarryIss(t *testing.T) {
+	f := newFlow(t)
+	issuer := strings.TrimSuffix(f.cfg.Issuer, "/")
+	loc := redirect(t, f.consent(f.authorizeParams(), "approve", csrf))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("code") == "" {
+		t.Errorf("approve redirect = %s", loc)
+	}
+	loc = redirect(t, f.consent(f.authorizeParams(), "deny", csrf))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("error") != "access_denied" {
+		t.Errorf("deny redirect = %s", loc)
+	}
+	q := f.authorizeParams()
+	q.Del("state")
+	loc = redirect(t, f.authorize(q))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("error") != "invalid_request" {
+		t.Errorf("error redirect = %s", loc)
+	}
+}
+
+// Regression (attack suite cjedpxp6, RFC 9700 section 4.16): the pages the
+// authorization server renders cannot be framed, are not cached and do
+// not leak their URL through Referer.
+func TestPagesCarryHardeningHeaders(t *testing.T) {
+	f := newFlow(t)
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"consent":   f.authorize(f.authorizeParams()),
+		"error":     f.authorize(url.Values{"client_id": {"gwc_nope"}}),
+		"harnesses": f.harnesses(),
+	} {
+		h := rec.Header()
+		if h.Get("X-Frame-Options") != "DENY" || h.Get("Content-Security-Policy") != "frame-ancestors 'none'" || h.Get("Referrer-Policy") != "no-referrer" || h.Get("Cache-Control") != "no-store" || h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s page headers = %v", name, h)
+		}
+	}
+}
+
 func TestAuthorizeRedirectsProtocolErrors(t *testing.T) {
 	f := newFlow(t)
 	cases := map[string]struct {
@@ -599,6 +734,44 @@ func TestConfidentialClientMustAuthenticate(t *testing.T) {
 }
 
 // --- revocation --------------------------------------------------------------
+
+// Regression (attack suite cjedpxp6, RFC 6749 section 5.2): every
+// invalid_client answered to a client that used the Authorization header
+// carries WWW-Authenticate: Basic, including an unknown client and a
+// client_id that disagrees with the header; the failure is logged.
+func TestBasicAuthFailuresCarryChallenge(t *testing.T) {
+	f := newFlow(t)
+	_, out := f.register(t, map[string]any{"client_name": "server app", "redirect_uris": []string{redirectURI}, "token_endpoint_auth_method": "client_secret_basic"})
+	confidential := out["client_id"].(string)
+	basic := func(id, secret string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(id)+":"+url.QueryEscape(secret)))
+	}
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"gwr_x"}}
+	for name, c := range map[string]struct {
+		form   url.Values
+		header string
+	}{
+		"wrong secret":   {form, basic(confidential, "wrong")},
+		"unknown client": {form, basic("gwc_nope", "x")},
+		"id mismatch":    {url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"gwr_x"}, "client_id": {f.clientID}}, basic(confidential, "x")},
+		"not base64":     {form, "Basic !!!"},
+	} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, authserver.TokenPath, strings.NewReader(c.form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Authorization", c.header)
+		rec := httptest.NewRecorder()
+		f.svc.ServeToken(rec, req)
+		// An unparsable header is not an authentication attempt: without a
+		// client_id anywhere the request is invalid_request, no challenge.
+		wantStatus, wantChallenge := http.StatusUnauthorized, true
+		if c.header == "Basic !!!" {
+			wantStatus, wantChallenge = http.StatusBadRequest, false
+		}
+		if rec.Code != wantStatus || (rec.Header().Get("WWW-Authenticate") != "") != wantChallenge {
+			t.Errorf("%s: %d WWW-Authenticate %q", name, rec.Code, rec.Header().Get("WWW-Authenticate"))
+		}
+	}
+}
 
 func (f *flow) revoke(token, clientID string) int {
 	f.t.Helper()

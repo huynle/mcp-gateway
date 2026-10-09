@@ -141,6 +141,7 @@ func (s *Service) ServeConsent(w http.ResponseWriter, r *http.Request) {
 	q := u.Query()
 	q.Set("code", code)
 	q.Set("state", req.state)
+	q.Set("iss", s.cfg.issuer()) // RFC 9207: the client checks it against the metadata it recorded
 	u.RawQuery = q.Encode()
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, u.String(), http.StatusSeeOther)
@@ -166,6 +167,13 @@ func (s *Service) issueCode(ctx context.Context, userID string, req *authorizeRe
 // parseAuthorize validates the request parameters (query or posted form)
 // in the order the standard requires.
 func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeRequest, error) {
+	// OAuth 2.1 section 4.1.1: a parameter must not appear more than
+	// once. A duplicated client_id or redirect_uri makes the destination
+	// ambiguous (parameter pollution), so it is an error page; the rest
+	// are reported to the client once it is known.
+	if duplicated(q, "client_id", "redirect_uri") {
+		return nil, &clientError{"The request repeats client_id or redirect_uri."}
+	}
 	clientID := q.Get("client_id")
 	if clientID == "" {
 		return nil, &clientError{"The request does not name a client."}
@@ -183,11 +191,14 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 		return nil, err
 	}
 	redirectURI := q.Get("redirect_uri")
-	if redirectURI == "" || !slices.Contains(client.RedirectURIs, redirectURI) {
+	if redirectURI == "" || !redirectURIRegistered(client.RedirectURIs, redirectURI) {
 		return nil, &clientError{"The redirect URI is missing or is not one the client registered."}
 	}
 	req := &authorizeRequest{client: client, redirectURI: redirectURI, state: q.Get("state")}
 	meta := clientMeta(client)
+	if duplicated(q, "response_type", "state", "code_challenge", "code_challenge_method", "scope") {
+		return req, &protocolError{"invalid_request", "a parameter is repeated"}
+	}
 	switch rt := q.Get("response_type"); {
 	case rt == "":
 		return req, &protocolError{"invalid_request", "response_type is required"}
@@ -221,6 +232,9 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 	switch {
 	case resource == "":
 		return req, &protocolError{"invalid_target", "resource is required and must be " + s.cfg.Resource()}
+	case len(q["resource"]) > 1:
+		// RFC 8707 allows several targets; this server has exactly one.
+		return req, &protocolError{"invalid_target", "resource must be exactly one value: " + s.cfg.Resource()}
 	case !sameResource(resource, s.cfg.Resource()):
 		return req, &protocolError{"invalid_target", "resource must be " + s.cfg.Resource()}
 	}
@@ -259,6 +273,7 @@ func (s *Service) redirectError(w http.ResponseWriter, r *http.Request, req *aut
 	q := u.Query()
 	q.Set("error", pe.code)
 	q.Set("error_description", pe.description)
+	q.Set("iss", s.cfg.issuer())
 	if req.state != "" {
 		q.Set("state", req.state)
 	}
@@ -281,6 +296,44 @@ func (s *Service) identity(r *http.Request) (string, string) {
 		return "", ""
 	}
 	return s.who(r)
+}
+
+// duplicated reports whether any of the named parameters appears more
+// than once in q.
+func duplicated(q url.Values, names ...string) bool {
+	for _, n := range names {
+		if len(q[n]) > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// redirectURIRegistered reports whether requested is one of the client's
+// registered redirect URIs: an exact string match (OAuth 2.1 section
+// 4.1.3, MCP spec "Open Redirection"), or, for an http URI on the
+// loopback interface, a match in everything but the port (OAuth 2.1
+// section 8.4.2, RFC 8252 section 7.3: native harnesses bind an
+// ephemeral port per run). The code is then bound to the URI actually
+// used, so the token request must repeat it.
+func redirectURIRegistered(registered []string, requested string) bool {
+	if slices.Contains(registered, requested) {
+		return true
+	}
+	u, err := url.Parse(requested)
+	if err != nil || u.Scheme != "http" || !isLoopbackHost(u.Hostname()) || u.User != nil || u.Opaque != "" || u.Fragment != "" || strings.Contains(requested, "#") {
+		return false
+	}
+	for _, raw := range registered {
+		r, err := url.Parse(raw)
+		if err != nil || r.Scheme != "http" || !isLoopbackHost(r.Hostname()) {
+			continue
+		}
+		if r.Hostname() == u.Hostname() && r.EscapedPath() == u.EscapedPath() && r.RawQuery == u.RawQuery && r.User == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // sameResource compares a requested resource indicator with the canonical

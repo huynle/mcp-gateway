@@ -166,6 +166,11 @@ func (a *JWTAuthenticator) Authenticate(ctx context.Context, bearer string) (*to
 	}
 	publicID := PublicIDPrefix + shortID(claims.FamilyID)
 	now := a.now()
+	// RFC 9068 section 4: exp is required in a JWT access token and the
+	// resource server must check it; go-jose only checks it when present.
+	if claims.Expiry == nil {
+		return nil, a.reject(tokens.ReasonUnknown, publicID, "invalid_claims")
+	}
 	err = claims.ValidateWithLeeway(jwt.Expected{Issuer: a.cfg.issuer(), AnyAudience: jwt.Audience{a.cfg.Resource()}, Time: now}, Leeway)
 	switch {
 	case errors.Is(err, jwt.ErrExpired):

@@ -197,6 +197,37 @@ func TestRejectedTokens(t *testing.T) {
 	}
 }
 
+// Regression (attack suite cjedpxp6, RFC 9068 section 4): a correctly
+// signed token without exp is refused; go-jose only validates exp when
+// it is present.
+func TestTokenWithoutExpIsRejected(t *testing.T) {
+	f := newJWT(t)
+	ctx := context.Background()
+	key, err := f.keys.Current(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key.Private}, (&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", key.KID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := map[string]any{"iss": strings.TrimSuffix(f.cfg.Issuer, "/"), "sub": alice, "aud": f.cfg.Resource(), "iat": t0.Unix(), "nbf": t0.Unix(), "jti": "x", "client_id": "c", "scope": "mcp", "fid": "00000000-0000-4000-8000-0000000000f1"}
+	noExp, err := jwt.Signed(signer).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.auth.Authenticate(ctx, noExp); err == nil {
+		t.Fatal("token without exp accepted")
+	} else if got := reason(t, err); got != tokens.ReasonUnknown {
+		t.Errorf("reason = %q, want unknown", got)
+	}
+	claims["exp"] = t0.Add(time.Hour).Unix()
+	withExp, _ := jwt.Signed(signer).Claims(claims).Serialize()
+	if _, err := f.auth.Authenticate(ctx, withExp); err != nil {
+		t.Errorf("the same token with exp: %v", err)
+	}
+}
+
 func TestDisabledUserIsRejected(t *testing.T) {
 	f := newJWT(t)
 	ctx := context.Background()

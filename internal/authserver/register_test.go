@@ -271,3 +271,25 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// Regression (attack suite cjedpxp6): a redirect URI with userinfo is
+// refused, and the http exception is exactly localhost / 127.0.0.1 /
+// [::1], not the rest of 127.0.0.0/8 or anything that merely resolves
+// to the loopback interface.
+func TestRegisterRefusesUserinfoAndNonCanonicalLoopback(t *testing.T) {
+	f := newService(t, func(c *authserver.Config) { c.RegisterPerMin = 100 })
+	for _, uri := range []string{
+		"https://user@app.example.com/cb", "https://app.example.com@evil.test/cb", "http://user@localhost:1/cb",
+		"http://127.0.0.2/cb", "http://127.1.1.1:8080/cb", "http://0.0.0.0/cb", "http://[::ffff:127.0.0.1]/cb", "http://localhost.localdomain/cb",
+	} {
+		code, out := f.register(t, map[string]any{"redirect_uris": []string{uri}})
+		if code != http.StatusBadRequest || out["error"] != "invalid_redirect_uri" {
+			t.Errorf("%s: %d %v; want 400 invalid_redirect_uri", uri, code, out)
+		}
+	}
+	for _, uri := range []string{"http://127.0.0.1/cb", "http://[::1]:8080/cb", "http://localhost:3000/cb", "http://LOCALHOST/cb"} {
+		if code, out := f.register(t, map[string]any{"redirect_uris": []string{uri}}); code != http.StatusCreated {
+			t.Errorf("%s: %d %v; want 201", uri, code, out)
+		}
+	}
+}

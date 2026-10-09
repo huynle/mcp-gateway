@@ -122,3 +122,13 @@ jobs:
           docker logs gw
           docker stop gw
           test "${ok:-0}" = 1
+
+  oauth-attack:
+    name: OAuth attack suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-attack

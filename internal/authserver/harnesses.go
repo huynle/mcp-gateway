@@ -3,6 +3,7 @@ package authserver
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"embed"
 	"errors"
 	"fmt"
@@ -60,10 +61,13 @@ type harnessesData struct {
 	MCPURL    string
 }
 
-// errorData is the error page.
+// errorData is the error page. CSRFToken is always empty: the layout
+// shows the sign-out form only when it is set, and an error page carries
+// no form.
 type errorData struct {
-	Title   string
-	Message string
+	Title     string
+	Message   string
+	CSRFToken string
 }
 
 // ServeHarnesses is GET /harnesses.
@@ -104,7 +108,7 @@ func (s *Service) ServeHarnessRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	if err := r.ParseForm(); err != nil || r.PostForm.Get("_csrf") != csrfToken {
+	if err := r.ParseForm(); err != nil || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("_csrf")), []byte(csrfToken)) != 1 {
 		s.errorPage(w, http.StatusForbidden, "The form token is missing or expired. Reload the page and try again.")
 		return
 	}
@@ -197,9 +201,11 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, nam
 	var buf bytes.Buffer
 	if err := s.tpl.ExecuteTemplate(&buf, name, data); err != nil {
 		s.log.Error("render failed", "event", "authserver.render_failed", "template", name, "path", r.URL.Path, "error", err)
+		pageHeaders(w)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	pageHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
@@ -208,6 +214,7 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, nam
 // errorPage renders a message without redirecting anywhere.
 func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 	var buf bytes.Buffer
+	pageHeaders(w)
 	if err := s.tpl.ExecuteTemplate(&buf, "error.html", errorData{Title: "Request refused", Message: message}); err != nil {
 		http.Error(w, message, status)
 		return
@@ -216,6 +223,19 @@ func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
+}
+
+// pageHeaders hardens every page the authorization server renders: the
+// consent page must not be framed (clickjacking, RFC 9700 section 4.16),
+// nothing on it may be cached, and the URL (which carries the client's
+// state) must not leak through the Referer header.
+func pageHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
 }
 
 // isBadUUID recognises PostgreSQL's complaint about an id that is not a
