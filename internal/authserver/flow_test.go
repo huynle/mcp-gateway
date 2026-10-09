@@ -295,6 +295,45 @@ func TestRepeatedParametersAreRefused(t *testing.T) {
 	}
 }
 
+// Regression (attack suite cjedpxp6, RFC 9207 / MCP spec mix-up
+// defence): every authorization response, success or error, carries
+// iss = the issuer.
+func TestAuthorizationResponsesCarryIss(t *testing.T) {
+	f := newFlow(t)
+	issuer := strings.TrimSuffix(f.cfg.Issuer, "/")
+	loc := redirect(t, f.consent(f.authorizeParams(), "approve", csrf))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("code") == "" {
+		t.Errorf("approve redirect = %s", loc)
+	}
+	loc = redirect(t, f.consent(f.authorizeParams(), "deny", csrf))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("error") != "access_denied" {
+		t.Errorf("deny redirect = %s", loc)
+	}
+	q := f.authorizeParams()
+	q.Del("state")
+	loc = redirect(t, f.authorize(q))
+	if loc.Query().Get("iss") != issuer || loc.Query().Get("error") != "invalid_request" {
+		t.Errorf("error redirect = %s", loc)
+	}
+}
+
+// Regression (attack suite cjedpxp6, RFC 9700 section 4.16): the pages the
+// authorization server renders cannot be framed, are not cached and do
+// not leak their URL through Referer.
+func TestPagesCarryHardeningHeaders(t *testing.T) {
+	f := newFlow(t)
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"consent":   f.authorize(f.authorizeParams()),
+		"error":     f.authorize(url.Values{"client_id": {"gwc_nope"}}),
+		"harnesses": f.harnesses(),
+	} {
+		h := rec.Header()
+		if h.Get("X-Frame-Options") != "DENY" || h.Get("Content-Security-Policy") != "frame-ancestors 'none'" || h.Get("Referrer-Policy") != "no-referrer" || h.Get("Cache-Control") != "no-store" || h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s page headers = %v", name, h)
+		}
+	}
+}
+
 func TestAuthorizeRedirectsProtocolErrors(t *testing.T) {
 	f := newFlow(t)
 	cases := map[string]struct {

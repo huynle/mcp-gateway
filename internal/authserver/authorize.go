@@ -141,6 +141,7 @@ func (s *Service) ServeConsent(w http.ResponseWriter, r *http.Request) {
 	q := u.Query()
 	q.Set("code", code)
 	q.Set("state", req.state)
+	q.Set("iss", s.cfg.issuer()) // RFC 9207: the client checks it against the metadata it recorded
 	u.RawQuery = q.Encode()
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, u.String(), http.StatusSeeOther)
@@ -272,6 +273,7 @@ func (s *Service) redirectError(w http.ResponseWriter, r *http.Request, req *aut
 	q := u.Query()
 	q.Set("error", pe.code)
 	q.Set("error_description", pe.description)
+	q.Set("iss", s.cfg.issuer())
 	if req.state != "" {
 		q.Set("state", req.state)
 	}

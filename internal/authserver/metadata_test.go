@@ -22,20 +22,21 @@ func testConfig() authserver.Config {
 func TestAuthorizationServerMetadataDocument(t *testing.T) {
 	cfg := testConfig()
 	want := map[string]any{
-		"issuer":                                     "https://gw.example.com",
-		"authorization_endpoint":                     "https://gw.example.com/oauth/authorize",
-		"token_endpoint":                             "https://gw.example.com/oauth/token",
-		"registration_endpoint":                      "https://gw.example.com/oauth/register",
-		"revocation_endpoint":                        "https://gw.example.com/oauth/revoke",
-		"jwks_uri":                                   "https://gw.example.com/oauth/jwks",
-		"response_types_supported":                   []any{"code"},
-		"response_modes_supported":                   []any{"query"},
-		"grant_types_supported":                      []any{"authorization_code", "refresh_token"},
-		"code_challenge_methods_supported":           []any{"S256"},
-		"token_endpoint_auth_methods_supported":      []any{"none", "client_secret_post", "client_secret_basic"},
-		"revocation_endpoint_auth_methods_supported": []any{"none", "client_secret_post", "client_secret_basic"},
-		"scopes_supported":                           []any{"mcp", "mcp:read"},
-		"service_documentation":                      "https://gw.example.com/harnesses",
+		"issuer":                                         "https://gw.example.com",
+		"authorization_endpoint":                         "https://gw.example.com/oauth/authorize",
+		"token_endpoint":                                 "https://gw.example.com/oauth/token",
+		"registration_endpoint":                          "https://gw.example.com/oauth/register",
+		"revocation_endpoint":                            "https://gw.example.com/oauth/revoke",
+		"jwks_uri":                                       "https://gw.example.com/oauth/jwks",
+		"response_types_supported":                       []any{"code"},
+		"response_modes_supported":                       []any{"query"},
+		"grant_types_supported":                          []any{"authorization_code", "refresh_token"},
+		"code_challenge_methods_supported":               []any{"S256"},
+		"token_endpoint_auth_methods_supported":          []any{"none", "client_secret_post", "client_secret_basic"},
+		"revocation_endpoint_auth_methods_supported":     []any{"none", "client_secret_post", "client_secret_basic"},
+		"scopes_supported":                               []any{"mcp", "mcp:read"},
+		"service_documentation":                          "https://gw.example.com/harnesses",
+		"authorization_response_iss_parameter_supported": true,
 	}
 	got := roundTrip(t, authserver.AuthorizationServerMetadata(cfg))
 	if !reflect.DeepEqual(got, want) {
@@ -106,4 +107,39 @@ func roundTrip(t *testing.T, v any) map[string]any {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// Regression (attack suite cjedpxp6): every public route answers a wrong
+// method with 405 and Allow itself, so the mux's catch-all (the portal's
+// 404 page) never takes over; OPTIONS is the CORS preflight.
+func TestMountAnswers405ForWrongMethods(t *testing.T) {
+	f := newService(t)
+	mux := http.NewServeMux()
+	f.svc.Mount(mux)
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "portal 404", http.StatusNotFound) })
+	for _, c := range []struct{ method, path, allow string }{
+		{http.MethodGet, "/oauth/token", "POST, OPTIONS"},
+		{http.MethodPut, "/oauth/token", "POST, OPTIONS"},
+		{http.MethodGet, "/oauth/register", "POST, OPTIONS"},
+		{http.MethodGet, "/oauth/revoke", "POST, OPTIONS"},
+		{http.MethodPost, "/oauth/jwks", "GET, HEAD, OPTIONS"},
+		{http.MethodPost, "/.well-known/oauth-authorization-server", "GET, HEAD, OPTIONS"},
+		{http.MethodDelete, "/.well-known/oauth-protected-resource", "GET, HEAD, OPTIONS"},
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), c.method, c.path, nil))
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != c.allow {
+			t.Errorf("%s %s: %d Allow %q; want 405 %q", c.method, c.path, rec.Code, rec.Header().Get("Allow"), c.allow)
+		}
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodOptions, c.path, nil))
+		if rec.Code != http.StatusNoContent || rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+			t.Errorf("OPTIONS %s: %d %q", c.path, rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/oauth/jwks", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("HEAD /oauth/jwks: %d", rec.Code)
+	}
 }

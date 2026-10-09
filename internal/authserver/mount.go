@@ -34,18 +34,50 @@ type Mounter interface {
 // Mount registers the public OAuth routes. Discovery documents and the
 // JWKS are readable cross-origin; registration and token requests answer
 // CORS preflights so browser-hosted harnesses (the MCP inspector) work.
+//
+// Each path is registered without a method and dispatches itself, so a
+// wrong method is 405 with Allow (RFC 9110 section 15.5.6) rather than
+// whatever the mux's catch-all (the portal) would answer; OPTIONS is the
+// CORS preflight.
 func (s *Service) Mount(mux Mounter) {
 	cfg := s.cfg
-	mux.Handle("GET "+MetadataPath, MetadataHandler(cfg))
-	mux.Handle("GET "+ProtectedResourcePath, ProtectedResourceHandler(cfg))
-	mux.Handle("GET "+ProtectedResourcePath+cfg.ResourcePath, ProtectedResourceHandler(cfg))
-	mux.Handle("GET "+JWKSPath, http.HandlerFunc(s.ServeJWKS))
-	mux.Handle("POST "+RegisterPath, cors(http.HandlerFunc(s.ServeRegister)))
-	mux.Handle("POST "+TokenPath, cors(http.HandlerFunc(s.ServeToken)))
-	mux.Handle("POST "+RevokePath, cors(http.HandlerFunc(s.ServeRevoke)))
-	for _, p := range []string{RegisterPath, TokenPath, RevokePath, MetadataPath, ProtectedResourcePath, ProtectedResourcePath + cfg.ResourcePath, JWKSPath} {
-		mux.Handle("OPTIONS "+p, cors(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })))
+	for _, p := range []string{MetadataPath, ProtectedResourcePath, ProtectedResourcePath + cfg.ResourcePath} {
+		mux.Handle(p, methods(http.MethodGet, documentHandler(cfg, p)))
 	}
+	mux.Handle(JWKSPath, methods(http.MethodGet, http.HandlerFunc(s.ServeJWKS)))
+	mux.Handle(RegisterPath, methods(http.MethodPost, http.HandlerFunc(s.ServeRegister)))
+	mux.Handle(TokenPath, methods(http.MethodPost, http.HandlerFunc(s.ServeToken)))
+	mux.Handle(RevokePath, methods(http.MethodPost, http.HandlerFunc(s.ServeRevoke)))
+}
+
+// documentHandler picks the discovery document for a well-known path.
+func documentHandler(cfg Config, path string) http.Handler {
+	if path == MetadataPath {
+		return MetadataHandler(cfg)
+	}
+	return ProtectedResourceHandler(cfg)
+}
+
+// methods serves next for the one allowed method (and HEAD for GET),
+// answers the CORS preflight on OPTIONS, and 405 + Allow otherwise. Every
+// answer carries the CORS headers (browser-hosted harnesses).
+func methods(allowed string, next http.Handler) http.Handler {
+	allow := allowed + ", OPTIONS"
+	if allowed == http.MethodGet {
+		allow = "GET, HEAD, OPTIONS"
+	}
+	return cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == allowed, allowed == http.MethodGet && r.Method == http.MethodHead:
+			next.ServeHTTP(w, r)
+		case r.Method == http.MethodOptions:
+			w.Header().Set("Allow", allow)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.Header().Set("Allow", allow)
+			writeError(w, http.StatusMethodNotAllowed, "invalid_request", allowed+" only")
+		}
+	}))
 }
 
 // MountPortal registers the pages that need a signed-in user through the

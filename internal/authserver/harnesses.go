@@ -200,9 +200,11 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, nam
 	var buf bytes.Buffer
 	if err := s.tpl.ExecuteTemplate(&buf, name, data); err != nil {
 		s.log.Error("render failed", "event", "authserver.render_failed", "template", name, "path", r.URL.Path, "error", err)
+		pageHeaders(w)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	pageHeaders(w)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
@@ -211,6 +213,7 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, nam
 // errorPage renders a message without redirecting anywhere.
 func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 	var buf bytes.Buffer
+	pageHeaders(w)
 	if err := s.tpl.ExecuteTemplate(&buf, "error.html", errorData{Title: "Request refused", Message: message}); err != nil {
 		http.Error(w, message, status)
 		return
@@ -219,6 +222,19 @@ func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
+}
+
+// pageHeaders hardens every page the authorization server renders: the
+// consent page must not be framed (clickjacking, RFC 9700 section 4.16),
+// nothing on it may be cached, and the URL (which carries the client's
+// state) must not leak through the Referer header.
+func pageHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
 }
 
 // isBadUUID recognises PostgreSQL's complaint about an id that is not a

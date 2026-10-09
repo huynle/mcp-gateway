@@ -875,3 +875,9 @@ func nonce(t *testing.T) string {
 // authserverLeeway mirrors authserver.Leeway (exp / nbf clock-skew
 // tolerance) for cases that step the clock across a boundary.
 const authserverLeeway = authserver.Leeway + time.Second
+
+// hashSecret mirrors how the store hashes codes and refresh tokens.
+func hashSecret(s string) []byte {
+	sum := sha256.Sum256([]byte(s))
+	return sum[:]
+}
