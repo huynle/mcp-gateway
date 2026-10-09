@@ -245,6 +245,10 @@ func toCreatedIssue(is *gh.Issue, repo string) CreatedIssue {
 	return CreatedIssue{Number: is.GetNumber(), ID: is.GetID(), URL: is.GetHTMLURL(), Repo: repo, State: is.GetState()}
 }
 
+func toCreatedComment(cm *gh.IssueComment, repo string, number int) CreatedComment {
+	return CreatedComment{ID: cm.GetID(), URL: cm.GetHTMLURL(), Repo: repo, Number: number}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 func i64toa(n int64) string { return strconv.FormatInt(n, 10) }

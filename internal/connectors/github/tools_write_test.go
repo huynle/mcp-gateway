@@ -143,7 +143,7 @@ const opID = "0f1e2d3c-4b5a-4968-8777-66554433aa11"
 const marker = "<!-- mcp-gateway op:" + opID + " -->"
 
 // write builds a write call under the ledger operation opID.
-func write(tool string, args map[string]any) connectors.Call { //nolint:unparam // the other writes' tests use it too
+func write(tool string, args map[string]any) connectors.Call {
 
 	c := call(tool, args)
 	c.OperationID = opID
@@ -340,7 +340,7 @@ func TestCreateIssueConnectionLostIsUnknown(t *testing.T) {
 }
 
 // toolNamed returns the connector's tool by short name.
-func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool { //nolint:unparam // the other writes' tests use it too
+func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool {
 	t.Helper()
 	for _, tool := range c.Tools() {
 		if tool.Name == name {
@@ -362,7 +362,7 @@ const (
 // reconcile builds the input the ledger's reconciler hands to Check:
 // the principal and account, the operation id and the stored resource
 // identity; never arguments.
-func reconcile(tool string, identity map[string]string) connectors.ReconcileInput { //nolint:unparam // the other writes' tests use it too
+func reconcile(tool string, identity map[string]string) connectors.ReconcileInput {
 	return connectors.ReconcileInput{
 		Call:             connectors.Call{Principal: connectors.Principal{UserID: alice, TokenID: "tok"}, Tool: "github." + tool, Account: acct, OperationID: opID},
 		OperationID:      opID,
@@ -516,6 +516,138 @@ func TestCheckIssueNeedsIdentityAndOperation(t *testing.T) {
 	in.OperationID, in.Call.OperationID = "", ""
 	if _, err := check(context.Background(), in); err == nil {
 		t.Error("Check without an operation id succeeded")
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d requests sent", n)
+	}
+}
+
+// --- add_issue_comment ------------------------------------------------------------------
+
+const (
+	createCommentPath = "POST /repos/example-org/widgets/issues/42/comments"
+	listCommentsPath  = "GET /repos/example-org/widgets/issues/42/comments"
+)
+
+var commentIdentity = map[string]string{"owner": "example-org", "repo": "example-org/widgets", "org": "example-org", "number": "42"}
+
+func TestAddIssueComment(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{createCommentPath: {status: 201, body: "created_comment.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := c.Call(context.Background(), write(github.ToolAddIssueComment, map[string]any{"owner": "example-org", "repo": "widgets", "number": 42, "body": "Reproduced on main."}))
+	if err != nil {
+		t.Fatalf("add_issue_comment: %v", err)
+	}
+	created, ok := res.Content.(github.CreatedComment)
+	if !ok || created.ID != 9001 || created.Number != 42 || created.Repo != "example-org/widgets" || !strings.HasSuffix(created.URL, "#issuecomment-9001") {
+		t.Errorf("content = %#v", res.Content)
+	}
+	ids := toolNamed(t, c, github.ToolAddIssueComment).ResultIDs(res)
+	if ids["id"] != "9001" || ids["url"] != created.URL || len(ids) != 2 {
+		t.Errorf("ResultIDs = %v", ids)
+	}
+	if body := jsonBody(t, srv.Last(t, createCommentPath)); body["body"] != "Reproduced on main.\n\n"+marker {
+		t.Errorf("body = %q, want the text followed by the marker", body["body"])
+	}
+}
+
+func TestAddIssueCommentValidation(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	for name, args := range map[string]map[string]any{
+		"missing body":   {"owner": "example-org", "repo": "widgets", "number": 42},
+		"blank body":     {"owner": "example-org", "repo": "widgets", "number": 42, "body": " "},
+		"missing number": {"owner": "example-org", "repo": "widgets", "body": "b"},
+		"bad number":     {"owner": "example-org", "repo": "widgets", "number": 0, "body": "b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.Call(context.Background(), write(github.ToolAddIssueComment, args))
+			wantClass(t, err, github.ClassInvalidArgument, 0)
+		})
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d requests sent for invalid arguments", n)
+	}
+}
+
+func TestAddIssueCommentErrors(t *testing.T) {
+	for _, tc := range writeErrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{createCommentPath: tc.rt})
+			c, err := github.New(github.Options{Tokens: (&tokens{}).source, BaseURL: srv.URL + "/", Timeout: 300 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := c.Call(context.Background(), write(github.ToolAddIssueComment, map[string]any{"owner": "example-org", "repo": "widgets", "number": 42, "body": "b"}))
+			checkWriteError(t, tc, res, err)
+		})
+	}
+}
+
+// commentPages is the issue's comment list: page 1 (oldest) without the
+// marker and a Link to the last page, page 2 with it.
+func commentPages(last string) route {
+	return route{pages: map[string]route{
+		"1": {status: 200, body: "comments_page1.json", headers: map[string]string{"Link": `<https://api.github.example.test/repos/example-org/widgets/issues/42/comments?page=2>; rel="next", <https://api.github.example.test/repos/example-org/widgets/issues/42/comments?page=2>; rel="last"`}},
+		"2": {status: 200, body: last},
+	}}
+}
+
+func TestCheckCommentFoundOnTheLastPage(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{listCommentsPath: commentPages("comments_page2.json")})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, github.ToolAddIssueComment).Reconcile.Check(context.Background(), reconcile(github.ToolAddIssueComment, commentIdentity))
+	wantFound(t, res, err, "9001")
+	if n := srv.Count(listCommentsPath); n != 2 {
+		t.Errorf("listing requests = %d, want 2", n)
+	}
+	if q := srv.Last(t, listCommentsPath).URL.Query(); q.Get("page") != "2" || q.Get("per_page") != "100" {
+		t.Errorf("last listing query = %v, want page 2 of 100", q)
+	}
+}
+
+func TestCheckCommentNotFound(t *testing.T) {
+	for name, rt := range map[string]route{
+		"single page":      {status: 200, body: "comments_page1.json"},
+		"no comments":      {status: 200, body: "[]"},
+		"empty last page":  commentPages("[]"),
+		"other op's pages": commentPages("comments_page1.json"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{listCommentsPath: rt})
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, github.ToolAddIssueComment).Reconcile.Check(context.Background(), reconcile(github.ToolAddIssueComment, commentIdentity))
+			wantNotFound(t, res, err)
+		})
+	}
+}
+
+func TestCheckCommentCannotTell(t *testing.T) {
+	for name, rt := range map[string]route{
+		"500":            {status: 500, body: "error_server.json"},
+		"404":            {status: 404, body: "error_not_found.json"},
+		"rate limited":   {status: 429, body: "error_secondary_rate_limit.json", headers: map[string]string{"Retry-After": "3"}},
+		"too many pages": {status: 200, body: "comments_page1.json", headers: map[string]string{"Link": `<https://api.github.example.test/repos/example-org/widgets/issues/42/comments?page=99>; rel="last"`}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{listCommentsPath: rt})
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, github.ToolAddIssueComment).Reconcile.Check(context.Background(), reconcile(github.ToolAddIssueComment, commentIdentity))
+			if err == nil {
+				t.Fatalf("Check = %+v, want an error (cannot tell yet)", res)
+			}
+			if n := srv.Count(listCommentsPath); n > 5 {
+				t.Errorf("listing requests = %d, want at most 5", n)
+			}
+		})
+	}
+}
+
+func TestCheckCommentNeedsTheIssueNumber(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	if _, err := toolNamed(t, c, github.ToolAddIssueComment).Reconcile.Check(context.Background(), reconcile(github.ToolAddIssueComment, issueIdentity)); err == nil {
+		t.Error("Check without a number in the identity succeeded")
 	}
 	if n := len(srv.Requests()); n != 0 {
 		t.Errorf("%d requests sent", n)

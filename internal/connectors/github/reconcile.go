@@ -135,8 +135,61 @@ func (tg reconcileTarget) searchMarker(ctx context.Context) *gh.Issue {
 
 // --- the other writes (filled in by the following increments) --------------------
 
-func (c *Connector) checkComment(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error) {
-	return connectors.ReconcileResult{}, errors.New("github: add_issue_comment check not implemented")
+// --- add_issue_comment -----------------------------------------------------------
+
+// checkComment is add_issue_comment's marker reconciliation: the issue's
+// comments, which GitHub lists oldest first, are read newest first (the
+// first page tells where the last one is, then the pages are walked
+// backwards) bounded by MaxReconcilePages. The marker on any page is
+// found; every page read without it is not_found; running out of pages,
+// or any listing error (including a 404: the account may have lost
+// access rather than the issue being gone), is "cannot tell yet".
+func (c *Connector) checkComment(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	tg, err := c.target(ctx, in)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	number, err := strconv.Atoi(in.ResourceIdentity["number"])
+	if err != nil || number < 1 {
+		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no issue number", ErrNotReconcilable)
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	scan := func(page int) (id string, last int, err error) {
+		opts := &gh.IssueListCommentsOptions{ListOptions: gh.ListOptions{PerPage: reconcilePerPage, Page: page}}
+		comments, resp, err := tg.client.Issues.ListComments(ctx, tg.owner, tg.repo, number, opts)
+		if err := classify("reconcile: list comments", err); err != nil {
+			return "", 0, err
+		}
+		for _, cm := range comments {
+			if cm != nil && hasMarker(cm.GetBody(), tg.operationID) {
+				return strconv.FormatInt(cm.GetID(), 10), resp.LastPage, nil
+			}
+		}
+		return "", resp.LastPage, nil
+	}
+	id, last, err := scan(1)
+	switch {
+	case err != nil:
+		return connectors.ReconcileResult{}, err
+	case id != "":
+		return found(id), nil
+	case last <= 1:
+		return notFound, nil
+	}
+	for page, reads := last, 1; page >= 2; page-- {
+		if reads++; reads > MaxReconcilePages {
+			return connectors.ReconcileResult{}, fmt.Errorf("github: reconcile: more than %d pages of comments on %s/%s#%d; cannot tell yet", MaxReconcilePages, tg.owner, tg.repo, number)
+		}
+		id, _, err := scan(page)
+		if err != nil {
+			return connectors.ReconcileResult{}, err
+		}
+		if id != "" {
+			return found(id), nil
+		}
+	}
+	return notFound, nil
 }
 
 func (c *Connector) checkPullRequest(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error) {

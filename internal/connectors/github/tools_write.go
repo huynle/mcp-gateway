@@ -318,8 +318,24 @@ func (c *Connector) createIssue(ctx context.Context, client *gh.Client, call con
 	return connectors.Result{Content: toCreatedIssue(is, owner+"/"+repo)}, nil
 }
 
-func (c *Connector) addIssueComment(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {
-	return connectors.Result{}, errors.New("github: add_issue_comment not implemented")
+func (c *Connector) addIssueComment(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error) {
+	owner, repo, err := repoArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	number, err := numberArg(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	body, err := requiredString(call.Args, "body")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	cm, _, err := client.Issues.CreateComment(ctx, owner, repo, number, &gh.IssueComment{Body: gh.Ptr(withMarker(body, call.OperationID))})
+	if err := classifyWrite("add issue comment", err); err != nil {
+		return connectors.Result{}, err
+	}
+	return connectors.Result{Content: toCreatedComment(cm, owner+"/"+repo, number)}, nil
 }
 
 func (c *Connector) createPullRequest(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {
