@@ -145,6 +145,14 @@ func Handler(opts Options) (http.Handler, error) {
 		Stateless:           true,
 		JSONResponse:        true, // one JSON body per POST: nothing to stream, friendlier to proxies
 		MaxRequestBodyBytes: opts.MaxBody,
+		// When the HTTP request is gone (client disconnect, the drain
+		// cut-off) the answer cannot be delivered, so the tool handler's
+		// context is cancelled with it: a connector call stops instead of
+		// running on detached, and the ledger stage records the outcome as
+		// unknown. The SDK applies this to protocol >= 2026-07-28 only;
+		// older clients' calls run to completion (the stale sweep and the
+		// shutdown hook cover their ledger rows).
+		PropagateRequestCancellation: true,
 		// The gateway is a network service behind bearer authentication: a
 		// browser-based DNS-rebinding attacker cannot attach the header.
 		// The SDK's default would 403 every request a reverse proxy on the
