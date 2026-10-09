@@ -12,9 +12,9 @@ Requirements: Go 1.25, Docker with Compose v2, [golangci-lint](https://golangci-
 
 ```bash
 make build test lint          # bin/gateway + bin/migrate, unit tests (race detector), lint
-make compose-up               # PostgreSQL 16 (15432), dex (15556), migrations, gateway (18080)
+make compose-up               # PostgreSQL 16 (15432), dex (15556), migrations, dev key file, gateway (18080)
 curl -f localhost:18080/healthz
-curl -f localhost:18080/readyz # {"status":"ok","checks":[{"name":"database",...},{"name":"schema",...}]}
+curl -f localhost:18080/readyz # {"status":"ok","checks":[{"name":"database",...},{"name":"schema",...},{"name":"key-provider",...}]}
 open http://localhost:18080    # sign in as dev@example.com / password (an admin), see "My account" and "Users"
 make compose-down             # stop and drop volumes
 ```
@@ -36,7 +36,10 @@ Integration tests need a PostgreSQL **superuser** URL in `GATEWAY_TEST_DATABASE_
 make compose-up
 export GATEWAY_TEST_DATABASE_URL='postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable'
 make test-integration
+make test-e2e                 # the safety-core end-to-end gate (test/e2e), see below
 ```
+
+`make test-e2e` runs the whole gateway in-process (identity, portal, tokens, policy, connections, approvals with the Slack notifier against a fake Slack API, ledger, jobs, `/mcp` with every stage, `/slack/interactions`, audit) over its own database and drives it with the official MCP Go SDK client: reads, hidden and denied tools, confirm → approve in the portal (session cookie + CSRF) or from Slack (signed button press) → retry with `approval_id`, the bounded wait, duplicate replay inside and outside the 24 h window, eight concurrent uses of one approval, unknown outcomes reconciled or surfaced by the real reconciler job, a crash mid-call swept by the stale-sweep job, cross-user attempts with the wrong token or session, personal-account and read-only refusals, `/activity` vs `/admin/audit`, and a scan of the captured gateway log and every audit row for token secrets and argument values. [`docs/conformance.md`](docs/conformance.md) maps those scenarios to the manual OpenCode / Claude Code checklist.
 
 ## Database
 
@@ -168,7 +171,7 @@ Decision `mh7c6z3v`: users connect **company and personal** accounts per vendor,
 
 **Tokens.** `Service.TokenSource(ctx, userID, connectionID)` is the `oauth2.TokenSource` connectors use: `Token()` opens one user-scoped transaction, takes the connection row with `SELECT ... FOR UPDATE`, and refreshes only when the access token is within two minutes of expiry, so concurrent callers (and replicas) make **one** vendor call and share the result; a rotated refresh token is persisted; `invalid_grant` sets the connection to `needs_reconnect`, notifies the user through the `connections.Notifier` (log by default; the approvals task plugs in Slack/portal), increments `connection_refresh_failures_total{app}` and returns `connections.ErrNeedsReconnect`; transient vendor failures only count the metric. `Disconnect` revokes at the vendor when the app has a revoke URL (best effort), **deletes the `connection_secrets` row** and marks the connection `revoked` (the row stays: approvals, ledger and audit rows reference it; reconnecting revives it). Disabling a user runs the same for every connection inside the disabling transaction (`identity.Service.OnDisable`). `connections.KeepAliveJob` (`Name`, `Interval` = 24h, `Run`) refreshes tokens that have not been refreshed for 30 days and sweeps expired flows; the jobs runner registers it (TODO in `cmd/gateway/main.go`).
 
-**Accounts.** `connections.Service` implements `connectors.AccountSource`: the user's `active` connections of the vendor an app uses (`Service.MapApp(app, vendor)`, e.g. `gmail` → `google`; unmapped apps are their own vendor), as `Account{ID: connection UUID, Label, DisplayName, App, Scopes}`. `cmd/gateway` routes app `fake` to the fake connector's own source and everything else to the connections table. Without a key provider (`GATEWAY_KEY_PROVIDER` / `GATEWAY_KEY_FILE`) the connections module is not mounted.
+**Accounts.** `connections.Service` implements `connectors.AccountSource`: the user's `active` connections of the vendor an app uses (`Service.MapApp(app, vendor)`, e.g. `gmail` → `google`; unmapped apps are their own vendor), as `Account{ID: connection UUID, Label, DisplayName, App, Scopes}`. The fake connector's development accounts are connections rows too: `Service.SeedAccount(ctx, userID, Seed{ExternalAccountID, Label, DisplayName})` creates (or revives) an active `fake` connection without an OAuth flow, with a disabled `fake` vendor app row and no token bundle, refusing every real vendor; `cmd/gateway` seeds one company account per user the first time their fake accounts are listed and routes app `fake` through it (quirk `enqgtw5y`). Without a key provider (`GATEWAY_KEY_PROVIDER` / `GATEWAY_KEY_FILE`) the connections module is not mounted.
 
 Tests: `internal/connections` runs an httptest vendor (authorize, token with PKCE and rotating refresh tokens, user info, revoke) through the service and the real portal; the integration suite (`gateway_connections_test`) proves the refresh race under `FOR UPDATE`, row-level security on connections, secrets and flows, AAD binding (a bundle moved to another connection or with a flipped byte fails to decrypt), `invalid_grant`, disconnect keeping audit rows, keep-alive, the disable hook, and scans every column of the four tables and the logs for any issued token or client secret.
 
@@ -178,7 +181,7 @@ A connector implements `connectors.Connector`: `App() string`, `Tools() []Tool`,
 
 `connectors.AccountSource` (`ListAccounts(ctx, userID, app) ([]Account, error)`) is what the account stage and `list_accounts` consult; `StaticAccountSource` is the in-memory implementation and `connections.Service` the store-backed one. `Account{ID, Label company|personal, DisplayName, App, Scopes}` carries no tokens; a connector gets them through `connections.Service.TokenSource(ctx, call.Principal.UserID, call.Account)`.
 
-**The fake connector** (`internal/connectors/fake`, app `fake`) is what the safety-core tests drive, and what `make compose-up` exposes (`GATEWAY_ENABLE_FAKE_CONNECTOR=true`; every user gets one make-believe company account on first use). Reads: `list_items` (paginated with `page_size`/`cursor`, honours bounds, optional `prefix`), `get_item`. Writes: `create_item` (reconciles by stable ID: the client-chosen `id`, else one derived from the operation), `post_note` (reconciliation `none`), `flaky_write` (reconciles by `marker`, defaulting to the operation ID). `fake.New(Options)`, `SeedAccount(userID, Account)`, `SeedItems`, `State().Items/Notes/Writes(account)`, and faults: `InjectFault(tool, Fault{Mode: FaultFail|FaultUnknown|FaultHang|FaultRateLimited|FaultPartial|FaultUnavailable, Latency, RetryAfter, Message, Applied, Remaining})`; `Faults()` returns the table (`fake.NewFaults()` is usable on its own). `FaultUnknown`/`FaultHang` with `Applied` perform the write before reporting the unknown outcome, so reconciliation finds it.
+**The fake connector** (`internal/connectors/fake`, app `fake`) is what the safety-core tests drive, and what `make compose-up` exposes (`GATEWAY_ENABLE_FAKE_CONNECTOR=true`; every user gets one make-believe company account on first use, backed by a real `connections` row when the connections module is mounted, so confirmed and ledgered fake writes work). Reads: `list_items` (paginated with `page_size`/`cursor`, honours bounds, optional `prefix`), `get_item`. Writes: `create_item` (reconciles by stable ID: the client-chosen `id`, else one derived from the operation), `post_note` (reconciliation `none`), `flaky_write` (reconciles by `marker`, defaulting to the operation ID). `fake.New(Options)`, `SeedAccount(userID, Account)`, `SeedItems`, `State().Items/Notes/Writes(account)`, and faults: `InjectFault(tool, Fault{Mode: FaultFail|FaultUnknown|FaultHang|FaultRateLimited|FaultPartial|FaultUnavailable, Latency, RetryAfter, Message, Applied, Remaining})`; `Faults()` returns the table (`fake.NewFaults()` is usable on its own). `FaultUnknown`/`FaultHang` with `Applied` perform the write before reporting the unknown outcome, so reconciliation finds it.
 
 ### Extending the pipeline
 
@@ -237,7 +240,7 @@ Every write is recorded before it happens, duplicates are suppressed within the 
 5. **Stale sweep and shutdown.** `jobs.StaleSweepJob` (every 30 s) turns `in_progress` rows older than `GATEWAY_LEDGER_STALE_AFTER` (default `2m`) into `unknown` (class `stale`): the replica that owned them died or was cut off. On shutdown, after the drain, the replica marks its own still-in-flight operations `unknown` (class `shutdown`) so the reconciler does not have to wait for the sweep. The `/mcp` handler also propagates HTTP request cancellation to tool handlers (protocol ≥ 2026-07-28), so a cut-off call stops instead of running on detached.
 6. **Portal.** `GET /operations` lists the signed-in user's last 50 writes with state, result identifiers (URLs linked) and the *verify in the app* hint for unresolved ones.
 
-Local smoke with the fake connector: `fake.create_item` twice with the same `id` and `name` inside a day replays (`_ledger: replayed`); `fake.post_note` after `InjectFault(FaultUnknown)` becomes `unresolved` on the next reconciler run and is listed on `/operations`. The fake's auto-seeded Compose accounts are not `connections` rows yet, so unconfirmed fake writes fail the `ledger_operations` insert in Compose until that is fixed (quirk `enqgtw5y`); the integration tests create the rows.
+Local smoke with the fake connector (verified against `make compose-up`, scripted in [`deploy/smoke/fake-connector-smoke.sh`](deploy/smoke/fake-connector-smoke.sh): dex sign-in with curl, role edit, token, then `/mcp`): `fake.list_accounts` returns the seeded company account (a `connections` row); `fake.post_note` twice with the same `text` inside a day runs once and replays (`_ledger: replayed`, the first note's id); `fake.create_item` answers `-32032 approval required` after the bounded wait, `POST /approvals/{id}/approve` with the session cookie and CSRF token approves it, and the retry with `approval_id` runs the stored arguments even when the retried `name` drifted; `/operations` lists both writes as `succeeded`. In tests, `fake.post_note` after `InjectFault(FaultUnknown)` becomes `unresolved` on the next reconciler run and is listed on `/operations`.
 
 ## Repository layout
 
@@ -265,22 +268,26 @@ internal/portal/        embedded server-rendered portal (templates/ + static/htm
 internal/jobs/          single-replica background workers (runner + locker; ReconcilerJob, StaleSweepJob)
 deploy/dex/             dex configuration for Compose
 deploy/postgres/init/   Compose-only role bootstrap (dev passwords)
+deploy/smoke/           curl smoke of the fake connector's write path against the Compose stack
 docs/plans/             design documents
+docs/conformance.md     harness conformance checklist (automated rows from test/e2e, manual OpenCode / Claude Code rows)
+test/e2e/               the safety-core end-to-end gate (make test-e2e; build tag e2e or integration)
 ```
 
 Each `internal/*` package has a `doc.go` stating what it owns and which design sections and decisions it implements.
 
 ## Development
 
-- `make fmt` / `make fmt-check`, `make lint`, `make test`, `make test-integration`, `make build`.
+- `make fmt` / `make fmt-check`, `make lint`, `make test`, `make test-integration`, `make test-e2e`, `make build`.
 - `make migrate` / `make migrate-down` / `make migrate-status` wrap `cmd/migrate`; migrations run as a pre-upgrade job, the service never migrates itself. Adding a migration means adding `internal/store/migrations/NNNNN_name.sql` **and** bumping `store.ExpectedSchemaVersion`; a unit test fails if they disagree.
 - Expected-failure assertions against PostgreSQL (an RLS violation, a bad enum) must run in their own `WithUser` transaction: PostgreSQL aborts the transaction on the first error.
 - Lookups that precede user resolution (identity by issuer+subject, session by hash, just-in-time user creation, admin actions) run through `store.WithJobs`; self-service reads run through `store.WithUser`. Package-level helpers for these live in `internal/store/repo_identity_lookup.go`.
-- The identity, audit, tokens, mcp, policy and connections integration tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, `gateway_mcp_test`, `gateway_policy_test`, `gateway_connections_test`, created on demand) so they never race the store tests' `TRUNCATE`; every bootstrap retries `ALTER ROLE` on `tuple concurrently updated`, since the packages run in parallel against the same cluster-global roles.
+- The identity, audit, tokens, mcp, policy, connections, approvals, ledger, jobs and e2e tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, `gateway_mcp_test`, `gateway_policy_test`, `gateway_connections_test`, `gateway_approvals_test`, `gateway_ledger_test`, `gateway_jobs_test`, `gateway_e2e_test`, created on demand) so they never race the store tests' `TRUNCATE`; every bootstrap retries `ALTER ROLE` **and** `migrations.Up` on `tuple concurrently updated` (migration 00001 alters the cluster-global roles), since packages may run in parallel against the same cluster. `make test-integration` still runs packages one at a time (`-p 1`).
+- Gateway JSON-RPC error codes live in `-32029..-32034` (`internal/mcp/errors.go`); `-32001..-32005`, `-32020..-32022` and `-32042` are the go-sdk's own and must never be reused: the SDK client turns `-32003`/`-32004` into "connection closed" (`internal/mcp/errors_test.go` guards this; decision `xi9gyo82`).
 - Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0 and prometheus/client_golang v1.25.0); modelcontextprotocol/go-sdk v1.8.0 (declares `go 1.25.0`; check the directive before bumping); cedar-policy/cedar-go v1.8.0 (declares `go 1.23.0`); golang.org/x/oauth2 v0.36.0 (v0.37.0 requires Go 1.26); slack-go/slack v0.29.0 (v0.30.0+ requires Go 1.26); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
-- CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests against a PostgreSQL 16 service container and a container image smoke test.
+- CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests and the end-to-end gate against PostgreSQL 16 service containers, and a container image smoke test.
 
 ## History
 
