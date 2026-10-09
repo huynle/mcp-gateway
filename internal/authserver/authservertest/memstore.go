@@ -214,17 +214,18 @@ func (t *memTx) CreateCode(_ context.Context, c *store.OAuthCode) error {
 	return nil
 }
 
-func (t *memTx) ConsumeCode(_ context.Context, codeHash []byte, at time.Time) (*store.OAuthCode, error) {
+func (t *memTx) ConsumeCode(_ context.Context, codeHash []byte, at time.Time) (*store.OAuthCode, bool, error) {
 	for _, c := range t.m.codes {
 		if bytes.Equal(c.CodeHash, codeHash) && t.visible(c.UserID) {
-			if c.ConsumedAt == nil {
+			consumed := c.ConsumedAt == nil
+			if consumed {
 				c.ConsumedAt = &at
 			}
 			cp := *c
-			return &cp, nil
+			return &cp, consumed, nil
 		}
 	}
-	return nil, store.ErrNotFound
+	return nil, false, store.ErrNotFound
 }
 
 func (t *memTx) SetCodeFamily(_ context.Context, id, familyID string) error {
@@ -277,12 +278,14 @@ func (t *memTx) FindRefreshTokenByHash(_ context.Context, hash []byte) (*store.R
 	return nil, store.ErrNotFound
 }
 
-func (t *memTx) RotateRefreshToken(_ context.Context, id string, at time.Time) error {
-	if r, ok := t.m.refresh[id]; ok && t.visible(r.UserID) {
-		r.RotatedAt = &at
-		r.LastUsedAt = &at
+func (t *memTx) RotateRefreshToken(_ context.Context, id string, at time.Time) (bool, error) {
+	r, ok := t.m.refresh[id]
+	if !ok || !t.visible(r.UserID) || r.RotatedAt != nil {
+		return false, nil
 	}
-	return nil
+	r.RotatedAt = &at
+	r.LastUsedAt = &at
+	return true, nil
 }
 
 func (t *memTx) TouchRefreshToken(_ context.Context, id string, at time.Time) error {

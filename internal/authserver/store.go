@@ -32,16 +32,19 @@ type Tx interface {
 	PruneClients(ctx context.Context, idleBefore time.Time) (int64, error)
 
 	CreateCode(ctx context.Context, c *store.OAuthCode) error
-	// ConsumeCode marks the code consumed and returns it; a code that was
-	// already consumed comes back with ConsumedAt set to the earlier time
-	// (replay); an unknown hash is store.ErrNotFound.
-	ConsumeCode(ctx context.Context, codeHash []byte, at time.Time) (*store.OAuthCode, error)
+	// ConsumeCode marks the code consumed and returns it with consumed =
+	// true; a code that was already consumed comes back with consumed =
+	// false (replay); an unknown hash is store.ErrNotFound.
+	ConsumeCode(ctx context.Context, codeHash []byte, at time.Time) (code *store.OAuthCode, consumed bool, err error)
 	SetCodeFamily(ctx context.Context, id, familyID string) error
 	DeleteExpiredCodes(ctx context.Context, before time.Time) (int64, error)
 
 	CreateRefreshToken(ctx context.Context, t *store.OAuthRefreshToken) error
 	FindRefreshTokenByHash(ctx context.Context, hash []byte) (*store.RefreshTokenLookup, error)
-	RotateRefreshToken(ctx context.Context, id string, at time.Time) error
+	// RotateRefreshToken marks the token exchanged for its successor and
+	// reports false when it had already been rotated (a concurrent
+	// exchange won; the caller treats that as reuse).
+	RotateRefreshToken(ctx context.Context, id string, at time.Time) (bool, error)
 	TouchRefreshToken(ctx context.Context, id string, at time.Time) error
 	RevokeRefreshFamily(ctx context.Context, familyID string, at time.Time) (int64, error)
 	RevokeUserRefreshTokens(ctx context.Context, userID string, at time.Time) (int64, error)
@@ -97,7 +100,7 @@ func (t pgTx) CreateCode(ctx context.Context, c *store.OAuthCode) error {
 	return store.CreateOAuthCode(ctx, t.tx, c)
 }
 
-func (t pgTx) ConsumeCode(ctx context.Context, codeHash []byte, at time.Time) (*store.OAuthCode, error) {
+func (t pgTx) ConsumeCode(ctx context.Context, codeHash []byte, at time.Time) (*store.OAuthCode, bool, error) {
 	return store.ConsumeOAuthCode(ctx, t.tx, codeHash, at)
 }
 
@@ -117,7 +120,7 @@ func (t pgTx) FindRefreshTokenByHash(ctx context.Context, hash []byte) (*store.R
 	return store.FindOAuthRefreshTokenByHash(ctx, t.tx, hash)
 }
 
-func (t pgTx) RotateRefreshToken(ctx context.Context, id string, at time.Time) error {
+func (t pgTx) RotateRefreshToken(ctx context.Context, id string, at time.Time) (bool, error) {
 	return store.RotateOAuthRefreshToken(ctx, t.tx, id, at)
 }
 

@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -46,6 +48,8 @@ type Service struct {
 	auth     *JWTAuthenticator
 	limiter  *tokens.FailureLimiter
 	clientIP func(*http.Request) string
+	who      Identity
+	tpl      *template.Template
 	metrics  *observability.Metrics
 	audit    audit.Recorder
 	log      *slog.Logger
@@ -83,6 +87,11 @@ func New(cfg Config, st Store, kp crypto.KeyProvider, opts Options) (*Service, e
 		log:      opts.Log,
 		now:      func() time.Time { return time.Now().UTC() },
 	}
+	tpl, err := parseTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("authserver: templates: %w", err)
+	}
+	s.tpl = tpl
 	s.keys = NewKeys(st, kp, KeysOptions{Grace: cfg.KeyGrace, Log: opts.Log})
 	s.mint = NewMinter(cfg, s.keys)
 	s.auth = NewJWTAuthenticator(cfg, st, s.keys, AuthenticatorOptions{Metrics: opts.Metrics, Log: opts.Log})

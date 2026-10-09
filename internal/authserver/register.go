@@ -261,9 +261,18 @@ func validateRegistration(req RegistrationRequest) (clientMetadata, *Registratio
 			return bad("invalid_client_metadata", "response_type %q is not supported", rt)
 		}
 	}
+	// A registered scope restricts what the client may ask for; none
+	// means any supported scope. The answer lists what it may use.
 	scope, ok := ParseScope(req.Scope)
 	if !ok {
 		return bad("invalid_client_metadata", "scope %q is not supported", req.Scope)
+	}
+	if strings.TrimSpace(req.Scope) == "" {
+		scope = ""
+	}
+	answerScope := scope
+	if answerScope == "" {
+		answerScope = strings.Join(ScopesSupported, " ")
 	}
 	name := strings.TrimSpace(req.ClientName)
 	switch {
@@ -289,7 +298,7 @@ func validateRegistration(req RegistrationRequest) (clientMetadata, *Registratio
 	}
 	resp := &RegistrationResponse{
 		ClientName: name, RedirectURIs: uris, TokenEndpointAuthMethod: method, GrantTypes: meta.GrantTypes,
-		ResponseTypes: meta.ResponseTypes, Scope: scope, ClientURI: req.ClientURI, LogoURI: req.LogoURI,
+		ResponseTypes: meta.ResponseTypes, Scope: answerScope, ClientURI: req.ClientURI, LogoURI: req.LogoURI,
 	}
 	return meta, resp, nil
 }

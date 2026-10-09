@@ -129,26 +129,27 @@ func CreateOAuthCode(ctx context.Context, q Querier, c *OAuthCode) error {
 }
 
 // ConsumeOAuthCode marks the code with the given hash consumed at the
-// given time and returns it. Exactly one caller wins a race: the losers,
-// and anyone presenting the code again, get the row with ConsumedAt set to
-// the earlier time, which the token endpoint treats as replay. An unknown
-// hash is ErrNotFound.
-func ConsumeOAuthCode(ctx context.Context, q Querier, codeHash []byte, at time.Time) (*OAuthCode, error) {
+// given time and returns it with consumed = true. Exactly one caller wins
+// a race (the conditional UPDATE serialises on the row): the losers, and
+// anyone presenting the code again, get the row with consumed = false,
+// which the token endpoint treats as replay. An unknown hash is
+// ErrNotFound.
+func ConsumeOAuthCode(ctx context.Context, q Querier, codeHash []byte, at time.Time) (*OAuthCode, bool, error) {
 	c, err := scanOAuthCode(q.QueryRow(ctx, `
 		UPDATE oauth_authorization_codes SET consumed_at = $2
 		WHERE code_hash = $1 AND consumed_at IS NULL
 		RETURNING `+oauthCodeColumns, codeHash, at))
 	if err == nil {
-		return c, nil
+		return c, true, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
-		return nil, fmt.Errorf("store: consume oauth code: %w", err)
+		return nil, false, fmt.Errorf("store: consume oauth code: %w", err)
 	}
 	c, err = scanOAuthCode(q.QueryRow(ctx, `SELECT `+oauthCodeColumns+` FROM oauth_authorization_codes WHERE code_hash = $1`, codeHash))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return c, nil
+	return c, false, nil
 }
 
 // SetOAuthCodeFamily records which refresh-token family a consumed code
@@ -220,12 +221,16 @@ func FindOAuthRefreshTokenByHash(ctx context.Context, q Querier, hash []byte) (*
 	return &l, nil
 }
 
-// RotateOAuthRefreshToken marks a token as exchanged for its successor.
-func RotateOAuthRefreshToken(ctx context.Context, q Querier, id string, at time.Time) error {
-	if _, err := q.Exec(ctx, `UPDATE oauth_refresh_tokens SET rotated_at = $2, last_used_at = $2 WHERE id = $1`, id, at); err != nil {
-		return fmt.Errorf("store: rotate oauth refresh token: %w", err)
+// RotateOAuthRefreshToken marks a token as exchanged for its successor
+// and reports whether this call did it: a token already rotated (by a
+// concurrent exchange) is left alone and false is returned, so exactly
+// one exchange of the same token succeeds.
+func RotateOAuthRefreshToken(ctx context.Context, q Querier, id string, at time.Time) (bool, error) {
+	tag, err := q.Exec(ctx, `UPDATE oauth_refresh_tokens SET rotated_at = $2, last_used_at = $2 WHERE id = $1 AND rotated_at IS NULL`, id, at)
+	if err != nil {
+		return false, fmt.Errorf("store: rotate oauth refresh token: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() == 1, nil
 }
 
 // RevokeOAuthRefreshFamily revokes every live token of a family and
