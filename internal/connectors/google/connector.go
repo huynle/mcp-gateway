@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	"google.golang.org/api/people/v1"
 	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/tasks/v1"
 
@@ -78,6 +79,7 @@ type Connector struct {
 
 	calendar, tasks, gmail *App
 	drive, docs, sheets    *App
+	contacts               *App
 }
 
 // New builds the Google connector.
@@ -121,15 +123,16 @@ func New(opts Options) (*Connector, error) {
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
 	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())
+	c.contacts = c.newApp(AppContacts, c.contactsReadTools(), c.contactsWriteTools(), c.contactsReadHandlers(), c.contactsWriteHandlers())
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs, sheets. Each is registered with
-// connectors.RegisterConnector and mapped to Vendor with
+// calendar, tasks, gmail, drive, docs, sheets, contacts. Each is
+// registered with connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
 func (c *Connector) Apps() []*App {
-	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets}
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts}
 }
 
 // Drive returns the "drive" app.
@@ -140,6 +143,9 @@ func (c *Connector) Docs() *App { return c.docs }
 
 // Sheets returns the "sheets" app.
 func (c *Connector) Sheets() *App { return c.sheets }
+
+// Contacts returns the "contacts" app.
+func (c *Connector) Contacts() *App { return c.contacts }
 
 // Calendar returns the "calendar" app.
 func (c *Connector) Calendar() *App { return c.calendar }
@@ -364,6 +370,18 @@ func (cl *client) sheets(ctx context.Context) (*sheets.Service, error) {
 	svc, err := sheets.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "sheets client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// people builds the People API service (Contacts).
+func (cl *client) people(ctx context.Context) (*people.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := people.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "people client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

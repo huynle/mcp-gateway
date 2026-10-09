@@ -36,6 +36,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppDrive:    {"search", "get_file_metadata", "create_folder"},
 		google.AppDocs:     {"get_text", "create", "append_text"},
 		google.AppSheets:   {"read_range", "append_rows"},
+		google.AppContacts: {"search"},
 	}
 	for app, names := range want {
 		var got []string
@@ -239,5 +240,79 @@ func TestPerFileScopes(t *testing.T) {
 	}
 	if !google.GrantsOrPerFile([]string{google.ScopeDriveReadonly}, google.ScopeDriveMetadataReadonly) {
 		t.Error("GrantsOrPerFile must still apply the implication table")
+	}
+}
+
+// Increment 2: an account that declined the Drive, Docs, Sheets or
+// Contacts scope is blocked on that app's tools before any request while
+// the apps whose scopes it granted keep working; an account that granted
+// only drive.file is admitted to the Drive, Docs and Sheets tools (Google
+// decides per file) but not to Contacts.
+func TestDeclinedIncrement2ScopeBlocksOnlyThatApp(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{
+		listFilesPath:                        {status: 200, body: "files_list_empty.json"},
+		getDocPath:                           {status: 200, body: "document.json"},
+		getValuesPath:                        {status: 200, body: "values_get.json"},
+		searchContactsPath:                   {status: 200, body: "contacts_search.json"},
+		"GET /drive/v3/files/" + newFolderID: {status: 200, body: "created_folder.json"},
+	})
+	const (
+		driveOnly   = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"
+		perFileOnly = "8d2e3f4a-5b6c-4d7e-9f0a-1b2c3d4e5f6a"
+	)
+	accounts := connectors.NewStaticAccountSource()
+	for _, app := range google.Apps {
+		accounts.Add(alice, connectors.Account{ID: acct, App: app, Label: connectors.LabelCompany, Scopes: []string{
+			google.ScopeDriveMetadataReadonly, google.ScopeDocumentsReadonly, google.ScopeSpreadsheetsReadonly, google.ScopeContactsReadonly, google.ScopeDriveFile,
+		}})
+		accounts.Add(alice, connectors.Account{ID: driveOnly, App: app, Label: connectors.LabelCompany, Scopes: []string{google.ScopeDriveMetadataReadonly}})
+		accounts.Add(alice, connectors.Account{ID: perFileOnly, App: app, Label: connectors.LabelPersonal, Scopes: []string{google.ScopeDriveFile}})
+	}
+	c, err := google.New(google.Options{Tokens: (&tokens{}).source, BaseURL: srv.URL + "/", Accounts: accounts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := map[string]map[string]any{
+		"drive.search":        nil,
+		"docs.get_text":       {"document_id": docID},
+		"sheets.read_range":   {"spreadsheet_id": sheetID, "range": sheetRange},
+		"contacts.search":     {"query": "bob"},
+		"drive.create_folder": {"name": "x"},
+	}
+	for name, args := range calls {
+		if _, err := run(t, c, call(name, args)); err != nil && !errors.Is(err, google.ErrMissingOperation) {
+			t.Errorf("%s with every scope: %v", name, err)
+		}
+	}
+	before := len(srv.Requests())
+	for name, args := range calls {
+		cl := call(name, args)
+		cl.Account = driveOnly
+		_, err := run(t, c, cl)
+		if name == "drive.search" {
+			if err != nil {
+				t.Errorf("%s with the drive scope: %v", name, err)
+			}
+			continue
+		}
+		if errors.Is(err, google.ErrMissingOperation) {
+			continue // writes are refused before the gate without a ledger operation
+		}
+		wantClass(t, err, google.ClassScopeRequired, 0)
+	}
+	if got := len(srv.Requests()) - before; got != 1 {
+		t.Errorf("requests for the drive-only account = %d, want 1 (declined apps are blocked before any request)", got)
+	}
+	for name, args := range calls {
+		cl := call(name, args)
+		cl.Account = perFileOnly
+		_, err := run(t, c, cl)
+		switch {
+		case name == "contacts.search":
+			wantClass(t, err, google.ClassScopeRequired, 0)
+		case errors.Is(err, google.ErrMissingOperation):
+		case err != nil:
+			t.Errorf("%s with drive.file only: %v (per-file admission)", name, err)
+		}
 	}
 }
