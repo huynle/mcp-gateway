@@ -1,11 +1,16 @@
 package github_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
+	"github.com/huynle/mcp-gateway/internal/connectors/github"
 )
 
 // --- tool metadata ----------------------------------------------------------
@@ -128,4 +133,220 @@ func TestWriteToolsMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- write helpers ------------------------------------------------------------
+
+const opID = "0f1e2d3c-4b5a-4968-8777-66554433aa11"
+
+// marker is the hidden HTML comment every marker-reconciled write embeds.
+const marker = "<!-- mcp-gateway op:" + opID + " -->"
+
+// write builds a write call under the ledger operation opID.
+func write(tool string, args map[string]any) connectors.Call { //nolint:unparam // the other writes' tests use it too
+
+	c := call(tool, args)
+	c.OperationID = opID
+	return c
+}
+
+// jsonBody decodes a recorded request body.
+func jsonBody(t *testing.T, r recorded) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(r.Body), &m); err != nil {
+		t.Fatalf("request body %q: %v", r.Body, err)
+	}
+	return m
+}
+
+// writeErrorCases are the vendor answers every write maps the same way.
+func writeErrorCases() []struct {
+	name    string
+	rt      route
+	class   string
+	status  int
+	unknown bool
+	rateLim bool
+} {
+	return []struct {
+		name    string
+		rt      route
+		class   string
+		status  int
+		unknown bool
+		rateLim bool
+	}{
+		{name: "422 invalid argument", rt: route{status: 422, body: "error_validation.json"}, class: github.ClassInvalidArgument, status: 422},
+		{name: "403 forbidden", rt: route{status: 403, body: "error_forbidden.json"}, class: github.ClassForbidden, status: 403},
+		{name: "404 not found", rt: route{status: 404, body: "error_not_found.json"}, class: github.ClassNotFound, status: 404},
+		{name: "401 reconnect", rt: route{status: 401, body: "error_bad_credentials.json"}, class: github.ClassReconnectRequired, status: 401},
+		{name: "429 rate limited", rt: route{status: 429, body: "error_secondary_rate_limit.json", headers: map[string]string{"Retry-After": "7"}}, rateLim: true},
+		{name: "500 outcome unknown", rt: route{status: 500, body: "error_server.json"}, unknown: true},
+		{name: "502 outcome unknown", rt: route{status: 502, body: "error_server.json"}, unknown: true},
+		{name: "timeout outcome unknown", rt: route{status: 201, body: "created_issue.json", delay: 2 * time.Second}, unknown: true},
+	}
+}
+
+// checkWriteError asserts the outcome of one writeErrorCases entry.
+func checkWriteError(t *testing.T, tc struct {
+	name    string
+	rt      route
+	class   string
+	status  int
+	unknown bool
+	rateLim bool
+}, res connectors.Result, err error) {
+	t.Helper()
+	switch {
+	case tc.unknown:
+		if !errors.Is(err, connectors.ErrOutcomeUnknown) {
+			t.Fatalf("err = %v (%T), want ErrOutcomeUnknown", err, err)
+		}
+		if res.Unavailable || res.Content != nil {
+			t.Errorf("res = %+v, want an empty result with the error", res)
+		}
+	case tc.rateLim:
+		var rl *connectors.RateLimited
+		if !errors.As(err, &rl) || rl.App != "github" || rl.RetryAfter != 7*time.Second {
+			t.Fatalf("err = %v (%T), want *connectors.RateLimited of 7s", err, err)
+		}
+	default:
+		wantClass(t, err, tc.class, tc.status)
+		if errors.Is(err, connectors.ErrOutcomeUnknown) {
+			t.Errorf("a vendor answer of %d is a known outcome, got ErrOutcomeUnknown", tc.status)
+		}
+	}
+	if err != nil && strings.Contains(err.Error(), testToken) {
+		t.Errorf("error message leaks the token: %q", err.Error())
+	}
+}
+
+// --- create_issue -------------------------------------------------------------------
+
+const createIssuePath = "POST /repos/example-org/widgets/issues"
+
+func TestCreateIssue(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{createIssuePath: {status: 201, body: "created_issue.json"}})
+	c, tk := newConnector(t, srv, connectors.Bounds{})
+	res, err := c.Call(context.Background(), write("create_issue", map[string]any{
+		"owner": "example-org", "repo": "widgets", "title": "Add a retry to the uploader",
+		"body": "The uploader gives up on the first timeout.", "labels": []any{"bug"}, "assignees": []any{"hubot"},
+	}))
+	if err != nil {
+		t.Fatalf("create_issue: %v", err)
+	}
+	created, ok := res.Content.(github.CreatedIssue)
+	if !ok || created.Number != 57 || created.ID != 2001 || created.URL != "https://github.example.test/example-org/widgets/issues/57" || created.Repo != "example-org/widgets" {
+		t.Errorf("content = %#v", res.Content)
+	}
+	if res.Empty || res.Partial || res.Unavailable {
+		t.Errorf("markers = %+v", res)
+	}
+	tool := toolNamed(t, c, "create_issue")
+	ids := tool.ResultIDs(res)
+	if ids["number"] != "57" || ids["id"] != "2001" || ids["url"] != created.URL || len(ids) != 3 {
+		t.Errorf("ResultIDs = %v", ids)
+	}
+	if tool.ResultIDs(connectors.Result{}) != nil {
+		t.Error("ResultIDs of an empty result should be nil")
+	}
+	body := jsonBody(t, srv.Last(t, createIssuePath))
+	if body["title"] != "Add a retry to the uploader" {
+		t.Errorf("title = %v", body["title"])
+	}
+	if got := body["body"]; got != "The uploader gives up on the first timeout.\n\n"+marker {
+		t.Errorf("body = %q, want the text followed by the marker", got)
+	}
+	if fmt.Sprint(body["labels"]) != "[bug]" || fmt.Sprint(body["assignees"]) != "[hubot]" {
+		t.Errorf("labels/assignees = %v / %v", body["labels"], body["assignees"])
+	}
+	if len(tk.calls) != 1 || tk.calls[0] != alice+"/"+acct {
+		t.Errorf("token source calls = %v", tk.calls)
+	}
+}
+
+func TestCreateIssueWithoutBodyCarriesOnlyTheMarker(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{createIssuePath: {status: 201, body: "created_issue.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	if _, err := c.Call(context.Background(), write(github.ToolCreateIssue, map[string]any{"owner": "example-org", "repo": "widgets", "title": "t"})); err != nil {
+		t.Fatal(err)
+	}
+	body := jsonBody(t, srv.Last(t, createIssuePath))
+	if body["body"] != marker {
+		t.Errorf("body = %q, want just the marker", body["body"])
+	}
+	if _, ok := body["labels"]; ok {
+		t.Errorf("labels sent when none given: %v", body)
+	}
+}
+
+func TestCreateIssueValidation(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	cases := map[string]map[string]any{
+		"missing title": {"owner": "example-org", "repo": "widgets"},
+		"blank title":   {"owner": "example-org", "repo": "widgets", "title": "  "},
+		"bad owner":     {"owner": "", "repo": "widgets", "title": "t"},
+		"bad labels":    {"owner": "example-org", "repo": "widgets", "title": "t", "labels": "bug"},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.Call(context.Background(), write("create_issue", args))
+			wantClass(t, err, github.ClassInvalidArgument, 0)
+		})
+	}
+	if n := len(srv.Requests()); n != 0 {
+		t.Errorf("%d requests sent for invalid arguments", n)
+	}
+}
+
+func TestWritesRequireAnOperationID(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, tk := newConnector(t, srv, connectors.Bounds{})
+	for _, tool := range []string{"create_issue", "add_issue_comment", "create_pull_request", "create_branch"} {
+		_, err := c.Call(context.Background(), call(tool, map[string]any{"owner": "example-org", "repo": "widgets", "title": "t", "number": 1, "body": "b", "head": "h", "base": "b", "branch": "x"}))
+		if !errors.Is(err, github.ErrMissingOperation) {
+			t.Errorf("%s without an operation id: err = %v, want ErrMissingOperation", tool, err)
+		}
+	}
+	if len(srv.Requests()) != 0 || len(tk.calls) != 0 {
+		t.Errorf("requests = %d, token calls = %v; want none", len(srv.Requests()), tk.calls)
+	}
+}
+
+func TestCreateIssueErrors(t *testing.T) {
+	for _, tc := range writeErrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{createIssuePath: tc.rt})
+			c, err := github.New(github.Options{Tokens: (&tokens{}).source, BaseURL: srv.URL + "/", Timeout: 300 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := c.Call(context.Background(), write("create_issue", map[string]any{"owner": "example-org", "repo": "widgets", "title": "t"}))
+			checkWriteError(t, tc, res, err)
+		})
+	}
+}
+
+func TestCreateIssueConnectionLostIsUnknown(t *testing.T) {
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	srv.Close()
+	res, err := c.Call(context.Background(), write("create_issue", map[string]any{"owner": "example-org", "repo": "widgets", "title": "t"}))
+	if !errors.Is(err, connectors.ErrOutcomeUnknown) || res.Unavailable {
+		t.Fatalf("res = %+v err = %v, want ErrOutcomeUnknown (never Unavailable for a write)", res, err)
+	}
+}
+
+// toolNamed returns the connector's tool by short name.
+func toolNamed(t *testing.T, c *github.Connector, name string) connectors.Tool {
+	t.Helper()
+	for _, tool := range c.Tools() {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool %s not declared", name)
+	return connectors.Tool{}
 }

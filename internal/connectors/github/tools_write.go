@@ -15,6 +15,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	gh "github.com/google/go-github/v90/github"
@@ -181,10 +182,133 @@ func branchResultIDs(res connectors.Result) map[string]string {
 	return map[string]string{"sha": v.SHA, "ref": v.Ref, "url": v.URL}
 }
 
-// --- handlers (filled in by the following increments) ------------------------------
+// --- markers and shared write helpers ------------------------------------------------
 
-func (c *Connector) createIssue(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {
-	return connectors.Result{}, errors.New("github: create_issue not implemented")
+// markerPrefix opens the hidden HTML comment a marker-reconciled write
+// appends to the body it creates; GitHub renders nothing for it.
+const markerPrefix = "<!-- mcp-gateway op:"
+
+// Marker returns the hidden comment for a ledger operation:
+// "<!-- mcp-gateway op:<operation id> -->".
+func Marker(operationID string) string { return markerPrefix + operationID + " -->" }
+
+// withMarker appends the operation's marker to body (on its own
+// paragraph; just the marker when body is empty).
+func withMarker(body, operationID string) string {
+	body = strings.TrimRight(body, " \t\r\n")
+	if body == "" {
+		return Marker(operationID)
+	}
+	return body + "\n\n" + Marker(operationID)
+}
+
+// requiredString reads a non-blank string argument.
+func requiredString(args map[string]any, name string) (string, error) {
+	v, _ := args[name].(string)
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", invalid("%s is required", name)
+	}
+	return v, nil
+}
+
+// optionalString reads a string argument, "" when absent.
+func optionalString(args map[string]any, name string) (string, error) {
+	v, ok := args[name]
+	if !ok || v == nil {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", invalid("%s must be a string", name)
+	}
+	return s, nil
+}
+
+// stringList reads an optional array-of-strings argument; blank entries
+// are dropped and nil is returned when nothing remains.
+func stringList(args map[string]any, name string) ([]string, error) {
+	v, ok := args[name]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	var out []string
+	switch list := v.(type) {
+	case []string:
+		out = append(out, list...)
+	case []any:
+		for _, item := range list {
+			s, ok := item.(string)
+			if !ok {
+				return nil, invalid("%s must be an array of strings", name)
+			}
+			out = append(out, s)
+		}
+	default:
+		return nil, invalid("%s must be an array of strings", name)
+	}
+	kept := out[:0]
+	for _, s := range out {
+		if s = strings.TrimSpace(s); s != "" {
+			kept = append(kept, s)
+		}
+	}
+	if len(kept) == 0 {
+		return nil, nil
+	}
+	return kept, nil
+}
+
+// classifyWrite maps the error of the request that performs a write:
+// an answer from GitHub (4xx, rate limit) is a known outcome and is
+// classified like a read's; anything that leaves the outcome open (5xx,
+// a timeout, a cancelled context, a dropped connection: the request may
+// have been applied) wraps connectors.ErrOutcomeUnknown so the ledger
+// marks the operation unknown and the reconciler checks it.
+func classifyWrite(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return fmt.Errorf("%w: %s: GitHub did not answer in time (%w)", connectors.ErrOutcomeUnknown, action, err)
+	}
+	classified := classify(action, err)
+	var e *Error
+	if errors.As(classified, &e) && e.Class == ClassUnavailable {
+		return fmt.Errorf("%w: %w", connectors.ErrOutcomeUnknown, classified)
+	}
+	return classified
+}
+
+// --- handlers -------------------------------------------------------------------------
+
+func (c *Connector) createIssue(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error) {
+	owner, repo, err := repoArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	title, err := requiredString(call.Args, "title")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	body, err := optionalString(call.Args, "body")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	labels, err := stringList(call.Args, "labels")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	assignees, err := stringList(call.Args, "assignees")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	req := gh.CreateIssueRequest{Title: title, Body: gh.Ptr(withMarker(body, call.OperationID)), Labels: labels, Assignees: assignees}
+	is, _, err := client.Issues.Create(ctx, owner, repo, req)
+	if err := classifyWrite("create issue", err); err != nil {
+		return connectors.Result{}, err
+	}
+	return connectors.Result{Content: toCreatedIssue(is, owner+"/"+repo)}, nil
 }
 
 func (c *Connector) addIssueComment(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {

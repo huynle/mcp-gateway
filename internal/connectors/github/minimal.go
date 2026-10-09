@@ -241,6 +241,10 @@ func toPullRequest(pr *gh.PullRequest, repo string) PullRequest {
 	return out
 }
 
+func toCreatedIssue(is *gh.Issue, repo string) CreatedIssue {
+	return CreatedIssue{Number: is.GetNumber(), ID: is.GetID(), URL: is.GetHTMLURL(), Repo: repo, State: is.GetState()}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 func i64toa(n int64) string { return strconv.FormatInt(n, 10) }
