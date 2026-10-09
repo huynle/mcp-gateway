@@ -767,3 +767,136 @@ func TestCheckPullRequestNotFoundAndCannotTell(t *testing.T) {
 		t.Error("Check without a branch in the identity succeeded")
 	}
 }
+
+// --- create_branch -------------------------------------------------------------------
+
+const (
+	repoPath      = "GET /repos/example-org/widgets"
+	refMainPath   = "GET /repos/example-org/widgets/git/ref/heads/main"
+	refDevPath    = "GET /repos/example-org/widgets/git/ref/heads/develop"
+	refNewPath    = "GET /repos/example-org/widgets/git/ref/heads/feature/retry"
+	createRefPath = "POST /repos/example-org/widgets/git/refs"
+	sha           = "0123456789abcdef0123456789abcdef01234567"
+)
+
+var branchIdentity = map[string]string{"owner": "example-org", "repo": "example-org/widgets", "org": "example-org", "branch": "feature/retry"}
+
+func TestCreateBranch(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{refMainPath: {status: 200, body: "ref_main.json"}, createRefPath: {status: 201, body: "created_ref.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := c.Call(context.Background(), write(github.ToolCreateBranch, map[string]any{"owner": "example-org", "repo": "widgets", "branch": "feature/retry", "from_branch": "main"}))
+	if err != nil {
+		t.Fatalf("create_branch: %v", err)
+	}
+	created, ok := res.Content.(github.CreatedBranch)
+	if !ok || created.Ref != "refs/heads/feature/retry" || created.Branch != "feature/retry" || created.SHA != sha || created.Repo != "example-org/widgets" || created.URL == "" {
+		t.Errorf("content = %#v", res.Content)
+	}
+	ids := toolNamed(t, c, github.ToolCreateBranch).ResultIDs(res)
+	if ids["sha"] != sha || ids["ref"] != "refs/heads/feature/retry" || ids["url"] != created.URL || len(ids) != 3 {
+		t.Errorf("ResultIDs = %v", ids)
+	}
+	if body := jsonBody(t, srv.Last(t, createRefPath)); body["ref"] != "refs/heads/feature/retry" || body["sha"] != sha {
+		t.Errorf("request = %v", body)
+	}
+	if srv.Count(repoPath) != 0 {
+		t.Error("the repository was fetched although from_branch was given")
+	}
+}
+
+func TestCreateBranchFromTheDefaultBranch(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{
+		repoPath: {status: 200, body: "repo.json"}, refDevPath: {status: 200, body: "ref_main.json"}, createRefPath: {status: 201, body: "created_ref.json"},
+	})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	if _, err := c.Call(context.Background(), write(github.ToolCreateBranch, map[string]any{"owner": "example-org", "repo": "widgets", "branch": "feature/retry"})); err != nil {
+		t.Fatalf("create_branch: %v", err)
+	}
+	if srv.Count(refDevPath) != 1 || srv.Count(createRefPath) != 1 {
+		t.Errorf("requests: develop ref %d, create %d; want 1 each", srv.Count(refDevPath), srv.Count(createRefPath))
+	}
+}
+
+func TestCreateBranchFailuresBeforeTheWriteAreKnown(t *testing.T) {
+	cases := map[string]struct {
+		routes map[string]route
+		class  string
+		status int
+	}{
+		"source branch missing": {routes: map[string]route{refMainPath: {status: 404, body: "error_not_found.json"}}, class: github.ClassNotFound, status: 404},
+		"source lookup 500":     {routes: map[string]route{refMainPath: {status: 500, body: "error_server.json"}}, class: github.ClassUnavailable, status: 500},
+		"repository forbidden":  {routes: map[string]route{repoPath: {status: 403, body: "error_forbidden.json"}}, class: github.ClassForbidden, status: 403},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, tc.routes)
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			args := map[string]any{"owner": "example-org", "repo": "widgets", "branch": "feature/retry", "from_branch": "main"}
+			if name == "repository forbidden" {
+				delete(args, "from_branch")
+			}
+			res, err := c.Call(context.Background(), write(github.ToolCreateBranch, args))
+			wantClass(t, err, tc.class, tc.status)
+			if errors.Is(err, connectors.ErrOutcomeUnknown) || res.Unavailable {
+				t.Errorf("a failure before the write is a known outcome: err = %v res = %+v", err, res)
+			}
+			if srv.Count(createRefPath) != 0 {
+				t.Error("the ref was created after a failed lookup")
+			}
+		})
+	}
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	_, err := c.Call(context.Background(), write(github.ToolCreateBranch, map[string]any{"owner": "example-org", "repo": "widgets", "branch": " "}))
+	wantClass(t, err, github.ClassInvalidArgument, 0)
+}
+
+func TestCreateBranchErrors(t *testing.T) {
+	for _, tc := range writeErrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{refMainPath: {status: 200, body: "ref_main.json"}, createRefPath: tc.rt})
+			c, err := github.New(github.Options{Tokens: (&tokens{}).source, BaseURL: srv.URL + "/", Timeout: 300 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := c.Call(context.Background(), write(github.ToolCreateBranch, map[string]any{"owner": "example-org", "repo": "widgets", "branch": "feature/retry", "from_branch": "main"}))
+			checkWriteError(t, tc, res, err)
+		})
+	}
+}
+
+func TestCheckBranch(t *testing.T) {
+	cases := map[string]struct {
+		rt      route
+		found   string
+		missing bool
+	}{
+		"exists":       {rt: route{status: 200, body: "created_ref.json"}, found: sha},
+		"missing":      {rt: route{status: 404, body: "error_not_found.json"}, missing: true},
+		"unavailable":  {rt: route{status: 500, body: "error_server.json"}},
+		"forbidden":    {rt: route{status: 403, body: "error_forbidden.json"}},
+		"rate limited": {rt: route{status: 429, body: "error_secondary_rate_limit.json", headers: map[string]string{"Retry-After": "3"}}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{refNewPath: tc.rt})
+			c, _ := newConnector(t, srv, connectors.Bounds{})
+			res, err := toolNamed(t, c, github.ToolCreateBranch).Reconcile.Check(context.Background(), reconcile(github.ToolCreateBranch, branchIdentity))
+			switch {
+			case tc.found != "":
+				wantFound(t, res, err, tc.found)
+			case tc.missing:
+				wantNotFound(t, res, err)
+			default:
+				if err == nil {
+					t.Fatalf("Check = %+v, want an error (cannot tell yet)", res)
+				}
+			}
+		})
+	}
+	srv := newAPIServer(t, nil)
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	if _, err := toolNamed(t, c, github.ToolCreateBranch).Reconcile.Check(context.Background(), reconcile(github.ToolCreateBranch, issueIdentity)); err == nil {
+		t.Error("Check without a branch in the identity succeeded")
+	}
+}

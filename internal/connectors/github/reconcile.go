@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -234,6 +235,32 @@ func (c *Connector) checkPullRequest(ctx context.Context, in connectors.Reconcil
 	return connectors.ReconcileResult{}, fmt.Errorf("github: reconcile: more than %d pages of pull requests from %s in %s/%s; cannot tell yet", MaxReconcilePages, head, tg.owner, tg.repo)
 }
 
-func (c *Connector) checkBranch(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error) {
-	return connectors.ReconcileResult{}, errors.New("github: create_branch check not implemented")
+// --- create_branch ----------------------------------------------------------------
+
+// checkBranch is create_branch's stable-id reconciliation: the branch
+// name is known before the call (the resource identity stores it with
+// its case), so the ref is looked up. Present is found with the commit
+// sha; 404 is not_found; anything else is "cannot tell yet".
+func (c *Connector) checkBranch(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	tg, err := c.target(ctx, in)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	branch := in.ResourceIdentity["branch"]
+	if branch == "" {
+		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no branch", ErrNotReconcilable)
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	ref, _, err := tg.client.Git.GetRef(ctx, tg.owner, tg.repo, "heads/"+branch)
+	if err := classify("reconcile: get branch", err); err != nil {
+		if statusOf(err) == http.StatusNotFound {
+			return notFound, nil
+		}
+		return connectors.ReconcileResult{}, err
+	}
+	if sha := ref.GetObject().GetSHA(); sha != "" {
+		return found(sha), nil
+	}
+	return connectors.ReconcileResult{}, errors.New("github: reconcile: branch answer carried no commit sha; cannot tell yet")
 }

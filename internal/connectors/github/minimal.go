@@ -256,6 +256,10 @@ func toCreatedPullRequest(pr *gh.PullRequest, repo string) CreatedPullRequest {
 	}
 }
 
+func toCreatedBranch(ref *gh.Reference, repo, branch string) CreatedBranch {
+	return CreatedBranch{Ref: ref.GetRef(), Branch: branch, SHA: ref.GetObject().GetSHA(), URL: ref.GetURL(), Repo: repo}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 func i64toa(n int64) string { return strconv.FormatInt(n, 10) }

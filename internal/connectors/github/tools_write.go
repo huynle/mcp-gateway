@@ -374,6 +374,40 @@ func (c *Connector) createPullRequest(ctx context.Context, client *gh.Client, ca
 	return connectors.Result{Content: toCreatedPullRequest(pr, owner+"/"+repo)}, nil
 }
 
-func (c *Connector) createBranch(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {
-	return connectors.Result{}, errors.New("github: create_branch not implemented")
+// createBranch resolves the source branch (the repository's default
+// branch unless from_branch is given), reads its commit and creates the
+// ref. The lookups before the write are reads: their failures are known
+// outcomes (classify); only the ref creation itself can be unknown
+// (classifyWrite).
+func (c *Connector) createBranch(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error) {
+	owner, repo, err := repoArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	branch, err := requiredString(call.Args, "branch")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	from, err := optionalString(call.Args, "from_branch")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	if from = strings.TrimSpace(from); from == "" {
+		repository, _, err := client.Repositories.Get(ctx, owner, repo)
+		if err := classify("get repository", err); err != nil {
+			return connectors.Result{}, err
+		}
+		if from = repository.GetDefaultBranch(); from == "" {
+			return connectors.Result{}, &Error{Class: ClassVendorError, Message: "get repository: GitHub reported no default branch; pass from_branch"}
+		}
+	}
+	source, _, err := client.Git.GetRef(ctx, owner, repo, "heads/"+from)
+	if err := classify("get source branch", err); err != nil {
+		return connectors.Result{}, err
+	}
+	created, _, err := client.Git.CreateRef(ctx, owner, repo, gh.CreateRef{Ref: "refs/heads/" + branch, SHA: source.GetObject().GetSHA()})
+	if err := classifyWrite("create branch", err); err != nil {
+		return connectors.Result{}, err
+	}
+	return connectors.Result{Content: toCreatedBranch(created, owner+"/"+repo, branch)}, nil
 }
