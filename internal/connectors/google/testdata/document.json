@@ -1,0 +1,58 @@
+{
+  "documentId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+  "title": "Gateway notes",
+  "revisionId": "ALBJ4LtExample",
+  "body": {
+    "content": [
+      {"endIndex": 1, "sectionBreak": {"sectionStyle": {"columnSeparatorStyle": "NONE"}}},
+      {"startIndex": 1, "endIndex": 16, "paragraph": {
+        "elements": [{"startIndex": 1, "endIndex": 16, "textRun": {"content": "Gateway notes\n", "textStyle": {"bold": true}}}],
+        "paragraphStyle": {"namedStyleType": "HEADING_1"}
+      }},
+      {"startIndex": 16, "endIndex": 46, "paragraph": {
+        "elements": [
+          {"startIndex": 16, "endIndex": 30, "textRun": {"content": "Reviewed with ", "textStyle": {}}},
+          {"startIndex": 30, "endIndex": 31, "person": {"personId": "p1", "personProperties": {"name": "Bob Example", "email": "bob@example.test"}}},
+          {"startIndex": 31, "endIndex": 36, "textRun": {"content": " and ", "textStyle": {}}},
+          {"startIndex": 36, "endIndex": 37, "richLink": {"richLinkId": "r1", "richLinkProperties": {"title": "Design doc", "uri": "https://docs.google.com/document/d/other/edit", "mimeType": "application/vnd.google-apps.document"}}},
+          {"startIndex": 37, "endIndex": 38, "footnoteReference": {"footnoteId": "f1", "footnoteNumber": "1"}},
+          {"startIndex": 38, "endIndex": 46, "textRun": {"content": " today.\n", "textStyle": {}}}
+        ]
+      }},
+      {"startIndex": 46, "endIndex": 56, "paragraph": {
+        "elements": [{"startIndex": 46, "endIndex": 56, "textRun": {"content": "First item\n", "textStyle": {}}}],
+        "bullet": {"listId": "kix.list1", "textStyle": {}}
+      }},
+      {"startIndex": 56, "endIndex": 68, "paragraph": {
+        "elements": [{"startIndex": 56, "endIndex": 68, "textRun": {"content": "Second item\n", "textStyle": {}}}],
+        "bullet": {"listId": "kix.list1", "nestingLevel": 1, "textStyle": {}}
+      }},
+      {"startIndex": 68, "endIndex": 100, "table": {
+        "rows": 2, "columns": 2,
+        "tableRows": [
+          {"tableCells": [
+            {"content": [{"paragraph": {"elements": [{"textRun": {"content": "Name\n"}}]}}]},
+            {"content": [{"paragraph": {"elements": [{"textRun": {"content": "Role\n"}}]}}]}
+          ]},
+          {"tableCells": [
+            {"content": [{"paragraph": {"elements": [{"textRun": {"content": "Alice\n"}}]}}]},
+            {"content": [
+              {"paragraph": {"elements": [{"textRun": {"content": "Owner\n"}}]}},
+              {"paragraph": {"elements": [{"textRun": {"content": "(acting)\n"}}]}}
+            ]}
+          ]}
+        ]
+      }},
+      {"startIndex": 100, "endIndex": 101, "paragraph": {"elements": [{"startIndex": 100, "endIndex": 101, "textRun": {"content": "\n", "textStyle": {}}}]}},
+      {"startIndex": 101, "endIndex": 120, "tableOfContents": {"content": [
+        {"paragraph": {"elements": [{"textRun": {"content": "Contents entry\n"}}]}}
+      ]}},
+      {"startIndex": 120, "endIndex": 128, "paragraph": {
+        "elements": [
+          {"startIndex": 120, "endIndex": 127, "textRun": {"content": "The end", "textStyle": {}}},
+          {"startIndex": 127, "endIndex": 128, "textRun": {"content": "\n", "textStyle": {}}}
+        ]
+      }}
+    ]
+  }
+}
