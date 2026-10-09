@@ -57,7 +57,10 @@ func openTestStore(t *testing.T) *store.Store {
 	}
 	u.Path = "/" + testDB
 	superURL := u.String()
-	if err := migrations.Up(ctx, superURL); err != nil {
+	// Migration 00001 ALTERs the cluster-global roles, so a fresh database
+	// can lose the race against another package's bootstrap (quirk
+	// aihn7hjb); goose rolls the migration back and a retry reruns it.
+	if err := retryConcurrentUpdate(func() error { return migrations.Up(ctx, superURL) }); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	super, err := pgx.Connect(ctx, superURL)
@@ -70,13 +73,10 @@ func openTestStore(t *testing.T) *store.Store {
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + jobsPass + "'",
 		"TRUNCATE job_locks",
 	} {
-		var err error
-		for attempt := 0; attempt < 20; attempt++ {
-			if _, err = super.Exec(ctx, stmt); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		err := retryConcurrentUpdate(func() error {
+			_, err := super.Exec(ctx, stmt)
+			return err
+		})
 		if err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
@@ -90,6 +90,19 @@ func openTestStore(t *testing.T) *store.Store {
 	}
 	t.Cleanup(st.Close)
 	return st
+}
+
+// retryConcurrentUpdate runs fn, retrying up to 20 times at 100 ms when
+// PostgreSQL reports "tuple concurrently updated" (SQLSTATE XX000).
+func retryConcurrentUpdate(fn func() error) error {
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if err = fn(); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
 }
 
 type sharedJob struct {
@@ -123,6 +136,16 @@ func (j *sharedJob) Run(ctx context.Context) error {
 	return nil
 }
 
+// runnerLease is the lease the two runners use. The holder keeps the lease
+// for Interval + Lease after each run and re-acquires it on its next
+// attempt one Interval later, so the lease can only move to the other
+// replica when the holder stalls for longer than Lease. The shared test
+// cluster stalls for seconds under the full suite with the race detector
+// (quirk aihn7hjb), so the margin is far above any plausible round trip;
+// the heartbeat (Lease/3) never fires during the 60 ms run, which is fine:
+// the lease primitives are checked separately below with short leases.
+const runnerLease = 30 * time.Second
+
 // TestIntegrationTwoRunnersOneHolder: two runners over the real job_locks
 // table never run the job at the same time, the job stays on the replica
 // that holds the lease, the lease row names that holder and survives the
@@ -137,8 +160,8 @@ func TestIntegrationTwoRunnersOneHolder(t *testing.T) {
 	var once sync.Once
 	j1 := &sharedJob{runs: &runs, active: &active, maxAct: &maxAct, enough: enough, once: &once}
 	j2 := &sharedJob{runs: &runs, active: &active, maxAct: &maxAct, enough: enough, once: &once}
-	r1 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-1", Lease: 2 * time.Second, Log: slog.New(slog.DiscardHandler)})
-	r2 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-2", Lease: 2 * time.Second, Log: slog.New(slog.DiscardHandler)})
+	r1 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-1", Lease: runnerLease, Log: slog.New(slog.DiscardHandler)})
+	r2 := jobs.NewRunner(locker, jobs.Options{Holder: "replica-2", Lease: runnerLease, Log: slog.New(slog.DiscardHandler)})
 	if err := r1.Register(j1); err != nil {
 		t.Fatal(err)
 	}

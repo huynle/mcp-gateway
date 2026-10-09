@@ -40,20 +40,27 @@ type testEnv struct {
 }
 
 var (
-	envOnce sync.Once
-	envVal  *testEnv
-	envErr  error
+	envMu  sync.Mutex
+	envVal *testEnv
 )
 
+// setup builds the package's test environment once. A failed bootstrap is
+// not sticky: the next test tries again, so a lost cluster-global race
+// (quirk aihn7hjb) costs one test, not the whole package.
 func setup(t *testing.T) *testEnv {
 	t.Helper()
 	raw := os.Getenv("GATEWAY_TEST_DATABASE_URL")
 	if raw == "" {
 		t.Skip("GATEWAY_TEST_DATABASE_URL not set; skipping integration test")
 	}
-	envOnce.Do(func() { envVal, envErr = newTestEnv(context.Background(), raw) })
-	if envErr != nil {
-		t.Fatalf("test environment: %v", envErr)
+	envMu.Lock()
+	defer envMu.Unlock()
+	if envVal == nil {
+		env, err := newTestEnv(context.Background(), raw)
+		if err != nil {
+			t.Fatalf("test environment: %v", err)
+		}
+		envVal = env
 	}
 	return envVal
 }
@@ -74,7 +81,7 @@ func newTestEnv(ctx context.Context, superURL string) (*testEnv, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := migrations.Up(ctx, dbURL); err != nil {
+	if err := migrateUpRetrying(ctx, dbURL); err != nil {
 		return nil, err
 	}
 	super, err := pgxpool.New(ctx, dbURL)
@@ -360,9 +367,26 @@ func TestIntegrationRecordRejectsBadIDs(t *testing.T) {
 // integration bootstrap ALTERs the same cluster-global roles and `go test`
 // runs packages in parallel.
 func execRetryingConcurrentUpdate(ctx context.Context, conn *pgxpool.Pool, stmt string) error {
+	return retryConcurrentUpdate(func() error {
+		_, err := conn.Exec(ctx, stmt)
+		return err
+	})
+}
+
+// migrateUpRetrying runs the migrations, retrying when migration 00001's
+// ALTER ROLE on the cluster-global roles loses the race against another
+// package's bootstrap (quirk aihn7hjb: goose rolls the migration back, so a
+// retry simply runs it again).
+func migrateUpRetrying(ctx context.Context, dbURL string) error {
+	return retryConcurrentUpdate(func() error { return migrations.Up(ctx, dbURL) })
+}
+
+// retryConcurrentUpdate runs fn, retrying up to 20 times at 100 ms when
+// PostgreSQL reports "tuple concurrently updated" (SQLSTATE XX000).
+func retryConcurrentUpdate(fn func() error) error {
 	var err error
 	for attempt := 0; attempt < 20; attempt++ {
-		if _, err = conn.Exec(ctx, stmt); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
+		if err = fn(); err == nil || !strings.Contains(err.Error(), "concurrently updated") {
 			return err
 		}
 		time.Sleep(100 * time.Millisecond)

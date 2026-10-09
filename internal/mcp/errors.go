@@ -8,24 +8,33 @@ import (
 // JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
 // and CodeInvalidParams reuse the standard "invalid params" code (the SDK
 // does the same for unknown tools); the others are in the server-defined
-// range.
+// range (-32000..-32099), in the gateway's own block -32029..-32034.
+//
+// The block avoids the codes the official Go SDK reserves for its own
+// signalling (-32001..-32005: ErrUnknown, CodeResourceNotFound,
+// ErrClientClosing, ErrServerClosing, ErrRejected; -32020..-32022 and
+// -32042 in the mcp package): the SDK's WireError.Is compares by code
+// only, so an answer with one of those codes is mistaken for the SDK's
+// condition (-32003 and -32004 came back to the client as "connection
+// closed" with the *jsonrpc.Error dropped from the chain). errors_test.go
+// guards the block.
 const (
-	CodeInvalidParams   int64 = -32602
-	CodeToolNotFound    int64 = -32602
-	CodeUnauthenticated int64 = -32001
-	CodeDenied          int64 = -32003
+	CodeInvalidParams int64 = -32602
+	CodeToolNotFound  int64 = -32602
+	CodeRateLimited   int64 = -32029
+	CodeDenied        int64 = -32030
 	// CodeNoAccount: the user has no connected account for the tool's app;
 	// changing the arguments cannot fix it, connecting one can.
-	CodeNoAccount int64 = -32004
+	CodeNoAccount int64 = -32031
 	// CodeApprovalRequired: policy says confirm and the call has no
 	// granted approval yet (decision 490o45d0; the approvals task adds
 	// the approval id and the retry contract to this error).
-	CodeApprovalRequired int64 = -32005
+	CodeApprovalRequired int64 = -32032
 	// CodePendingVerification: an earlier attempt of the same write is
 	// still in progress or awaiting reconciliation, so the gateway will
 	// not run it again yet (decision dovthftx; the ledger stage).
-	CodePendingVerification int64 = -32006
-	CodeRateLimited         int64 = -32029
+	CodePendingVerification int64 = -32033
+	CodeUnauthenticated     int64 = -32034
 	// CodeInternal is the JSON-RPC internal error, used when a gateway
 	// dependency (the account source) failed; the message never carries
 	// the cause.

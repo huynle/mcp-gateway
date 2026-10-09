@@ -72,6 +72,30 @@ services:
       timeout: 3s
       retries: 30
 
+  # Dev key file for the envelope-encryption key provider (docs/crypto.md):
+  # generated once into the gateway-keys volume (a fresh random key, mode
+  # 0600, owned by the gateway's non-root user) and kept until
+  # `make compose-down` drops the volumes together with the database it
+  # encrypts for. With it the gateway mounts approvals and app connections,
+  # so the fake connector's confirmed and ledgered writes work end to end.
+  keys:
+    image: alpine:3.21
+    command:
+      - sh
+      - -ec
+      - |
+        f=/keys/dev-keys.json
+        if [ ! -s "$$f" ]; then
+          umask 077
+          k=$$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+          printf '{"current":"compose-1","keys":[{"id":"compose-1","key":"%s"}]}\n' "$$k" > "$$f"
+        fi
+        chown 65532:65532 "$$f"
+        chmod 0600 "$$f"
+    volumes:
+      - gateway-keys:/keys
+    restart: "no"
+
   gateway:
     build:
       context: .
@@ -98,6 +122,11 @@ services:
       GATEWAY_OIDC_DEX_CLIENT_SECRET: "gateway-dev-secret"
       GATEWAY_OIDC_DEX_ALLOWED_DOMAINS: "example.com"
       GATEWAY_BOOTSTRAP_ADMINS: "http://localhost:15556/dex|CiQwOGE4Njg0Yi1kYjg4LTRiNzMtOTBhOS0zY2QxNjYxZjU0NjYSBWxvY2Fs"
+      # Dev key file from the keys service (see above). Never for production.
+      GATEWAY_KEY_PROVIDER: "file"
+      GATEWAY_KEY_FILE: "/keys/dev-keys.json"
+    volumes:
+      - gateway-keys:/keys:ro
     ports:
       - "18080:18080"
     # The OIDC issuer must be one URL for both the browser (host) and the
@@ -112,6 +141,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      keys:
+        condition: service_completed_successfully
       dex:
         condition: service_healthy
     # Match Kubernetes' terminationGracePeriodSeconds: must exceed GATEWAY_DRAIN_TIMEOUT.
@@ -119,3 +150,4 @@ services:
 
 volumes:
   postgres-data:
+  gateway-keys:
