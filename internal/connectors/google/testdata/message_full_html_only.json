@@ -1,0 +1,35 @@
+{
+  "id": "18f1a2b3c4d5e6f9",
+  "threadId": "18f1a2b3c4d5e6f9",
+  "labelIds": [
+    "INBOX"
+  ],
+  "snippet": "Newsletter",
+  "payload": {
+    "mimeType": "text/html",
+    "headers": [
+      {
+        "name": "From",
+        "value": "news@example.test"
+      },
+      {
+        "name": "To",
+        "value": "alice@example.test"
+      },
+      {
+        "name": "Subject",
+        "value": "Newsletter"
+      },
+      {
+        "name": "Date",
+        "value": "Mon, 05 Oct 2026 08:00:00 +0000"
+      }
+    ],
+    "body": {
+      "size": 84,
+      "data": "PGRpdj5IaSBBbGljZSw8YnI-PGJyPlRoZSBnYXRld2F5IHJldmlldyBpcyBvbiA8Yj5GcmlkYXk8L2I-IGF0IDEwLjxicj48YnI-Qm9iPC9kaXY-"
+    }
+  },
+  "sizeEstimate": 3000,
+  "internalDate": "1791800000000"
+}

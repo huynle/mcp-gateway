@@ -1,0 +1,26 @@
+{
+  "labels": [
+    {
+      "id": "INBOX",
+      "name": "INBOX",
+      "type": "system"
+    },
+    {
+      "id": "SENT",
+      "name": "SENT",
+      "type": "system"
+    },
+    {
+      "id": "DRAFT",
+      "name": "DRAFT",
+      "type": "system"
+    },
+    {
+      "id": "Label_12",
+      "name": "Projects/Gateway",
+      "type": "user",
+      "messageListVisibility": "show",
+      "labelListVisibility": "labelShow"
+    }
+  ]
+}
