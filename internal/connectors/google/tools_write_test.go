@@ -95,13 +95,14 @@ func TestWritesDeclareReconciliationAndNeedAnOperationID(t *testing.T) {
 		"tasks.create":          connectors.ReconcileMarker,
 		"gmail.send":            connectors.ReconcileMarker,
 		"gmail.create_draft":    connectors.ReconcileMarker,
+		"drive.create_folder":   connectors.ReconcileMarker,
 	}
 	for full, kind := range want {
 		tool := toolOf(t, c, full)
 		if tool.Kind != connectors.KindWrite || tool.Reconcile.Kind != kind || tool.Reconcile.Check == nil || tool.ResultIDs == nil {
 			t.Errorf("%s: kind %s reconcile %s check %v resultIDs %v", full, tool.Kind, tool.Reconcile.Kind, tool.Reconcile.Check != nil, tool.ResultIDs != nil)
 		}
-		if _, err := run(t, c, call(full, map[string]any{"summary": "x", "title": "x", "start": "2026-10-10", "end": "2026-10-11", "to": "a@b.test", "subject": "s", "body": "b"})); !errors.Is(err, google.ErrMissingOperation) {
+		if _, err := run(t, c, call(full, map[string]any{"summary": "x", "title": "x", "name": "x", "start": "2026-10-10", "end": "2026-10-11", "to": "a@b.test", "subject": "s", "body": "b"})); !errors.Is(err, google.ErrMissingOperation) {
 			t.Errorf("%s without an operation id: err = %v, want ErrMissingOperation", full, err)
 		}
 	}

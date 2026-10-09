@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/tasks/v1"
@@ -48,9 +49,11 @@ type Options struct {
 	HTTPClient *http.Client
 	// BaseURL replaces the root of every Google API endpoint (with a
 	// trailing slash): the Calendar API is reached at
-	// BaseURL + "calendar/v3/", Tasks and Gmail at BaseURL + "tasks/v1/"
-	// and BaseURL + "gmail/v1/". Empty means Google's own hosts; tests
-	// point it at an httptest server.
+	// BaseURL + "calendar/v3/", Drive at BaseURL + "drive/v3/", Tasks,
+	// Gmail, Docs, Sheets and People at BaseURL + "tasks/v1/",
+	// "gmail/v1/", "v1/documents", "v4/spreadsheets" and "v1/people".
+	// Empty means Google's own hosts; tests point it at an httptest
+	// server.
 	BaseURL string
 	// Bounds caps page size (at most 100) and result size for every
 	// tool; zero fields take the package defaults.
@@ -59,10 +62,10 @@ type Options struct {
 	Timeout time.Duration
 }
 
-// Connector holds what the three apps share: the token source, the
-// transport, the bounds and the timeout. It is not a connectors.Connector
-// itself; Apps returns the three that are. Safe for concurrent use: it
-// holds no per-call state and builds one API client per call.
+// Connector holds what the apps share: the token source, the transport,
+// the bounds and the timeout. It is not a connectors.Connector itself;
+// Apps returns the ones that are. Safe for concurrent use: it holds no
+// per-call state and builds one API client per call.
 type Connector struct {
 	tokens    TokenSourceFunc
 	accounts  connectors.AccountSource
@@ -72,6 +75,7 @@ type Connector struct {
 	timeout   time.Duration
 
 	calendar, tasks, gmail *App
+	drive                  *App
 }
 
 // New builds the Google connector.
@@ -112,13 +116,18 @@ func New(opts Options) (*Connector, error) {
 	c.calendar = c.newApp(AppCalendar, c.calendarReadTools(), c.calendarWriteTools(), c.calendarReadHandlers(), c.calendarWriteHandlers())
 	c.tasks = c.newApp(AppTasks, c.tasksReadTools(), c.tasksWriteTools(), c.tasksReadHandlers(), c.tasksWriteHandlers())
 	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
+	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
 	return c, nil
 }
 
-// Apps returns the three connector apps in registration order: calendar,
-// tasks, gmail. Each is registered with connectors.RegisterConnector and
-// mapped to Vendor with connections.Service.MapApp.
-func (c *Connector) Apps() []*App { return []*App{c.calendar, c.tasks, c.gmail} }
+// Apps returns the connector apps in registration order (Apps):
+// calendar, tasks, gmail, drive. Each is registered with
+// connectors.RegisterConnector and mapped to Vendor with
+// connections.Service.MapApp.
+func (c *Connector) Apps() []*App { return []*App{c.calendar, c.tasks, c.gmail, c.drive} }
+
+// Drive returns the "drive" app.
+func (c *Connector) Drive() *App { return c.drive }
 
 // Calendar returns the "calendar" app.
 func (c *Connector) Calendar() *App { return c.calendar }
@@ -132,8 +141,8 @@ func (c *Connector) Gmail() *App { return c.gmail }
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error)
 
-// App is one of the three connector apps (connectors.Connector). Tools
-// are declared with nil handlers: Call dispatches by name.
+// App is one of the connector apps (connectors.Connector). Tools are
+// declared with nil handlers: Call dispatches by name.
 type App struct {
 	c      *Connector
 	name   string
@@ -307,6 +316,18 @@ func (cl *client) gmail(ctx context.Context) (*gmail.Service, error) {
 	svc, err := gmail.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "gmail client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// drive builds the Drive API service.
+func (cl *client) drive(ctx context.Context) (*drive.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := drive.NewService(ctx, cl.options("drive/v3/")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "drive client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }
