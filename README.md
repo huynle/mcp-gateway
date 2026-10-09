@@ -8,7 +8,7 @@ Foundation, data layer and sign-in: Go module, configuration, structured logging
 
 ## Run locally
 
-Requirements: Go 1.25, Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
+Requirements: Go 1.26 (the `toolchain` directive in `go.mod` pins the patch release; govulncheck is clean only on a supported Go), Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
 
 ```bash
 make build test lint          # bin/gateway + bin/migrate, unit tests (race detector), lint
@@ -43,7 +43,7 @@ make test-e2e                 # the safety-core end-to-end gate (test/e2e), see 
 
 ## Database
 
-The schema is one linear set of goose migrations embedded in the binaries (`internal/store/migrations`). `cmd/migrate` (`make migrate`, `make migrate-down`, `make migrate-status`, or `/migrate up` in the container image) runs them as the database owner before a rollout; the gateway never migrates itself and refuses to start, and reports not ready, when the database's version differs from `store.ExpectedSchemaVersion`.
+The schema is one linear set of goose migrations embedded in the binaries (`internal/store/migrations`). `cmd/migrate` (`make migrate`, `make migrate-down`, `make migrate-status`, or `/migrate up` in the container image) runs them as the database owner before a rollout; the gateway never migrates itself and refuses to start when the database's version differs from `store.ExpectedSchemaVersion`; once running it reports not ready only when the database is *behind* that version (a newer schema, rolled out ahead of the next release's pods, keeps it ready; see [`docs/deploy.md`](docs/deploy.md)).
 
 Three roles, three connection strings:
 
@@ -301,7 +301,7 @@ Each `internal/*` package has a `doc.go` stating what it owns and which design s
 - Lookups that precede user resolution (identity by issuer+subject, session by hash, just-in-time user creation, admin actions) run through `store.WithJobs`; self-service reads run through `store.WithUser`. Package-level helpers for these live in `internal/store/repo_identity_lookup.go`.
 - The identity, audit, tokens, mcp, policy, connections, approvals, ledger, jobs and e2e tests use their own databases (`gateway_identity_test`, `gateway_audit`, `gateway_tokens_test`, `gateway_mcp_test`, `gateway_policy_test`, `gateway_connections_test`, `gateway_approvals_test`, `gateway_ledger_test`, `gateway_jobs_test`, `gateway_e2e_test`, created on demand) so they never race the store tests' `TRUNCATE`; every bootstrap retries `ALTER ROLE` **and** `migrations.Up` on `tuple concurrently updated` (migration 00001 alters the cluster-global roles), since packages may run in parallel against the same cluster. `make test-integration` still runs packages one at a time (`-p 1`).
 - Gateway JSON-RPC error codes live in `-32029..-32034` (`internal/mcp/errors.go`); `-32001..-32005`, `-32020..-32022` and `-32042` are the go-sdk's own and must never be reused: the SDK client turns `-32003`/`-32004` into "connection closed" (`internal/mcp/errors_test.go` guards this; decision `xi9gyo82`).
-- Dependency pins: zitadel/oidc v3.51.8 (v3.51.9+ requires Go 1.26, like goose v3.28.0 and prometheus/client_golang v1.25.0); modelcontextprotocol/go-sdk v1.8.0 (declares `go 1.25.0`; check the directive before bumping); cedar-policy/cedar-go v1.8.0 (declares `go 1.23.0`); golang.org/x/oauth2 v0.36.0 (v0.37.0 requires Go 1.26); slack-go/slack v0.29.0 (v0.30.0+ requires Go 1.26); htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
+- Dependency pins: the module builds with Go 1.26 (`go 1.26.0` + `toolchain` in `go.mod`, `golang:1.26-alpine` in the Dockerfile) because Go 1.25 is out of support and `govulncheck` flags its standard library; zitadel/oidc v3.51.8, goose v3.27.x, prometheus/client_golang v1.24.x, golang.org/x/oauth2 v0.36.0 and slack-go/slack v0.29.0 are pinned as they were and can now be bumped when needed; modelcontextprotocol/go-sdk v1.8.0; cedar-policy/cedar-go v1.8.0; htmx v2.0.8 is vendored under `internal/portal/static` (see THIRD_PARTY_NOTICES.md).
 - Shutdown: on SIGTERM the server stops accepting connections, waits up to `GATEWAY_DRAIN_TIMEOUT` (default 25s) for in-flight requests, then cancels their contexts and closes them. Keep the orchestrator's termination grace period above the drain timeout.
 - Third-party code: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before adapting anything.
 - CI (`.github/workflows/ci.yml`) runs gofmt, golangci-lint, unit tests, integration tests and the end-to-end gate against PostgreSQL 16 service containers, a container image smoke test, and the Helm chart checks (`make helm-lint`, `make test-helm`, plus a non-blocking kind smoke; see [`docs/deploy.md`](docs/deploy.md)).

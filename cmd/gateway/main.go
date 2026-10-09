@@ -219,7 +219,7 @@ func openStore(ctx context.Context, cfg config.Config, readiness *observability.
 		return nil, fmt.Errorf("schema check: %w", err)
 	}
 	readiness.Register("database", st.Ping)
-	readiness.Register("schema", st.SchemaVersionMatches)
+	readiness.Register("schema", st.SchemaVersionReady)
 	log.Info("database ready", "schema_version", store.ExpectedSchemaVersion)
 	return st, nil
 }
