@@ -20,9 +20,13 @@
 //     there are several and treats any other account as unknown. The
 //     ratelimit stage is a per-user and per-app token bucket
 //     (TokenBucketLimiter) that also turns a connector's RateLimited into
-//     a retry_after for the harness and pauses the app. Later modules add
-//     policy, confirm and ledger with Pipeline.Insert(Before|After, anchor,
-//     stage) and never touch the transport.
+//     a retry_after for the harness and pauses the app. The policy stage
+//     (PolicyStage, with the ConfirmHandler hook) follows account; the
+//     ledger stage (LedgerStage, pipeline_ledger.go) is inserted before
+//     ratelimit by cmd/gateway and records every write before it runs,
+//     replays duplicates and answers CodePendingVerification. Later
+//     modules add stages with Pipeline.Insert(Before|After, anchor, stage)
+//     and never touch the transport.
 //
 // Hidden and unknown tools produce the same ToolError and therefore the
 // same JSON-RPC error bytes. A ToolError is a protocol error (with
