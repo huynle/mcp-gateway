@@ -60,24 +60,17 @@ func (r oauthRepo) GetClient(ctx context.Context, id string) (*OAuthClient, erro
 }
 
 func (r oauthRepo) CreateRefreshToken(ctx context.Context, t *OAuthRefreshToken) error {
-	err := r.q.QueryRow(ctx, `
-		INSERT INTO oauth_refresh_tokens (user_id, client_id, token_hash, scope, expires_at, rotated_from)
-		VALUES ($1, $2, $3, coalesce($4::jsonb, '{}'::jsonb), $5, $6)
-		RETURNING id, scope, issued_at`,
-		t.UserID, t.ClientID, t.TokenHash, t.Scope, t.ExpiresAt, t.RotatedFrom,
-	).Scan(&t.ID, &t.Scope, &t.IssuedAt)
-	if err != nil {
-		return fmt.Errorf("store: create refresh token: %w", err)
-	}
-	return nil
+	// Delegates to the authorization server's insert so family_id (its
+	// own id for a new family) and resource are always set (migration 00013).
+	return CreateOAuthRefreshToken(ctx, r.q, t)
 }
 
 func (r oauthRepo) GetRefreshToken(ctx context.Context, id string) (*OAuthRefreshToken, error) {
 	var t OAuthRefreshToken
 	err := r.q.QueryRow(ctx, `
-		SELECT id, user_id, client_id, token_hash, scope, issued_at, expires_at, rotated_from, revoked_at, last_used_at
+		SELECT id, user_id, client_id, family_id, resource, token_hash, scope, issued_at, expires_at, rotated_from, rotated_at, revoked_at, last_used_at
 		FROM oauth_refresh_tokens WHERE id = $1`, id,
-	).Scan(&t.ID, &t.UserID, &t.ClientID, &t.TokenHash, &t.Scope, &t.IssuedAt, &t.ExpiresAt, &t.RotatedFrom, &t.RevokedAt, &t.LastUsedAt)
+	).Scan(&t.ID, &t.UserID, &t.ClientID, &t.FamilyID, &t.Resource, &t.TokenHash, &t.Scope, &t.IssuedAt, &t.ExpiresAt, &t.RotatedFrom, &t.RotatedAt, &t.RevokedAt, &t.LastUsedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

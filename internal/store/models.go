@@ -125,15 +125,22 @@ type OAuthClient struct {
 }
 
 // OAuthRefreshToken is one link in a rotating refresh-token chain.
+// FamilyID is the first link's id (one family per connected harness);
+// RotatedAt is set once the token was exchanged for its successor, so a
+// later presentation is reuse; Resource is the audience its access tokens
+// are minted for (migration 00013).
 type OAuthRefreshToken struct {
 	ID          string
 	UserID      string
 	ClientID    string
+	FamilyID    string
+	Resource    string
 	TokenHash   []byte
 	Scope       json.RawMessage
 	IssuedAt    time.Time
 	ExpiresAt   time.Time
 	RotatedFrom *string
+	RotatedAt   *time.Time
 	RevokedAt   *time.Time
 	LastUsedAt  *time.Time
 }
