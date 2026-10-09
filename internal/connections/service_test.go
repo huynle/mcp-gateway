@@ -352,3 +352,45 @@ func mustQuery(t *testing.T, raw string) url.Values {
 	}
 	return u.Query()
 }
+
+// TestAuthParamsSendOnlyAuthorizationParameters (quirk sxbr5or5): binder
+// hints in Extra (company_domains, default_label, the field names, the
+// GitHub binder's company_orgs) are configuration for the gateway and
+// never become authorization request parameters; real parameters
+// (access_type, prompt, audience, ...) still are.
+func TestAuthParamsSendOnlyAuthorizationParameters(t *testing.T) {
+	app := connections.VendorApp{Extra: map[string]string{
+		"prompt": "consent", "access_type": "offline", "audience": "api.example.test",
+		connections.ExtraCompanyDomains: "acme.test", connections.ExtraDefaultLabel: "company", connections.ExtraScopeParam: "user_scope",
+		connections.ExtraIDField: "id", connections.ExtraNameField: "login", connections.ExtraEmailField: "email",
+		connections.ExtraCompanyOrgs: "acme,acme-labs", "": "ignored",
+	}}
+	var got []string
+	for _, kv := range app.AuthParams() {
+		got = append(got, kv[0]+"="+kv[1])
+	}
+	if want := "access_type=offline,audience=api.example.test,prompt=consent"; strings.Join(got, ",") != want {
+		t.Errorf("AuthParams = %v, want %s", got, want)
+	}
+
+	// Through the flow: the authorize URL carries prompt but no company_orgs.
+	env := newTestEnv(t)
+	v := newFakeVendor(t)
+	saved := registerFakeApp(t, env, v)
+	saved.Extra[connections.ExtraCompanyOrgs] = "acme"
+	saved.ClientSecret = v.secret
+	if _, err := env.svc.SaveVendorApp(context.Background(), userAlice, saved); err != nil {
+		t.Fatalf("SaveVendorApp: %v", err)
+	}
+	redirect, err := env.svc.Start(context.Background(), connections.StartRequest{UserID: userAlice, Vendor: connections.VendorFake})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	u, err := url.Parse(redirect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := u.Query(); q.Get("prompt") != "consent" || q.Has(connections.ExtraCompanyOrgs) || q.Has(connections.ExtraCompanyDomains) {
+		t.Errorf("authorize query = %v, want prompt=consent and no binder hints", q)
+	}
+}

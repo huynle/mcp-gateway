@@ -63,7 +63,7 @@ A 401 on `/user` fails the connect with `reconnect_required`; a 5xx fails it wit
    ```
    company_orgs=acme,acme-labs
    ```
-   Leave *Scopes* empty: GitHub Apps ignore the `scope` parameter; permissions are app-level. (Any Extra key the connections module does not reserve is also sent as an authorization parameter; GitHub ignores `company_orgs` there. Adding it to the reserved keys is a small follow-up in `internal/connections`.)
+   Leave *Scopes* empty: GitHub Apps ignore the `scope` parameter; permissions are app-level. `company_orgs` is a reserved binder hint (`connections.ExtraCompanyOrgs`): it is read by the gateway and never sent to GitHub as an authorization parameter.
 4. Users connect on `/connections` -> GitHub -> *Connect*. The connection's label and display name appear on the page; `github.list_accounts` shows them to a harness.
 5. Grant the tools to a role on `/admin/roles` (`github.*` allow, or per tool; use `repo` prefix conditions to confirm or deny by repository).
 
