@@ -249,6 +249,13 @@ func toCreatedComment(cm *gh.IssueComment, repo string, number int) CreatedComme
 	return CreatedComment{ID: cm.GetID(), URL: cm.GetHTMLURL(), Repo: repo, Number: number}
 }
 
+func toCreatedPullRequest(pr *gh.PullRequest, repo string) CreatedPullRequest {
+	return CreatedPullRequest{
+		Number: pr.GetNumber(), ID: pr.GetID(), URL: pr.GetHTMLURL(), Repo: repo, State: pr.GetState(), Draft: pr.GetDraft(),
+		Head: pr.GetHead().GetRef(), Base: pr.GetBase().GetRef(),
+	}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 func i64toa(n int64) string { return strconv.FormatInt(n, 10) }

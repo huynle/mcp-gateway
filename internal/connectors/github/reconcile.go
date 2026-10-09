@@ -192,8 +192,46 @@ func (c *Connector) checkComment(ctx context.Context, in connectors.ReconcileInp
 	return notFound, nil
 }
 
-func (c *Connector) checkPullRequest(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error) {
-	return connectors.ReconcileResult{}, errors.New("github: create_pull_request check not implemented")
+// --- create_pull_request ----------------------------------------------------------
+
+// checkPullRequest is create_pull_request's marker reconciliation: the
+// repository's pull requests from the head branch (head=owner:branch, or
+// the login:branch the harness gave for a fork; every state), bounded by
+// MaxReconcilePages, newest first. The marker in a body is found; the
+// end of the list without it is not_found; running out of pages or a
+// listing error is "cannot tell yet". The list endpoint is not a search
+// index, so its answer is authoritative.
+func (c *Connector) checkPullRequest(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	tg, err := c.target(ctx, in)
+	if err != nil {
+		return connectors.ReconcileResult{}, err
+	}
+	head := in.ResourceIdentity["branch"]
+	if head == "" {
+		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no head branch", ErrNotReconcilable)
+	}
+	if !strings.Contains(head, ":") {
+		head = tg.owner + ":" + head
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	opts := &gh.PullRequestListOptions{State: "all", Head: head, Sort: "created", Direction: "desc", ListOptions: gh.ListOptions{PerPage: reconcilePerPage}}
+	for page := 1; page <= MaxReconcilePages; page++ {
+		opts.Page = page
+		pulls, resp, err := tg.client.PullRequests.List(ctx, tg.owner, tg.repo, opts)
+		if err := classify("reconcile: list pull requests", err); err != nil {
+			return connectors.ReconcileResult{}, err
+		}
+		for _, pr := range pulls {
+			if pr != nil && hasMarker(pr.GetBody(), tg.operationID) {
+				return found(strconv.Itoa(pr.GetNumber())), nil
+			}
+		}
+		if resp.NextPage == 0 {
+			return notFound, nil
+		}
+	}
+	return connectors.ReconcileResult{}, fmt.Errorf("github: reconcile: more than %d pages of pull requests from %s in %s/%s; cannot tell yet", MaxReconcilePages, head, tg.owner, tg.repo)
 }
 
 func (c *Connector) checkBranch(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error) {

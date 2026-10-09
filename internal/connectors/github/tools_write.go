@@ -338,8 +338,40 @@ func (c *Connector) addIssueComment(ctx context.Context, client *gh.Client, call
 	return connectors.Result{Content: toCreatedComment(cm, owner+"/"+repo, number)}, nil
 }
 
-func (c *Connector) createPullRequest(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {
-	return connectors.Result{}, errors.New("github: create_pull_request not implemented")
+func (c *Connector) createPullRequest(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error) {
+	owner, repo, err := repoArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	title, err := requiredString(call.Args, "title")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	head, err := requiredString(call.Args, "head")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	base, err := requiredString(call.Args, "base")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	body, err := optionalString(call.Args, "body")
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	req := gh.CreatePullRequest{Title: gh.Ptr(title), Head: head, Base: base, Body: gh.Ptr(withMarker(body, call.OperationID))}
+	if v, ok := call.Args["draft"]; ok && v != nil {
+		draft, ok := v.(bool)
+		if !ok {
+			return connectors.Result{}, invalid("draft must be a boolean")
+		}
+		req.Draft = gh.Ptr(draft)
+	}
+	pr, _, err := client.PullRequests.Create(ctx, owner, repo, req)
+	if err := classifyWrite("create pull request", err); err != nil {
+		return connectors.Result{}, err
+	}
+	return connectors.Result{Content: toCreatedPullRequest(pr, owner+"/"+repo)}, nil
 }
 
 func (c *Connector) createBranch(context.Context, *gh.Client, connectors.Call) (connectors.Result, error) {

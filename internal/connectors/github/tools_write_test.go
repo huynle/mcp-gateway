@@ -653,3 +653,117 @@ func TestCheckCommentNeedsTheIssueNumber(t *testing.T) {
 		t.Errorf("%d requests sent", n)
 	}
 }
+
+// --- create_pull_request ------------------------------------------------------------
+
+const pullsPath = "/repos/example-org/widgets/pulls"
+
+var pullIdentity = map[string]string{"owner": "example-org", "repo": "example-org/widgets", "org": "example-org", "branch": "feature/retry", "base": "main"}
+
+func TestCreatePullRequest(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"POST " + pullsPath: {status: 201, body: "created_pull.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := c.Call(context.Background(), write(github.ToolCreatePullRequest, map[string]any{
+		"owner": "example-org", "repo": "widgets", "title": "Retry uploads", "head": "feature/retry", "base": "main", "body": "Adds a retry.", "draft": true,
+	}))
+	if err != nil {
+		t.Fatalf("create_pull_request: %v", err)
+	}
+	created, ok := res.Content.(github.CreatedPullRequest)
+	if !ok || created.Number != 61 || created.ID != 3001 || created.Repo != "example-org/widgets" || !created.Draft || created.Head != "feature/retry" || created.Base != "main" || created.URL == "" {
+		t.Errorf("content = %#v", res.Content)
+	}
+	ids := toolNamed(t, c, github.ToolCreatePullRequest).ResultIDs(res)
+	if ids["number"] != "61" || ids["id"] != "3001" || ids["url"] != created.URL || len(ids) != 3 {
+		t.Errorf("ResultIDs = %v", ids)
+	}
+	body := jsonBody(t, srv.Last(t, "POST "+pullsPath))
+	if body["title"] != "Retry uploads" || body["head"] != "feature/retry" || body["base"] != "main" || body["draft"] != true {
+		t.Errorf("request = %v", body)
+	}
+	if body["body"] != "Adds a retry.\n\n"+marker {
+		t.Errorf("body = %q, want the text followed by the marker", body["body"])
+	}
+}
+
+func TestCreatePullRequestDefaultsAndValidation(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"POST " + pullsPath: {status: 201, body: "created_pull.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	if _, err := c.Call(context.Background(), write(github.ToolCreatePullRequest, map[string]any{"owner": "example-org", "repo": "widgets", "title": "t", "head": "feature/retry", "base": "main"})); err != nil {
+		t.Fatal(err)
+	}
+	body := jsonBody(t, srv.Last(t, "POST "+pullsPath))
+	if body["body"] != marker {
+		t.Errorf("body = %q, want just the marker", body["body"])
+	}
+	if _, ok := body["draft"]; ok {
+		t.Errorf("draft sent when not given: %v", body)
+	}
+	for name, args := range map[string]map[string]any{
+		"missing head": {"owner": "example-org", "repo": "widgets", "title": "t", "base": "main"},
+		"missing base": {"owner": "example-org", "repo": "widgets", "title": "t", "head": "h"},
+		"blank title":  {"owner": "example-org", "repo": "widgets", "title": " ", "head": "h", "base": "b"},
+		"bad draft":    {"owner": "example-org", "repo": "widgets", "title": "t", "head": "h", "base": "b", "draft": "yes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := c.Call(context.Background(), write(github.ToolCreatePullRequest, args))
+			wantClass(t, err, github.ClassInvalidArgument, 0)
+		})
+	}
+	if n := srv.Count("POST " + pullsPath); n != 1 {
+		t.Errorf("%d requests sent, want 1 (none for invalid arguments)", n)
+	}
+}
+
+func TestCreatePullRequestErrors(t *testing.T) {
+	for _, tc := range writeErrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAPIServer(t, map[string]route{"POST " + pullsPath: tc.rt})
+			c, err := github.New(github.Options{Tokens: (&tokens{}).source, BaseURL: srv.URL + "/", Timeout: 300 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, err := c.Call(context.Background(), write(github.ToolCreatePullRequest, map[string]any{"owner": "example-org", "repo": "widgets", "title": "t", "head": "h", "base": "b"}))
+			checkWriteError(t, tc, res, err)
+		})
+	}
+}
+
+func TestCheckPullRequestFoundByHeadAndMarker(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"GET " + pullsPath: {status: 200, body: "pulls_by_head.json"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	res, err := toolNamed(t, c, github.ToolCreatePullRequest).Reconcile.Check(context.Background(), reconcile(github.ToolCreatePullRequest, pullIdentity))
+	wantFound(t, res, err, "61")
+	q := query(t, srv, pullsPath)
+	if q.Get("head") != "example-org:feature/retry" || q.Get("state") != "all" || q.Get("per_page") != "100" {
+		t.Errorf("listing query = %v, want head=example-org:feature/retry state=all per_page=100", q)
+	}
+}
+
+func TestCheckPullRequestForkHeadIsSentAsIs(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"GET " + pullsPath: {status: 200, body: "[]"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	id := map[string]string{"owner": "example-org", "repo": "example-org/widgets", "org": "example-org", "branch": "octocat:feature/retry"}
+	res, err := toolNamed(t, c, github.ToolCreatePullRequest).Reconcile.Check(context.Background(), reconcile(github.ToolCreatePullRequest, id))
+	wantNotFound(t, res, err)
+	if got := query(t, srv, pullsPath).Get("head"); got != "octocat:feature/retry" {
+		t.Errorf("head = %q", got)
+	}
+}
+
+func TestCheckPullRequestNotFoundAndCannotTell(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{"GET " + pullsPath: {status: 200, body: "[]"}})
+	c, _ := newConnector(t, srv, connectors.Bounds{})
+	check := toolNamed(t, c, github.ToolCreatePullRequest).Reconcile.Check
+	res, err := check(context.Background(), reconcile(github.ToolCreatePullRequest, pullIdentity))
+	wantNotFound(t, res, err)
+
+	srv = newAPIServer(t, map[string]route{"GET " + pullsPath: {status: 500, body: "error_server.json"}})
+	c, _ = newConnector(t, srv, connectors.Bounds{})
+	if res, err := toolNamed(t, c, github.ToolCreatePullRequest).Reconcile.Check(context.Background(), reconcile(github.ToolCreatePullRequest, pullIdentity)); err == nil {
+		t.Errorf("Check = %+v, want an error (cannot tell yet)", res)
+	}
+	if _, err := check(context.Background(), reconcile(github.ToolCreatePullRequest, issueIdentity)); err == nil {
+		t.Error("Check without a branch in the identity succeeded")
+	}
+}
