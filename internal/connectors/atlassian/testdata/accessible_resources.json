@@ -1,0 +1,16 @@
+[
+  {
+    "id": "11111111-2222-4333-8444-555555555555",
+    "url": "https://example-site.atlassian.example.test",
+    "name": "Example Site",
+    "scopes": ["read:jira-work", "write:jira-work", "read:jira-user"],
+    "avatarUrl": "https://site-admin-avatar-cdn.example.test/default.png"
+  },
+  {
+    "id": "99999999-8888-4777-8666-555555555555",
+    "url": "https://personal-site.atlassian.example.test",
+    "name": "Personal Site",
+    "scopes": ["read:jira-work"],
+    "avatarUrl": "https://site-admin-avatar-cdn.example.test/default.png"
+  }
+]
