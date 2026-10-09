@@ -805,3 +805,7 @@ func nonce(t *testing.T) string {
 	}
 	return fmt.Sprintf("%x", b)
 }
+
+// authserverLeeway mirrors authserver.Leeway (exp / nbf clock-skew
+// tolerance) for cases that step the clock across a boundary.
+const authserverLeeway = authserver.Leeway + time.Second
