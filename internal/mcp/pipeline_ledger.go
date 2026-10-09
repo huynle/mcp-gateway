@@ -73,9 +73,7 @@ func LedgerStage(svc *ledger.Service, log *slog.Logger) Stage {
 			UserID: cc.Principal.UserID, TokenID: cc.Principal.TokenID, AccountID: cc.AccountID, Tool: cc.Call.Tool,
 			Digest: ledger.Digest(cc.Call.Args), PolicyVersionID: cc.PolicyVersion, ApprovalID: cc.ApprovalID,
 		}
-		if cc.Tool.ResourceIdentity != nil {
-			in.ResourceIdentity = cc.Tool.ResourceIdentity(cc.Call.Args)
-		}
+		in.ResourceIdentity = cc.resourceIdentity()
 		op, prior, err := svc.Begin(ctx, in)
 		switch {
 		case err != nil && cc.ApprovalID != "":

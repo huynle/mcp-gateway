@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -341,5 +342,166 @@ func TestPolicyEndToEndWithFakeConnector(t *testing.T) {
 	d, _ := svc.Decide(ctx, policy.Input{UserID: "user-1", TokenID: "token-1", Tool: connectors.Tool{App: "fake", Name: "list_items", Kind: connectors.KindRead}, AccountLabel: "company"})
 	if d.VersionID == approval.PolicyVersion {
 		t.Error("decision still reports the approval's old version")
+	}
+}
+
+// resolvingConnector is a connector that implements
+// connectors.IdentityResolver: its one write tool identifies a channel
+// by id or name, and ResolveIdentity turns a known id into its name
+// (keeping the id), fails for an unknown id, and leaves a name alone.
+type resolvingConnector struct {
+	names map[string]string
+	calls []connectors.Call
+	seen  []map[string]string
+}
+
+func (r *resolvingConnector) App() string { return "chat" }
+
+func (r *resolvingConnector) Tools() []connectors.Tool {
+	post := stubTool("chat", "post", connectors.KindWrite)
+	post.Reconcile = connectors.Reconciliation{Kind: connectors.ReconcileNone}
+	post.Handler = nil
+	post.ResourceIdentity = func(args map[string]any) map[string]string {
+		raw, _ := args["channel"].(string)
+		if strings.HasPrefix(raw, "C") {
+			return map[string]string{"channel": raw, "channel_id": raw}
+		}
+		return map[string]string{"channel": raw, "channel_name": raw}
+	}
+	return []connectors.Tool{post}
+}
+
+func (r *resolvingConnector) Call(_ context.Context, call connectors.Call) (connectors.Result, error) {
+	r.calls = append(r.calls, call)
+	return connectors.Result{Content: "posted"}, nil
+}
+
+func (r *resolvingConnector) ResolveIdentity(_ context.Context, call connectors.Call, identity map[string]string) (map[string]string, error) {
+	r.seen = append(r.seen, map[string]string{"account": call.Account, "channel": identity["channel"]})
+	id := identity["channel_id"]
+	if id == "" {
+		return identity, nil
+	}
+	name, ok := r.names[id]
+	if !ok {
+		return nil, errors.New("channel " + id + " not found")
+	}
+	out := map[string]string{}
+	for k, v := range identity {
+		out[k] = v
+	}
+	out["channel"] = name
+	return out, nil
+}
+
+// resolverPipeline registers the connector through RegisterConnector
+// (which is what makes the registry know the resolver) with one account
+// for user-1, a decider that allows chat.post and the capture recorder.
+func resolverPipeline(t *testing.T, conn connectors.Connector, d mcp.Decider, rec *captureRecorder) *mcp.Pipeline {
+	t.Helper()
+	reg := connectors.NewRegistry()
+	src := connectors.NewStaticAccountSource()
+	src.Add("user-1", connectors.Account{ID: "11111111-2222-4333-8444-555555555555", App: "chat", Label: connectors.LabelCompany})
+	if err := connectors.RegisterConnector(reg, conn, src); err != nil {
+		t.Fatal(err)
+	}
+	p, err := mcp.DefaultPipeline(mcp.PipelineDeps{Registry: reg, Accounts: src, Policy: d, Visibility: allVisible{}, Audit: rec, Log: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// TestPolicyStageResolvesIdentityBeforeDecide: for a connector that
+// implements connectors.IdentityResolver the policy stage hands the
+// tool's resource identity to the resolver after the account is bound
+// and before the decider sees it, so a name condition applies to a
+// channel given by id; the resolved identity is what the audit row
+// records and the call context carries; a name needs no change.
+func TestPolicyStageResolvesIdentityBeforeDecide(t *testing.T) {
+	conn := &resolvingConnector{names: map[string]string{"C0SECRET01": "eng-secrets"}}
+	d := &stubDecider{outcomes: map[string]policy.Outcome{"chat.post": policy.OutcomeAllow, "chat.list_accounts": policy.OutcomeAllow}}
+	rec := &captureRecorder{}
+	p := resolverPipeline(t, conn, d, rec)
+
+	cc, res, err := run(t, p, "chat.post", map[string]any{"channel": "C0SECRET01", "text": "x"})
+	if err != nil || res.Content != "posted" {
+		t.Fatalf("by id: res=%+v err=%v", res, err)
+	}
+	want := map[string]string{"channel": "eng-secrets", "channel_id": "C0SECRET01"}
+	in := d.inputs[len(d.inputs)-1]
+	if !reflect.DeepEqual(in.ResourceIdentity, want) {
+		t.Errorf("decider saw identity %v, want %v", in.ResourceIdentity, want)
+	}
+	if !reflect.DeepEqual(cc.ResourceIdentity, want) {
+		t.Errorf("cc.ResourceIdentity = %v, want %v", cc.ResourceIdentity, want)
+	}
+	if len(rec.events) != 1 || !reflect.DeepEqual(rec.events[0].ResourceIdentity, want) {
+		t.Errorf("audit events = %+v, want one with identity %v", rec.events, want)
+	}
+	if len(conn.seen) != 1 || conn.seen[0]["account"] != "11111111-2222-4333-8444-555555555555" {
+		t.Errorf("resolver calls = %v, want one with the bound account", conn.seen)
+	}
+	// The handler still gets the arguments as sent: resolution is for
+	// policy and audit, not a rewrite of the call.
+	if len(conn.calls) != 1 || conn.calls[0].Args["channel"] != "C0SECRET01" {
+		t.Errorf("handler calls = %+v", conn.calls)
+	}
+
+	// A name: the resolver is consulted (it decides nothing is needed)
+	// and the identity reaches the decider unchanged.
+	cc, _, err = run(t, p, "chat.post", map[string]any{"channel": "eng-deploys", "text": "x"})
+	if err != nil {
+		t.Fatalf("by name: %v", err)
+	}
+	want = map[string]string{"channel": "eng-deploys", "channel_name": "eng-deploys"}
+	if in := d.inputs[len(d.inputs)-1]; !reflect.DeepEqual(in.ResourceIdentity, want) || !reflect.DeepEqual(cc.ResourceIdentity, want) {
+		t.Errorf("by name: decider saw %v, cc %v, want %v", in.ResourceIdentity, cc.ResourceIdentity, want)
+	}
+
+	// list_accounts has no account and nothing to resolve: the resolver
+	// is not consulted.
+	before := len(conn.seen)
+	if _, _, err := run(t, p, "chat.list_accounts", nil); err != nil {
+		t.Fatalf("list_accounts: %v", err)
+	}
+	if len(conn.seen) != before {
+		t.Errorf("resolver consulted for list_accounts")
+	}
+}
+
+// TestPolicyStageFailsClosedWhenIdentityUnresolved: when the resolver
+// cannot name the resource the call is denied (CodeDenied, class
+// identity_unresolved, a denial for audit: decision deny, outcome
+// denied) before the decider or the handler run; the raw identity is
+// never evaluated as if it were resolved.
+func TestPolicyStageFailsClosedWhenIdentityUnresolved(t *testing.T) {
+	conn := &resolvingConnector{names: map[string]string{}}
+	d := &stubDecider{outcomes: map[string]policy.Outcome{"chat.post": policy.OutcomeAllow}}
+	rec := &captureRecorder{}
+	p := resolverPipeline(t, conn, d, rec)
+
+	cc, _, err := run(t, p, "chat.post", map[string]any{"channel": "C0UNKNOWN1", "text": "x"})
+	var te *mcp.ToolError
+	if !errors.As(err, &te) || te.Code != mcp.CodeDenied || te.Class() != "identity_unresolved" || !te.Denial() {
+		t.Fatalf("err = %v (%T)", err, err)
+	}
+	if strings.Contains(te.Message, "not found") {
+		t.Errorf("message carries the resolver's cause: %q", te.Message)
+	}
+	if cc.Decision != "deny" {
+		t.Errorf("decision = %q, want deny", cc.Decision)
+	}
+	if len(d.inputs) != 0 {
+		t.Errorf("decider consulted %d times, want 0", len(d.inputs))
+	}
+	if len(conn.calls) != 0 {
+		t.Errorf("handler ran %d times, want 0", len(conn.calls))
+	}
+	if len(rec.events) != 1 || rec.events[0].Decision != "deny" || rec.events[0].Outcome != "denied" || rec.events[0].ErrorClass != "identity_unresolved" {
+		t.Fatalf("audit events = %+v", rec.events)
+	}
+	if got := rec.events[0].ResourceIdentity; got["channel_id"] != "C0UNKNOWN1" {
+		t.Errorf("audit identity = %v, want the raw identity with the id", got)
 	}
 }

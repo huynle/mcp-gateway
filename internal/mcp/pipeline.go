@@ -61,10 +61,28 @@ type CallContext struct {
 	// (nil when the source recorded none); the scope stage checks them
 	// against the tool's RequiredScopes.
 	AccountScopes []string
+	// ResourceIdentity is the identity the policy stage evaluated: the
+	// tool's ResourceIdentity hook over Call.Args, passed through the
+	// app's connectors.IdentityResolver when it has one (a Slack channel
+	// id resolved to its name). Nil until the policy stage ran; audit
+	// and the ledger prefer it over recomputing from the arguments.
+	ResourceIdentity map[string]string
 
 	// replayed marks a result the ledger stage served from a prior
 	// operation; the audit row's error class says so.
 	replayed bool
+}
+
+// resourceIdentity is the identity later stages record: what the policy
+// stage evaluated when it ran, else the tool's hook over the arguments.
+func (cc *CallContext) resourceIdentity() map[string]string {
+	if cc.ResourceIdentity != nil {
+		return cc.ResourceIdentity
+	}
+	if cc.Tool != nil && cc.Tool.ResourceIdentity != nil {
+		return cc.Tool.ResourceIdentity(cc.Call.Args)
+	}
+	return nil
 }
 
 // Next continues the pipeline from the current stage. A stage that answers

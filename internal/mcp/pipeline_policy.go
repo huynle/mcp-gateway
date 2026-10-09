@@ -13,8 +13,13 @@ import (
 // StagePolicy is the policy stage (decision 490o45d0), inserted after
 // StageAccount (after StageStrip when there is no account stage) and
 // before StageRateLimit: with the tool resolved, the arguments stripped
-// and the account known, it asks the Decider and sets
-// CallContext.Decision and PolicyVersion for the audit row. Then:
+// and the account known, it builds the resource identity (the tool's
+// hook, then the app's connectors.IdentityResolver when the connector
+// has one: a Slack channel id becomes its name, so name conditions
+// hold whichever form the harness used), asks the Decider and sets
+// CallContext.Decision, PolicyVersion and ResourceIdentity for the
+// audit row. A resolver failure fails closed: CodeDenied, class
+// identity_unresolved, before the decider runs. Then:
 //
 //   - hidden: the very same not-found error as an unknown tool (resolve
 //     already hides such tools; this is the second line of defence);
@@ -66,13 +71,28 @@ func DefaultConfirmHandler() ConfirmHandler {
 // errPolicyUnavailable is the fail-closed answer when the Decider errs.
 var errPolicyUnavailable = NewToolError(CodeInternal, "policy_unavailable", "policy could not be evaluated")
 
+// errIdentityUnresolved is the fail-closed answer when the app's
+// IdentityResolver could not name the resource: the policy cannot be
+// evaluated against what the rules are written in, so the call is
+// refused as a denial. The cause stays in the log.
+var errIdentityUnresolved = NewToolError(CodeDenied, "identity_unresolved",
+	"denied: the resource could not be identified for policy (pass the channel by name, or check that the account can see it)")
+
+// IdentityResolvers finds the connectors.IdentityResolver of an app;
+// *connectors.Registry implements it (RegisterConnector installs the
+// resolver of every connector that has one). nil means no app resolves.
+type IdentityResolvers interface {
+	IdentityResolver(app string) (connectors.IdentityResolver, bool)
+}
+
 // errDenied is the answer for a deny decision. The reason stays in the
 // log and the audit row: the harness learns only that policy refused.
 var errDenied = NewToolError(CodeDenied, "denied", "denied by policy")
 
-// PolicyStage builds the stage over d and confirm (nil means
-// DefaultConfirmHandler).
-func PolicyStage(d Decider, confirm ConfirmHandler, log *slog.Logger) Stage {
+// PolicyStage builds the stage over d, confirm (nil means
+// DefaultConfirmHandler) and resolvers (nil means no connector resolves
+// identities; DefaultPipeline passes the registry).
+func PolicyStage(d Decider, confirm ConfirmHandler, resolvers IdentityResolvers, log *slog.Logger) Stage {
 	if confirm == nil {
 		confirm = DefaultConfirmHandler()
 	}
@@ -87,6 +107,15 @@ func PolicyStage(d Decider, confirm ConfirmHandler, log *slog.Logger) Stage {
 		in.AccountLabel = cc.AccountLabel
 		if cc.Tool.ResourceIdentity != nil {
 			in.ResourceIdentity = cc.Tool.ResourceIdentity(cc.Call.Args)
+		}
+		cc.ResourceIdentity = in.ResourceIdentity
+		if resolved, err := resolveIdentity(ctx, resolvers, cc, in.ResourceIdentity); err != nil {
+			cc.Decision = string(policy.OutcomeDeny)
+			log.Warn("resource identity unresolved; call denied", "event", "mcp.identity_unresolved", "tool", cc.Call.Tool,
+				"app", cc.Tool.App, "error", observability.RedactError(err), observability.RequestIDAttr(ctx))
+			return connectors.Result{}, errIdentityUnresolved
+		} else {
+			in.ResourceIdentity, cc.ResourceIdentity = resolved, resolved
 		}
 		d, err := d.Decide(ctx, in)
 		if err != nil {
@@ -110,6 +139,21 @@ func PolicyStage(d Decider, confirm ConfirmHandler, log *slog.Logger) Stage {
 			return connectors.Result{}, ErrToolNotFound(cc.Name)
 		}
 	}}
+}
+
+// resolveIdentity passes identity through the app's IdentityResolver
+// when the tool runs against an account and the app has one; otherwise
+// identity comes back as is. An error means the resolver could not name
+// the resource and the caller must fail closed.
+func resolveIdentity(ctx context.Context, resolvers IdentityResolvers, cc *CallContext, identity map[string]string) (map[string]string, error) {
+	if resolvers == nil || cc.Tool.NoAccount {
+		return identity, nil
+	}
+	r, ok := resolvers.IdentityResolver(cc.Tool.App)
+	if !ok {
+		return identity, nil
+	}
+	return r.ResolveIdentity(ctx, cc.Call, identity)
 }
 
 // PolicyVisibility is the Visibility over the compiled policy: a tool is

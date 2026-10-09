@@ -135,14 +135,35 @@ func (t Tool) FullName() string { return t.App + "." + t.Name }
 // is safe for concurrent use: connectors register at start-up and the /mcp
 // endpoint reads on every request.
 type Registry struct {
-	mu       sync.RWMutex
-	tools    map[string]Tool
-	coverage map[string]ScopeCoverage
+	mu        sync.RWMutex
+	tools     map[string]Tool
+	coverage  map[string]ScopeCoverage
+	resolvers map[string]IdentityResolver
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}}
+	return &Registry{tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}, resolvers: map[string]IdentityResolver{}}
+}
+
+// SetIdentityResolver installs app's IdentityResolver (RegisterConnector
+// does so for a connector that implements it); nil removes it.
+func (r *Registry) SetIdentityResolver(app string, res IdentityResolver) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if res == nil {
+		delete(r.resolvers, app)
+		return
+	}
+	r.resolvers[app] = res
+}
+
+// IdentityResolver returns app's resolver, if one was installed.
+func (r *Registry) IdentityResolver(app string) (IdentityResolver, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	res, ok := r.resolvers[app]
+	return res, ok
 }
 
 // ScopeCoverage reports whether one of an account's granted scopes
