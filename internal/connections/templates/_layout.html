@@ -44,22 +44,7 @@
   </style>
 </head>
 <body>
-<header>
-  <a class="brand" href="/">MCP Gateway</a>
-  <nav>
-    <a href="/account">My account</a>
-    <a href="/tokens">Tokens</a>
-    <a href="/connections">Connections</a>
-    <a href="/activity">Activity</a>
-    {{if .Caller.IsAdmin}}<a href="/admin/users">Users</a> <a href="/admin/roles">Roles</a> <a href="/admin/vendor-apps">Vendor apps</a>{{end}}
-  </nav>
-  <div class="who">
-    <form method="post" action="/auth/signout">
-      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-      <button class="btn" type="submit">Sign out</button>
-    </form>
-  </div>
-</header>
+{{template "nav" navData}}
 <main>
 <h1>{{.Title}}</h1>
 {{end}}

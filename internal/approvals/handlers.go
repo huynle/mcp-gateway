@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -49,7 +51,7 @@ func NewPortal(svc *Service, who Identity, log *slog.Logger) *Portal {
 	if log == nil {
 		log = slog.Default()
 	}
-	tpl := template.Must(template.New("").Funcs(template.FuncMap{
+	tpl := template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime":   fmtTime,
 		"expiresIn": expiresIn,
 		"shortID":   func(id string) string { return id[:min(8, len(id))] },
@@ -209,7 +211,7 @@ func (p *Portal) render(w http.ResponseWriter, r *http.Request, status int, name
 	if fragment == "" {
 		fragment = name
 	}
-	if err := p.tpl.ExecuteTemplate(&buf, fragment, data); err != nil {
+	if err := nav.Execute(p.tpl, r, &buf, fragment, data); err != nil {
 		p.fail(w, r, "render "+name, err)
 		return
 	}

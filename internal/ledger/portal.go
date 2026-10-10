@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -39,7 +41,7 @@ func NewPortal(svc *Service, who Identity, log *slog.Logger) *Portal {
 	if log == nil {
 		log = slog.Default()
 	}
-	tpl := template.Must(template.New("").Funcs(template.FuncMap{
+	tpl := template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": fmtTime,
 		"shortID": func(id string) string { return id[:min(8, len(id))] },
 		"isURL":   func(v string) bool { return strings.HasPrefix(v, "https://") || strings.HasPrefix(v, "http://") },
@@ -81,7 +83,7 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request) {
 	}
 	var buf bytes.Buffer
 	data := listData{Title: "Operations", Caller: caller{UserID: userID, CSRFToken: csrfToken}, Operations: ops, Limit: HistoryLimit}
-	if err := p.tpl.ExecuteTemplate(&buf, "operations.html", data); err != nil {
+	if err := nav.Execute(p.tpl, r, &buf, "operations.html", data); err != nil {
 		p.log.Error("operations page failed", "event", "ledger.page_failed", "what", "render", "error", observability.RedactError(err))
 		http.Error(w, "the request could not be completed; try again", http.StatusInternalServerError)
 		return

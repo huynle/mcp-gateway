@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -25,6 +26,7 @@ var staticFS embed.FS
 // page is the data every template receives.
 type page struct {
 	Principal *identity.Principal
+	Nav       nav.Data
 	Data      any
 }
 
@@ -62,6 +64,9 @@ func parseTemplates() (*templates, error) {
 		tmpl, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", name)
 		if err != nil {
 			return nil, fmt.Errorf("portal: parse %s: %w", name, err)
+		}
+		if _, err := nav.Add(tmpl); err != nil {
+			return nil, fmt.Errorf("portal: parse nav: %w", err)
 		}
 		t.pages[base] = tmpl
 	}

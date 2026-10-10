@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -79,7 +80,22 @@ func (p *Portal) Handler() http.Handler {
 	mux.Handle("/auth/", p.csrf(p.svc.Handler()))
 	mux.Handle("GET /static/", p.static())
 	mux.HandleFunc("/", p.notFound)
-	return SecurityHeaders(p.svc.Middleware(mux))
+	return SecurityHeaders(p.svc.Middleware(withNav(mux)))
+}
+
+// withNav attaches the shared nav data (package nav) for the signed-in
+// principal, so every page, the portal's and the mounted modules', renders
+// the same bar. The admin flag is Principal.IsAdmin, the check
+// requireAdmin applies to /admin/* (decision 7datr7x4).
+func withNav(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if pr := identity.PrincipalFrom(r.Context()); pr != nil {
+			r = r.WithContext(nav.WithData(r.Context(), nav.Data{
+				SignedIn: true, IsAdmin: pr.IsAdmin(), CSRFToken: pr.CSRFToken, DisplayName: pr.DisplayName,
+			}))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // CSP is the Content-Security-Policy every portal response carries:
@@ -309,7 +325,7 @@ func (p *Portal) adminAction(w http.ResponseWriter, r *http.Request, userID stri
 // --- rendering ---------------------------------------------------------------
 
 func (p *Portal) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
-	err := p.tpl.render(w, status, name, "", page{Principal: identity.PrincipalFrom(r.Context()), Data: data})
+	err := p.tpl.render(w, status, name, "", page{Principal: identity.PrincipalFrom(r.Context()), Nav: nav.FromRequest(r), Data: data})
 	if err != nil {
 		p.log.Error("render failed", "event", "portal.render_failed", "template", name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

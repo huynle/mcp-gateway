@@ -28,9 +28,10 @@ const (
 )
 
 type harness struct {
-	h   http.Handler
-	svc *identity.Service
-	st  *identitytest.MemStore
+	h      http.Handler
+	svc    *identity.Service
+	st     *identitytest.MemStore
+	portal *portal.Portal
 }
 
 func newHarness(t *testing.T) *harness {
@@ -60,7 +61,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("portal.New: %v", err)
 	}
-	return &harness{h: p.Handler(), svc: svc, st: st}
+	return &harness{h: p.Handler(), svc: svc, st: st, portal: p}
 }
 
 // session signs a user in directly and returns the session cookie and
