@@ -36,24 +36,7 @@
   </style>
 </head>
 <body{{if .Principal}} hx-headers='{"X-CSRF-Token": "{{.Principal.CSRFToken}}"}'{{end}}>
-<header>
-  <a class="brand" href="/">MCP Gateway</a>
-  {{if .Principal}}
-  <nav>
-    <a href="/account">My account</a>
-    <a href="/tokens">Tokens</a>
-    <a href="/activity">Activity</a>
-    {{if .Principal.IsAdmin}}<a href="/admin/users">Users</a>{{end}}
-  </nav>
-  <div class="who">
-    <span>{{.Principal.DisplayName}}</span>
-    <form method="post" action="/auth/signout">
-      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
-      <button class="btn" type="submit">Sign out</button>
-    </form>
-  </div>
-  {{end}}
-</header>
+{{template "nav" .Nav}}
 <main>
 {{template "content" .}}
 </main>
