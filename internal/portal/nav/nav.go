@@ -138,3 +138,32 @@ func FromRequest(r *http.Request) Data {
 	d.Active = r.URL.Path
 	return d
 }
+
+// FuncName is the template function modules call to get the request's nav
+// data: {{template "nav" navData}}.
+const FuncName = "navData"
+
+// Funcs is the placeholder FuncMap entry a module adds when it parses its
+// template set (functions must exist at parse time). It renders the
+// anonymous bar; For binds the real data per request.
+func Funcs() template.FuncMap {
+	return template.FuncMap{FuncName: func() Data { return Data{} }}
+}
+
+// Setup adds the placeholder function and the partial to a module's
+// template set: call Setup on template.New("") before ParseFS.
+func Setup(t *template.Template) *template.Template {
+	return template.Must(Add(t.Funcs(Funcs())))
+}
+
+// For returns a clone of t whose navData returns r's nav data. t itself must
+// never be executed (html/template refuses to clone an executed set), so
+// modules keep a pristine set and execute only the clones.
+func For(t *template.Template, r *http.Request) (*template.Template, error) {
+	c, err := t.Clone()
+	if err != nil {
+		return nil, err
+	}
+	d := FromRequest(r)
+	return c.Funcs(template.FuncMap{FuncName: func() Data { return d }}), nil
+}
