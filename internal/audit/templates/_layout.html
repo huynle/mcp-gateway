@@ -18,9 +18,15 @@
   .empty { color: #666; padding: 2rem 0; }
   nav.pager { margin-top: 1rem; display: flex; gap: 1rem; }
   dl.resource { margin: 0; } dl.resource dt { display: inline; color: #555; } dl.resource dd { display: inline; margin: 0 .5rem 0 .2rem; }
+  header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin: -1.5rem -1.5rem 1.5rem; padding: .6rem 1.5rem; border-bottom: 1px solid #ddd; }
+  header .brand { font-weight: 600; color: inherit; text-decoration: none; }
+  header nav.site-nav { display: flex; flex-wrap: wrap; gap: .9rem; }
+  header nav.site-nav a[aria-current="page"] { font-weight: 600; }
+  header .who { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
 </style>
 </head>
 <body>
+{{template "nav" navData}}
 <h1>{{.Title}}</h1>
 {{end}}
 

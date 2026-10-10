@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -62,7 +64,7 @@ func NewPortal(svc *Service, who Identity, log *slog.Logger) *Portal {
 	if log == nil {
 		log = slog.Default()
 	}
-	tpl := template.Must(template.New("").Funcs(template.FuncMap{
+	tpl := template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
 		"join":    func(s []string) string { return strings.Join(s, " ") },
 		"title":   titleCase,
@@ -477,7 +479,7 @@ func isBadUUID(err error) bool {
 
 func (p *Portal) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	var buf bytes.Buffer
-	if err := p.tpl.ExecuteTemplate(&buf, name, data); err != nil {
+	if err := nav.Execute(p.tpl, r, &buf, name, data); err != nil {
 		p.fail(w, r, "render "+name, err)
 		return
 	}

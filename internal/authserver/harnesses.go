@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -28,7 +30,7 @@ var templateFS embed.FS
 
 // parseTemplates builds the consent, harnesses and error pages.
 func parseTemplates() (*template.Template, error) {
-	return template.New("").Funcs(template.FuncMap{
+	return nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
 		"fmtDate": func(t time.Time) string { return t.UTC().Format("2006-01-02") },
 	}).ParseFS(templateFS, "templates/*.html")
@@ -199,7 +201,7 @@ func (s *Service) DisableHook() identity.DisableHook {
 
 func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	var buf bytes.Buffer
-	if err := s.tpl.ExecuteTemplate(&buf, name, data); err != nil {
+	if err := nav.Execute(s.tpl, r, &buf, name, data); err != nil {
 		s.log.Error("render failed", "event", "authserver.render_failed", "template", name, "path", r.URL.Path, "error", err)
 		pageHeaders(w)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -215,7 +217,7 @@ func (s *Service) render(w http.ResponseWriter, r *http.Request, status int, nam
 func (s *Service) errorPage(w http.ResponseWriter, status int, message string) {
 	var buf bytes.Buffer
 	pageHeaders(w)
-	if err := s.tpl.ExecuteTemplate(&buf, "error.html", errorData{Title: "Request refused", Message: message}); err != nil {
+	if err := nav.ExecuteData(s.tpl, nav.Data{}, &buf, "error.html", errorData{Title: "Request refused", Message: message}); err != nil {
 		http.Error(w, message, status)
 		return
 	}

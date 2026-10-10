@@ -15,7 +15,7 @@ func TestForBindsTheRequestsNavDataPerClone(t *testing.T) {
 	template.Must(base.New("page").Parse(`{{template "nav" navData}}`))
 
 	render := func(d *nav.Data) string {
-		r := httptest.NewRequest("GET", "/tokens", nil)
+		r := httptest.NewRequestWithContext(t.Context(), "GET", "/tokens", nil)
 		if d != nil {
 			r = r.WithContext(nav.WithData(r.Context(), *d))
 		}
@@ -54,7 +54,7 @@ func TestForBindsTheRequestsNavDataPerClone(t *testing.T) {
 		t.Error("anonymous bar shows user links")
 	}
 	// The base set is never executed, so it can be cloned again.
-	if _, err := nav.For(base, httptest.NewRequest("GET", "/", nil)); err != nil {
+	if _, err := nav.For(base, httptest.NewRequestWithContext(t.Context(), "GET", "/", nil)); err != nil {
 		t.Fatalf("base set no longer clonable: %v", err)
 	}
 }

@@ -172,9 +172,15 @@ func For(t *template.Template, r *http.Request) (*template.Template, error) {
 // Execute renders name from a per-request clone of t (see For). It is the
 // drop-in for t.ExecuteTemplate in module render helpers.
 func Execute(t *template.Template, r *http.Request, w io.Writer, name string, data any) error {
-	c, err := For(t, r)
+	return ExecuteData(t, FromRequest(r), w, name, data)
+}
+
+// ExecuteData is Execute with explicit nav data, for pages rendered where no
+// request is at hand (e.g. error pages, which show the anonymous bar).
+func ExecuteData(t *template.Template, d Data, w io.Writer, name string, data any) error {
+	c, err := t.Clone()
 	if err != nil {
 		return err
 	}
-	return c.ExecuteTemplate(w, name, data)
+	return c.Funcs(template.FuncMap{FuncName: func() Data { return d }}).ExecuteTemplate(w, name, data)
 }

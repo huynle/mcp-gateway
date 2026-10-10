@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -22,7 +24,7 @@ type Identity func(r *http.Request) (userID string, isAdmin bool)
 //go:embed templates/*.html
 var templateFS embed.FS
 
-var templates = template.Must(template.New("").Funcs(template.FuncMap{
+var templates = template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
 	"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05Z") },
 	"fmtDur":  func(d time.Duration) string { return d.String() },
 }).ParseFS(templateFS, "templates/*.html"))
@@ -180,7 +182,7 @@ func pageLink(u *url.URL, n, got, limit int) string {
 func render(w http.ResponseWriter, r *http.Request, name string, data page) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := templates.ExecuteTemplate(w, name, data); err != nil {
+	if err := nav.Execute(templates, r, w, name, data); err != nil {
 		// Headers are already out; log and stop.
 		logError(r.Context(), "audit: render "+name, err)
 	}

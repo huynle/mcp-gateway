@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
+
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -36,7 +38,10 @@ func TestOperationsPageListsTheCallersOperationsWithHints(t *testing.T) {
 	}
 	ledger.NewPortal(f.svc, who, slog.New(slog.DiscardHandler)).Mount(mux.Handle)
 
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations", nil)
+	// The portal middleware attaches the shared nav data (sign-out form
+	// token, admin flag) to every request; simulate it for a member.
+	ctx := nav.WithData(t.Context(), nav.Data{SignedIn: true, CSRFToken: "csrf-token"})
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/operations", nil)
 	req.Header.Set("X-User", alice)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -51,6 +56,9 @@ func TestOperationsPageListsTheCallersOperationsWithHints(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
+	}
+	if strings.Contains(body, "/admin/") {
+		t.Error("member page shows admin links")
 	}
 	if strings.Contains(body, bobs.ID[:8]) || strings.Contains(body, "it-bob") {
 		t.Error("page shows another user's operation")
