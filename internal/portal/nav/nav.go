@@ -15,6 +15,7 @@ package nav
 import (
 	"context"
 	"html/template"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -166,4 +167,14 @@ func For(t *template.Template, r *http.Request) (*template.Template, error) {
 	}
 	d := FromRequest(r)
 	return c.Funcs(template.FuncMap{FuncName: func() Data { return d }}), nil
+}
+
+// Execute renders name from a per-request clone of t (see For). It is the
+// drop-in for t.ExecuteTemplate in module render helpers.
+func Execute(t *template.Template, r *http.Request, w io.Writer, name string, data any) error {
+	c, err := For(t, r)
+	if err != nil {
+		return err
+	}
+	return c.ExecuteTemplate(w, name, data)
 }
