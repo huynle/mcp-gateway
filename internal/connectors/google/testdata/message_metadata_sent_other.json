@@ -1,0 +1,15 @@
+{
+  "id": "18f9other0001",
+  "threadId": "18f9other0001",
+  "labelIds": [
+    "SENT"
+  ],
+  "payload": {
+    "headers": [
+      {
+        "name": "Message-ID",
+        "value": "<someone-else@example.test>"
+      }
+    ]
+  }
+}

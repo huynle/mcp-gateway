@@ -1,0 +1,22 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#teams('team-1')/channels('19:chan-general@thread.tacv2')/messages",
+  "@odata.count": 2,
+  "value": [
+    {
+      "id": "1728380000001",
+      "createdDateTime": "2026-10-08T08:00:00.001Z",
+      "messageType": "message",
+      "from": {"user": {"id": "22222222-3333-4444-8555-666666666666", "displayName": "Bob Example"}},
+      "body": {"contentType": "html", "content": "<p>Deploy window is <b>14:00</b> today.</p>"},
+      "webUrl": "https://teams.example.test/l/message/1728380000001"
+    },
+    {
+      "id": "1728370000002",
+      "createdDateTime": "2026-10-08T07:00:00.002Z",
+      "messageType": "message",
+      "from": {"user": {"id": "33333333-4444-4555-8666-777777777777", "displayName": "Carol Example"}},
+      "body": {"contentType": "text", "content": "Morning all"},
+      "webUrl": "https://teams.example.test/l/message/1728370000002"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "issues": [
+    {
+      "id": "10057",
+      "key": "MOCK-57",
+      "fields": {
+        "summary": "Add a retry to the uploader",
+        "description": {"type": "doc", "version": 1, "content": [
+          {"type": "paragraph", "content": [{"type": "text", "text": "The uploader gives up on the first timeout."}]},
+          {"type": "paragraph", "content": [{"type": "text", "text": "mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11"}]}
+        ]}
+      }
+    }
+  ],
+  "isLast": true
+}

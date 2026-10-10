@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/events",
+  "value": [
+    {"id": "AAMkAGE1-evt-new", "transactionId": "0f1e2d3c-4b5a-4968-8777-66554433aa11", "webLink": "https://outlook.example.test/owa/?itemid=AAMkAGE1-evt-new"}
+  ]
+}

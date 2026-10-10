@@ -1,0 +1,386 @@
+# Default values for mcp-gateway. Every GATEWAY_* variable from .env.example
+# has a knob here; secrets are referenced by the name of an existing Secret
+# and never templated (docs/deploy.md lists the Secrets and their keys).
+#
+# Render-time checks: replicaCount must be >= 2 (the gateway is stateless;
+# decision ysorv868), terminationGracePeriodSeconds is derived as
+# drainTimeoutSeconds + 10 unless set explicitly.
+
+image:
+  repository: ghcr.io/huynle/mcp-gateway
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# At least 2. Background jobs run on every replica but take a PostgreSQL
+# lease (job_locks) so each job runs on one replica at a time; there is no
+# singleton deployment.
+replicaCount: 2
+
+gateway:
+  # Public origin users and harnesses reach the gateway at (GATEWAY_BASE_URL;
+  # the OAuth issuer and the OIDC redirect base). No trailing slash. The
+  # Ingress host defaults to this URL's host.
+  baseURL: https://mcp-gateway.example.com
+  # Container ports. GATEWAY_LISTEN_ADDR is ":<httpPort>"; the metrics
+  # listener is 0.0.0.0:<metricsPort> so the metrics Service can reach it
+  # (it is still private: a separate Service, never on the Ingress).
+  httpPort: 18080
+  metricsPort: 19090
+  # GATEWAY_DRAIN_TIMEOUT in seconds. terminationGracePeriodSeconds is this
+  # plus 10 unless overridden below.
+  drainTimeoutSeconds: 25
+  # terminationGracePeriodSeconds: 35
+  logLevel: info # debug | info | warn | error
+  logFormat: json # json | text
+  session:
+    idleTimeout: 12h
+    absoluteTimeout: 168h
+    # Secure flag on cookies. Only false for plain-http local clusters.
+    cookieSecure: true
+  tokens:
+    # Harness tokens stop working when the owner's last sign-in is older.
+    signinMaxAge: 720h
+  mcp:
+    # Largest /mcp request body in bytes.
+    maxBody: 1048576
+  rateLimits:
+    userPerMinute: 60
+    appPerMinute: 600
+  policy:
+    reloadInterval: 15s
+  approvals:
+    ttl: 15m
+    wait: 30s
+  ledger:
+    idempotencyWindow: 24h
+    staleAfter: 2m
+    maxReconcileAttempts: 6
+    maxReconcileAge: 24h
+  oauth:
+    accessTokenTTL: 1h
+    refreshTokenTTL: 720h
+    codeTTL: 10m
+    registerPerMinute: 10
+    maxUnusedClients: 1000
+    clientIdle: 720h
+    keyRotation: 720h
+    keyGrace: 2h
+  # Role for users created on first sign-in when none is flagged default.
+  defaultRole: member
+  # "issuer|subject" pairs that receive the admin role on every sign-in.
+  bootstrapAdmins: []
+  # Registers the in-process "fake" connector. NEVER in production: it gives
+  # every user a make-believe account and tools. Local/test clusters only.
+  enableFakeConnector: false
+
+# Company identity providers, rendered to GATEWAY_OIDC_PROVIDERS and
+# GATEWAY_OIDC_<NAME>_* . The client secret comes from an existing Secret.
+# Every provider needs allowedDomains and/or allowedTenants.
+oidc:
+  providers: []
+  # - name: google               # lower-case letters, digits, hyphens
+  #   displayName: Google
+  #   issuer: https://accounts.google.com
+  #   clientID: 1234.apps.googleusercontent.com
+  #   clientSecret:
+  #     secretName: mcp-gateway-oidc
+  #     secretKey: google-client-secret
+  #   allowedDomains: [example.com]
+  #   allowedTenants: []
+  #   domainClaim: ""            # optional: which claim holds the domain
+
+# PostgreSQL connection strings for the three roles, read from one existing
+# Secret (the chart never creates it). The migrate key is used only by the
+# pre-upgrade Job; the gateway pods receive app + jobs.
+database:
+  existingSecret: mcp-gateway-database
+  appURLKey: app-url
+  jobsURLKey: jobs-url
+  migrateURLKey: migrate-url
+
+# Envelope-encryption key provider (docs/crypto.md).
+keyProvider:
+  # vault (staging/production) or file (local clusters only).
+  type: vault
+  vault:
+    addr: https://vault.internal:8200
+    transitKey: mcp-gateway
+    mount: transit
+    token:
+      existingSecret: mcp-gateway-vault
+      secretKey: token
+  file:
+    # The Secret holding the JSON key file (crypto.GenerateKeyFile). Secret
+    # volumes cannot produce a 0600 file owned by the gateway user, so an
+    # init container copies it into an emptyDir with the right mode.
+    existingSecret: mcp-gateway-keys
+    secretKey: keys.json
+    mountPath: /var/run/mcp-gateway/keys
+    initImage:
+      repository: busybox
+      tag: "1.37"
+      pullPolicy: IfNotPresent
+
+# Optional GATEWAY_LOG_SALT from an existing Secret; "" leaves it unset
+# (user hashes then change on every restart).
+logSalt:
+  existingSecret: ""
+  secretKey: log-salt
+
+# Pre-install / pre-upgrade hook running `/migrate up` with the same image.
+# Helm waits for it before creating or updating the Deployment. The last Job
+# is kept (for `kubectl logs job/<release>-migrate`) and replaced on the
+# next install/upgrade; add hook-succeeded to delete it right away.
+migrate:
+  enabled: true
+  hookWeight: "-5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  podAnnotations: {}
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# Private metrics: its own Service (never referenced by the Ingress) with
+# Prometheus scrape annotations; optional ServiceMonitor for the operator.
+metrics:
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "19090"
+      prometheus.io/path: /metrics
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  # Optional PrometheusRule (templates/prometheusrule.yaml) with the alerts
+  # the runbooks expect: unresolved write operations, vendor token refresh
+  # failures, bearer authentication failure spikes, vendor 429 rates and
+  # the scrape target going away; with kubeStateMetrics also "no ready
+  # replica" / "fewer than two replicas" from kube-state-metrics. Every
+  # expression is over the gateway's own metrics (docs/observability.md),
+  # which carry no user identifiers.
+  prometheusRule:
+    enabled: false
+    # Extra labels so the operator's Prometheus picks the rule up (e.g.
+    # release: kube-prometheus-stack).
+    labels: {}
+    # Label matcher added to every gateway metric selector. With the
+    # ServiceMonitor above the job label is the metrics Service name
+    # ("<release>-metrics"); set it to whatever your scrape config uses, or
+    # "" to match the metric names alone.
+    selector: 'job="mcp-gateway-metrics"'
+    # Where runbook_url annotations point (a file name is appended).
+    runbookBaseURL: https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks
+    # Render the kube_deployment_status_replicas_available alerts (needs
+    # kube-state-metrics).
+    kubeStateMetrics: true
+    unresolved:
+      window: 30m
+      for: 0m
+      severity: warning
+    refreshFailures:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    authFailures:
+      window: 5m
+      perMinute: 30
+      for: 10m
+      severity: warning
+    vendorRateLimited:
+      window: 15m
+      perMinute: 1
+      for: 15m
+      severity: warning
+    scrapeDown:
+      for: 5m
+      severity: critical
+
+ingress:
+  enabled: true
+  className: ""
+  # Defaults to the host of gateway.baseURL.
+  host: ""
+  annotations: {}
+  tls:
+    enabled: true
+    secretName: mcp-gateway-tls
+  # Only the public paths are routed; /healthz, /readyz and the metrics
+  # port never are. Set paths to [{path: /, pathType: Prefix}] for a plain
+  # catch-all if your controller cannot take this list.
+  paths:
+    - path: /
+      pathType: Exact
+    - path: /mcp
+      pathType: Prefix
+    - path: /oauth
+      pathType: Prefix
+    - path: /.well-known
+      pathType: Prefix
+    - path: /auth
+      pathType: Prefix
+    - path: /signin
+      pathType: Prefix
+    - path: /account
+      pathType: Prefix
+    - path: /tokens
+      pathType: Prefix
+    - path: /connections
+      pathType: Prefix
+    - path: /connect
+      pathType: Prefix
+    - path: /approvals
+      pathType: Prefix
+    - path: /operations
+      pathType: Prefix
+    - path: /harnesses
+      pathType: Prefix
+    - path: /activity
+      pathType: Prefix
+    - path: /admin
+      pathType: Prefix
+    - path: /static
+      pathType: Prefix
+    - path: /slack
+      pathType: Prefix
+
+# Default-deny with explicit ingress and egress. Core NetworkPolicy matches
+# CIDRs and selectors, never hostnames: the vendor API host list is
+# documented on the policy (annotation) and, without explicit CIDRs, means
+# "HTTPS to the public internet, not to private ranges".
+networkPolicy:
+  enabled: true
+  ingress:
+    # Who may reach the http port. Empty = any peer (the ingress controller
+    # usually lives in another namespace). Example:
+    # from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}}]
+    http:
+      from: []
+    # Who may scrape metrics. Empty = any peer in the cluster.
+    metrics:
+      from: []
+  egress:
+    dns:
+      enabled: true
+      # Peers allowed on 53/udp+tcp. Empty = anywhere.
+      to: []
+    postgres:
+      port: 5432
+      # Any of: cidrs, namespaceSelector + podSelector. Empty = anywhere on
+      # that port.
+      cidrs: []
+      namespaceSelector: {}
+      podSelector: {}
+    # Key provider egress (rendered only for keyProvider.type=vault).
+    keyProvider:
+      port: 8200
+      cidrs: []
+      namespaceSelector: {}
+      podSelector: {}
+    vendorAPIs:
+      port: 443
+      # Hosts the connectors and sign-in talk to (docs/vendor-apps.md).
+      hosts:
+        - api.github.com
+        - github.com
+        - slack.com
+        - api.slack.com
+        - api.atlassian.com
+        - auth.atlassian.com
+        - accounts.google.com
+        - oauth2.googleapis.com
+        - www.googleapis.com
+        - gmail.googleapis.com
+        - login.microsoftonline.com
+        - graph.microsoft.com
+      # Resolved CIDRs for the hosts above. Empty = 0.0.0.0/0 except private
+      # and link-local ranges.
+      cidrs: []
+      except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 169.254.0.0/16
+    # Additional raw egress rules appended verbatim.
+    extra: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Spread replicas across nodes. "soft" is preferred-during-scheduling,
+# "hard" is required (needs >= 2 nodes).
+antiAffinity:
+  enabled: true
+  type: soft
+  topologyKey: kubernetes.io/hostname
+topologySpreadConstraints: []
+affinity: {}
+nodeSelector: {}
+tolerations: []
+priorityClassName: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+probes:
+  startup:
+    failureThreshold: 30
+    periodSeconds: 2
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The gateway never talks to the Kubernetes API.
+  automountServiceAccountToken: false
+
+podAnnotations: {}
+podLabels: {}
+# Extra env, envFrom, volumes and mounts for the gateway container.
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []

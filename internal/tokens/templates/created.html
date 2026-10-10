@@ -1,0 +1,24 @@
+{{template "head" .}}
+<p class="notice">Copy the token now. It is shown only this once; the gateway keeps a hash and cannot show it again. If you lose it, revoke it and create a new one.</p>
+<pre class="token">{{.Raw}}</pre>
+<dl>
+  <dt>Name</dt><dd>{{.Token.Name}}</dd>
+  <dt>Expires</dt><dd>{{fmtTime .Token.ExpiresAt}} UTC</dd>
+  <dt>Scope</dt><dd>{{.Token.Scope.String}}</dd>
+</dl>
+
+<h2>Point a harness at the gateway</h2>
+<p>MCP endpoint: <code>{{.Snippets.MCPURL}}</code> (Streamable HTTP). Send the token as <code>Authorization: Bearer …</code>.</p>
+
+<h2>OpenCode (<code>opencode.json</code>)</h2>
+<pre>{{.Snippets.OpenCode}}</pre>
+
+<h2>Claude Code (<code>.mcp.json</code> in the project, or the CLI)</h2>
+<pre>{{.Snippets.ClaudeCode}}</pre>
+<pre>{{.Snippets.ClaudeCodeCLI}}</pre>
+
+<h2>Check it works</h2>
+<pre>{{.Snippets.Curl}}</pre>
+
+<p><a class="btn" href="/tokens">Back to tokens</a></p>
+{{template "foot" .}}

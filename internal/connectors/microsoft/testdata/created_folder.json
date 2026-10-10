@@ -1,0 +1,8 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/drive/items/$entity",
+  "id": "01DRIVE-folder-new",
+  "name": "Q4 planning",
+  "webUrl": "https://example-my.sharepoint.example.test/personal/alice/Documents/Q4%20planning",
+  "folder": {"childCount": 0},
+  "parentReference": {"driveId": "b!drive-1", "id": "01DRIVE-root", "path": "/drive/root:"}
+}

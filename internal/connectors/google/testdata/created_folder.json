@@ -1,0 +1,7 @@
+{
+  "kind": "drive#file",
+  "id": "1NewFolder00000000000000000000000",
+  "mimeType": "application/vnd.google-apps.folder",
+  "webViewLink": "https://drive.google.com/drive/folders/1NewFolder00000000000000000000000",
+  "parents": ["1Folder0000000000000000000000000"]
+}

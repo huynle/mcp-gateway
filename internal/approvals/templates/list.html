@@ -1,0 +1,43 @@
+{{template "head" .}}
+{{if eq .Decided "approved"}}<p class="ok">Approved. Tell the harness to call the tool again with the approval id, or wait: a call that is still waiting completes on its own.</p>
+{{else if eq .Decided "denied"}}<p class="notice">Denied. The arguments were discarded.</p>
+{{else if eq .Decided "already"}}<p class="notice">That approval had already been decided, used or had expired.</p>{{end}}
+<p>A harness asked to run a tool your role marks as <em>confirm</em>. Check the arguments and approve or deny. Approving lets exactly one call run with exactly these arguments within the expiry; the arguments are deleted afterwards.</p>
+{{template "pending" .}}
+<p class="muted"><a href="/approvals/history">History</a></p>
+{{template "foot" .}}
+
+{{define "pending"}}
+<div id="pending" hx-get="/approvals" hx-trigger="every 5s" hx-select="#pending" hx-swap="outerHTML">
+{{$csrf := .Caller.CSRFToken}}{{$now := .Now}}
+{{range .Pending}}
+<section class="card">
+  <h2><code>{{.Tool}}</code> <span class="pill pending">waiting</span></h2>
+  <div class="meta">
+    Account: {{if .AccountName}}{{.AccountName}} ({{.AccountLabel}}){{else}}{{.AccountLabel}}{{end}}
+    {{if .ResourceIdentity}}· {{range $k, $v := .ResourceIdentity}}<span>{{$k}}=<strong>{{$v}}</strong></span> {{end}}{{end}}
+    · Expires in {{expiresIn .ExpiresAt $now}} · Requested {{fmtTime .CreatedAt}} UTC
+  </div>
+  {{if .Summary}}
+  <dl class="args">
+  {{range .Summary}}<dt>{{.Key}}</dt><dd>{{.Value}}{{if .Truncated}} <span class="muted">(truncated)</span>{{end}}</dd>
+  {{end}}
+  </dl>
+  {{else}}<p class="muted">No arguments.</p>{{end}}
+  <div class="actions">
+    <form class="inline" method="post" action="/approvals/{{.ID}}/approve" hx-post="/approvals/{{.ID}}/approve" hx-target="#pending" hx-swap="outerHTML">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn primary" type="submit">Approve</button>
+    </form>
+    <form class="inline" method="post" action="/approvals/{{.ID}}/deny" hx-post="/approvals/{{.ID}}/deny" hx-target="#pending" hx-swap="outerHTML">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button class="btn danger" type="submit">Deny</button>
+    </form>
+    <span class="muted"><code>{{.ID}}</code></span>
+  </div>
+</section>
+{{else}}
+<p class="muted">No approvals waiting.</p>
+{{end}}
+</div>
+{{end}}

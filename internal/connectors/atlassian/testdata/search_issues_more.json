@@ -1,0 +1,16 @@
+{
+  "issues": [
+    {
+      "id": "10001",
+      "key": "MOCK-1",
+      "fields": {
+        "summary": "Mock issue from JQL search",
+        "status": {"name": "To Do"},
+        "issuetype": {"name": "Task"},
+        "project": {"key": "MOCK", "name": "Mock Project"}
+      }
+    }
+  ],
+  "isLast": false,
+  "nextPageToken": "CAEaAggD"
+}

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: mcp-gateway
+description: >-
+  Self-hosted MCP gateway for a team: company sign-in, per-user app
+  connections, policy, approvals, a write ledger and audit in front of every
+  tool a harness can call. Runs as >= 2 stateless replicas against PostgreSQL
+  with a pre-upgrade migration Job (see docs/deploy.md).
+type: application
+# Chart version (packaging); bump on every chart change.
+version: 0.2.0
+# Default image tag; override with image.tag.
+appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - mcp
+  - gateway
+  - oauth
+home: https://github.com/huynle/mcp-gateway
+sources:
+  - https://github.com/huynle/mcp-gateway
+maintainers:
+  - name: mcp-gateway maintainers

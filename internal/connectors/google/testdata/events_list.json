@@ -1,0 +1,41 @@
+{
+  "kind": "calendar#events",
+  "summary": "alice@example.test",
+  "updated": "2026-10-08T09:00:00.000Z",
+  "timeZone": "America/Los_Angeles",
+  "accessRole": "owner",
+  "nextPageToken": "page-two",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "id": "evt_standup_001",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_standup_001",
+      "created": "2026-09-01T08:00:00.000Z",
+      "updated": "2026-10-01T08:00:00.000Z",
+      "summary": "Team standup",
+      "description": "Daily sync.",
+      "location": "Room 4",
+      "creator": {"email": "alice@example.test", "self": true},
+      "organizer": {"email": "alice@example.test", "self": true},
+      "start": {"dateTime": "2026-10-09T09:30:00-07:00", "timeZone": "America/Los_Angeles"},
+      "end": {"dateTime": "2026-10-09T09:45:00-07:00", "timeZone": "America/Los_Angeles"},
+      "recurringEventId": "evt_standup",
+      "attendees": [
+        {"email": "alice@example.test", "organizer": true, "self": true, "responseStatus": "accepted"},
+        {"email": "bob@example.test", "displayName": "Bob", "responseStatus": "needsAction", "optional": true}
+      ],
+      "hangoutLink": "https://meet.google.com/abc-defg-hij"
+    },
+    {
+      "kind": "calendar#event",
+      "id": "evt_offsite_002",
+      "status": "tentative",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_offsite_002",
+      "summary": "Offsite",
+      "start": {"date": "2026-10-10"},
+      "end": {"date": "2026-10-11"},
+      "organizer": {"email": "carol@example.test"}
+    }
+  ]
+}

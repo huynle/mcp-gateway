@@ -1,0 +1,48 @@
+{
+  "roles": [
+    {
+      "name": "admin",
+      "description": "Manages users, roles and settings; grants no tools by itself",
+      "rules": []
+    },
+    {
+      "name": "engineer",
+      "description": "Engineers: every github tool, issues confirmed outside acme/, no deleting repos; slack reads, no exec channels",
+      "rules": [
+        {"app": "github", "tool": "*", "outcome": "allow"},
+        {"app": "github", "tool": "create_issue", "outcome": "allow"},
+        {"app": "github", "tool": "create_issue", "outcome": "confirm", "conditions": [{"key": "repo", "op": "prefix", "value": "acme/"}]},
+        {"app": "github", "tool": "delete_repo", "outcome": "hidden"},
+        {"app": "github", "tool": "merge_pr", "outcome": "deny", "conditions": [{"key": "repo", "op": "equals", "value": "acme/prod"}]},
+        {"app": "slack", "tool": "*", "outcome": "confirm"},
+        {"app": "slack", "tool": "post_message", "outcome": "deny", "conditions": [{"key": "channel", "op": "glob", "value": "#exec-*"}]},
+        {"app": "slack", "tool": "list_channels", "outcome": "allow"}
+      ],
+      "personal_accounts": {"github": "confirm_writes", "slack": "deny"}
+    },
+    {
+      "name": "member",
+      "description": "Default role: fake reads only",
+      "rules": [
+        {"app": "fake", "tool": "*", "outcome": "deny"},
+        {"app": "fake", "tool": "list_items", "outcome": "allow"},
+        {"app": "fake", "tool": "get_item", "outcome": "allow"},
+        {"app": "fake", "tool": "list_accounts", "outcome": "allow"}
+      ]
+    }
+  ],
+  "assignments": [
+    {"UserID": "u-alice", "Role": "engineer"},
+    {"UserID": "u-alice", "Role": "admin"},
+    {"UserID": "u-bob", "Role": "member"},
+    {"UserID": "u-carol", "Role": "engineer"}
+  ],
+  "restrictions": [
+    {"user_id": "u-carol", "rules": [
+      {"app": "github", "tool": "merge_pr", "outcome": "hidden"},
+      {"app": "slack", "tool": "*", "outcome": "deny"},
+      {"app": "github", "tool": "create_issue", "outcome": "confirm"},
+      {"app": "github", "tool": "list_issues", "outcome": "deny", "conditions": [{"key": "repo", "op": "prefix", "value": "secret/"}]}
+    ]}
+  ]
+}

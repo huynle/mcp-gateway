@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "messages": [
+    {"type": "message", "user": "U0BOB00002", "text": "newer chatter", "ts": "1700005000.000100"},
+    {"type": "message", "user": "U0BOB00002", "text": "older chatter", "ts": "1700003000.000200"}
+  ],
+  "has_more": false,
+  "response_metadata": {"next_cursor": ""}
+}

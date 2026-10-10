@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "id": "10058",
+      "key": "MOCK-58",
+      "fields": {
+        "summary": "Mentions the gateway",
+        "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "mcp-gateway op:some-other-operation"}]}]}
+      }
+    }
+  ],
+  "isLast": true
+}

@@ -1,0 +1,41 @@
+{
+  "id": "18f1a2b3c4d5e6f7",
+  "threadId": "18f1a2b3c4d5e6f0",
+  "labelIds": [
+    "INBOX",
+    "UNREAD",
+    "Label_12"
+  ],
+  "snippet": "Hi Alice, the gateway review is on Friday.",
+  "payload": {
+    "mimeType": "multipart/alternative",
+    "headers": [
+      {
+        "name": "From",
+        "value": "Bob Example <bob@example.test>"
+      },
+      {
+        "name": "To",
+        "value": "alice@example.test"
+      },
+      {
+        "name": "Cc",
+        "value": "carol@example.test"
+      },
+      {
+        "name": "Subject",
+        "value": "Gateway review"
+      },
+      {
+        "name": "Date",
+        "value": "Wed, 07 Oct 2026 10:15:00 -0700"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<abc123@example.test>"
+      }
+    ]
+  },
+  "sizeEstimate": 4521,
+  "internalDate": "1791997700000"
+}

@@ -1,0 +1,8 @@
+{{define "title"}}{{.Data.Title}}{{end}}
+{{define "content"}}
+<h1>{{.Data.Title}}</h1>
+<div class="error">
+  <p>{{.Data.Message}}</p>
+  <p><a class="btn" href="{{.Data.Back}}">Back</a></p>
+</div>
+{{end}}

@@ -1,0 +1,8 @@
+{
+  "url": "https://api.github.example.test/orgs/example-org/memberships/octocat",
+  "state": "active",
+  "role": "member",
+  "organization_url": "https://api.github.example.test/orgs/example-org",
+  "organization": { "login": "example-org", "id": 9919 },
+  "user": { "login": "octocat", "id": 583231 }
+}

@@ -1,0 +1,46 @@
+{
+  "total_count": 2,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 1,
+      "node_id": "MDU6SXNzdWUx",
+      "number": 42,
+      "title": "Login page throws 500 on empty password",
+      "state": "open",
+      "locked": false,
+      "html_url": "https://github.example.test/example-org/widgets/issues/42",
+      "repository_url": "https://api.github.example.test/repos/example-org/widgets",
+      "user": { "login": "octocat", "id": 583231 },
+      "labels": [ { "id": 10, "name": "bug" }, { "id": 11, "name": "priority:high" } ],
+      "assignees": [ { "login": "hubot", "id": 1 } ],
+      "comments": 3,
+      "created_at": "2024-03-01T10:00:00Z",
+      "updated_at": "2024-03-02T11:00:00Z",
+      "body": "Steps: leave the password empty and submit."
+    },
+    {
+      "id": 2,
+      "node_id": "MDExOlB1bGxSZXF1ZXN0Mg==",
+      "number": 43,
+      "title": "Fix empty password handling",
+      "state": "closed",
+      "state_reason": "completed",
+      "locked": false,
+      "html_url": "https://github.example.test/example-org/widgets/pull/43",
+      "repository_url": "https://api.github.example.test/repos/example-org/widgets",
+      "user": { "login": "hubot", "id": 1 },
+      "labels": [],
+      "assignees": [],
+      "comments": 0,
+      "created_at": "2024-03-03T10:00:00Z",
+      "updated_at": "2024-03-04T11:00:00Z",
+      "closed_at": "2024-03-04T11:00:00Z",
+      "pull_request": {
+        "url": "https://api.github.example.test/repos/example-org/widgets/pulls/43",
+        "html_url": "https://github.example.test/example-org/widgets/pull/43"
+      },
+      "body": "Closes #42"
+    }
+  ]
+}

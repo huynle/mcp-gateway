@@ -1,0 +1,11 @@
+{
+  "id": "12400",
+  "status": "current",
+  "title": "Release checklist",
+  "spaceId": "98765",
+  "parentId": "12000",
+  "authorId": "5b10ac8d82e05b22cc7d4ef5",
+  "createdAt": "2026-10-07T09:00:00.000Z",
+  "version": {"number": 1, "createdAt": "2026-10-07T09:00:00.000Z"},
+  "_links": {"webui": "/spaces/DOCS/pages/12400/Release+checklist", "editui": "/pages/resumedraft.action?draftId=12400", "tinyui": "/x/AQAC"}
+}

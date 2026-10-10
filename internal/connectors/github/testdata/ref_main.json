@@ -1,0 +1,6 @@
+{
+  "ref": "refs/heads/main",
+  "node_id": "MDM6UmVmcmVmcy9oZWFkcy9tYWlu",
+  "url": "https://api.github.example.test/repos/example-org/widgets/git/refs/heads/main",
+  "object": { "type": "commit", "sha": "0123456789abcdef0123456789abcdef01234567", "url": "https://api.github.example.test/repos/example-org/widgets/git/commits/0123456789abcdef0123456789abcdef01234567" }
+}

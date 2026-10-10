@@ -1,23 +1,38 @@
-FROM python:3.12-slim AS runtime
+# syntax=docker/dockerfile:1
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+# --- build stage -----------------------------------------------------------
+FROM golang:1.26-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-RUN useradd --create-home --shell /usr/sbin/nologin appuser
+# Cache module downloads separately from source changes.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-COPY pyproject.toml README.md alembic.ini ./
-COPY src ./src
-COPY migrations ./migrations
+COPY . .
 
-RUN pip install --upgrade pip && pip install .
+ARG VERSION=dev
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags "-s -w -X main.version=${VERSION}" \
+      -o /out/gateway ./cmd/gateway \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags "-s -w -X main.version=${VERSION}" \
+      -o /out/migrate ./cmd/migrate
 
-RUN chown -R appuser:appuser /app
+# --- runtime stage ---------------------------------------------------------
+# Static distroless: no shell, no package manager, runs as the non-root user
+# 65532 (nonroot). CA certificates and tzdata are included for outbound
+# HTTPS to vendor APIs and the key provider. The same image carries the
+# migrate binary so the pre-upgrade job (`/migrate up`) runs the exact
+# migrations the service expects.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-USER appuser
+COPY --from=builder /out/gateway /gateway
+COPY --from=builder /out/migrate /migrate
 
-EXPOSE 8000
+USER nonroot:nonroot
+EXPOSE 18080
 
-CMD ["uvicorn", "mcp_gateway.app:create_gateway_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/gateway"]

@@ -1,0 +1,7 @@
+{
+  "results": [
+    {"id": "12402", "status": "current", "title": "Newest", "spaceId": "98765", "body": {"storage": {"value": "<p>nothing</p>"}}, "_links": {"webui": "/spaces/DOCS/pages/12402/Newest"}},
+    {"id": "12401", "status": "current", "title": "Newer", "spaceId": "98765", "body": {"storage": {"value": ""}}, "_links": {"webui": "/spaces/DOCS/pages/12401/Newer"}}
+  ],
+  "_links": {"next": "/wiki/api/v2/spaces/98765/pages?cursor=CURSOR2&limit=100&sort=-created-date&body-format=storage"}
+}

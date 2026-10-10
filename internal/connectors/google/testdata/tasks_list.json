@@ -1,0 +1,33 @@
+{
+  "kind": "tasks#tasks",
+  "etag": "\"etag-1\"",
+  "nextPageToken": "tasks-page-two",
+  "items": [
+    {
+      "kind": "tasks#task",
+      "id": "task_001",
+      "etag": "\"e1\"",
+      "title": "Write the report",
+      "updated": "2026-10-07T18:00:00.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/@default/tasks/task_001",
+      "position": "00000000000000000001",
+      "notes": "Due before the offsite.",
+      "status": "needsAction",
+      "due": "2026-10-10T00:00:00.000Z",
+      "webViewLink": "https://tasks.google.com/task/task_001"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "task_002",
+      "etag": "\"e2\"",
+      "title": "Book the room",
+      "updated": "2026-10-06T12:00:00.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/@default/tasks/task_002",
+      "parent": "task_001",
+      "position": "00000000000000000002",
+      "status": "completed",
+      "completed": "2026-10-06T12:00:00.000Z",
+      "hidden": true
+    }
+  ]
+}

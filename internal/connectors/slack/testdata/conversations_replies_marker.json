@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "messages": [
+    {"type": "message", "user": "U0ALICE001", "text": "Starting the deploy now", "thread_ts": "1700002000.000100", "ts": "1700002000.000100", "reply_count": 3},
+    {"type": "message", "user": "U0BOB00002", "text": "Watching the dashboards", "thread_ts": "1700002000.000100", "ts": "1700002100.000200"},
+    {"type": "message", "user": "U0ALICE001", "text": "the reply we are looking for", "thread_ts": "1700002000.000100", "ts": "1700004100.000200",
+     "metadata": {"event_type": "mcp_gateway_operation", "event_payload": {"operation_id": "0f1e2d3c-4b5a-4968-8777-66554433aa11"}}}
+  ],
+  "has_more": false,
+  "response_metadata": {"next_cursor": ""}
+}

@@ -1,0 +1,89 @@
+# Staging values: separate vendor apps and OIDC client, Vault transit with
+# its own key, a cluster-issued certificate, the same alert rules as
+# production so they are exercised before the pilot. Replace every
+# example.com and every selector with your cluster's values. No secret
+# values live here; create the Secrets named below first (docs/deploy.md).
+# Staging is where the runbooks are drilled (docs/runbooks/README.md) and
+# where the real-harness conformance rows get ticked (docs/conformance.md).
+image:
+  repository: ghcr.io/huynle/mcp-gateway
+  tag: "" # the chart's appVersion; pin a release tag in CD
+
+replicaCount: 2
+
+gateway:
+  baseURL: https://mcp-gateway-staging.example.com
+  logLevel: debug
+  bootstrapAdmins: []
+  # - "https://accounts.google.com|<sub of the first admin>"
+  enableFakeConnector: false # staging runs the real connectors against staging vendor apps
+
+oidc:
+  providers:
+    - name: google
+      displayName: Google
+      issuer: https://accounts.google.com
+      clientID: REPLACE-ME.apps.googleusercontent.com
+      clientSecret:
+        secretName: mcp-gateway-oidc
+        secretKey: google-client-secret
+      allowedDomains: [example.com]
+
+database:
+  existingSecret: mcp-gateway-database
+
+keyProvider:
+  type: vault
+  vault:
+    addr: https://vault.staging.example.com:8200
+    transitKey: mcp-gateway-staging
+    mount: transit
+    token:
+      existingSecret: mcp-gateway-vault
+      secretKey: token
+
+logSalt:
+  existingSecret: mcp-gateway-app
+  secretKey: log-salt
+
+ingress:
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+  tls:
+    secretName: mcp-gateway-staging-tls
+
+networkPolicy:
+  ingress:
+    http:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+    metrics:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  egress:
+    postgres:
+      cidrs: ["10.20.0.0/16"] # the managed PostgreSQL subnet
+    keyProvider:
+      cidrs: ["10.30.0.0/24"] # Vault
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels: {}
+  prometheusRule:
+    enabled: true
+    labels: {}
+    selector: 'job="mcp-gateway-metrics"'
+    kubeStateMetrics: true
+
+podDisruptionBudget:
+  minAvailable: 1
+
+antiAffinity:
+  type: soft

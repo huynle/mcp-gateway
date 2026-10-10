@@ -1,0 +1,23 @@
+[
+  {
+    "id": 2003,
+    "number": 59,
+    "title": "Newest issue by the same user",
+    "body": "Unrelated.\n\n<!-- mcp-gateway op:11111111-2222-4333-8444-555555555555 -->",
+    "state": "open",
+    "html_url": "https://github.example.test/example-org/widgets/issues/59",
+    "repository_url": "https://api.github.example.test/repos/example-org/widgets",
+    "user": { "login": "octocat", "id": 583231 }
+  },
+  {
+    "id": 2002,
+    "number": 58,
+    "title": "A pull request by the same user",
+    "body": "Also unrelated.",
+    "state": "open",
+    "html_url": "https://github.example.test/example-org/widgets/pull/58",
+    "repository_url": "https://api.github.example.test/repos/example-org/widgets",
+    "pull_request": { "url": "https://api.github.example.test/repos/example-org/widgets/pulls/58" },
+    "user": { "login": "octocat", "id": 583231 }
+  }
+]

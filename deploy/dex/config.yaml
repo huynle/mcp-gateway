@@ -1,0 +1,47 @@
+# dex configuration for local development only. Mock company OIDC provider
+# with one static user and one static client. Never use outside Compose.
+issuer: http://localhost:15556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:15556
+
+# Dev-only: user sign-in via the static password list below.
+enablePasswordDB: true
+
+staticClients:
+  - id: gateway
+    name: MCP Gateway (local)
+    secret: gateway-dev-secret
+    redirectURIs:
+      - http://localhost:18080/auth/dex/callback
+      - http://127.0.0.1:18080/auth/dex/callback
+
+# The gateway identifies users by issuer + the ID token "sub" claim. dex
+# derives "sub" from userID and the connector ID ("local" for static
+# passwords): for dev@example.com it is
+# CiQwOGE4Njg0Yi1kYjg4LTRiNzMtOTBhOS0zY2QxNjYxZjU0NjYSBWxvY2Fs, which
+# docker-compose.yml lists in GATEWAY_BOOTSTRAP_ADMINS so the dev user is an
+# admin. The gateway logs the subject of every sign-in (event
+# identity.signin) if you need the value for another user.
+staticPasswords:
+  - email: dev@example.com
+    # bcrypt("password"), the hash from dex's own examples/config-dev.yaml
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: dev
+    userID: 08a8684b-db88-4b73-90a9-3cd1661f5466
+  - email: alice@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: alice
+    userID: 2c1b3f84-3a7e-4c4d-9a6b-0f2a9e1d5c77
+  # Not in GATEWAY_OIDC_DEX_ALLOWED_DOMAINS: signing in as this user is
+  # rejected with identity.signin_rejected reason=domain_not_allowed.
+  - email: mallory@evil.test
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: mallory
+    userID: 7e9d2b11-5f0c-4e8a-b3d4-6a1c8f2e9b05
+
+oauth2:
+  skipApprovalScreen: true

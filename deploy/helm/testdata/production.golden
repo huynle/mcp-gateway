@@ -1,0 +1,704 @@
+---
+# Source: mcp-gateway/templates/networkpolicy.yaml
+# Default deny in both directions for the gateway pods, then: ingress to the
+# http port (ingress controller) and the metrics port (scrapers); egress to
+# DNS, PostgreSQL, the key provider (Vault) and the vendor APIs over HTTPS.
+# Core NetworkPolicy cannot match hostnames: the vendor host list is recorded
+# in the annotation and, without explicit CIDRs, egress on the vendor port
+# is allowed to every public address (private ranges excluded).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    mcp-gateway/vendor-api-hosts: "api.github.com,github.com,slack.com,api.slack.com,api.atlassian.com,auth.atlassian.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,gmail.googleapis.com,login.microsoftonline.com,graph.microsoft.com"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-gateway
+      app.kubernetes.io/instance: mcp-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 18080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+    - ports:
+        - port: 19090
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: 5432
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: 10.20.0.0/16
+    - ports:
+        - port: 8200
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: 10.30.0.0/24
+    - ports:
+        - port: 443
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+
+
+
+---
+# Source: mcp-gateway/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-gateway
+      app.kubernetes.io/instance: mcp-gateway
+
+---
+# Source: mcp-gateway/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: false
+
+---
+# Source: mcp-gateway/templates/service-metrics.yaml
+# Private: scraped inside the cluster, never referenced by the Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-gateway-metrics
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: metrics
+  annotations:
+    prometheus.io/path: /metrics
+    prometheus.io/port: "19090"
+    prometheus.io/scrape: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+  ports:
+    - name: metrics
+      port: 19090
+      targetPort: metrics
+      protocol: TCP
+
+---
+# Source: mcp-gateway/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: mcp-gateway/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-gateway
+      app.kubernetes.io/instance: mcp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-gateway
+        app.kubernetes.io/instance: mcp-gateway
+    spec:
+      serviceAccountName: mcp-gateway
+      automountServiceAccountToken: false
+      # Must exceed GATEWAY_DRAIN_TIMEOUT so in-flight calls finish before
+      # the kubelet kills the process (decision dovthftx).
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: "ghcr.io/huynle/mcp-gateway:0.1.0"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          ports:
+            - name: http
+              containerPort: 18080
+              protocol: TCP
+            - name: metrics
+              containerPort: 19090
+              protocol: TCP
+          env:
+            
+            - name: GATEWAY_LISTEN_ADDR
+              value: ":18080"
+            - name: GATEWAY_METRICS_ADDR
+              value: "0.0.0.0:19090"
+            - name: GATEWAY_DRAIN_TIMEOUT
+              value: "25s"
+            - name: GATEWAY_LOG_LEVEL
+              value: "info"
+            - name: GATEWAY_LOG_FORMAT
+              value: "json"
+            - name: GATEWAY_BASE_URL
+              value: "https://mcp-gateway.example.com"
+            - name: GATEWAY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-database"
+                  key: "app-url"
+            - name: GATEWAY_JOBS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-database"
+                  key: "jobs-url"
+            - name: GATEWAY_SESSION_IDLE_TIMEOUT
+              value: "12h"
+            - name: GATEWAY_SESSION_ABSOLUTE_TIMEOUT
+              value: "168h"
+            - name: GATEWAY_SESSION_COOKIE_SECURE
+              value: "true"
+            - name: GATEWAY_TOKEN_SIGNIN_MAX_AGE
+              value: "720h"
+            - name: GATEWAY_MCP_MAX_BODY
+              value: "1048576"
+            - name: GATEWAY_RATE_USER_PER_MIN
+              value: "60"
+            - name: GATEWAY_RATE_APP_PER_MIN
+              value: "600"
+            - name: GATEWAY_POLICY_RELOAD_INTERVAL
+              value: "15s"
+            - name: GATEWAY_APPROVAL_TTL
+              value: "15m"
+            - name: GATEWAY_APPROVAL_WAIT
+              value: "30s"
+            - name: GATEWAY_LEDGER_IDEMPOTENCY_WINDOW
+              value: "24h"
+            - name: GATEWAY_LEDGER_STALE_AFTER
+              value: "2m"
+            - name: GATEWAY_LEDGER_MAX_RECONCILE_ATTEMPTS
+              value: "6"
+            - name: GATEWAY_LEDGER_MAX_RECONCILE_AGE
+              value: "24h"
+            - name: GATEWAY_OAUTH_ACCESS_TOKEN_TTL
+              value: "1h"
+            - name: GATEWAY_OAUTH_REFRESH_TOKEN_TTL
+              value: "720h"
+            - name: GATEWAY_OAUTH_CODE_TTL
+              value: "10m"
+            - name: GATEWAY_OAUTH_REGISTER_PER_MIN
+              value: "10"
+            - name: GATEWAY_OAUTH_MAX_UNUSED_CLIENTS
+              value: "1000"
+            - name: GATEWAY_OAUTH_CLIENT_IDLE
+              value: "720h"
+            - name: GATEWAY_OAUTH_KEY_ROTATION
+              value: "720h"
+            - name: GATEWAY_OAUTH_KEY_GRACE
+              value: "2h"
+            - name: GATEWAY_DEFAULT_ROLE
+              value: "member"
+            - name: GATEWAY_ENABLE_FAKE_CONNECTOR
+              value: "false"
+            - name: GATEWAY_OIDC_PROVIDERS
+              value: "google"
+            - name: GATEWAY_OIDC_GOOGLE_DISPLAY_NAME
+              value: "Google"
+            - name: GATEWAY_OIDC_GOOGLE_ISSUER
+              value: "https://accounts.google.com"
+            - name: GATEWAY_OIDC_GOOGLE_CLIENT_ID
+              value: "REPLACE-ME.apps.googleusercontent.com"
+            - name: GATEWAY_OIDC_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-oidc"
+                  key: "google-client-secret"
+            - name: GATEWAY_OIDC_GOOGLE_ALLOWED_DOMAINS
+              value: "example.com"
+            - name: GATEWAY_KEY_PROVIDER
+              value: "vault"
+            - name: GATEWAY_VAULT_ADDR
+              value: "https://vault.internal.example.com:8200"
+            - name: GATEWAY_VAULT_TRANSIT_KEY
+              value: "mcp-gateway"
+            - name: GATEWAY_VAULT_MOUNT
+              value: "transit"
+            - name: GATEWAY_VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-vault"
+                  key: "token"
+            - name: GATEWAY_LOG_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-app"
+                  key: "log-salt"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: mcp-gateway
+                app.kubernetes.io/name: mcp-gateway
+            topologyKey: kubernetes.io/hostname
+
+---
+# Source: mcp-gateway/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "mcp-gateway.example.com"
+      secretName: "mcp-gateway-tls"
+  rules:
+    - host: "mcp-gateway.example.com"
+      http:
+        paths:
+          - path: "/"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/mcp"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/oauth"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/.well-known"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/auth"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/signin"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/account"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/tokens"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/connections"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/connect"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/approvals"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/operations"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/harnesses"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/activity"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/admin"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/static"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/slack"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+
+---
+# Source: mcp-gateway/templates/prometheusrule.yaml
+# Alert rules for the Prometheus Operator, over the gateway's own metric
+# catalogue (docs/observability.md): no user, token or account identifier
+# exists as a label, so no alert can name a person. The ledger counter has
+# no "currently unresolved" gauge, so the first rule fires on any write
+# that became unresolved inside the window; triage is on /operations and
+# in docs/runbooks/unresolved-operations.md. Values under
+# metrics.prometheusRule tune windows and thresholds.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  groups:
+    - name: mcp-gateway
+      rules:
+        - alert: MCPGatewayUnresolvedOperations
+          expr: "sum(increase(ledger_operations_total{state=\"unresolved\",job=\"mcp-gateway-metrics\"}[30m])) > 0"
+          for: "0m"
+          labels:
+            severity: "warning"
+            service: mcp-gateway
+          annotations:
+            summary: "Writes could not be verified in the last 30m"
+            description: "{{ $value }} write operation(s) became unresolved: the vendor did not confirm the outcome and reconciliation gave up. The owners were notified; an operator triages them on /admin/audit and the admin_ledger_operations view."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/unresolved-operations.md"
+        - alert: MCPGatewayConnectionRefreshFailures
+          expr: "sum by (app) (rate(connection_refresh_failures_total{job=\"mcp-gateway-metrics\"}[15m])) * 60 > 1"
+          for: "15m"
+          labels:
+            severity: "warning"
+            service: mcp-gateway
+          annotations:
+            summary: "Vendor token refreshes failing for {{ $labels.app }}"
+            description: "{{ $value | printf \"%.2f\" }} refresh failures per minute for app {{ $labels.app }} over 15m. A burst across many users usually means the vendor app's client secret was rotated or revoked at the vendor; isolated failures mark single connections needs_reconnect and the user reconnects on /connections."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/vendor-app-secret-rotation.md"
+        - alert: MCPGatewayAuthFailureSpike
+          expr: "sum(rate(auth_failures_total{job=\"mcp-gateway-metrics\"}[5m])) * 60 > 30"
+          for: "10m"
+          labels:
+            severity: "warning"
+            service: mcp-gateway
+          annotations:
+            summary: "Bearer authentication failures above 30 per minute"
+            description: "{{ $value | printf \"%.1f\" }} rejected bearer tokens per minute on /mcp over 5m. Break it down by auth_failures_total{reason}: unknown/malformed is scanning or token guessing (the per-IP limiter answers 429), signin_stale is users past the 30-day sign-in rule, revoked/user_disabled right after an offboarding is expected."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/incident-redaction-check.md"
+        - alert: MCPGatewayVendorRateLimited
+          expr: "sum by (app) (rate(vendor_rate_limited_total{job=\"mcp-gateway-metrics\"}[15m])) * 60 > 1"
+          for: "15m"
+          labels:
+            severity: "warning"
+            service: mcp-gateway
+          annotations:
+            summary: "{{ $labels.app }} is rate limiting the gateway"
+            description: "{{ $value | printf \"%.2f\" }} vendor 429 answers per minute for app {{ $labels.app }}; the app is paused for every user until the vendor's Retry-After each time. Sustained limiting means gateway.rateLimits.appPerMinute is above what the vendor app is allowed: lower it or raise the vendor quota."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/deploy-and-rollback.md"
+        - alert: MCPGatewayScrapeDown
+          expr: "absent(up{job=\"mcp-gateway-metrics\"} == 1)"
+          for: "5m"
+          labels:
+            severity: "critical"
+            service: mcp-gateway
+          annotations:
+            summary: "No gateway replica is being scraped"
+            description: "Prometheus has no healthy target for Service mcp-gateway-metrics in mcp-gateway: every replica is down, or the scrape configuration / NetworkPolicy (networkPolicy.ingress.metrics.from) no longer reaches the metrics port."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/deploy-and-rollback.md"
+        - alert: MCPGatewayNoReadyReplicas
+          expr: "kube_deployment_status_replicas_available{namespace=\"mcp-gateway\",deployment=\"mcp-gateway\"} < 1"
+          for: "5m"
+          labels:
+            severity: critical
+            service: mcp-gateway
+          annotations:
+            summary: "No ready gateway replica"
+            description: "Deployment mcp-gateway in mcp-gateway has no available replica: /readyz fails on every pod (database unreachable, schema version behind the binary, or key provider down)."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/deploy-and-rollback.md"
+        - alert: MCPGatewayReplicasBelowMinimum
+          expr: "kube_deployment_status_replicas_available{namespace=\"mcp-gateway\",deployment=\"mcp-gateway\"} < 2"
+          for: "15m"
+          labels:
+            severity: warning
+            service: mcp-gateway
+          annotations:
+            summary: "Fewer than two ready gateway replicas"
+            description: "The gateway runs as >= 2 identical replicas (background jobs move between them on a PostgreSQL lease, decision ysorv868); fewer than two have been available for 15 minutes."
+            runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/deploy-and-rollback.md"
+
+---
+# Source: mcp-gateway/templates/servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-gateway
+      app.kubernetes.io/instance: mcp-gateway
+      app.kubernetes.io/component: metrics
+  namespaceSelector:
+    matchNames:
+      - mcp-gateway
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# Source: mcp-gateway/templates/job-migrate.yaml
+# Pre-install / pre-upgrade hook: applies the embedded goose migrations as
+# the database owner before Helm touches the Deployment. The weight orders it
+# before any other hook; the delete policy (before-hook-creation) keeps the
+# last Job around for `kubectl logs` and replaces it on the next run. The
+# gateway refuses to start on a schema mismatch, so a failed migration
+# leaves the previous pods serving. The pod labels deliberately differ from
+# the Deployment's selector so the Service, PDB and NetworkPolicy never
+# match the migrate pod.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mcp-gateway-migrate
+  namespace: mcp-gateway
+  labels:
+    helm.sh/chart: mcp-gateway-0.2.0
+    app.kubernetes.io/name: mcp-gateway-migrate
+    app.kubernetes.io/instance: mcp-gateway
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-gateway-migrate
+        app.kubernetes.io/instance: mcp-gateway
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      # No serviceAccountName: the chart's ServiceAccount does not exist yet
+      # during pre-install, and the Job never talks to the API.
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: "ghcr.io/huynle/mcp-gateway:0.1.0"
+          imagePullPolicy: IfNotPresent
+          command: ["/migrate", "up"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: GATEWAY_MIGRATE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "mcp-gateway-database"
+                  key: "migrate-url"
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+

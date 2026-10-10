@@ -1,0 +1,23 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#Collection(driveItem)",
+  "value": [
+    {
+      "id": "01DRIVE-item-1",
+      "name": "Q3 budget.xlsx",
+      "size": 48213,
+      "webUrl": "https://example-my.sharepoint.example.test/personal/alice/Documents/Finance/Q3%20budget.xlsx",
+      "lastModifiedDateTime": "2026-10-05T16:20:00Z",
+      "file": {"mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+      "parentReference": {"driveId": "b!drive-1", "id": "01DRIVE-folder-finance", "path": "/drive/root:/Finance"}
+    },
+    {
+      "id": "01DRIVE-folder-budgets",
+      "name": "Budgets",
+      "size": 0,
+      "webUrl": "https://example-my.sharepoint.example.test/personal/alice/Documents/Budgets",
+      "lastModifiedDateTime": "2026-09-30T08:00:00Z",
+      "folder": {"childCount": 3},
+      "parentReference": {"driveId": "b!drive-1", "id": "01DRIVE-root", "path": "/drive/root:"}
+    }
+  ]
+}

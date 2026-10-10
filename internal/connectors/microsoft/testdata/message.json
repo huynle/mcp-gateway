@@ -1,0 +1,16 @@
+{
+  "@odata.context": "https://graph.example.test/v1.0/$metadata#users('alice')/messages/$entity",
+  "id": "AAMkAGE1-msg-1",
+  "subject": "Q3 budget review",
+  "from": {"emailAddress": {"name": "Bob Example", "address": "bob@example.test"}},
+  "toRecipients": [{"emailAddress": {"name": "Alice Example", "address": "alice@example.test"}}],
+  "ccRecipients": [{"emailAddress": {"name": "Carol Example", "address": "carol@example.test"}}],
+  "receivedDateTime": "2026-10-07T09:15:00Z",
+  "sentDateTime": "2026-10-07T09:14:30Z",
+  "isRead": false,
+  "hasAttachments": true,
+  "importance": "normal",
+  "conversationId": "AAQkAGE1-conv-1",
+  "webLink": "https://outlook.example.test/owa/?ItemID=AAMkAGE1-msg-1",
+  "body": {"contentType": "text", "content": "Hi Alice,\n\nAttached is the Q3 budget for review before Friday.\n\nBob"}
+}

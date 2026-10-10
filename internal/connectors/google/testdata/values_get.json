@@ -1,0 +1,10 @@
+{
+  "range": "Budget!A1:C4",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Item", "Owner", "Amount"],
+    ["Laptops", "alice@example.test", "12000"],
+    ["Travel", "", "3500.5"],
+    ["Total", "", "15500.5"]
+  ]
+}

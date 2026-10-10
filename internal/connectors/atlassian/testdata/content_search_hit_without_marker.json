@@ -1,0 +1,6 @@
+{
+  "results": [
+    {"id": "12401", "type": "page", "status": "current", "title": "Other", "body": {"storage": {"value": "<p>mcp-gateway op:some-other-operation</p>"}}, "_links": {"webui": "/spaces/DOCS/pages/12401/Other"}}
+  ],
+  "start": 0, "limit": 10, "size": 1, "_links": {}
+}

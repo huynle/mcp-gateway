@@ -1,0 +1,43 @@
+{{define "title"}}Users{{end}}
+{{define "content"}}
+<h1>Users</h1>
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Roles</th><th>Last company sign-in</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Users}}{{template "user_row" (userRow $ .)}}{{else}}<tr><td colspan="6" class="muted">No users yet.</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{define "user_row"}}
+<tr id="user-{{.User.ID}}">
+  <td>{{.User.DisplayName}}{{if eq .User.ID .Principal.UserID}} <span class="muted">(you)</span>{{end}}</td>
+  <td><span class="pill {{.User.Status}}">{{.User.Status}}</span></td>
+  <td>
+    <form class="inline" method="post" action="/admin/users/{{.User.ID}}/role" hx-post="/admin/users/{{.User.ID}}/role" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <select name="role" onchange="this.form.requestSubmit()" aria-label="Role">
+        {{$current := .User.Roles}}
+        {{range .Roles}}<option value="{{.Name}}"{{if hasRole $current .Name}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+      <noscript><button class="btn" type="submit">Set</button></noscript>
+    </form>
+  </td>
+  <td>{{if .User.LastCompanySignInAt}}{{.User.LastCompanySignInAt.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
+  <td>{{.User.CreatedAt.Format "2006-01-02"}}</td>
+  <td>
+    {{if eq .User.ID .Principal.UserID}}
+    {{else if eq .User.Status "active"}}
+    <form class="inline" method="post" action="/admin/users/{{.User.ID}}/disable" hx-post="/admin/users/{{.User.ID}}/disable" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML" hx-confirm="Disable {{.User.DisplayName}}? Their sessions end immediately.">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <button class="btn danger" type="submit">Disable</button>
+    </form>
+    {{else}}
+    <form class="inline" method="post" action="/admin/users/{{.User.ID}}/enable" hx-post="/admin/users/{{.User.ID}}/enable" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <button class="btn" type="submit">Enable</button>
+    </form>
+    {{end}}
+  </td>
+</tr>
+{{end}}

@@ -1,0 +1,8 @@
+{
+  "issues": [
+    {"id": "10060", "key": "MOCK-60", "fields": {"summary": "Newest", "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "nothing here"}]}]}}},
+    {"id": "10059", "key": "MOCK-59", "fields": {"summary": "Newer", "description": null}}
+  ],
+  "isLast": false,
+  "nextPageToken": "PAGE2"
+}

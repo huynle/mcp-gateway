@@ -1,0 +1,23 @@
+[
+  {
+    "id": 3002,
+    "number": 62,
+    "state": "closed",
+    "title": "An earlier pull request from the same branch",
+    "body": "Closed without the marker.",
+    "html_url": "https://github.example.test/example-org/widgets/pull/62",
+    "head": { "ref": "feature/retry", "sha": "ffffffffffffffffffffffffffffffffffffffff" },
+    "base": { "ref": "main", "sha": "0123456789abcdef0123456789abcdef01234567" }
+  },
+  {
+    "id": 3001,
+    "number": 61,
+    "state": "open",
+    "draft": true,
+    "title": "Retry uploads",
+    "body": "Adds a retry.\n\n<!-- mcp-gateway op:0f1e2d3c-4b5a-4968-8777-66554433aa11 -->",
+    "html_url": "https://github.example.test/example-org/widgets/pull/61",
+    "head": { "ref": "feature/retry", "sha": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" },
+    "base": { "ref": "main", "sha": "0123456789abcdef0123456789abcdef01234567" }
+  }
+]

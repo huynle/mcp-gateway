@@ -1,0 +1,9 @@
+{
+  "results": [
+    {"id": "12345", "type": "page", "status": "current", "title": "Mock Confluence page", "space": {"key": "DOCS"}, "_links": {"webui": "/spaces/DOCS/pages/12345/Mock+Confluence+page"}}
+  ],
+  "start": 5,
+  "limit": 1,
+  "size": 1,
+  "_links": {"next": "/rest/api/content/search?cql=type%3Dpage&limit=1&start=6", "base": "https://example-site.atlassian.example.test/wiki"}
+}

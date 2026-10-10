@@ -1,0 +1,23 @@
+{
+  "id": "18f1a2b3c4d5e6f7",
+  "threadId": "18f1a2b3c4d5e6f0",
+  "labelIds": [
+    "INBOX"
+  ],
+  "payload": {
+    "headers": [
+      {
+        "name": "Message-ID",
+        "value": "<abc123@example.test>"
+      },
+      {
+        "name": "References",
+        "value": "<root@example.test>"
+      },
+      {
+        "name": "Subject",
+        "value": "Gateway review"
+      }
+    ]
+  }
+}

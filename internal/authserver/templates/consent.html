@@ -1,0 +1,17 @@
+{{template "head" .}}
+<div class="card">
+  <p><strong>{{.ClientName}}</strong> wants to use the MCP gateway as you.</p>
+  <ul>
+    {{range .Scopes}}<li>{{.}}</li>{{end}}
+  </ul>
+  <p class="muted">Tokens will be issued for <code>{{.Resource}}</code> and sent back to <code>{{.RedirectHost}}</code>. Everything the harness does is checked by policy, confirmed where your role requires it, and recorded in your activity. You can disconnect it at any time on the Harnesses page.</p>
+  <form method="post" action="/oauth/authorize/consent">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    {{range $k, $vs := .Hidden}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
+    <div class="actions">
+      <button class="btn primary" type="submit" name="action" value="approve">Allow</button>
+      <button class="btn" type="submit" name="action" value="deny">Deny</button>
+    </div>
+  </form>
+</div>
+{{template "foot" .}}

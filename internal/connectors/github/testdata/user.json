@@ -1,0 +1,20 @@
+{
+  "login": "octocat",
+  "id": 583231,
+  "node_id": "MDQ6VXNlcjU4MzIzMQ==",
+  "avatar_url": "https://avatars.example.test/u/583231",
+  "html_url": "https://github.example.test/octocat",
+  "type": "User",
+  "name": "The Octocat",
+  "company": "@example-org",
+  "blog": "https://example.test",
+  "location": "Nowhere",
+  "email": null,
+  "bio": "Fixture user; no real person.",
+  "public_repos": 8,
+  "public_gists": 8,
+  "followers": 1,
+  "following": 9,
+  "created_at": "2011-01-25T18:44:36Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}

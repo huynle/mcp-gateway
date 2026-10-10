@@ -1,0 +1,235 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: gofmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make fmt-check
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --build-tags integration ./...
+
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make build
+      - run: make test
+
+  test-integration:
+    name: integration tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gateway
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway-dev
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway -d gateway"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      GATEWAY_TEST_DATABASE_URL: postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-integration
+
+  test-e2e:
+    name: end-to-end gate (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gateway
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway-dev
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway -d gateway"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      GATEWAY_TEST_DATABASE_URL: postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-e2e
+
+  image:
+    name: container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-gateway:ci
+          build-args: VERSION=${{ github.sha }}
+      - name: smoke test /healthz
+        run: |
+          docker run -d --rm --name gw -p 18080:18080 mcp-gateway:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:18080/healthz; then ok=1; break; fi
+            sleep 1
+          done
+          docker logs gw
+          docker stop gw
+          test "${ok:-0}" = 1
+
+  oauth-attack:
+    name: OAuth attack suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-attack
+
+  helm:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: make helm-lint
+      - run: make test-helm
+      # Optional kind smoke: installs the chart on a throwaway cluster with
+      # a plain PostgreSQL, waits for 2 replicas, probes /healthz, /readyz,
+      # the MCP endpoint and the metrics Service, then rolls a migration back
+      # and upgrades to prove the pre-upgrade Job runs before the new pods.
+      # It does not block the build (continue-on-error).
+      - uses: docker/setup-buildx-action@v3
+        continue-on-error: true
+      - uses: docker/build-push-action@v6
+        continue-on-error: true
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-gateway:ci
+          build-args: VERSION=${{ github.sha }}
+      - uses: helm/kind-action@v1
+        continue-on-error: true
+        with:
+          install_only: true
+      - name: kind smoke
+        continue-on-error: true
+        run: IMAGE=mcp-gateway:ci BUILD=0 deploy/smoke/kind-smoke.sh
+
+  # --- security scanning (task kwcbub3k) -------------------------------------
+  # Both jobs are permanent gates: a reachable vulnerable call in the
+  # module graph, or a fixable HIGH/CRITICAL finding in the container
+  # image, fails the build. Accepted image findings live in .trivyignore
+  # with a justification per entry; govulncheck has no allow-list (fix or
+  # upgrade; the Go toolchain itself is pinned by go.mod's toolchain line).
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: make vulncheck
+
+  image-scan:
+    name: container image scan (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-gateway:ci
+          build-args: VERSION=${{ github.sha }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: mcp-gateway:ci
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
+  test-security:
+    name: security acceptance suite (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gateway
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway-dev
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway -d gateway"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      GATEWAY_TEST_DATABASE_URL: postgres://gateway:gateway-dev@localhost:15432/gateway?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-security
