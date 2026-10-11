@@ -210,3 +210,26 @@ func TestBuildReviewClearOverride(t *testing.T) {
 }
 
 func kindPtr(k Kind) *Kind { return &k }
+
+func TestBuildReviewEnableReadsSkipsExplicitlyDisabled(t *testing.T) {
+	base := firstSnapshot()
+	// First approval: nothing decided except search explicitly disabled.
+	r, err := BuildReview(nil, nil, base, ReviewDecisions{Tools: map[string]Decision{"search": enable(false)}}, "alice", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Later "enable all reads" on the same snapshot.
+	r2, err := BuildReview(base, r, base, ReviewDecisions{EnableReads: true}, "bob", t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r2["list"].Enabled || r2["list"].ReviewedBy != "bob" {
+		t.Errorf("undecided read = %+v, want enabled by bob", r2["list"])
+	}
+	if r2["search"].Enabled || r2["search"].ReviewedBy != "alice" {
+		t.Errorf("explicitly disabled read = %+v, want still disabled", r2["search"])
+	}
+	if r2["send"].Enabled || r2["delete"].Enabled {
+		t.Error("EnableReads enabled a write")
+	}
+}

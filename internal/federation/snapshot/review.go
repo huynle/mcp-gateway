@@ -17,8 +17,9 @@ import (
 //     stricter kind); its kind is otherwise recomputed from the new hints.
 //   - Tools missing from next are dropped.
 //   - Then decisions apply: Kind (override, or "" to clear it) first, then
-//     Enabled. EnableReads enables the read tools that needed review (not
-//     carried over) and got no Enabled decision.
+//     Enabled. EnableReads enables the read tools no reviewer has decided
+//     on yet (new, changed, or never reviewed) that got no Enabled
+//     decision; a tool a reviewer explicitly disabled stays disabled.
 //
 // Decisions naming a tool not in next return ErrUnknownTool; a kind other
 // than read, write or "" returns ErrInvalidKind.
@@ -36,7 +37,6 @@ func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDeci
 	}
 	diff := Compare(base, next)
 	out := make(Review, len(next.Tools))
-	needsReview := make(map[string]bool)
 	for _, t := range next.Tools {
 		prev, had := baseReview[t.Name]
 		var tr ToolReview
@@ -44,7 +44,6 @@ func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDeci
 		case had && !diff.ToolChanged(t.Name):
 			tr = prev
 		default:
-			needsReview[t.Name] = true
 			if had && prev.Override != nil && prev.Override.Kind == KindWrite {
 				o := *prev.Override
 				tr.Override = &o
@@ -66,7 +65,7 @@ func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDeci
 		case decided && dec.Enabled != nil:
 			tr.Enabled = *dec.Enabled
 			tr.ReviewedBy, tr.ReviewedAt = actor, timePtr(now)
-		case d.EnableReads && needsReview[t.Name] && tr.Kind == KindRead:
+		case d.EnableReads && !tr.Enabled && tr.ReviewedBy == "" && tr.Kind == KindRead:
 			tr.Enabled = true
 			tr.ReviewedBy, tr.ReviewedAt = actor, timePtr(now)
 		}
