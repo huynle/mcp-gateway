@@ -53,6 +53,8 @@ Behaviour:
 
 ## For the gateway (wiring)
 
+Wired in `cmd/gateway/federation.go` through `connector.Wire` (see [federation-connector.md](federation-connector.md)): the handler is mounted at `/tunnel/connect` on the top-level mux, and the connector authorizes and dials `tunnel://` servers as below. What remains is the portal UI for tunnels (task 9dp13dgy) and the reverse proxy's WebSocket upgrade. The sketch:
+
 ```go
 svc, _ := tunnel.NewService(tunnel.Options{
     Store:  tunnel.NewStore(st),   // *store.Store with the jobs pool (WithJobsURL)

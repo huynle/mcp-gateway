@@ -50,6 +50,18 @@ func (p postgresStore) Load(ctx context.Context) (Snapshot, error) {
 			}
 			snap.Restrictions = append(snap.Restrictions, u)
 		}
+		// The owner layer of private user-added MCP servers (OwnerGrant):
+		// active private servers only; published ones are governed by
+		// roles alone.
+		servers, err := store.ListAllMCPServers(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, s := range servers {
+			if s.Audience == store.MCPAudiencePrivate && s.Status == store.MCPServerActive {
+				snap.Owners = append(snap.Owners, OwnerGrant{UserID: s.OwnerUserID, App: s.Name})
+			}
+		}
 		return nil
 	})
 	return snap, err

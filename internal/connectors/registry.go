@@ -139,11 +139,18 @@ type Registry struct {
 	tools     map[string]Tool
 	coverage  map[string]ScopeCoverage
 	resolvers map[string]IdentityResolver
+	// static are the apps built-in connectors registered; servers the
+	// server (dynamic) apps of registry_dynamic.go. Disjoint.
+	static  map[string]bool
+	servers map[string]bool
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}, resolvers: map[string]IdentityResolver{}}
+	return &Registry{
+		tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}, resolvers: map[string]IdentityResolver{},
+		static: map[string]bool{}, servers: map[string]bool{},
+	}
 }
 
 // SetIdentityResolver installs app's IdentityResolver (RegisterConnector
@@ -218,8 +225,9 @@ func (r *Registry) MissingScopes(t Tool, granted []string) []string {
 	return missing
 }
 
-// Register adds t. The full name must be unique (ErrDuplicateTool) and the
-// tool well-formed (ErrInvalidTool); on either error nothing changes.
+// Register adds t. The full name must be unique (ErrDuplicateTool), the
+// tool well-formed (ErrInvalidTool) and its app not a server app
+// (ErrAppTaken); on any error nothing changes.
 func (r *Registry) Register(t Tool) error {
 	if err := t.validate(); err != nil {
 		return err
@@ -227,10 +235,14 @@ func (r *Registry) Register(t Tool) error {
 	name := t.FullName()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.servers[t.App] {
+		return fmt.Errorf("%w: %q is a server app", ErrAppTaken, t.App)
+	}
 	if _, exists := r.tools[name]; exists {
 		return fmt.Errorf("%w: %s", ErrDuplicateTool, name)
 	}
 	r.tools[name] = t
+	r.static[t.App] = true
 	return nil
 }
 
@@ -241,6 +253,9 @@ func (r *Registry) registerAll(tools []Tool) error {
 	defer r.mu.Unlock()
 	seen := map[string]bool{}
 	for _, t := range tools {
+		if r.servers[t.App] {
+			return fmt.Errorf("%w: %q is a server app", ErrAppTaken, t.App)
+		}
 		name := t.FullName()
 		if _, exists := r.tools[name]; exists || seen[name] {
 			return fmt.Errorf("%w: %s", ErrDuplicateTool, name)
@@ -249,6 +264,7 @@ func (r *Registry) registerAll(tools []Tool) error {
 	}
 	for _, t := range tools {
 		r.tools[t.FullName()] = t
+		r.static[t.App] = true
 	}
 	return nil
 }

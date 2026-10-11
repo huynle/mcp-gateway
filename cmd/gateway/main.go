@@ -94,6 +94,7 @@ func run() error {
 	}()
 
 	var portalHandler, mcpHandler, slackHandler http.Handler
+	var muxExtras []muxExtra
 	var ledgerSvc *ledger.Service
 	var authSvc *authserver.Service
 	if st != nil {
@@ -124,6 +125,14 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
 		}
+		// User-added MCP servers: their tools join the registry after the
+		// built-in connectors (federation.go).
+		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, metrics, log)
+		if err != nil {
+			return err
+		}
+		accounts = federationAccounts(fed, accounts)
+		muxExtras = append(muxExtras, withFederationRoutes(fed))
 		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)
 		if err != nil {
 			return err
@@ -147,11 +156,11 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc))
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed))
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), policySvc, approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
+		mcpHandler, err = newMCP(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), federationDecider(fed, policySvc), approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
 		if err != nil {
 			return err
 		}
@@ -179,7 +188,7 @@ func run() error {
 	}
 
 	log.Info("gateway starting", "version", version, "addr", cfg.ListenAddr, "drain", cfg.DrainTimeout)
-	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler, withOAuthRoutes(authSvc))))
+	handler := observability.RequestID(metrics.HTTPMiddleware(newMux(readiness, portalHandler, mcpHandler, slackHandler, append(muxExtras, withOAuthRoutes(authSvc))...)))
 	srv := server.New(handler, cfg.DrainTimeout, log)
 	err = srv.ListenAndServe(ctx, cfg.ListenAddr)
 	markInFlightUnknown(ledgerSvc, log)
@@ -327,7 +336,7 @@ type mcpExtra func(p *mcp.Pipeline, confirm mcp.ConfirmHandler) error
 // which only answers "approval required", when approvals are not
 // available), and the token authenticator with the production failure
 // limiter. Later tasks obtain the pipeline here to insert their stages.
-func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc *policy.Service, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, extras ...mcpExtra) (http.Handler, error) {
+func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, extras ...mcpExtra) (http.Handler, error) {
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
 	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
 	confirm := mcp.DefaultConfirmHandler()

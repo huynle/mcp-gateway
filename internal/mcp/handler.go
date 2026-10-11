@@ -299,8 +299,11 @@ func decodeArgs(raw json.RawMessage) (map[string]any, error) {
 }
 
 // toCallResult renders a connectors.Result: a string becomes one text
-// block, SDK content blocks pass through, anything else is marshalled to
-// JSON text and also returned as structuredContent. Reads add the
+// block, SDK content blocks pass through, an upstream *CallToolResult (a
+// federated MCP server's tool) passes through whole (content,
+// structuredContent and isError; the federation client already bounded
+// its size), anything else is marshalled to JSON text and also returned
+// as structuredContent. Reads add the
 // empty/partial/unavailable flags under MetaReadKey when any is set.
 func toCallResult(cc *CallContext, res connectors.Result) (*sdk.CallToolResult, error) {
 	out := &sdk.CallToolResult{}
@@ -313,6 +316,13 @@ func toCallResult(cc *CallContext, res connectors.Result) (*sdk.CallToolResult, 
 		out.Content = c
 	case sdk.Content:
 		out.Content = []sdk.Content{c}
+	case *sdk.CallToolResult:
+		out.Content = c.Content
+		if out.Content == nil {
+			out.Content = []sdk.Content{}
+		}
+		out.StructuredContent = c.StructuredContent
+		out.IsError = c.IsError
 	default:
 		b, err := json.Marshal(c)
 		if err != nil {

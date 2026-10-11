@@ -145,7 +145,7 @@ func classifyOutcome(res connectors.Result, err error, tool *connectors.Tool) le
 	case errors.As(err, &ne) && ne.Timeout():
 		return ledger.Unknown("timeout")
 	}
-	return ledger.Failed("tool_error")
+	return ledger.Failed(errorClass(err, "tool_error"))
 }
 
 // replayResult renders a prior operation's stored result IDs as the tool
