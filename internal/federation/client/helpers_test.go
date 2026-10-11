@@ -169,3 +169,7 @@ func assertNoLeak(t *testing.T, err error, secrets ...string) {
 		}
 	}
 }
+
+func mcpSSEHandler(s *mcp.Server) http.Handler {
+	return mcp.NewSSEHandler(func(*http.Request) *mcp.Server { return s }, nil)
+}

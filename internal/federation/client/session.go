@@ -11,6 +11,7 @@ type Session struct {
 	c         *Client
 	cs        *mcp.ClientSession
 	transport Transport
+	cancel    context.CancelFunc
 }
 
 // Transport is the transport in use.
@@ -113,7 +114,11 @@ func (s *Session) GetPrompt(ctx context.Context, name string, args map[string]st
 }
 
 // Close closes.
-func (s *Session) Close() error { return s.cs.Close() }
+func (s *Session) Close() error {
+	err := s.cs.Close()
+	s.cancel()
+	return err
+}
 
 // listAll follows cursors until the server reports no next page.
 func listAll[T any](ctx context.Context, page func(context.Context, string) ([]*T, string, error)) ([]*T, error) {
