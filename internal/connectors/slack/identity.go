@@ -40,8 +40,12 @@ const (
 )
 
 // resolveTypes are the conversation types a channel id is looked up
-// among: mpim (group DMs) have ids shaped like channels and a name.
-var resolveTypes = []string{"public_channel", "private_channel", "mpim"}
+// among: the ones the app's user scopes cover (channels:read,
+// groups:read). Group DMs (mpim) need mpim:read, which the app does not
+// request; asking for them made users.conversations fail with
+// missing_scope and every call naming a channel by id was denied. A
+// group-DM id is now not found and denied (fail closed), as before.
+var resolveTypes = []string{"public_channel", "private_channel"}
 
 // ResolveIdentity implements connectors.IdentityResolver: when identity
 // names a channel by id (channel_id set, not a direct message), the id

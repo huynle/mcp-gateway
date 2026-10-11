@@ -61,8 +61,10 @@ func TestResolveIdentityChannelID(t *testing.T) {
 		t.Errorf("users.conversations requests = %d, want 2 (random is on page 2)", n)
 	}
 	form := srv.Last(t, "users.conversations").Form
-	if types := form.Get("types"); !strings.Contains(types, "public_channel") || !strings.Contains(types, "private_channel") || !strings.Contains(types, "mpim") {
-		t.Errorf("types = %q, want public, private and mpim conversations", types)
+	// Only the types the app's user scopes cover (channels:read, groups:read):
+	// asking for mpim without mpim:read made Slack answer missing_scope.
+	if types := form.Get("types"); types != "public_channel,private_channel" {
+		t.Errorf("types = %q, want public_channel,private_channel (no mpim: the app lacks mpim:read)", types)
 	}
 	if form.Get("limit") != "200" {
 		t.Errorf("limit = %q, want 200", form.Get("limit"))

@@ -517,6 +517,9 @@ func (c *Connector) listChannels(ctx context.Context, api *goslack.Client, call 
 	}
 	out := ChannelsPage{Channels: make([]Channel, 0, len(channels)), NextCursor: next, HasMore: next != "", Limit: limit}
 	for _, ch := range channels {
+		// users.conversations lists only conversations the user is a member
+		// of, but does not set is_member on them.
+		ch.IsMember = true
 		out.Channels = append(out.Channels, toChannel(ch))
 	}
 	out.Channels, out.Truncated = fit(out.Channels, c.bounds.MaxResultBytes, func(items []Channel) any { out.Channels = items; return out })
