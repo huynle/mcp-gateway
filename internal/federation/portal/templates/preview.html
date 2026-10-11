@@ -1,0 +1,10 @@
+{{define "preview"}}
+{{range .}}
+<div class="stack-item">
+  {{if .Label}}<p><strong>{{.Label}}</strong>{{if .MIMEType}} <span class="muted">{{.MIMEType}}</span>{{end}}</p>{{end}}
+  {{if .Bytes}}<p class="muted">{{.Note}}: {{.Bytes}} bytes{{if .MIMEType}}, {{.MIMEType}}{{end}} (not shown)</p>
+  {{else if .Text}}<pre class="preview">{{.Text}}</pre>{{if .Truncated}}<p class="muted">Preview truncated.</p>{{end}}
+  {{else if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+</div>
+{{end}}
+{{end}}
