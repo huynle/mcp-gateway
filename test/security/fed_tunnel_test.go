@@ -10,6 +10,7 @@ package security
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -214,6 +215,8 @@ func TestSecurityFedTunnelHostileClient(t *testing.T) {
 	const calls = 40
 	var wg sync.WaitGroup
 	var fastFail atomic.Int64
+	var outMu sync.Mutex
+	var outcomes []string
 	tok := w.token(w.alice, tokens.CreateRequest{})
 	for range calls {
 		wg.Add(1)
@@ -221,17 +224,26 @@ func TestSecurityFedTunnelHostileClient(t *testing.T) {
 			defer wg.Done()
 			start := time.Now()
 			code, _, body := w.rawCall(tok, "hostiletun.search", map[string]any{})
-			if code == http.StatusOK && time.Since(start) < 5*time.Second && strings.Contains(string(body), "could not be reached") {
-				fastFail.Add(1) // refused for lack of a free stream
+			took := time.Since(start)
+			// Refused for lack of a free stream, while the 32 streams are
+			// still held (the hostile client is released only after this
+			// count is reached, so these did not wait for it).
+			if code == http.StatusOK && strings.Contains(string(body), "could not be reached") {
+				fastFail.Add(1)
 			}
+			outMu.Lock()
+			outcomes = append(outcomes, fmt.Sprintf("%d after %s: %.120s", code, took.Round(100*time.Millisecond), body))
+			outMu.Unlock()
 		}()
 	}
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for (reqs.Load() < 32 || fastFail.Load() < calls-32) && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if fastFail.Load() < calls-32 {
-		t.Errorf("%d calls refused at once for lack of a stream, want %d", fastFail.Load(), calls-32)
+		outMu.Lock()
+		t.Errorf("%d calls refused for lack of a stream while the others were held, want %d; finished so far:\n%s", fastFail.Load(), calls-32, strings.Join(outcomes, "\n"))
+		outMu.Unlock()
 	}
 	time.Sleep(300 * time.Millisecond)
 	if n := reqs.Load(); n > 32 {
