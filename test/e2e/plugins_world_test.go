@@ -34,7 +34,9 @@ import (
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
+	"github.com/huynle/mcp-gateway/internal/store"
 )
 
 // stdioServerEnv makes the re-executed test binary a stdio MCP server (the
@@ -297,6 +299,60 @@ func (w *world) toolText(cs *sdk.ClientSession, tool string, args map[string]any
 		w.t.Fatalf("%s: tool error %q", tool, text(w.t, res))
 	}
 	return text(w.t, res)
+}
+
+// roleID reads a role's ID by name (the admin publish form posts IDs).
+func (w *world) roleID(name string) string {
+	w.t.Helper()
+	var id string
+	err := w.st.WithJobs(w.t.Context(), func(tx store.Tx) error {
+		role, err := store.FindRoleByName(w.t.Context(), tx, name)
+		if err != nil {
+			return err
+		}
+		id = role.ID
+		return nil
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return id
+}
+
+// grant appends tool rules to a role through the policy service (what the
+// role editor saves).
+func (w *world) grant(roleName string, rules ...policy.ToolRule) {
+	w.t.Helper()
+	role, err := w.policy.Role(w.t.Context(), roleName)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	role.Rules = append(role.Rules, rules...)
+	if err := w.policy.SaveRole(w.t.Context(), w.admin.id, role); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+// signInAs signs a further user in and gives them role.
+func (w *world) signInAs(sub, name, role string) user {
+	w.t.Helper()
+	u := w.signIn(sub, name)
+	if err := w.idSvc.SetUserRole(w.t.Context(), w.admin.id, u.id, role); err != nil {
+		w.t.Fatal(err)
+	}
+	w.policy.Invalidate()
+	return u
+}
+
+// hasAudit reports whether u has an audit row for tool with the outcome
+// and error class ("" matches any class).
+func (w *world) hasAudit(u user, tool, outcome, class string) bool {
+	for _, ev := range w.events(u) {
+		if ev.Tool == tool && ev.Outcome == outcome && (class == "" || ev.ErrorClass == class) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- fake upstreams ----------------------------------------------------------------
