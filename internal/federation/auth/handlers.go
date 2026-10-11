@@ -90,7 +90,7 @@ func defaultFinish(w http.ResponseWriter, _ *http.Request, _ string, err error) 
 
 var publicErrors = []error{
 	ErrNotConnected, ErrNeedsReconnect, ErrNotConfigured, ErrUnsupported, ErrNoOAuth, ErrPKCEUnsupported,
-	ErrNoClient, ErrFlowInvalid, ErrDenied, ErrSharedCredentialRejected, ErrInvalidCredential, ErrInvalidServerURL,
+	ErrNoClient, ErrFlowInvalid, ErrDenied, ErrSharedCredentialRejected, ErrInvalidCredential, ErrInvalidServerURL, ErrForbidden,
 }
 
 // safeMessage is the user-facing text of err: a package sentinel, a
@@ -117,6 +117,8 @@ func errorStatus(err error) int {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, ErrForbidden):
+		return http.StatusForbidden
 	case errors.Is(err, ErrFlowInvalid), errors.Is(err, ErrDenied), errors.Is(err, ErrInvalidServerURL):
 		return http.StatusBadRequest
 	case errors.Is(err, ErrNotConfigured), errors.Is(err, ErrUnsupported), errors.Is(err, ErrNoOAuth),

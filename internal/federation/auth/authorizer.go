@@ -55,7 +55,7 @@ func (s *Service) ForUser(ctx context.Context, server *store.MCPServer, userID s
 		extra := pick(b.Headers, hc.PerUser)
 		if kind == store.MCPAuthOAuth {
 			if b.OAuth == nil {
-				return nil, ErrNeedsReconnect
+				return nil, ErrNotConnected
 			}
 			return &oauthAuthorizer{s: s, server: server, userID: userID, tok: b.OAuth, extra: extra}, nil
 		}

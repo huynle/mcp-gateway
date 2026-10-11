@@ -270,7 +270,7 @@ func (a *testAS) authorize(t *testing.T, authURL string) *url.URL {
 		t.Fatalf("authorize request without PKCE S256: %v", q)
 	}
 	cid := q.Get("client_id")
-	if _, ok := a.clients[cid]; !ok && !(a.cimd && strings.HasPrefix(cid, "http")) {
+	if _, ok := a.clients[cid]; !ok && (!a.cimd || !strings.HasPrefix(cid, "http")) {
 		t.Fatalf("authorize with unknown client %q", cid)
 	}
 	code := "code-" + randHex(8)
