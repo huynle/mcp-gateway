@@ -277,6 +277,12 @@ func (u *upstream) setGate(g func(w http.ResponseWriter, r *http.Request) bool) 
 	u.mu.Unlock()
 }
 
+func (u *upstream) setBuild(b func(r *http.Request) *sdk.Server) {
+	u.mu.Lock()
+	u.build = b
+	u.mu.Unlock()
+}
+
 func (u *upstream) reset() {
 	u.mu.Lock()
 	u.reqs = nil
