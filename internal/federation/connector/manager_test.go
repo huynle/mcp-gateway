@@ -242,6 +242,7 @@ type createIn struct {
 // request.
 type upstream struct {
 	srv     *httptest.Server
+	sdk     *sdk.Server
 	mu      sync.Mutex
 	headers []http.Header
 	block   chan struct{}
@@ -271,6 +272,8 @@ func newUpstream(t *testing.T) *upstream {
 		func(context.Context, *sdk.CallToolRequest, searchIn) (*sdk.CallToolResult, any, error) {
 			return nil, nil, errors.New("upstream detail that must not leak")
 		})
+	addResources(s)
+	u.sdk = s
 	h := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	u.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u.mu.Lock()
