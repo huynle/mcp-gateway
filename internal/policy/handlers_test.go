@@ -27,6 +27,7 @@ type pages struct {
 	svc *policy.Service
 	st  *policytest.MemStore
 	rec *memRecorder
+	reg *connectors.Registry
 }
 
 // newPages mounts the admin pages on a bare mux with a fake identity: the
@@ -53,7 +54,7 @@ func newPages(t *testing.T) pages {
 	}
 	mux := http.NewServeMux()
 	policy.NewPortal(svc, reg, who, slog.New(slog.DiscardHandler)).Mount(mux.Handle)
-	return pages{mux: mux, svc: svc, st: st, rec: rec}
+	return pages{mux: mux, svc: svc, st: st, rec: rec, reg: reg}
 }
 
 func (p pages) do(t *testing.T, method, path string, form url.Values, admin bool) *httptest.ResponseRecorder {

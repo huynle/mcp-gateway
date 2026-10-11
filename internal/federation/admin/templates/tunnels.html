@@ -1,0 +1,24 @@
+{{template "head" .}}
+{{template "subnav"}}
+{{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
+<p class="muted">Tunnels connect user-run stdio or private MCP servers to the gateway. "Online" is this replica's view.</p>
+{{if .Tunnels}}
+<table>
+  <thead><tr><th>Name</th><th>Owner</th><th>State</th><th>Created</th><th>Last seen</th><th></th></tr></thead>
+  <tbody>
+  {{range .Tunnels}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td>{{if .OwnerName}}{{.OwnerName}}{{else}}{{.OwnerUserID}}{{end}}</td>
+    <td>{{if .RevokedAt}}<span class="pill revoked">revoked</span>{{else if .Online}}<span class="pill active">online</span>{{else}}<span class="pill none">offline</span>{{end}}</td>
+    <td>{{fmtTime .CreatedAt}}</td>
+    <td>{{with .LastSeenAt}}{{fmtTime .}}{{else}}never{{end}}</td>
+    <td>{{if not .RevokedAt}}<form method="post" action="/admin/tunnels/{{.ID}}/revoke" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger" type="submit">Revoke</button></form>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No tunnels.</p>
+{{end}}
+{{template "foot" .}}

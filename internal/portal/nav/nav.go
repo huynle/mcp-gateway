@@ -48,6 +48,7 @@ var UserLinks = []Link{
 var AdminLinks = []Link{
 	{"/admin/users", "Users"},
 	{"/admin/roles", "Roles"},
+	{"/admin/servers", "Servers"},
 	{"/admin/audit", "Audit"},
 	{"/admin/vendor-apps", "Vendor apps"},
 }

@@ -1,0 +1,37 @@
+{{template "head" .}}
+{{template "subnav"}}
+{{if not .Queue}}
+<form method="get" action="/admin/servers" class="actions">
+  <label class="check">Status
+    <select name="status">
+      <option value=""{{if not .Status}} selected{{end}}>any</option>
+      {{range .Statuses}}<option value="{{.}}"{{if eq . $.Status}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <label class="check"><input type="checkbox" name="pending" value="1"{{if .Pending}} checked{{end}}> pending review only</label>
+  <button class="btn" type="submit">Filter</button>
+</form>
+{{else}}
+<p class="muted">Servers whose newest snapshot is not the approved one. New and changed tools stay disabled until reviewed.</p>
+{{end}}
+{{if .Servers}}
+<table>
+  <thead><tr><th>Name</th><th>Owner</th><th>Host</th><th>Audience</th><th>Credentials</th><th>Users</th><th>Status</th></tr></thead>
+  <tbody>
+  {{range .Servers}}
+  <tr>
+    <td><a href="/admin/servers/{{.ID}}">{{.Name}}</a>{{if .Pending}} <a class="badge" href="/admin/servers/{{.ID}}/review">pending review</a>{{end}}</td>
+    <td>{{.Owner}}</td>
+    <td><code>{{.Host}}</code></td>
+    <td>{{.Audience}}{{if .Roles}}: {{join .Roles ", "}}{{end}}</td>
+    <td>{{.CredentialMode}} · {{.AuthKind}}{{if .Shared}} · <span class="pill company">shared credential set</span>{{end}}</td>
+    <td>{{.Connections}}</td>
+    <td><span class="pill {{.Status}}">{{.Status}}</span>{{if .LastError}} <span class="muted">{{.LastError}}</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No servers{{if or .Status .Pending}} match the filter{{end}}.</p>
+{{end}}
+{{template "foot" .}}

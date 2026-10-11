@@ -1,6 +1,6 @@
 # Servers portal (`internal/federation/portal`)
 
-The users' pages for **user-added MCP servers** ("plugins"): list my servers and the ones published to me, add a server, connect my account or key, refresh and review its tools, browse its resources and prompts, and manage tunnels. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (everyone may add; servers start private; frozen snapshots), `17iv8p3b` (owner writes, admin-only publish and published review), `7datr7x4` (server-rendered portal, CSRF), `u46t7kmq` (shared nav); task `9dp13dgy`. Admin pages (publish, review published servers, allow-list) are a separate task.
+The users' pages for **user-added MCP servers** ("plugins"): list my servers and the ones published to me, add a server, connect my account or key, refresh and review its tools, browse its resources and prompts, and manage tunnels. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (everyone may add; servers start private; frozen snapshots), `17iv8p3b` (owner writes, admin-only publish and published review), `7datr7x4` (server-rendered portal, CSRF), `u46t7kmq` (shared nav); task `9dp13dgy`. Admin pages (publish, review published servers, tunnels, allow-list) are in [plugins-admin.md](plugins-admin.md).
 
 ## Pages
 

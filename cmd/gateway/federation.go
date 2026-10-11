@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
@@ -124,6 +126,42 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log},
 			Identity: identityFn, Log: log, BaseURL: baseURL,
 		}).Mount(mountUser)
+	}
+}
+
+// withFederationAdmin mounts the admin pages for user-added MCP servers
+// (internal/federation/admin, task 1d9i8b07): /admin/servers (publish,
+// credentials, status, delete, refresh, review), /admin/tunnels and
+// /admin/network/allow-hosts. Their patterns are under /admin, so
+// portalMount puts them behind the portal's admin check. Changes call the
+// connector Manager's ServerChanged and, for the allow-list, invalidate
+// netguard's cached allow list; every change is audited through rec.
+func withFederationAdmin(fed *connector.Federation, st *store.Store, rec audit.Recorder) portalExtra {
+	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
+		if fed == nil {
+			return
+		}
+		factory, err := fedportal.NewClientFactory(fedportal.FactoryOptions{
+			Credentials: fed.Auth, Tunnels: fed.Tunnels, HTTPClient: fed.Guard.Client(), Log: log,
+		})
+		if err != nil {
+			log.Error("admin servers pages not mounted", "error", err)
+			return
+		}
+		identityFn := func(r *http.Request) (string, string, bool) {
+			id, csrf := session(r)
+			return id, csrf, identity.PrincipalFrom(r.Context()).IsAdmin()
+		}
+		deps := fedadmin.Deps{
+			Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels, ClientFactory: factory,
+			Hook: fed.Manager, Identity: identityFn, Audit: rec, Log: log,
+		}
+		if fed.AllowList != nil {
+			deps.AllowList = fed.AllowList
+		}
+		as := fedadmin.NewStore(st)
+		deps.Store, deps.Roles = as, as
+		fedadmin.NewAdmin(deps).Mount(mount)
 	}
 }
 
