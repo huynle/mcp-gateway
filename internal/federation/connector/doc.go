@@ -17,6 +17,12 @@
 //   - Each tool's handler checks the pinned snapshot as the caller, picks
 //     the caller's credential (auth.ForUser), dials through netguard or
 //     the user's tunnel and maps every failure to a class-level error.
+//   - Manager.ResourceProvider serves the approved resources, resource
+//     templates and prompts on /mcp (task isdrqc6a) with the same server
+//     visibility: gateway URIs "mcpgw://<server>/<upstream URI>"
+//     (GatewayResourceURI, reversible, templates included), prompts
+//     "<server>.<prompt>"; reads and gets re-check the approved snapshot
+//     and go upstream live over the tool-call path.
 //
 // Server names of built-in apps are reserved (ValidateServerName). See
 // docs/federation-connector.md.

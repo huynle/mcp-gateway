@@ -78,6 +78,38 @@ The handler: server still active → `snapshot.Allowed` as the caller (in the ap
 
 Upstream failures implement `mcp.ClassedError`, so the audit row and a failed ledger operation record the class. A **write** that fails *inside* `tools/call` with a timeout, an unreachable server, a protocol error, an oversize answer or a tunnel dropping mid-call is an **unknown outcome** (`connectors.ErrOutcomeUnknown`) and the message tells the user to check before retrying. A tool that ran and reported an error (`isError: true`) is passed through as a result; the ledger records the write as succeeded, because the call completed.
 
+## Resources and prompts
+
+The gateway's own `/mcp` also serves the **resources, resource templates and prompts** of user-added servers (task `isdrqc6a`, plan `0omkv2e1` §3), through `Manager.ResourceProvider()` (`mcp.Options.Resources`; `cmd/gateway/federation_resources.go`). `/mcp` then advertises `resources` (no `subscribe`, no `listChanged`) and `prompts` (no `listChanged`); without a federation it advertises neither.
+
+### Names and URIs
+
+| Upstream | On the gateway |
+|---|---|
+| resource `notes://readme` of server `notes` | `mcpgw://notes/notes://readme` |
+| template `notes://note/{id}` | `mcpgw://notes/notes://note/{id}` |
+| prompt `summarize` | `notes.summarize` |
+
+A gateway resource URI is `mcpgw://<server>/` followed by the upstream URI **verbatim** (no escaping): the server is the URI's authority and the mapping is a plain prefix, so it reverses exactly for any upstream URI (any scheme, query, fragment or characters; `connector.GatewayResourceURI` / `ParseGatewayResourceURI`). The prefix holds no template expressions, so the same prefix rewrites a template and a client filling in the gateway template gets the gateway URI of what the upstream template gives for the same values. Read contents carry gateway URIs too. Prompt names split at the first `.` (server names have none). Names are `<server>.<upstream name>`; **titles and descriptions start with `[<server>] `** (provenance) and are cleaned like tool descriptions (`snapshot.Display*`). Items whose URI, template or prompt name contains control or format characters (bidi, zero-width) are not listed.
+
+### Visibility and checks
+
+- **Lists** are the union, over the servers the caller may use (the same rule as their tools: owner of a private server, or a role it is published to; a narrowed token must name the server in its apps), of each server's **approved snapshot** as of the last load, never a live listing. Sorted by URI / name, paged with an opaque cursor (100 per page), `cacheScope: private`.
+- **`resources/read`**: the URI must map back to a loaded server the caller may use, still active under that name, and the upstream URI must be a resource of the approved snapshot (read as the caller: RLS) or match one of its templates (RFC 6570, the go-sdk's matcher). Then it goes upstream **live** over the tool-call path: `auth.ForUser` (per_user / shared / none), netguard or the owner's tunnel, `auth.Reauth`, bounded by the federation client (timeout, 4 MiB per message). Text and blob contents pass through with their MIME types.
+- **`prompts/get`**: the prompt must be in the approved snapshot; arguments pass through as given; then like a read.
+- **Policy is server-level only for now**: anyone who may use the server may list and read all of its approved resources and prompts, including on published servers (no role rule is needed, unlike tools). Per-resource / per-prompt rules (Cedar actions, review toggles) are a follow-up.
+
+### Errors and audit
+
+| Answer | When |
+|---|---|
+| `-32602` `Resource not found` (`data.uri`) / `unknown prompt "<name>"` | not a gateway URI, no such server, a server the caller may not use, disabled, not in the approved snapshot. The same bytes for hidden and unknown. |
+| `-32031` `auth_required`, `needs_reconnect`, `server_not_configured`, `shared_credential_rejected` | as for tools (the message carries `<BASE_URL>/servers/<id>`) |
+| `-32029` `rate_limited` | the per-user / per-app limiter of tool calls, app = the server |
+| `-32036` (`mcp.CodeUpstream`) with a class-level message | `tunnel_offline`, `tunnel_unavailable`, `upstream_unreachable` / `timeout` / `protocol` / `too_large` / `forbidden` / `blocked`, `upstream_refused` (the upstream answered with a JSON-RPC error; its text is never relayed) |
+
+Every read and get writes **one audit event**, like a tool call: tool `<server>.resources/read` or `<server>.prompts/get` (the bare method when the request never resolved, e.g. not found), resource identity `{server, uri (without query and fragment), uri_sha256 (of the full URI)}` or `{server, prompt}`, decision, outcome, latency, error class. **Never content or arguments.** Lists are not audited.
+
 ## Wiring (`cmd/gateway/federation.go`)
 
 Only with a database **and** a key provider (like app connections):
@@ -85,7 +117,7 @@ Only with a database **and** a key provider (like app connections):
 ```go
 fed, _ := newFederation(ctx, cfg, st, keys, registry, policySvc, metrics, log) // connector.Wire + Start
 accounts = federationAccounts(fed, accounts)            // anchors for server apps
-newMCP(..., federationDecider(fed, policySvc), ...)     // server visibility for list/resolve/policy
+newMCPWithResources(..., federationDecider(fed, policySvc), ..., federationResources(fed), ...) // server visibility for list/resolve/policy; resources/prompts
 ```
 
 | Route | Where | Handler |
@@ -103,4 +135,6 @@ netguard uses `netguard.CachedAllowList` over `netguard_allow_hosts` (30 s TTL, 
 
 - `go test -race ./internal/federation/connector/`: names, sanitizing, tool building, load/reload, visibility and decider, accounts, the call path against an in-process go-sdk upstream through the real netguard (header capture, pinned-schema refusal, disabled/changed tools, credential errors, upstream isError, slow write = unknown outcome, unreachable, tunnel transport, offline and forbidden tunnels), reserved names.
 - `make test-integration`: `TestIntegrationPostgresStore` (anchors under RLS, concurrent first use, allow-list loader), `TestIntegrationFederationTunnelThroughMux` (cmd/gateway: tunnel agent through the real mux, a tunnel-backed server reviewed, listed and called through `/mcp`, no gateway credential at the local server, CIMD route).
+- `go test -race ./internal/federation/connector/ ./internal/mcp/`: gateway URI and prompt-name round trips (queries, fragments, odd characters, template expansion), template matching, audit identity; resource/prompt lists per visibility and token scope, live reads with the caller's credential, refusals of hidden / unreviewed / non-matching URIs without reaching the upstream, class-level errors; the `/mcp` methods (capabilities, cursor paging, not-found shape, upstream code, audit rows, rate limit).
+- `make test-e2e`: `TestE2EFederatedResourcesAndPrompts`: alice lists, reads (text, blob, template) and gets a prompt of her server through the official SDK client; bob sees nothing and reading her URI is "Resource not found"; a resource added upstream after the review is refused without an upstream read; audit rows name the server, never the content.
 - `make test-e2e`: `TestE2EFederatedServerVisibilityApprovalAndCredentials`: alice's private server visible to her only, read allowed, write approved and ledgered, a disabled tool absent, args outside the schema refused, a changed schema refused after refresh until re-reviewed, publish → hidden until the role grants → bob with his own credential, then the shared one, approval for bob's write, reserved names refused, no gateway token upstream, audit rows naming the server.

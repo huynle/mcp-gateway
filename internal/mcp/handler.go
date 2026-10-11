@@ -66,10 +66,11 @@ type Options struct {
 	BaseURL string
 	// MaxBody bounds request bodies; 0 means DefaultMaxBody.
 	MaxBody int64
-	// Audit receives one event per tools/call (default pipeline only).
+	// Audit receives one event per tools/call (default pipeline only) and
+	// one per resources/read and prompts/get.
 	Audit audit.Recorder
-	// RateLimiter is the per-user and per-app limiter (default pipeline
-	// only); nil allows everything.
+	// RateLimiter is the per-user and per-app limiter (default pipeline,
+	// and resources/read and prompts/get); nil allows everything.
 	RateLimiter RateLimiter
 	// Accounts enables the account stage (default pipeline only).
 	Accounts connectors.AccountSource
@@ -80,6 +81,12 @@ type Options struct {
 	Confirm ConfirmHandler
 	// Metrics counts vendor rate limits (default pipeline only).
 	Metrics *observability.Metrics
+	// Resources serves resources/* and prompts/* (the federation's
+	// upstream servers, resources.go); nil advertises neither capability.
+	Resources ResourceProvider
+	// ListPageSize bounds a resources/list, resources/templates/list or
+	// prompts/list page; 0 means DefaultListPageSize.
+	ListPageSize int
 	// Log defaults to slog.Default().
 	Log *slog.Logger
 	// Version is reported in initialize; empty means "dev".
@@ -133,12 +140,16 @@ func Handler(opts Options) (http.Handler, error) {
 	}
 
 	e := &endpoint{opts: opts}
-	server := sdk.NewServer(&sdk.Implementation{Name: ServerName, Version: opts.Version}, &sdk.ServerOptions{
-		// Tools are served from the registry by the middleware below; the
-		// capability must still be advertised. No listChanged: a stateless
-		// server cannot push it (ysorv868), harnesses re-list.
-		Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{ListChanged: false}},
-	})
+	// Tools are served from the registry by the middleware below; the
+	// capability must still be advertised. No listChanged: a stateless
+	// server cannot push it (ysorv868), harnesses re-list. Resources and
+	// prompts likewise (no subscribe either) when a provider serves them.
+	caps := &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{ListChanged: false}}
+	if opts.Resources != nil {
+		caps.Resources = &sdk.ResourceCapabilities{Subscribe: false, ListChanged: false}
+		caps.Prompts = &sdk.PromptCapabilities{ListChanged: false}
+	}
+	server := sdk.NewServer(&sdk.Implementation{Name: ServerName, Version: opts.Version}, &sdk.ServerOptions{Capabilities: caps})
 	server.AddReceivingMiddleware(e.middleware)
 
 	streamable := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{
@@ -174,8 +185,10 @@ type endpoint struct {
 	opts Options
 }
 
-// middleware intercepts tools/list and tools/call; everything else
-// (initialize, ping, server/discover) goes to the SDK.
+// middleware intercepts tools/list and tools/call, and with a
+// ResourceProvider resources/list, resources/templates/list,
+// resources/read, prompts/list and prompts/get (resources.go);
+// everything else (initialize, ping, server/discover) goes to the SDK.
 func (e *endpoint) middleware(next sdk.MethodHandler) sdk.MethodHandler {
 	return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
 		switch method {
@@ -187,6 +200,11 @@ func (e *endpoint) middleware(next sdk.MethodHandler) sdk.MethodHandler {
 				return next(ctx, method, req)
 			}
 			return e.callTool(ctx, r)
+		}
+		if e.opts.Resources != nil {
+			if res, ok, err := e.resourceMethod(ctx, method, req); ok {
+				return res, err
+			}
 		}
 		return next(ctx, method, req)
 	}

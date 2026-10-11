@@ -34,6 +34,17 @@
 // Handler is a tool result with IsError after redaction; read results
 // carry empty/partial/unavailable under _meta["mcp-gateway/read"].
 //
+// With Options.Resources (a ResourceProvider: the federation's
+// user-added servers) the endpoint also advertises resources (no
+// subscribe, no listChanged) and prompts, and serves resources/list,
+// resources/templates/list and prompts/list (the provider's per-caller
+// union, sorted and paged with an opaque cursor), resources/read and
+// prompts/get (one audit event each, tool-like name
+// "<server>.resources/read" / "<server>.prompts/get", rate limited like
+// tool calls; unknown and hidden items get the same not-found answer;
+// upstream failures CodeUpstream with a class-level message). See
+// resources.go.
+//
 // Design: Brain plan 36bakiw8 sections 2 and 3; decisions ysorv868, dovthftx,
 // s0p05diu (approval_id), 490o45d0 (hidden = absent).
 package mcp

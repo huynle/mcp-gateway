@@ -160,7 +160,8 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCP(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), federationDecider(fed, policySvc), approvalSvc, rec, metrics, log, withLedgerStage(ledgerSvc))
+		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), federationDecider(fed, policySvc), approvalSvc, rec, metrics, log,
+			federationResources(fed), withLedgerStage(ledgerSvc))
 		if err != nil {
 			return err
 		}
@@ -336,7 +337,17 @@ type mcpExtra func(p *mcp.Pipeline, confirm mcp.ConfirmHandler) error
 // which only answers "approval required", when approvals are not
 // available), and the token authenticator with the production failure
 // limiter. Later tasks obtain the pipeline here to insert their stages.
+//
+//nolint:unparam // the no-resources form; production serves resources through newMCPWithResources
 func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, extras ...mcpExtra) (http.Handler, error) {
+	return newMCPWithResources(cfg, registry, accounts, auth, policySvc, approvalSvc, rec, metrics, log, nil, extras...)
+}
+
+// newMCPWithResources is newMCP that also serves resources/* and
+// prompts/* from resources (the federation's user-added servers; nil
+// serves neither), audited by rec and rate limited by the same limiter as
+// tool calls.
+func newMCPWithResources(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, resources mcp.ResourceProvider, extras ...mcpExtra) (http.Handler, error) {
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
 	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
 	confirm := mcp.DefaultConfirmHandler()
@@ -365,16 +376,19 @@ func newMCP(cfg config.Config, registry *connectors.Registry, accounts connector
 			Metrics: metrics,
 			Log:     log,
 		},
-		BaseURL: cfg.BaseURL,
-		MaxBody: cfg.MCPMaxBody,
-		Log:     log,
-		Version: version,
+		BaseURL:     cfg.BaseURL,
+		MaxBody:     cfg.MCPMaxBody,
+		Log:         log,
+		Version:     version,
+		Resources:   resources,
+		Audit:       rec,
+		RateLimiter: limiter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 	log.Info("mcp endpoint ready", "path", "/mcp", "tools", len(registry.List()), "body_limit", cfg.MCPMaxBody,
-		"stages", pipeline.Names(), "rate_user_per_min", cfg.RateUserPerMin, "rate_app_per_min", cfg.RateAppPerMin)
+		"stages", pipeline.Names(), "resources", resources != nil, "rate_user_per_min", cfg.RateUserPerMin, "rate_app_per_min", cfg.RateAppPerMin)
 	return h, nil
 }
 
