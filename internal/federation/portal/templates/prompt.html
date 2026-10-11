@@ -1,0 +1,21 @@
+{{template "head" .}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{with .Prompt}}
+<p><code>{{.Name}}</code>{{if .Title}} · {{.Title}}{{end}} <span class="muted">from {{$.Server.Name}}</span></p>
+{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}
+<form method="post" action="/servers/{{$.Server.ID}}/prompts/{{.Path}}" class="stack" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
+  {{range .Args}}
+  <label>{{.Name}}{{if .Required}} <span class="muted">(required)</span>{{end}}{{if .Description}} <span class="muted">{{.Description}}</span>{{end}}
+    <input type="text" name="arg_{{.Index}}" value="{{.Value}}"></label>
+  {{else}}<p class="muted">This prompt takes no arguments.</p>{{end}}
+  <p><button class="btn primary" type="submit">Preview</button> <span class="muted">Gets the prompt from the server with your credential.</span></p>
+</form>
+{{end}}
+{{if .Run}}
+<h2>Preview</h2>
+{{if .Summary}}<div class="desc muted">{{.Summary}}</div>{{end}}
+{{template "preview" .Preview}}
+{{end}}
+<p><a href="/servers/{{.Server.ID}}/resources">Back to resources and prompts</a></p>
+{{template "foot" .}}

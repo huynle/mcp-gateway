@@ -37,6 +37,7 @@ var UserLinks = []Link{
 	{"/account", "My account"},
 	{"/tokens", "Tokens"},
 	{"/connections", "Connections"},
+	{"/servers", "Servers"},
 	{"/approvals", "Approvals"},
 	{"/operations", "Operations"},
 	{"/harnesses", "Harnesses"},
