@@ -262,7 +262,8 @@ func (g *Guard) block(host string, reason Reason) error {
 }
 
 // guardTransport checks each request URL before handing it to the base
-// transport (whose DialContext checks the addresses).
+// transport (whose DialContext checks the addresses) and caps the
+// response body.
 type guardTransport struct {
 	g    *Guard
 	base http.RoundTripper
@@ -275,5 +276,10 @@ func (t *guardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		return nil, err
 	}
-	return t.base.RoundTrip(req)
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = LimitedBody(resp.Body, t.g.maxBody)
+	return resp, nil
 }
