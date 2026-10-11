@@ -14,6 +14,12 @@
 // cmd/migrate as a pre-upgrade job, never by the service: it only compares
 // the database's version with [ExpectedSchemaVersion].
 //
+// User-added MCP servers (migration 00014, repo_mcp_*.go) follow the same
+// model: servers are visible to their owner and to holders of a role they
+// are published to; credentials, per-user connections and tunnels stay
+// owner-only; publishing is an admin action through WithJobs.
+//
 // Design: Brain plan 36bakiw8 section 6; decisions v6piaxdb, dovthftx,
-// s0p05diu, ysorv868, 490o45d0, uamxx6ba, mh7c6z3v.
+// s0p05diu, ysorv868, 490o45d0, uamxx6ba, mh7c6z3v; plan 0omkv2e1 and
+// decision yhd5kcaz for MCP servers.
 package store
