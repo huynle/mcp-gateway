@@ -96,6 +96,7 @@ func (c *Client) Connect(ctx context.Context, ep Endpoint) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx = withoutSDKValues(ctx)
 	start := time.Now()
 	tr := v.transport
 	if tr == TransportAuto {
@@ -104,7 +105,7 @@ func (c *Client) Connect(ctx context.Context, ep Endpoint) (*Session, error) {
 	s, err := c.connect(ctx, v, tr)
 	var e *Error
 	if v.transport == TransportAuto && err != nil && errors.As(err, &e) &&
-		e.Class == ClassProtocol && legacyStatus(e.Status) {
+		e.Class == ClassProtocol && legacyStatus(e.Status) && e.RPCCode != mcp.CodeUnsupportedProtocolVersion {
 		c.log.Info("federation client: falling back to legacy HTTP+SSE",
 			"host", v.u.Hostname(), "status", e.Status)
 		tr = TransportSSE
@@ -117,7 +118,9 @@ func (c *Client) Connect(ctx context.Context, ep Endpoint) (*Session, error) {
 // legacyStatus reports whether an HTTP status answering the Streamable
 // HTTP POST means "this is a legacy HTTP+SSE server": any 4xx except the
 // ones about credentials, timing or rate (MCP spec, backwards
-// compatibility section).
+// compatibility section). Connect also never falls back when the 4xx
+// carried JSON-RPC -32022 (unsupported protocol version): that server
+// speaks Streamable HTTP, and a fallback would only hide the real error.
 func legacyStatus(code int) bool {
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusProxyAuthRequired,

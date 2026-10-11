@@ -56,7 +56,7 @@ func (s *Session) Capabilities() *mcp.ServerCapabilities { return s.init().Capab
 func do[R any](ctx context.Context, s *Session, op string, f func(context.Context) (R, error)) (R, error) {
 	start := time.Now()
 	obs := &observer{}
-	ctx, cancel := context.WithTimeout(withObserver(ctx, obs), s.c.timeout)
+	ctx, cancel := context.WithTimeout(withObserver(withoutSDKValues(ctx), obs), s.c.timeout)
 	defer cancel()
 	r, err := f(ctx)
 	if err != nil {

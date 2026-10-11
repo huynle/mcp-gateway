@@ -159,16 +159,20 @@ func classify(ctx context.Context, op string, err error, obs ...*observer) *Erro
 		}
 		return mk(ClassUnreachable)
 	}
+	var we *jsonrpc.Error
+	hasRPC := errors.As(err, &we)
 	if f.status != 0 {
 		e := mk(ClassProtocol)
 		e.Status = f.status
+		if hasRPC { // a JSON-RPC error body on a non-2xx (e.g. 400 -32022)
+			e.RPCCode = we.Code
+		}
 		if f.status >= 500 || f.status == http.StatusRequestTimeout || f.status == http.StatusTooManyRequests {
 			e.Class = ClassUnreachable
 		}
 		return e
 	}
-	var we *jsonrpc.Error
-	if errors.As(err, &we) {
+	if hasRPC {
 		e := mk(ClassProtocol)
 		if op == opCallTool {
 			e.Class = ClassToolError
