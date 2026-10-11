@@ -13,7 +13,6 @@
       "is_archived": false,
       "is_general": false,
       "name_normalized": "eng-general",
-      "is_member": true,
       "topic": {"value": "Engineering chatter", "creator": "U0ALICE001", "last_set": 1700000100},
       "purpose": {"value": "Everything engineering", "creator": "U0ALICE001", "last_set": 1700000100},
       "num_members": 42
@@ -30,7 +29,6 @@
       "is_archived": false,
       "is_general": false,
       "name_normalized": "eng-leads",
-      "is_member": true,
       "topic": {"value": "", "creator": "", "last_set": 0},
       "purpose": {"value": "Leads only", "creator": "U0ALICE001", "last_set": 1700000200},
       "num_members": 5
