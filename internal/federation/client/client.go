@@ -26,6 +26,13 @@ const (
 const (
 	DefaultTimeout    = 30 * time.Second
 	DefaultClientName = "mcp-gateway"
+	// DefaultMaxResultBytes bounds one JSON-RPC response on the wire.
+	DefaultMaxResultBytes = 4 << 20
+	// DefaultMaxListItems bounds the items of one list operation.
+	DefaultMaxListItems = 1000
+	// sseSlack keeps the SDK's own SSE event cap above ours, so our bound
+	// (which classifies) always trips first.
+	sseSlack = 64 << 10
 )
 
 // Options configure a Client.
@@ -34,6 +41,7 @@ type Options struct {
 	Authorizer     Authorizer
 	Timeout        time.Duration
 	MaxResultBytes int64
+	MaxListItems   int
 	ClientName     string
 	ClientVersion  string
 	Log            *slog.Logger
@@ -44,6 +52,8 @@ type Client struct {
 	hc      *http.Client
 	auth    Authorizer
 	timeout time.Duration
+	maxBody int64
+	maxList int
 	impl    *mcp.Implementation
 	log     *slog.Logger
 }
@@ -59,6 +69,14 @@ func New(o Options) (*Client, error) {
 	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log}
 	if c.timeout <= 0 {
 		c.timeout = DefaultTimeout
+	}
+	c.maxBody = o.MaxResultBytes
+	if c.maxBody <= 0 {
+		c.maxBody = DefaultMaxResultBytes
+	}
+	c.maxList = o.MaxListItems
+	if c.maxList <= 0 {
+		c.maxList = DefaultMaxListItems
 	}
 	if c.log == nil {
 		c.log = slog.New(slog.DiscardHandler)
@@ -117,14 +135,14 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Sess
 
 	hc := *c.hc
 	hc.Timeout = 0 // per-operation contexts bound requests; see doc.go
-	hc.Transport = &roundTripper{base: c.hc.Transport, origin: origin(v.u), headers: v.headers, auth: c.auth}
+	hc.Transport = &roundTripper{base: c.hc.Transport, origin: origin(v.u), headers: v.headers, auth: c.auth, maxBody: c.maxBody, life: sessCtx}
 
 	var inner mcp.Transport
 	if tr == TransportSSE {
-		inner = &mcp.SSEClientTransport{Endpoint: v.u.String(), HTTPClient: &hc}
+		inner = &mcp.SSEClientTransport{Endpoint: v.u.String(), HTTPClient: &hc, MaxEventSize: int(c.maxBody) + sseSlack}
 	} else {
 		inner = &mcp.StreamableClientTransport{Endpoint: v.u.String(), HTTPClient: &hc,
-			DisableStandaloneSSE: true, MaxRetries: -1}
+			DisableStandaloneSSE: true, MaxRetries: -1, MaxEventSize: int(c.maxBody) + sseSlack}
 	}
 	cl := mcp.NewClient(c.impl, &mcp.ClientOptions{Logger: c.log})
 	cs, err := cl.Connect(hctx, &detached{inner: inner, ctx: sessCtx}, nil)

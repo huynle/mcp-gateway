@@ -146,6 +146,9 @@ func classify(ctx context.Context, op string, err error, obs ...*observer) *Erro
 		e.WWWAuthenticate = f.challenge
 		return e
 	}
+	if f.tooLarge {
+		return mk(ClassTooLarge)
+	}
 	if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return mk(ClassTimeout)
 	}
@@ -182,6 +185,7 @@ type facts struct {
 	challenge    string
 	transportErr error
 	refusal      *Error
+	tooLarge     bool
 }
 
 func merge(obs []*observer) facts {
@@ -194,6 +198,7 @@ func merge(obs []*observer) facts {
 		if f.refusal == nil {
 			f.refusal = o.refusal
 		}
+		f.tooLarge = f.tooLarge || o.tooLarge
 		if f.transportErr == nil {
 			f.transportErr = o.transportErr
 		}

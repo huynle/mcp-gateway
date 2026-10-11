@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +19,13 @@ type observer struct {
 	challenge    string // WWW-Authenticate of the last 401/403
 	transportErr error  // first error from the underlying transport
 	refusal      *Error // first refusal by the round tripper itself
+	tooLarge     bool   // a response body exceeded the bound
+}
+
+func (o *observer) recordTooLarge() {
+	o.mu.Lock()
+	o.tooLarge = true
+	o.mu.Unlock()
 }
 
 func (o *observer) recordResponse(resp *http.Response) {
@@ -75,6 +83,11 @@ type roundTripper struct {
 	origin  string
 	headers http.Header
 	auth    Authorizer
+	maxBody int64
+	// life is the session context: cancelling it (Close, or a failed
+	// handshake) aborts every request of the session, including SDK
+	// background requests made with detached contexts.
+	life context.Context
 }
 
 func origin(u *url.URL) string {
@@ -98,20 +111,40 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if origin(req.URL) != t.origin {
 		return refuse(refusal(ClassBlocked, ReasonCrossOrigin, nil))
 	}
-	r := req.Clone(req.Context())
+	ctx, cancel := context.WithCancel(req.Context())
+	stop := context.AfterFunc(t.life, cancel)
+	release := func() { stop(); cancel() }
+	r := req.Clone(ctx)
 	for k, vs := range t.headers {
 		r.Header[k] = append([]string(nil), vs...)
 	}
 	if t.auth != nil {
 		if err := t.auth.Authorize(r.Context(), r); err != nil {
+			release()
 			return refuse(refusal(ClassAuthRequired, ReasonAuthorizer, err))
 		}
 	}
 	resp, err := t.base.RoundTrip(r)
 	if err != nil {
+		release()
 		obs.recordTransportErr(err)
 		return nil, err
 	}
 	obs.recordResponse(resp)
+	limitBody(resp, t.maxBody, obs)
+	resp.Body = &releaseBody{ReadCloser: resp.Body, release: release}
 	return resp, nil
+}
+
+// releaseBody frees the request's session-cancellation hook on Close.
+type releaseBody struct {
+	io.ReadCloser
+	once    sync.Once
+	release func()
+}
+
+func (b *releaseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.release)
+	return err
 }
