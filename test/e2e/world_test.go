@@ -45,7 +45,9 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/jobs"
 	"github.com/huynle/mcp-gateway/internal/ledger"
@@ -324,6 +326,7 @@ func newWorld(t *testing.T, opts options) *world {
 	if opts.federation {
 		w.fed, err = connector.Wire(connector.WireOptions{
 			Store: st, Keys: keys, Registry: reg, BaseURL: baseURL, Version: "e2e", OnChange: w.policy.Invalidate, Log: log,
+			ConnectFinish: connectFinish,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -418,6 +421,9 @@ func newWorld(t *testing.T, opts options) *world {
 	cp.MountConnect(p.MountUser)
 	cp.MountAdmin(p.MountAdmin)
 	ledger.NewPortal(w.ledger, session, log).Mount(p.MountUser)
+	if w.fed != nil {
+		w.mountFederationPages(p, session, log)
+	}
 	w.idSvc.OnDisable(w.tokens.DisableHook())
 	w.idSvc.OnDisable(w.conn.DisableHook())
 
@@ -425,6 +431,11 @@ func newWorld(t *testing.T, opts options) *world {
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("/mcp", mcpHandler)
 	mux.Handle("POST /slack/interactions", slackHandler)
+	if w.fed != nil {
+		// cmd/gateway's withFederationRoutes: public, outside the portal.
+		mux.Handle("GET "+auth.ClientMetadataPath, w.fed.Auth.ClientMetadataDocument())
+		mux.Handle(tunnel.ConnectPath, w.fed.Tunnels.Handler())
+	}
 	mux.Handle("/", p.Handler())
 	w.srv = httptest.NewServer(observability.RequestID(metrics.HTTPMiddleware(mux)))
 	t.Cleanup(w.srv.Close)
