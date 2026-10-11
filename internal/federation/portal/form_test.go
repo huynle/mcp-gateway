@@ -226,20 +226,30 @@ func TestEditAndDeleteAreOwnerOnly(t *testing.T) {
 	mustContain(t, r.body, `value="https://m.example/mcp"`, "a secret is stored", `value="bearer" checked`)
 	mustNotContain(t, r.body, `name="name"`) // the name (tool prefix) is fixed
 
-	// Saving without a new secret keeps the stored one.
-	r = e.post("/servers/"+mine.ID+"/edit", alice, addForm("url", "https://m2.example/mcp", "auth_kind", "bearer", "credential_mode", "shared"))
+	// Saving without a new secret keeps the stored one while the URL is
+	// unchanged.
+	r = e.post("/servers/"+mine.ID+"/edit", alice, addForm("url", "https://m.example/mcp", "auth_kind", "bearer", "credential_mode", "shared", "scopes", "read"))
 	if r.code != 303 {
 		t.Fatalf("save: %d %s", r.code, r.body)
-	}
-	if s := e.serverByName("mine"); s.URL != "https://m2.example/mcp" || s.Name != "mine" {
-		t.Errorf("after save %+v", s)
 	}
 	if len(e.auth.shared) != 0 {
 		t.Error("blank secret overwrote the stored one")
 	}
+	// A new URL needs the secret again: the stored one is sealed to the old
+	// URL (security task rvrfpzzj) and must never be sent to the new one.
+	r = e.post("/servers/"+mine.ID+"/edit", alice, addForm("url", "https://m2.example/mcp", "auth_kind", "bearer", "credential_mode", "shared"))
+	if r.code != 422 || !strings.Contains(r.body, "Enter the shared bearer token") {
+		t.Fatalf("URL change without a new secret: %d", r.code)
+	}
+	if s := e.serverByName("mine"); s.URL != "https://m.example/mcp" {
+		t.Errorf("URL changed without the secret: %+v", s)
+	}
 	r = e.post("/servers/"+mine.ID+"/edit", alice, addForm("url", "https://m2.example/mcp", "auth_kind", "bearer", "credential_mode", "shared", "shared_bearer", "tok2"))
 	if r.code != 303 || len(e.auth.shared) != 1 || e.auth.shared[0].c.Bearer != "tok2" {
 		t.Errorf("new secret: %d %+v", r.code, e.auth.shared)
+	}
+	if s := e.serverByName("mine"); s.URL != "https://m2.example/mcp" || s.Name != "mine" {
+		t.Errorf("after save %+v", s)
 	}
 
 	r = e.post("/servers/"+mine.ID+"/delete", alice, nil)

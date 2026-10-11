@@ -205,9 +205,10 @@ func (p *Portal) validate(ctx context.Context, c caller, f *serverForm, prev *st
 		if err != nil {
 			return nil, err
 		}
-		// A stored secret is sealed to its auth kind, so a new kind needs
-		// a new secret.
-		keep := prev != nil && info.SharedSecret && prev.AuthKind == f.AuthKind && prev.CredentialMode == store.MCPCredentialShared
+		// A stored secret is sealed to its auth kind and the server URL,
+		// so a new kind or a new URL needs a new secret.
+		keep := prev != nil && info.SharedSecret && prev.AuthKind == f.AuthKind && prev.CredentialMode == store.MCPCredentialShared &&
+			prev.URL == out.url
 		switch {
 		case cred != nil:
 			out.shared = cred
