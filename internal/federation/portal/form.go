@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
 
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
