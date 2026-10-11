@@ -20,6 +20,7 @@ func TestListShowsMyAndPublishedServersWithConnectionState(t *testing.T) {
 	e.st.add(store.MCPServer{Name: "bobsprivate", URL: "https://b.example/mcp", OwnerUserID: bob, AuthKind: store.MCPAuthNone})
 	e.st.setConn(wiki.ID, alice, store.MCPConnectionNeedsReconnect)
 	e.st.setConn(kb.ID, alice, store.MCPConnectionActive)
+	e.st.setConn(notes.ID, bob, store.MCPConnectionActive) // bob's connection is not alice's
 	e.snap.pending(notes.ID, &snapshot.Snapshot{})
 
 	r := e.get("/servers", alice)
@@ -68,6 +69,10 @@ func TestPostWithoutCSRFIs403(t *testing.T) {
 		if r.code != 403 {
 			t.Errorf("csrf %q: status %d, want 403", tok, r.code)
 		}
+	}
+	// A valid token of another user does not reach someone else's server.
+	if r := e.post("/servers/"+s.ID+"/delete", bob, nil); r.code != 404 {
+		t.Errorf("bob deletes alice's server: %d", r.code)
 	}
 	if len(e.st.deleted) != 0 {
 		t.Error("deleted without a valid CSRF token")

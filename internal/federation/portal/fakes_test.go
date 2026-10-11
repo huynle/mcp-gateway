@@ -546,5 +546,3 @@ func mustNotContain(t *testing.T, body string, bad ...string) {
 		}
 	}
 }
-
-func boolPtr(b bool) *bool { return &b }

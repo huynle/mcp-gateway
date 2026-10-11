@@ -33,10 +33,10 @@ var nameRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}$`)
 // and not a reserved built-in name. The error is safe to show.
 func ValidateName(name string) error {
 	if !nameRE.MatchString(name) {
-		return errors.New("Use 1–63 lowercase letters, digits, '-' or '_' for the name.")
+		return bad("Use 1–63 lowercase letters, digits, '-' or '_' for the name.")
 	}
 	if slices.Contains(ReservedNames, name) {
-		return fmt.Errorf("The name %q is reserved for a built-in app; choose another.", name)
+		return bad("The name %q is reserved for a built-in app; choose another.", name)
 	}
 	return nil
 }
@@ -141,7 +141,7 @@ func secretKind(kind string) bool {
 func (p *Portal) validate(ctx context.Context, c caller, f *serverForm, prev *store.MCPServer, info CredentialInfo) (*validated, error) {
 	if prev == nil {
 		if err := ValidateName(f.Name); err != nil {
-			return nil, &userError{msg: err.Error()}
+			return nil, err
 		}
 	}
 	out := &validated{}

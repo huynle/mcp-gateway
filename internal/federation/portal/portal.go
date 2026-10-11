@@ -183,7 +183,7 @@ func NewPortal(d Deps) *Portal {
 	d.BaseURL = strings.TrimRight(d.BaseURL, "/")
 	tpl := template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
-		"join":    func(s []string, sep string) string { return strings.Join(s, sep) },
+		"join":    strings.Join,
 		"dname":   snapshot.DisplayName,
 		"dtitle":  snapshot.DisplayTitle,
 		"ddesc":   snapshot.DisplayDescription,
