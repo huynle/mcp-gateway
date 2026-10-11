@@ -45,6 +45,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/jobs"
 	"github.com/huynle/mcp-gateway/internal/ledger"
@@ -115,7 +116,7 @@ func openTestStore(t *testing.T) *store.Store {
 	for _, stmt := range []string{
 		"ALTER ROLE gateway_app LOGIN PASSWORD '" + appPassword + "'",
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + jobsPass + "'",
-		"TRUNCATE users, identities, sessions, roles, role_assignments, user_restrictions, policy_versions, tokens, vendor_apps, connections, connection_secrets, connect_flows, approvals, ledger_operations, ledger_attempts, audit_events, job_locks CASCADE",
+		"TRUNCATE users, identities, sessions, roles, role_assignments, user_restrictions, policy_versions, tokens, vendor_apps, connections, connection_secrets, connect_flows, approvals, ledger_operations, ledger_attempts, audit_events, job_locks, mcp_servers, mcp_tunnels, netguard_allow_hosts CASCADE",
 	} {
 		err := retryConcurrentUpdate(func() error {
 			_, err := super.Exec(ctx, stmt)
@@ -165,6 +166,10 @@ type options struct {
 	// register adds further connectors to the registry after the fake
 	// (the GitHub world registers the real connector against a stub API).
 	register func(reg *connectors.Registry) error
+	// federation wires user-added MCP servers as cmd/gateway does
+	// (connector.Wire: store-backed netguard allow list, auth, snapshots,
+	// tunnels, the Manager's decider and account source).
+	federation bool
 }
 
 // world is the gateway wired like cmd/gateway, plus the handles the
@@ -183,6 +188,7 @@ type world struct {
 	notifier *memNotifier
 	fake     *fake.Connector
 	slack    *fakeSlack
+	fed      *connector.Federation
 	srv      *httptest.Server
 
 	admin, alice, bob    user
@@ -312,6 +318,19 @@ func newWorld(t *testing.T, opts options) *world {
 			t.Fatal(err)
 		}
 	}
+	// User-added MCP servers, as cmd/gateway's newFederation wires them.
+	var decider mcp.Decider = w.policy
+	var accounts connectors.AccountSource = w.conn
+	if opts.federation {
+		w.fed, err = connector.Wire(connector.WireOptions{
+			Store: st, Keys: keys, Registry: reg, BaseURL: baseURL, Version: "e2e", OnChange: w.policy.Invalidate, Log: log,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.fed.Start(ctx)
+		decider, accounts = w.fed.Manager.Decider(w.policy), w.fed.Manager.Accounts(w.conn)
+	}
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL
 	w.ledger, err = ledger.New(lcfg, ledger.NewPostgresStore(st), ledger.Options{
@@ -328,10 +347,10 @@ func newWorld(t *testing.T, opts options) *world {
 	// and the confirm handler in deferred-consumption mode.
 	confirm := approvals.NewConfirmHandler(w.approval, metrics, log)
 	confirm.DeferConsumption(true)
-	visibility := mcp.PolicyVisibility{Decider: w.policy, Log: log}
+	visibility := mcp.PolicyVisibility{Decider: decider, Log: log}
 	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
-		Registry: reg, Visibility: visibility, RateLimiter: limiter, Accounts: w.conn, Policy: w.policy, Confirm: confirm,
+		Registry: reg, Visibility: visibility, RateLimiter: limiter, Accounts: accounts, Policy: decider, Confirm: confirm,
 		Audit: w.rec, Metrics: metrics, Log: log,
 	})
 	if err != nil {
