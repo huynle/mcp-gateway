@@ -1,0 +1,30 @@
+{{template "head" .}}
+{{template "subnav"}}
+{{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<p class="notice"><strong>Warning:</strong> the gateway refuses to connect user-added servers (and their OAuth endpoints) to loopback, private, link-local, CGNAT and cloud-metadata addresses. Every entry here lifts that protection for the host or network: <strong>any user who adds a server can then make the gateway reach those internal networks</strong>. Add only what must be reachable, as narrowly as possible.</p>
+{{if .Hosts}}
+<table>
+  <thead><tr><th>Host or network</th><th>Note</th><th>Added</th><th></th></tr></thead>
+  <tbody>
+  {{range .Hosts}}
+  <tr>
+    <td><code>{{.Pattern}}</code></td>
+    <td>{{.Note}}</td>
+    <td>{{fmtTime .CreatedAt}}</td>
+    <td><form method="post" action="/admin/network/allow-hosts/{{.ID}}/delete" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger" type="submit">Remove</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">The allow-list is empty: only public addresses are reachable.</p>
+{{end}}
+<h2>Add an entry</h2>
+<form method="post" action="/admin/network/allow-hosts" class="stack">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <label>Host name, IP address or CIDR prefix <input type="text" name="pattern" value="{{.Pattern}}" placeholder="mcp.corp.internal or 10.20.0.0/16"></label>
+  <label>Note (why it is needed) <input type="text" name="note" value="{{.Note}}" maxlength="256"></label>
+  <p><button class="btn primary" type="submit">Add</button></p>
+</form>
+{{template "foot" .}}

@@ -1,0 +1,50 @@
+{{template "head" .}}
+{{template "subnav"}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<p class="muted">Names and descriptions below come from the server <strong>{{.Server.Name}}</strong> (owner {{.Server.Owner}}), not from the gateway: they are the upstream's own claims. Tools are shown to models as <code>{{.Server.Name}}.&lt;tool&gt;</code>.</p>
+{{if eq .Server.Audience "published"}}<p class="notice">This server is published to {{join .Server.Roles ", "}}: enabling a tool here makes it available to those roles wherever the role editor allows it.</p>{{end}}
+{{if not .Version}}
+<p>No snapshot yet. Use Refresh on the <a href="/admin/servers/{{.Server.ID}}">server page</a> to discover its tools.</p>
+{{else}}
+{{if .UpToDate}}<p>Version {{.Version}} is the approved snapshot. You can change the decisions.</p>
+{{else}}<p>Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools stay disabled until you enable them.</p>{{end}}
+
+{{if .Removed}}<p class="removed">Removed tools: {{range .Removed}}<code>{{.}}</code> {{end}}</p>{{end}}
+{{if not .Resources.Empty}}<p>Resources: {{range .Resources.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Resources.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Resources.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+{{if not .Templates.Empty}}<p>Resource templates: {{range .Templates.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Templates.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Templates.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+{{if not .Prompts.Empty}}<p>Prompts: {{range .Prompts.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Prompts.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Prompts.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+
+<form method="post" action="/admin/servers/{{.Server.ID}}/review">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <input type="hidden" name="version" value="{{.Version}}">
+<table>
+  <thead><tr><th>Enable</th><th>Tool</th><th>Kind</th></tr></thead>
+  <tbody>
+  {{range .Tools}}
+  <tr>
+    <td><input type="checkbox" name="enable" value="{{.Index}}"{{if .Checked}} checked{{end}} aria-label="Enable {{.Name}}"></td>
+    <td>
+      <strong><code>{{.Name}}</code></strong>{{if .Title}} · {{.Title}}{{end}}
+      {{if eq .Status "added"}}<span class="added">added</span>{{else if eq .Status "changed"}}<span class="changed">changed: {{join .Fields ", "}}</span>{{end}}
+      {{if .Enabled}}<span class="muted">(currently enabled)</span>{{end}}
+      {{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}
+    </td>
+    <td>
+      <span class="pill">{{.HintKind}}</span>{{if and (eq .HintKind "write") .Destructive}} <span class="muted">may be destructive</span>{{end}}
+      <select name="kind_{{.Index}}" aria-label="Kind of {{.Name}}">
+        <option value=""{{if not .Override}} selected{{end}}>as annotated ({{.HintKind}})</option>
+        <option value="read"{{if eq .Override "read"}} selected{{end}}>read</option>
+        <option value="write"{{if eq .Override "write"}} selected{{end}}>write</option>
+      </select>
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+  <p class="muted">Writes go through the gateway's confirmation and approval path. Tools without a read-only annotation count as writes. Writes are never enabled in bulk.</p>
+  <label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>
+  <p><button class="btn primary" type="submit">Approve as admin</button> <a class="btn" href="/admin/servers/{{.Server.ID}}">Cancel</a></p>
+</form>
+{{end}}
+<p><a href="/admin/servers/{{.Server.ID}}">Back to {{.Server.Name}}</a></p>
+{{template "foot" .}}
