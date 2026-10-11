@@ -76,10 +76,11 @@ type fakeDialer struct {
 
 func newFakeDialer() *fakeDialer { return &fakeDialer{routes: map[netip.Addr]string{}} }
 
-func (d *fakeDialer) route(ip string, srv *httptest.Server) {
+// routePublic forwards dials to publicIP to srv.
+func (d *fakeDialer) routePublic(srv *httptest.Server) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.routes[netip.MustParseAddr(ip)] = srv.Listener.Addr().String()
+	d.routes[netip.MustParseAddr(publicIP)] = srv.Listener.Addr().String()
 }
 
 func (d *fakeDialer) dial(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -273,7 +274,7 @@ func TestDialUsesCheckedAddressDespiteRebinding(t *testing.T) {
 	// First lookup: public. Every later lookup: loopback.
 	res.set("rebind.example", []string{publicIP}, []string{"127.0.0.1"})
 	dialer := newFakeDialer()
-	dialer.route(publicIP, srv)
+	dialer.routePublic(srv)
 	g := New(Options{Resolver: res, Dial: dialer.dial, AllowHTTP: true})
 
 	resp, err := get(t, g.Client(), fmt.Sprintf("http://rebind.example:%d/", port))

@@ -143,7 +143,7 @@ func New(o Options) *Guard {
 // Client returns a new *http.Client that uses Transport, the request
 // timeout and the redirect policy.
 func (g *Guard) Client() *http.Client {
-	return &http.Client{Transport: g.rt, Timeout: g.timeout}
+	return &http.Client{Transport: g.rt, Timeout: g.timeout, CheckRedirect: g.checkRedirect}
 }
 
 // Transport returns the guarded RoundTripper: every request URL is checked
