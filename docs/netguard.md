@@ -10,7 +10,7 @@ Vendor connectors (GitHub, Slack, Google, ...) talk to fixed vendor hosts and ar
 pm, err := netguard.NewPrometheusMetrics(metrics.Registry()) // blocked_dials_total{reason}
 if err != nil { return err }
 guard := netguard.New(netguard.Options{
-    AllowList:        allowList,          // nil = nothing allow-listed; the store-backed list comes with the federation schema
+    AllowList:        allowList,          // nil = nothing allow-listed; production: netguard.NewCachedAllowList over netguard_allow_hosts
     Timeout:          30 * time.Second,   // default
     MaxResponseBytes: 10 << 20,           // default
     Metrics:          pm,
@@ -51,6 +51,8 @@ if err := guard.CheckURL(ctx, u); err != nil { /* errors.As(err, &blocked) with 
 Request-level reasons: `scheme`, `userinfo`, `network`, `ambiguous_ip_literal`, `invalid_host`, `ipv6_zone`, `invalid_address`, `too_many_redirects`, `redirect_downgrade`.
 
 ### Allow list
+
+`CachedAllowList` (production, wired by `connector.Wire`) loads the entries from `netguard_allow_hosts` through a loader (`connector.AllowHostsLoader`), keeps them for 30 s (`Invalidate` after an admin edit), fails closed when the load fails and skips entries `NewStaticAllowList` refuses.
 
 `AllowList.Allowed(ctx, host, ip)` opens a destination: an exact host name (case-insensitive, no wildcards) or a CIDR/IP. `StaticAllowList` is the in-memory implementation (`NewStaticAllowList("mcp.internal.example", "10.20.0.0/16")`). An allow-listed host may use plain http. Ambiguous numeric hosts, zoned IPv6 and https→http redirects can never be allow-listed. A CIDR entry matches at dial time (or for IP-literal URLs); to permit `http` for a *name*, the name itself must be listed.
 

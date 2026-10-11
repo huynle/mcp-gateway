@@ -2,7 +2,7 @@
 
 How the gateway finds out how a **user-added MCP server** wants to be authenticated, and how it holds and uses the credentials: OAuth connections per user, shared or per-user API keys, bearer tokens and custom headers. The package supplies the [federation client](federation-client.md)'s `Authorizer`s. Everything outbound goes through [netguard](netguard.md). Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz`, `yd6qrbqc`, `uvi2nzcw`, `17iv8p3b`, task `k3ff95ec`.
 
-The package is not mounted or wired yet: the federation connector task builds the `Service`, mounts the handlers and calls `ForUser`.
+Wired by `connector.Wire` and mounted by `cmd/gateway/federation.go` (see [federation-connector.md](federation-connector.md)): `GET /servers/{id}/connect` and `GET /servers/oauth/callback` behind the portal session, the client metadata document public; the connector calls `ForUser` and `Reauth` for every federated tool call.
 
 ## Wiring (for the connector task)
 
