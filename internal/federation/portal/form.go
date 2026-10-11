@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
+
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
@@ -22,10 +24,7 @@ import (
 // take (decision 17iv8p3b leaves this to the app layer): v1 connectors and
 // the products behind them, so <server>.<tool> never shadows a built-in
 // tool family.
-var ReservedNames = []string{
-	"github", "slack", "atlassian", "jira", "confluence", "google", "calendar", "tasks", "gmail",
-	"drive", "docs", "sheets", "contacts", "microsoft", "fake",
-}
+var ReservedNames = connector.ReservedNames()
 
 var nameRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}$`)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,6 +41,9 @@ type WireOptions struct {
 	AllowList netguard.AllowList
 	// Timeout bounds each upstream operation (client default when 0).
 	Timeout time.Duration
+	// ConnectFinish renders the end of the upstream OAuth connect flow
+	// (auth.Options.Finish); nil keeps the auth package's default.
+	ConnectFinish func(w http.ResponseWriter, r *http.Request, serverID string, err error)
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -89,6 +93,7 @@ func Wire(o WireOptions) (*Federation, error) {
 	var err error
 	f.Auth, err = auth.New(auth.Options{
 		HTTPClient: f.Guard.Client(), Store: auth.NewPostgresStore(o.Store), Keys: o.Keys, BaseURL: o.BaseURL, Log: o.Log,
+		Finish: o.ConnectFinish,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("federation: auth: %w", err)

@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -35,6 +37,7 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	}
 	opts := connector.WireOptions{
 		Store: st, Keys: keys, Registry: registry, BaseURL: cfg.BaseURL, Version: version, Log: log,
+		ConnectFinish: connectFinish(log),
 	}
 	if policySvc != nil {
 		opts.OnChange = policySvc.Invalidate
@@ -92,8 +95,8 @@ func withFederationRoutes(fed *connector.Federation) muxExtra {
 // portal's signed-in check: GET /servers/{id}/connect starts it (302 to
 // the server's authorization server), GET /servers/oauth/callback
 // finishes it. The servers portal (its own package) links to them.
-func withFederationPages(fed *connector.Federation) portalExtra {
-	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), _ *slog.Logger) {
+func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string) portalExtra {
+	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
 		if fed == nil {
 			return
 		}
@@ -103,5 +106,55 @@ func withFederationPages(fed *connector.Federation) portalExtra {
 		}
 		mountUser("GET /servers/{id}/connect", fed.Auth.StartConnect(user))
 		mountUser("GET "+auth.CallbackPath, fed.Auth.Callback(user))
+
+		// The servers portal (internal/federation/portal, task 9dp13dgy).
+		factory, err := fedportal.NewClientFactory(fedportal.FactoryOptions{
+			Credentials: fed.Auth, Tunnels: fed.Tunnels, HTTPClient: fed.Guard.Client(), Log: log,
+		})
+		if err != nil {
+			log.Error("servers portal not mounted", "error", err)
+			return
+		}
+		identityFn := func(r *http.Request) (string, string, bool) {
+			id, csrf := session(r)
+			return id, csrf, identity.PrincipalFrom(r.Context()).IsAdmin()
+		}
+		fedportal.NewPortal(fedportal.Deps{
+			Store: fedportal.NewStore(st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
+			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log},
+			Identity: identityFn, Log: log, BaseURL: baseURL,
+		}).Mount(mountUser)
+	}
+}
+
+// serverChangedHook adapts the connector Manager to the portal's
+// ToolsChanged hook (no error return): a failed reload is logged and the
+// Manager's periodic reload catches up.
+type serverChangedHook struct {
+	m   *connector.Manager
+	log *slog.Logger
+}
+
+func (h serverChangedHook) ServerChanged(ctx context.Context, serverID string) {
+	if err := h.m.ServerChanged(ctx, serverID); err != nil {
+		h.log.Warn("server change not applied yet; periodic reload will retry", "event", "federation.server_changed_failed",
+			"server_id", serverID, "error", observability.RedactError(err))
+	}
+}
+
+// connectFinish ends the upstream OAuth connect flow back on the server's
+// portal page.
+func connectFinish(log *slog.Logger) func(http.ResponseWriter, *http.Request, string, error) {
+	return func(w http.ResponseWriter, r *http.Request, serverID string, err error) {
+		target := "/servers"
+		if serverID != "" {
+			target = "/servers/" + url.PathEscape(serverID)
+		}
+		if err != nil {
+			log.Warn("upstream connect failed", "event", "federation.connect_failed", "server_id", serverID, "error", observability.RedactError(err))
+			http.Redirect(w, r, target+"?connect=failed", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, target+"?connect=ok", http.StatusSeeOther)
 	}
 }
