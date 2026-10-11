@@ -344,11 +344,25 @@ func (w *world) signInAs(sub, name, role string) user {
 	return u
 }
 
+// toolError calls a tool that must fail as a tool result (isError) and
+// returns its text.
+func (w *world) toolError(cs *sdk.ClientSession, tool string, args map[string]any) string {
+	w.t.Helper()
+	res, err := w.call(cs, tool, args)
+	if err != nil {
+		w.t.Fatalf("%s: %v, want a tool error result", tool, err)
+	}
+	if !res.IsError {
+		w.t.Fatalf("%s succeeded (%q), want a tool error", tool, text(w.t, res))
+	}
+	return text(w.t, res)
+}
+
 // hasAudit reports whether u has an audit row for tool with the outcome
-// and error class ("" matches any class).
+// and error class ("" matches any).
 func (w *world) hasAudit(u user, tool, outcome, class string) bool {
 	for _, ev := range w.events(u) {
-		if ev.Tool == tool && ev.Outcome == outcome && (class == "" || ev.ErrorClass == class) {
+		if ev.Tool == tool && (outcome == "" || ev.Outcome == outcome) && (class == "" || ev.ErrorClass == class) {
 			return true
 		}
 	}
