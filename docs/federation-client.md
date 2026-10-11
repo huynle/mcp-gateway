@@ -69,7 +69,7 @@ type Authorizer interface {
 
 1. POST `initialize` with the **Streamable HTTP** transport. If the handshake succeeds, use it.
 2. If that POST was answered with **HTTP 4xx other than 401, 403, 407, 408, 429**, typically 404 or 405 from a legacy server with no POST route, or 400 from one that rejects the body, reconnect with **legacy HTTP+SSE** (GET the URL, wait for the `endpoint` event, POST messages there).
-3. Anything else is returned as is, with **no fallback**: success, 401/403 (credentials), 407/408/429 (proxy, timing, rate), 5xx, network errors, timeouts, netguard refusals, oversize responses, and non-HTTP protocol errors such as malformed JSON on a 200. Falling back on those would hide the real failure, and on 401 it would send credentials over a second transport for nothing.
+3. Anything else is returned as is, with **no fallback**: success, 401/403 (credentials), 407/408/429 (proxy, timing, rate), a 4xx whose body is JSON-RPC error `-32022` (unsupported protocol version: the server speaks Streamable HTTP, so a fallback would only replace the real error with a confusing SSE failure), 5xx, network errors, timeouts, netguard refusals, oversize responses, and non-HTTP protocol errors such as malformed JSON on a 200. Falling back on those would hide the real failure, and on 401 it would send credentials over a second transport for nothing.
 
 The fallback is logged at info (`host`, `status`). `Session.Transport()` and `CallInfo.Transport` report the transport actually used. Explicit `TransportStreamableHTTP` / `TransportSSE` never fall back.
 
@@ -77,7 +77,9 @@ The streamable transport runs with `DisableStandaloneSSE` (no server-initiated G
 
 ### Protocol version
 
-The go-sdk (v1.8.0) negotiates the version. It first tries the stateless `server/discover` (SEP-2575, protocol 2026-07-28) and falls back to `initialize` when the server does not know the method, so older servers get the version they answer with (e.g. `2025-06-18`). `ProtocolVersion()` reports the result.
+The go-sdk (v1.8.0) negotiates the version. It first tries the stateless `server/discover` (SEP-2575, protocol 2026-07-28) and falls back to `initialize` (asking `2025-11-25`) when the server does not support it, so older servers get the version they answer with (e.g. `2025-06-18`). go-sdk servers accept 2026-07-28 only in stateless mode; the default (stateful) `StreamableHTTPHandler` negotiates `2025-11-25`. `ProtocolVersion()` reports the result.
+
+**Caller contexts are isolated from the SDK.** `Connect` and every operation hide context values keyed by go-sdk types before handing the context to the SDK (`withoutSDKValues`, `sdkctx.go`); other values, deadlines and cancellation pass through. The gateway calls the client from inside its own go-sdk server handler (`/mcp`), and the SDK stores the inbound `Mcp-Protocol-Version` in the request context under the same key its client transport falls back to when setting that header. Without the isolation, a downstream client speaking 2026-07-28 made the gateway send `Mcp-Protocol-Version: 2026-07-28` on an `initialize` asking `2025-11-25`, and stateful upstreams rejected it with HTTP 400 `-32022` (Brain quirk `91d7smmg`, task `36hcuxk2`).
 
 ## Bounds
 
@@ -101,7 +103,7 @@ Upstream failures are `*client.Error`. Branch on `Class`:
 | `blocked` | netguard refused the destination (`Reason` = netguard reason, e.g. `loopback`, `private`, `metadata`) or a request left the origin (`cross_origin`) |
 | `auth_required` | HTTP 401 (`Status`, `WWWAuthenticate`) or the Authorizer failed (`Reason "authorizer"`) |
 | `forbidden` | HTTP 403 (`WWWAuthenticate` kept too, e.g. `insufficient_scope`) |
-| `protocol_error` | not MCP: malformed JSON, unexpected status or content type, JSON-RPC error outside `tools/call`, broken pagination |
+| `protocol_error` | not MCP: malformed JSON, unexpected status or content type, JSON-RPC error outside `tools/call`, broken pagination. A non-2xx answered with a JSON-RPC error body keeps both `Status` and `RPCCode` (e.g. 400 / `-32022`) |
 | `too_large` | a response or list exceeded its bound |
 | `timeout` | the operation's deadline passed or its context was cancelled |
 | `tool_error` | `tools/call` answered with a JSON-RPC error (unknown tool, bad arguments; `RPCCode`) |
@@ -127,5 +129,8 @@ Classification uses facts recorded at the HTTP layer (status, challenge, transpo
 - pagination; hostile servers: over-cap lists, empty-page and cursor loops, huge results (JSON and SSE), slow call and slow handshake → `timeout`, malformed JSON → `protocol_error`, JSON-RPC errors
 - netguard blocking private, loopback and metadata URLs; cross-origin redirect and SSE endpoint; unreachable; 5xx
 - `OnCall` reporting; protocol version negotiation
+- stateful go-sdk upstream (default options): two sequential sessions with list + call, also when connecting from inside a go-sdk server handler whose downstream speaks 2026-07-28 (`stateful_test.go`); a stateless upstream still negotiates 2026-07-28 there; no SSE fallback on 400 `-32022`
+
+`test/e2e` `TestE2EPluginsStatefulUpstream` covers the same through the whole gateway: review, then two `tools/call` via `/mcp` against a stateful upstream, checking each upstream `initialize` header matches its body.
 
 `internal/netguard`'s `TestFederationUsesOnlyTheGuard` (rawhttpcheck) fails if anything under `internal/federation` builds its own `http.Client`/`Transport`.
