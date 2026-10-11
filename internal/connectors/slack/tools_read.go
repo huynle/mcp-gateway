@@ -178,8 +178,10 @@ type property struct {
 
 var (
 	channelProperty = property{"channel", "string", "Channel id (C..., G...) or name (with or without #). Names are resolved among the channels you are a member of; pass the id when a name is not found.", nil}
-	limitProperty   = property{"limit", "integer", "Items per page (1-100); clamped to the tool's maximum.", nil}
-	cursorProperty  = property{"cursor", "string", "Pagination cursor from a previous next_cursor.", nil}
+	// postTargetProperty is channelProperty plus direct messages.
+	postTargetProperty = property{"channel", "string", "Channel id (C..., G...) or name (with or without #), or a user id (U...) or <@U...> mention to send a direct message to that user (your own id: a note to yourself). Names are resolved among the channels you are a member of; pass the id when a name is not found.", nil}
+	limitProperty      = property{"limit", "integer", "Items per page (1-100); clamped to the tool's maximum.", nil}
+	cursorProperty     = property{"cursor", "string", "Pagination cursor from a previous next_cursor.", nil}
 )
 
 // objectSchema builds a closed object schema with the given properties
@@ -230,6 +232,12 @@ func identity(extra ...string) func(map[string]any) map[string]string {
 		out := map[string]string{}
 		if raw, _ := args["channel"].(string); raw != "" {
 			id, name := parseChannelRef(raw)
+			if user := parseUserRef(raw); user != "" {
+				// A direct message: no channel name for name rules to
+				// match, no channel id to resolve.
+				id, name = "", ""
+				out["channel"], out["dm_user"] = "dm:"+user, user
+			}
 			switch {
 			case id != "":
 				out["channel"], out["channel_id"] = id, id
