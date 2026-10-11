@@ -20,6 +20,8 @@ type Endpoint struct {
 	// (e.g. a non-secret routing header). Credentials belong in the
 	// Authorizer.
 	Headers map[string]string
+	// Label identifies the server in CallInfo (e.g. its ID). Optional.
+	Label string
 }
 
 // reservedHeaders are set by the transport or the MCP SDK; an endpoint may
@@ -36,6 +38,7 @@ type validated struct {
 	u         *url.URL
 	transport Transport
 	headers   http.Header
+	label     string
 }
 
 func validate(ep Endpoint) (*validated, error) {
@@ -77,7 +80,7 @@ func validate(ep Endpoint) (*validated, error) {
 		}
 		h.Set(canon, value)
 	}
-	return &validated{u: u, transport: tr, headers: h}, nil
+	return &validated{u: u, transport: tr, headers: h, label: ep.Label}, nil
 }
 
 // validHeaderName reports whether s is an RFC 9110 token.

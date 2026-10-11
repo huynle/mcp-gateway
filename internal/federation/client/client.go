@@ -45,6 +45,7 @@ type Options struct {
 	ClientName     string
 	ClientVersion  string
 	Log            *slog.Logger
+	OnCall         func(CallInfo)
 }
 
 // Client connects to remote MCP servers.
@@ -54,6 +55,7 @@ type Client struct {
 	timeout time.Duration
 	maxBody int64
 	maxList int
+	onCall  func(CallInfo)
 	impl    *mcp.Implementation
 	log     *slog.Logger
 }
@@ -66,7 +68,7 @@ func New(o Options) (*Client, error) {
 	if o.HTTPClient.Transport == nil {
 		return nil, errors.New("federation client: Options.HTTPClient has no Transport (use netguard.Guard.Client())")
 	}
-	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log}
+	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log, onCall: o.OnCall}
 	if c.timeout <= 0 {
 		c.timeout = DefaultTimeout
 	}
@@ -96,18 +98,22 @@ func (c *Client) Connect(ctx context.Context, ep Endpoint) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch v.transport {
-	case TransportStreamableHTTP, TransportSSE:
-		return c.connect(ctx, v, v.transport)
+	start := time.Now()
+	tr := v.transport
+	if tr == TransportAuto {
+		tr = TransportStreamableHTTP
 	}
-	s, err := c.connect(ctx, v, TransportStreamableHTTP)
+	s, err := c.connect(ctx, v, tr)
 	var e *Error
-	if err == nil || !errors.As(err, &e) || e.Class != ClassProtocol || !legacyStatus(e.Status) {
-		return s, err
+	if v.transport == TransportAuto && err != nil && errors.As(err, &e) &&
+		e.Class == ClassProtocol && legacyStatus(e.Status) {
+		c.log.Info("federation client: falling back to legacy HTTP+SSE",
+			"host", v.u.Hostname(), "status", e.Status)
+		tr = TransportSSE
+		s, err = c.connect(ctx, v, tr)
 	}
-	c.log.Info("federation client: falling back to legacy HTTP+SSE",
-		"host", v.u.Hostname(), "status", e.Status)
-	return c.connect(ctx, v, TransportSSE)
+	c.report(v.label, opConnect, tr, start, err)
+	return s, err
 }
 
 // legacyStatus reports whether an HTTP status answering the Streamable
@@ -156,7 +162,7 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Sess
 		sessCancel()
 		return nil, classify(hctx, opConnect, context.DeadlineExceeded, hsObs, sessObs)
 	}
-	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel, obs: sessObs}, nil
+	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel, obs: sessObs, label: v.label}, nil
 }
 
 // detached connects the inner transport with the session context instead
