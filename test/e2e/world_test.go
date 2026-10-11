@@ -359,10 +359,17 @@ func newWorld(t *testing.T, opts options) *world {
 	if err := pipeline.Insert(mcp.Before, mcp.StageRateLimit, mcp.LedgerStage(w.ledger, log)); err != nil {
 		t.Fatal(err)
 	}
+	// Resources and prompts of user-added servers, audited and rate
+	// limited like tool calls (cmd/gateway's newMCP does the same).
+	var resources mcp.ResourceProvider
+	if w.fed != nil {
+		resources = w.fed.Manager.ResourceProvider()
+	}
 	mcpHandler, err := mcp.Handler(mcp.Options{
 		Registry: reg, Pipeline: pipeline, Visibility: visibility, Authenticator: w.tokens,
 		Auth:    tokens.MiddlewareOptions{Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow), Metrics: metrics, Log: log},
 		BaseURL: baseURL, MaxBody: cfg.MCPMaxBody, Log: log, Version: "e2e",
+		Resources: resources, Audit: w.rec, RateLimiter: limiter,
 	})
 	if err != nil {
 		t.Fatal(err)
