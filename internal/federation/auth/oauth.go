@@ -357,7 +357,7 @@ func (s *Service) ConnectURL(ctx context.Context, userID, serverID string) (stri
 		ID: id, UserID: userID, ServerID: server.ID, Verifier: verifier,
 		Issuer: asm.Issuer, IssRequired: asm.AuthorizationResponseIssParameterSupported,
 		TokenEndpoint: asm.TokenEndpoint, ClientID: cl.ClientID, ClientMethod: cl.Method,
-		AuthMethod: tokenAuthMethod(secret, asm), Resource: det.Resource, Scopes: scopes,
+		AuthMethod: tokenAuthMethod(secret, asm), Resource: det.Resource, Scopes: scopes, ServerURL: server.URL,
 		Exp: s.clock().Add(s.ttl).Unix(),
 	}
 	state, err := s.encodeState(ctx, st)
@@ -434,6 +434,10 @@ func (s *Service) CompleteConnect(ctx context.Context, req CallbackRequest) (str
 	}
 	if server.AuthKind != store.MCPAuthOAuth || server.CredentialMode != store.MCPCredentialPerUser {
 		return st.ServerID, fmt.Errorf("%w: the server's authentication changed", ErrFlowInvalid)
+	}
+	if server.URL != st.ServerURL {
+		s.log.Warn("oauth callback rejected", "event", "federation.auth_flow_rejected", "user_id", req.UserID, "server_id", st.ServerID, "reason", "server_url_changed")
+		return st.ServerID, fmt.Errorf("%w: the server's address changed", ErrFlowInvalid)
 	}
 	secret := ""
 	if st.AuthMethod != authMethodNone {
