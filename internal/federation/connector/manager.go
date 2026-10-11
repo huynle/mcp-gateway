@@ -346,11 +346,7 @@ func (v visibility) Visible(ctx context.Context, p *tokens.Principal, tool conne
 	if !v.m.o.Registry.IsServerApp(tool.App) {
 		return v.base.Visible(ctx, p, tool)
 	}
-	if p == nil {
-		return false
-	}
-	e, ok := v.m.entry(tool.App)
-	if !ok || !v.m.canSee(ctx, p.UserID, e.server.ID) {
+	if p == nil || !v.m.serverToolUsable(ctx, p.UserID, tool) {
 		return false
 	}
 	return v.base.Visible(ctx, p, tool)
