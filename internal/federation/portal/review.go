@@ -3,6 +3,7 @@ package portal
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 
@@ -10,11 +11,12 @@ import (
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
-// toolView is one tool of the snapshot under review. Upstream text is
-// passed through the snapshot Display helpers here and HTML-escaped by
-// the template. Index (position in the snapshot) names the form fields,
-// so upstream names never become field names.
-type toolView struct {
+// ReviewTool is one tool of the snapshot under review (shared with the
+// admin pages). Upstream text is passed through the snapshot Display
+// helpers here and HTML-escaped by the template. Index (position in the
+// snapshot) names the form fields, so upstream names never become field
+// names.
+type ReviewTool struct {
 	Index       int
 	Name        string
 	Title       string
@@ -28,26 +30,34 @@ type toolView struct {
 	Checked     bool // pre-checked: an unchanged read tool that is enabled
 }
 
+// ReviewView is the latest snapshot compared with the approved one, as
+// the review pages show it (BuildReviewView).
+type ReviewView struct {
+	Version   int // latest version (0: no snapshot)
+	From      int // approved version (0: none)
+	UpToDate  bool
+	Tools     []ReviewTool
+	Removed   []string
+	Resources KeyDiffView
+	Templates KeyDiffView
+	Prompts   KeyDiffView
+}
+
 type reviewData struct {
+	ReviewView
 	Title      string
 	Caller     caller
 	Server     serverView
-	Version    int
-	From       int
-	UpToDate   bool
 	CanApprove bool
 	NeedsAdmin bool
-	Tools      []toolView
-	Removed    []string
-	Resources  keyDiffView
-	Templates  keyDiffView
-	Prompts    keyDiffView
 	Error      string
 }
 
-type keyDiffView struct{ Added, Removed, Changed []string }
+// KeyDiffView is a KeyDiff with display-safe keys.
+type KeyDiffView struct{ Added, Removed, Changed []string }
 
-func (k keyDiffView) Empty() bool { return len(k.Added)+len(k.Removed)+len(k.Changed) == 0 }
+// Empty: nothing added, removed or changed.
+func (k KeyDiffView) Empty() bool { return len(k.Added)+len(k.Removed)+len(k.Changed) == 0 }
 
 func displayKeys(in []string) []string {
 	out := make([]string, len(in))
@@ -57,8 +67,8 @@ func displayKeys(in []string) []string {
 	return out
 }
 
-func keyView(k snapshot.KeyDiff) keyDiffView {
-	return keyDiffView{Added: displayKeys(k.Added), Removed: displayKeys(k.Removed), Changed: displayKeys(k.Changed)}
+func keyView(k snapshot.KeyDiff) KeyDiffView {
+	return KeyDiffView{Added: displayKeys(k.Added), Removed: displayKeys(k.Removed), Changed: displayKeys(k.Changed)}
 }
 
 // canApprove: the owner reviews a private server; a published server is
@@ -67,47 +77,32 @@ func canApprove(c caller, s *store.MCPServer) bool {
 	return s.OwnerUserID == c.UserID && s.Audience == store.MCPAudiencePrivate
 }
 
-func (p *Portal) review(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
-	p.renderReview(w, r, c, s, http.StatusOK, "")
-}
-
-func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string) {
-	ctx := r.Context()
-	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: p.view(ctx, c, s), Error: msg,
-		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished}
-	latest, err := p.d.Snapshots.Latest(ctx, c.snapActor(), s.ID)
-	switch {
-	case errors.Is(err, snapshot.ErrNoSnapshot):
-		data.CanApprove = false
-		p.render(w, r, status, "review.html", data)
-		return
-	case err != nil:
-		p.fail(w, r, "latest snapshot", err)
-		return
-	}
-	var current *snapshot.Record
-	if current, err = p.d.Snapshots.Current(ctx, c.snapActor(), s.ID); err != nil && !errors.Is(err, snapshot.ErrNoSnapshot) {
-		p.fail(w, r, "current snapshot", err)
-		return
+// BuildReviewView compares latest with current (the approved record, nil
+// when none) for the review pages. Writes are never pre-checked; neither
+// is anything new or changed.
+func BuildReviewView(latest, current *snapshot.Record) ReviewView {
+	var v ReviewView
+	if latest == nil {
+		return v
 	}
 	var diff snapshot.Diff
 	if current == nil || current.Version != latest.Version {
 		var from *snapshot.Snapshot
 		if current != nil {
 			from = current.Snapshot
-			data.From = current.Version
+			v.From = current.Version
 		}
 		diff = snapshot.Compare(from, latest.Snapshot)
 	} else {
-		data.UpToDate, data.From = true, current.Version
+		v.UpToDate, v.From = true, current.Version
 	}
-	data.Version = latest.Version
+	v.Version = latest.Version
 	var review snapshot.Review
 	if current != nil {
 		review = current.Review
 	}
 	for i, t := range latest.Snapshot.Tools {
-		tv := toolView{
+		tv := ReviewTool{
 			Index: i, Name: snapshot.DisplayName(t.Name), Title: snapshot.DisplayTitle(t.Title),
 			Description: snapshot.DisplayDescription(t.Description), HintKind: t.HintKind(), Status: "unchanged",
 		}
@@ -137,10 +132,37 @@ func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, 
 		}
 		// Writes are never pre-checked; neither is anything new or changed.
 		tv.Checked = tv.Enabled && tv.Status == "unchanged" && eff == snapshot.KindRead
-		data.Tools = append(data.Tools, tv)
+		v.Tools = append(v.Tools, tv)
 	}
-	data.Removed = displayKeys(diff.Removed)
-	data.Resources, data.Templates, data.Prompts = keyView(diff.Resources), keyView(diff.ResourceTemplates), keyView(diff.Prompts)
+	v.Removed = displayKeys(diff.Removed)
+	v.Resources, v.Templates, v.Prompts = keyView(diff.Resources), keyView(diff.ResourceTemplates), keyView(diff.Prompts)
+	return v
+}
+
+func (p *Portal) review(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
+	p.renderReview(w, r, c, s, http.StatusOK, "")
+}
+
+func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string) {
+	ctx := r.Context()
+	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: p.view(ctx, c, s), Error: msg,
+		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished}
+	latest, err := p.d.Snapshots.Latest(ctx, c.snapActor(), s.ID)
+	switch {
+	case errors.Is(err, snapshot.ErrNoSnapshot):
+		data.CanApprove = false
+		p.render(w, r, status, "review.html", data)
+		return
+	case err != nil:
+		p.fail(w, r, "latest snapshot", err)
+		return
+	}
+	var current *snapshot.Record
+	if current, err = p.d.Snapshots.Current(ctx, c.snapActor(), s.ID); err != nil && !errors.Is(err, snapshot.ErrNoSnapshot) {
+		p.fail(w, r, "current snapshot", err)
+		return
+	}
+	data.ReviewView = BuildReviewView(latest, current)
 	p.render(w, r, status, "review.html", data)
 }
 
@@ -164,21 +186,50 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 		p.renderReview(w, r, c, s, http.StatusConflict, "The server's tools changed since this page was loaded. Review them again.")
 		return
 	}
-	var review snapshot.Review
+	var current *snapshot.Record
 	if cur, err := p.d.Snapshots.Current(ctx, c.snapActor(), s.ID); err == nil {
-		review = cur.Review
+		current = cur
+	}
+	d := ReviewDecisionsFromForm(r.PostForm, latest, current)
+	_, err = p.d.Snapshots.Approve(ctx, c.snapActor(), s.ID, version, d)
+	switch {
+	case errors.Is(err, snapshot.ErrReviewNotAllowed):
+		p.renderReview(w, r, c, s, http.StatusForbidden, "This server is published: an admin must review its tools.")
+		return
+	case errors.Is(err, snapshot.ErrStaleVersion):
+		p.renderReview(w, r, c, s, http.StatusConflict, "The server's tools changed since this page was loaded. Review them again.")
+		return
+	case err != nil:
+		p.fail(w, r, "approve snapshot", err)
+		return
+	}
+	p.log.Info("snapshot approved", "event", "federation.snapshot_approved", "user_id", c.UserID, "server_id", s.ID, "version", version)
+	p.changed(ctx, s.ID)
+	http.Redirect(w, r, "/servers/"+s.ID+"?approved=1", http.StatusSeeOther)
+}
+
+// ReviewDecisionsFromForm turns a posted review form (fields enable=<i>,
+// kind_<i>, enable_reads) into decisions for latest; current is the
+// approved record (nil when none). Every checked tool is enabled; every
+// unchecked tool disabled, except read tools when "enable all read tools"
+// is on (left to EnableReads, which never re-enables a tool a reviewer
+// disabled before and never enables writes).
+func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) snapshot.ReviewDecisions {
+	var review snapshot.Review
+	if current != nil {
+		review = current.Review
 	}
 	checked := map[int]bool{}
-	for _, v := range r.PostForm["enable"] {
+	for _, v := range form["enable"] {
 		if i, err := strconv.Atoi(v); err == nil {
 			checked[i] = true
 		}
 	}
-	d := snapshot.ReviewDecisions{Tools: map[string]snapshot.Decision{}, EnableReads: r.PostForm.Get("enable_reads") != ""}
+	d := snapshot.ReviewDecisions{Tools: map[string]snapshot.Decision{}, EnableReads: form.Get("enable_reads") != ""}
 	for i, t := range latest.Snapshot.Tools {
 		var dec snapshot.Decision
 		eff := t.HintKind()
-		switch k := snapshot.Kind(r.PostForm.Get("kind_" + strconv.Itoa(i))); k {
+		switch k := snapshot.Kind(form.Get("kind_" + strconv.Itoa(i))); k {
 		case snapshot.KindRead, snapshot.KindWrite:
 			dec.Kind, eff = &k, k
 		default:
@@ -197,21 +248,7 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 		}
 		d.Tools[t.Name] = dec
 	}
-	_, err = p.d.Snapshots.Approve(ctx, c.snapActor(), s.ID, version, d)
-	switch {
-	case errors.Is(err, snapshot.ErrReviewNotAllowed):
-		p.renderReview(w, r, c, s, http.StatusForbidden, "This server is published: an admin must review its tools.")
-		return
-	case errors.Is(err, snapshot.ErrStaleVersion):
-		p.renderReview(w, r, c, s, http.StatusConflict, "The server's tools changed since this page was loaded. Review them again.")
-		return
-	case err != nil:
-		p.fail(w, r, "approve snapshot", err)
-		return
-	}
-	p.log.Info("snapshot approved", "event", "federation.snapshot_approved", "user_id", c.UserID, "server_id", s.ID, "version", version)
-	p.changed(ctx, s.ID)
-	http.Redirect(w, r, "/servers/"+s.ID+"?approved=1", http.StatusSeeOther)
+	return d
 }
 
 func enabled(b bool) *bool { return &b }
