@@ -11,7 +11,8 @@ import (
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
 
-func ownerTool(app, name string, kind connectors.Kind) connectors.Tool {
+func ownerTool(name string, kind connectors.Kind) connectors.Tool {
+	const app = "notes"
 	return connectors.Tool{App: app, Name: name, Kind: kind, InputSchema: json.RawMessage(`{"type":"object"}`)}
 }
 
@@ -35,7 +36,7 @@ func ownerFixture(t *testing.T, restrictions ...UserRestriction) *Compiled {
 
 func TestOwnerGrantDefaults(t *testing.T) {
 	c := ownerFixture(t)
-	read, write := ownerTool("notes", "search", connectors.KindRead), ownerTool("notes", "create", connectors.KindWrite)
+	read, write := ownerTool("search", connectors.KindRead), ownerTool("create", connectors.KindWrite)
 
 	for _, tc := range []struct {
 		user string
@@ -74,7 +75,7 @@ func TestOwnerGrantWriteStaysConfirmWithRoleAllow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := Input{UserID: "alice", Roles: c.RolesFor("alice"), Tool: ownerTool("notes", "create", connectors.KindWrite)}
+	in := Input{UserID: "alice", Roles: c.RolesFor("alice"), Tool: ownerTool("create", connectors.KindWrite)}
 	if got := c.Decide(in).Outcome; got != OutcomeConfirm {
 		t.Errorf("owner write with a role allow = %s, want confirm", got)
 	}
@@ -83,7 +84,7 @@ func TestOwnerGrantWriteStaysConfirmWithRoleAllow(t *testing.T) {
 // Token narrowing and user restrictions still apply to owners.
 func TestOwnerGrantNarrowedByTokenAndRestrictions(t *testing.T) {
 	c := ownerFixture(t, UserRestriction{UserID: "alice", Rules: []ToolRule{{App: "notes", Tool: "search", Outcome: OutcomeDeny}}})
-	read, write := ownerTool("notes", "search", connectors.KindRead), ownerTool("notes", "create", connectors.KindWrite)
+	read, write := ownerTool("search", connectors.KindRead), ownerTool("create", connectors.KindWrite)
 
 	// An unconditional deny restriction also forbids list: hidden.
 	if got := c.Decide(Input{UserID: "alice", Roles: c.RolesFor("alice"), Tool: read}).Outcome; got != OutcomeHidden {
@@ -132,7 +133,7 @@ func TestServiceCompilesOwnerGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := svc.Decide(context.Background(), Input{UserID: "alice", Tool: ownerTool("notes", "search", connectors.KindRead)})
+	d, err := svc.Decide(context.Background(), Input{UserID: "alice", Tool: ownerTool("search", connectors.KindRead)})
 	if err != nil {
 		t.Fatal(err)
 	}
