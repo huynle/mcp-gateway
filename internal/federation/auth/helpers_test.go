@@ -175,6 +175,7 @@ type testAS struct {
 	refresh       map[string]bool // live refresh tokens
 	refreshCalls  int
 	failRefresh   string // OAuth error code to answer refreshes with
+	denyAll       bool   // the protected server rejects every token
 	lastAuthorize url.Values
 	lastToken     url.Values
 	lastTokenAuth string
@@ -358,7 +359,7 @@ func (a *testAS) token(w http.ResponseWriter, r *http.Request) {
 func (a *testAS) validAccess(tok string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.access[tok]
+	return a.access[tok] && !a.denyAll
 }
 
 // revokeAll invalidates every access token (forces a 401 upstream).
