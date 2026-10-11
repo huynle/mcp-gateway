@@ -1,0 +1,68 @@
+{{template "head" .}}
+{{if .Notice}}<p class="ok">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<p class="muted">MCP servers you added, and servers an admin published to you. Their tools appear in your harnesses as <code>&lt;server&gt;.&lt;tool&gt;</code> once a reviewer enabled them.</p>
+<p><a class="btn primary" href="/servers/new">Add server</a></p>
+
+{{define "serverRows"}}
+<table>
+  <thead><tr><th>Name</th><th>Address</th><th>Status</th><th>Auth</th><th>My connection</th><th></th></tr></thead>
+  <tbody>
+  {{range .}}
+  <tr>
+    <td><a href="/servers/{{.ID}}"><strong>{{.Name}}</strong></a>{{if .Published}} <span class="pill company">published</span>{{else}} <span class="pill none">private</span>{{end}}</td>
+    <td class="muted">{{.URL}}</td>
+    <td><span class="pill {{.Status}}">{{.Status}}</span>{{if .ErrorClass}} <span class="muted">({{.ErrorClass}})</span>{{end}}</td>
+    <td>{{.AuthKind}}{{if eq .CredentialMode "shared"}} <span class="muted">(shared)</span>{{end}}</td>
+    <td><span class="pill {{.Conn.Class}}">{{.Conn.Label}}</span></td>
+    <td>{{if .PendingReview}}<a class="badge" href="/servers/{{.ID}}/review">pending review</a>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+
+<h2>My servers</h2>
+{{if .Mine}}{{template "serverRows" .Mine}}{{else}}<p class="muted">You have not added a server yet.</p>{{end}}
+
+<h2>Published to me</h2>
+{{if .Shared}}{{template "serverRows" .Shared}}{{else}}<p class="muted">No server is published to your roles.</p>{{end}}
+
+<h2 id="tunnels">Tunnels</h2>
+<p class="muted">A tunnel connects a stdio MCP server, or one on a private network, to the gateway. You run <code>mcp-gateway-tunnel</code> next to the server; it connects out to the gateway, which never starts programs or dials into your network. Use the address <code>tunnel://&lt;tunnel id&gt;</code> when you add the server.</p>
+{{with .NewTunnel}}
+<div class="ok">
+  <p><strong>Tunnel “{{.Name}}” created.</strong> Copy its token now: it is shown only once.</p>
+  <pre class="token">{{.Token}}</pre>
+  <p>Run this next to your server (replace the command with your stdio server, or use <code>--http http://localhost:PORT/mcp</code>):</p>
+  <pre>{{.Command}}</pre>
+  <p class="muted">Better, keep the token out of your shell history and process list:</p>
+  <pre>{{.EnvCommand}}</pre>
+  <p>Server address: <code>tunnel://{{.ID}}</code></p>
+</div>
+{{end}}
+{{if .Tunnels}}
+<table>
+  <thead><tr><th>Name</th><th>ID</th><th>State</th><th>Created</th><th>Last seen</th><th></th></tr></thead>
+  <tbody>
+  {{range .Tunnels}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td><code>{{.ID}}</code></td>
+    <td>{{if .Online}}<span class="pill active">online</span>{{else}}<span class="pill none">offline</span>{{end}}</td>
+    <td>{{fmtTime .CreatedAt}}</td>
+    <td>{{with .LastSeenAt}}{{fmtTime .}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td class="actions"><form method="post" action="/servers/tunnels/revoke" onsubmit="return confirm('Revoke this tunnel? Servers using it stop working.')">
+      <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><input type="hidden" name="id" value="{{.ID}}">
+      <button class="btn danger" type="submit">Revoke</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="muted">No tunnels.</p>{{end}}
+<form method="post" action="/servers/tunnels" class="actions">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <input type="text" name="name" placeholder="laptop" required maxlength="100" aria-label="Tunnel name">
+  <button class="btn" type="submit">Create tunnel</button>
+</form>
+{{template "foot" .}}
