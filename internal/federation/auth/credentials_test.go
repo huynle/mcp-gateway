@@ -214,3 +214,51 @@ func TestCredentialValidation(t *testing.T) {
 		t.Fatal("shared credential accepted for an OAuth server")
 	}
 }
+
+// TestStoredCredentialsBoundToServerURL: an owner may edit a server's URL
+// (even once published). Stored credentials (another user's own key, the
+// shared credential, a static client secret) must not follow it to the new
+// address: they are sealed to the URL and no longer open (security task
+// rvrfpzzj, test/security TestSecurityFedURLSwapNeverCarriesOtherUsersCredentials).
+func TestStoredCredentialsBoundToServerURL(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := t.Context()
+	shared := apiKeyServer(t, f, "shared-key-url")
+	if err := f.svc.SetSharedCredential(ctx, Actor{UserID: "admin", Admin: true}, shared.ID, Credential{APIKey: "shared-key-url"}); err != nil {
+		t.Fatal(err)
+	}
+	perUser := addStaticServer(t, f, store.MCPCredentialPerUser, store.MCPAuthAPIKey, `{"api_key":{"header":"X-Api-Key"}}`, `{}`, "bob-key-url")
+	if err := f.svc.SetUserCredential(ctx, "bob", perUser.ID, Credential{APIKey: "bob-key-url"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ForUser(ctx, shared, "bob"); err != nil {
+		t.Fatalf("shared before the move: %v", err)
+	}
+	if _, err := f.svc.ForUser(ctx, perUser, "bob"); err != nil {
+		t.Fatalf("per-user before the move: %v", err)
+	}
+	movedShared, movedPerUser := *shared, *perUser
+	movedShared.URL, movedPerUser.URL = "https://owner-capture.example/mcp", "https://owner-capture.example/mcp"
+	if _, err := f.svc.ForUser(ctx, &movedShared, "bob"); !errors.Is(err, ErrNotConfigured) {
+		t.Errorf("shared credential after a URL change: %v, want ErrNotConfigured", err)
+	}
+	if _, err := f.svc.ForUser(ctx, &movedPerUser, "bob"); !errors.Is(err, ErrNeedsReconnect) {
+		t.Errorf("per-user credential after a URL change: %v, want ErrNeedsReconnect", err)
+	}
+
+	if err := f.svc.SetStaticClient(ctx, Actor{UserID: "admin", Admin: true}, f.server.ID, "static-id", "static-secret-url", ""); err != nil {
+		t.Fatal(err)
+	}
+	row, err := f.svc.loadClient(ctx, f.server.ID)
+	if err != nil || row == nil {
+		t.Fatalf("loadClient: %v %v", row, err)
+	}
+	if got, err := f.svc.clientSecret(ctx, f.server, row); err != nil || got != "static-secret-url" {
+		t.Fatalf("static secret at the original URL: %q %v", got, err)
+	}
+	moved := *f.server
+	moved.URL = "https://owner-capture.example/mcp"
+	if got, err := f.svc.clientSecret(ctx, &moved, row); err == nil {
+		t.Errorf("static client secret opened for a changed URL: %q", got)
+	}
+}

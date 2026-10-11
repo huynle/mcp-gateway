@@ -44,7 +44,7 @@ func (s *Service) SetSharedCredential(ctx context.Context, actor Actor, serverID
 			return err
 		}
 		b := secretBundle{APIKey: c.APIKey, Bearer: c.Bearer, Headers: canonicalHeaders(c.Headers)}
-		enc, err := s.seal(ctx, aadShared(server.ID, server.AuthKind), b)
+		enc, err := s.seal(ctx, aadShared(server), b)
 		if err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (s *Service) SetUserCredential(ctx context.Context, userID, serverID string
 			}
 		}
 		b.APIKey, b.Bearer, b.Headers = c.APIKey, c.Bearer, canonicalHeaders(c.Headers)
-		if conn.Secret, err = s.seal(ctx, aadUserConnection(userID, server.ID, server.AuthKind), b); err != nil {
+		if conn.Secret, err = s.seal(ctx, aadUserConnection(userID, server), b); err != nil {
 			return err
 		}
 		if err := tx.UpsertUserConnection(ctx, conn); err != nil {
@@ -115,7 +115,7 @@ func (s *Service) SetStaticClient(ctx context.Context, actor Actor, serverID, cl
 	return s.asActor(ctx, actor, serverID, func(tx Tx, server *store.MCPServer) error {
 		row := &store.MCPOAuthClient{ServerID: server.ID, Method: store.MCPOAuthClientStatic, ClientID: clientID, Issuer: issuer}
 		if clientSecret != "" {
-			enc, err := s.seal(ctx, aadOAuthClient(server.ID, store.MCPOAuthClientStatic), clientSecret)
+			enc, err := s.seal(ctx, aadOAuthClient(server, store.MCPOAuthClientStatic), clientSecret)
 			if err != nil {
 				return err
 			}
