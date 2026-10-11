@@ -1,0 +1,86 @@
+{{template "head" .}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if not .Edit}}<p class="muted">The server starts private: only you can see and use it. An admin can publish it to roles later. Its tools stay disabled until you review them.</p>{{end}}
+<form method="post" action="{{if .Edit}}/servers/{{.ServerID}}/edit{{else}}/servers/new{{end}}" class="stack" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  {{if .Edit}}
+  <p>Name <strong>{{.Form.Name}}</strong> <span class="muted">(the tool prefix; it cannot change)</span></p>
+  {{else}}
+  <label>Name <span class="muted">(tool prefix: 1–63 lowercase letters, digits, '-' or '_'; tools appear as <code>name.tool</code>)</span>
+    <input type="text" name="name" value="{{.Form.Name}}" required maxlength="63" pattern="[a-z0-9_\-]{1,63}"></label>
+  {{end}}
+
+  <fieldset>
+    <legend>Address</legend>
+    <label class="check"><input type="radio" name="url_mode" value="https"{{if eq .Form.URLMode "https"}} checked{{end}}> Public https URL</label>
+    <label>URL <input type="url" name="url" value="{{.Form.URL}}" placeholder="https://example.com/mcp" maxlength="2048"></label>
+    <label class="check"><input type="radio" name="url_mode" value="tunnel"{{if eq .Form.URLMode "tunnel"}} checked{{end}}{{if not .Tunnels}} disabled{{end}}> Through one of my tunnels (stdio or private servers)</label>
+    {{if .Tunnels}}
+    <label>Tunnel <select name="tunnel_id">
+      {{range .Tunnels}}<option value="{{.ID}}"{{if eq .ID $.Form.TunnelID}} selected{{end}}>{{.Name}}{{if .Online}} (online){{else}} (offline){{end}}</option>{{end}}
+    </select></label>
+    <label>Path on the tunnel <span class="muted">(optional, e.g. /mcp)</span> <input type="text" name="tunnel_path" value="{{.Form.TunnelPath}}" maxlength="512"></label>
+    {{else}}<p class="muted">No tunnels yet: create one on the <a href="/servers#tunnels">servers page</a>.</p>{{end}}
+  </fieldset>
+
+  {{if not .Edit}}
+  <p><button class="btn" type="submit" name="action" value="detect" formnovalidate>Detect authentication</button>
+    <span class="muted">Contacts the URL from the gateway (through its network policy) and pre-selects what the server offers.</span></p>
+  {{end}}
+  {{with .Detect}}
+  <div class="{{if .Error}}error{{else}}notice{{end}}" role="status">
+    {{if .Error}}<p>{{.Error}}</p>{{else}}
+    <p>Detected: {{range $i, $k := .Kinds}}{{if $i}}, {{end}}<strong>{{$k}}</strong>{{end}}.</p>
+    {{if .OAuth}}<p>OAuth: {{if .CIMD}}client ID metadata document{{else if .DCR}}dynamic client registration{{else}}needs a static client (below){{end}}{{if .S256}}, PKCE S256{{else}}, <strong>no PKCE S256 (connecting will be refused)</strong>{{end}}{{if .Offline}}, refresh tokens{{end}}.</p>{{end}}
+    {{if .Scopes}}<p>Scopes: {{range .Scopes}}<code>{{.}}</code> {{end}}</p>{{end}}
+    {{end}}
+    {{if .Blocked}}<p>Blocked by the network policy:</p><ul>{{range .Blocked}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}
+  </div>
+  {{end}}
+
+  <fieldset>
+    <legend>Authentication</legend>
+    {{range .Kinds}}
+    <label class="check"><input type="radio" name="auth_kind" value="{{.Value}}"{{if .Checked}} checked{{end}}> {{.Label}}{{if and $.Detect .Offered}} <span class="pill active">detected</span>{{end}}</label>
+    {{end}}
+    <p class="muted">Credentials</p>
+    <label class="check"><input type="radio" name="credential_mode" value="per_user"{{if ne .Form.CredentialMode "shared"}} checked{{end}}> Per user: everyone connects their own account or key</label>
+    <label class="check"><input type="radio" name="credential_mode" value="shared"{{if eq .Form.CredentialMode "shared"}} checked{{end}}> Shared: one credential set here, used for everyone (not for OAuth)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>API key placement <span class="muted">(API key only; default header X-API-Key)</span></legend>
+    <label>Send in <select name="api_key_in">
+      <option value="header"{{if ne .Form.APIKeyIn "query"}} selected{{end}}>a header</option>
+      <option value="query"{{if eq .Form.APIKeyIn "query"}} selected{{end}}>a query parameter</option>
+    </select></label>
+    <label>Header or parameter name <input type="text" name="api_key_name" value="{{.Form.APIKeyName}}" maxlength="256"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Shared credential <span class="muted">(shared mode only; write-only: it is never shown again)</span></legend>
+    {{if .Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with .Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the fields blank to keep it.</p>{{end}}
+    <label>Shared API key <input type="password" name="shared_api_key" value="" autocomplete="new-password"></label>
+    <label>Shared bearer token <input type="password" name="shared_bearer" value="" autocomplete="new-password"></label>
+    <label>Shared headers <span class="muted">(one “Name: value” per line)</span> <textarea name="shared_headers" rows="3" autocomplete="off"></textarea></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>OAuth <span class="muted">(OAuth only)</span></legend>
+    <label>Scopes <span class="muted">(optional, space-separated; default: what the server advertises)</span> <input type="text" name="scopes" value="{{.Form.Scopes}}"></label>
+    <p class="muted">Static client, only if the authorization server supports neither client metadata documents nor dynamic registration:</p>
+    <label>Client ID <input type="text" name="client_id" value="{{.Form.ClientID}}"></label>
+    <label>Client secret {{if .Info.StaticClient}}<span class="muted">(leave blank to keep the stored one)</span>{{end}} <input type="password" name="client_secret" value="" autocomplete="new-password"></label>
+    <label>Issuer <span class="muted">(optional)</span> <input type="url" name="client_issuer" value="{{.Form.ClientIssuer}}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Extra headers</legend>
+    <label>Static headers <span class="muted">(not secret; one “Name: value” per line)</span> <textarea name="static_headers" rows="3">{{.Form.StaticHeaders}}</textarea></label>
+    <label>Per-user headers <span class="muted">(each user sets their own value, e.g. X-Brain-Project; one name per line)</span> <textarea name="per_user_headers" rows="3">{{.Form.PerUserHeaders}}</textarea></label>
+  </fieldset>
+
+  <p><button class="btn primary" type="submit" name="action" value="{{if .Edit}}save{{else}}create{{end}}">{{if .Edit}}Save{{else}}Add server{{end}}</button>
+    <a class="btn" href="{{if .Edit}}/servers/{{.ServerID}}{{else}}/servers{{end}}">Cancel</a></p>
+</form>
+{{template "foot" .}}

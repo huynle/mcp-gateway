@@ -14,8 +14,6 @@ func (p *Portal) todoS(w http.ResponseWriter, r *http.Request, c caller, _ *stor
 	p.todo(w, r, c)
 }
 
-func (p *Portal) newForm(w http.ResponseWriter, r *http.Request, c caller)      { p.todo(w, r, c) }
-func (p *Portal) create(w http.ResponseWriter, r *http.Request, c caller)       { p.todo(w, r, c) }
 func (p *Portal) createTunnel(w http.ResponseWriter, r *http.Request, c caller) { p.todo(w, r, c) }
 func (p *Portal) revokeTunnel(w http.ResponseWriter, r *http.Request, c caller) { p.todo(w, r, c) }
 
@@ -44,14 +42,5 @@ func (p *Portal) readResource(w http.ResponseWriter, r *http.Request, c caller, 
 	p.todoS(w, r, c, s)
 }
 func (p *Portal) prompt(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
-	p.todoS(w, r, c, s)
-}
-func (p *Portal) editForm(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
-	p.todoS(w, r, c, s)
-}
-func (p *Portal) save(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
-	p.todoS(w, r, c, s)
-}
-func (p *Portal) delete(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
 	p.todoS(w, r, c, s)
 }

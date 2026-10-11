@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -190,12 +191,12 @@ type approval struct {
 }
 
 type fakeSnapshots struct {
-	mu        sync.Mutex
-	latest    map[string]*snapshot.Record
-	current   map[string]*snapshot.Record
-	next      map[string]*snapshot.Snapshot // what Refresh discovers
-	refreshed []string
-	approvals []approval
+	mu         sync.Mutex
+	latest     map[string]*snapshot.Record
+	current    map[string]*snapshot.Record
+	next       map[string]*snapshot.Snapshot // what Refresh discovers
+	refreshed  []string
+	approvals  []approval
 	approveErr error
 }
 
@@ -484,6 +485,7 @@ func newEnv(t *testing.T) *env {
 			return u, "csrf-" + u, false
 		},
 		BaseURL: base,
+		Log:     slog.New(slog.DiscardHandler),
 	})
 	e.mux = http.NewServeMux()
 	p.Mount(func(pattern string, h http.Handler) { e.mux.Handle(pattern, h) })
