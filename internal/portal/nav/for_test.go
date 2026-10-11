@@ -34,7 +34,7 @@ func TestForBindsTheRequestsNavDataPerClone(t *testing.T) {
 	member := render(&nav.Data{SignedIn: true, CSRFToken: "t"})
 	anon := render(nil)
 
-	for _, href := range []string{"/admin/users", "/admin/roles", "/admin/audit", "/admin/vendor-apps"} {
+	for _, href := range []string{"/admin/users", "/admin/roles", "/admin/servers", "/admin/audit", "/admin/vendor-apps"} {
 		if !strings.Contains(admin, `href="`+href+`"`) {
 			t.Errorf("admin bar lacks %s", href)
 		}
