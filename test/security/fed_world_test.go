@@ -12,6 +12,7 @@ package security
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -366,4 +367,22 @@ func requireKey(keys ...string) func(w http.ResponseWriter, r *http.Request) boo
 func apiKeyServer(s *store.MCPServer) {
 	s.CredentialMode, s.AuthKind = store.MCPCredentialPerUser, store.MCPAuthAPIKey
 	s.AuthConfig = []byte(`{"api_key":{"header":"X-Notes-Key"}}`)
+}
+
+// rawBody posts one JSON-RPC message to /mcp with the token and returns
+// the wire answer.
+func (w *world) rawBody(token string, msg any) (int, http.Header, []byte) {
+	w.t.Helper()
+	body, _ := json.Marshal(msg)
+	req, _ := http.NewRequestWithContext(w.t.Context(), http.MethodPost, w.srv.URL+"/mcp", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	out, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header, out
 }
