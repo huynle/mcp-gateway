@@ -23,12 +23,12 @@ func (m *methodLog) wrap(h http.Handler) http.Handler {
 	})
 }
 
-func (m *methodLog) count(method string) int {
+func (m *methodLog) gets() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := 0
 	for _, x := range m.methods {
-		if x == method {
+		if x == http.MethodGet {
 			n++
 		}
 	}
@@ -73,7 +73,7 @@ func TestAutoPrefersStreamable(t *testing.T) {
 		}
 		exercise(t, s)
 	}
-	if n := log.count(http.MethodGet); n != 0 {
+	if n := log.gets(); n != 0 {
 		t.Errorf("auto made %d GET requests against a streamable server", n)
 	}
 }
@@ -86,8 +86,8 @@ func TestAutoFallsBackToSSE(t *testing.T) {
 		t.Fatalf("Transport() = %q, want sse", s.Transport())
 	}
 	exercise(t, s)
-	if log.count(http.MethodGet) != 1 {
-		t.Errorf("GET count = %d, want 1 (the SSE stream)", log.count(http.MethodGet))
+	if log.gets() != 1 {
+		t.Errorf("GET count = %d, want 1 (the SSE stream)", log.gets())
 	}
 }
 

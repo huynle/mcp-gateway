@@ -31,6 +31,7 @@ const (
 // Options configure a Client.
 type Options struct {
 	HTTPClient     *http.Client
+	Authorizer     Authorizer
 	Timeout        time.Duration
 	MaxResultBytes int64
 	ClientName     string
@@ -41,6 +42,7 @@ type Options struct {
 // Client connects to remote MCP servers.
 type Client struct {
 	hc      *http.Client
+	auth    Authorizer
 	timeout time.Duration
 	impl    *mcp.Implementation
 	log     *slog.Logger
@@ -54,7 +56,7 @@ func New(o Options) (*Client, error) {
 	if o.HTTPClient.Transport == nil {
 		return nil, errors.New("federation client: Options.HTTPClient has no Transport (use netguard.Guard.Client())")
 	}
-	c := &Client{hc: o.HTTPClient, timeout: o.Timeout, log: o.Log}
+	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log}
 	if c.timeout <= 0 {
 		c.timeout = DefaultTimeout
 	}
@@ -78,16 +80,16 @@ func (c *Client) Connect(ctx context.Context, ep Endpoint) (*Session, error) {
 	}
 	switch v.transport {
 	case TransportStreamableHTTP, TransportSSE:
-		return c.connect(ctx, v, v.transport, nil)
+		return c.connect(ctx, v, v.transport)
 	}
-	obs := &observer{}
-	s, err := c.connect(ctx, v, TransportStreamableHTTP, obs)
-	if err == nil || !legacyStatus(obs.lastStatus()) {
+	s, err := c.connect(ctx, v, TransportStreamableHTTP)
+	var e *Error
+	if err == nil || !errors.As(err, &e) || e.Class != ClassProtocol || !legacyStatus(e.Status) {
 		return s, err
 	}
 	c.log.Info("federation client: falling back to legacy HTTP+SSE",
-		"host", v.u.Hostname(), "status", obs.lastStatus())
-	return c.connect(ctx, v, TransportSSE, nil)
+		"host", v.u.Hostname(), "status", e.Status)
+	return c.connect(ctx, v, TransportSSE)
 }
 
 // legacyStatus reports whether an HTTP status answering the Streamable
@@ -103,10 +105,8 @@ func legacyStatus(code int) bool {
 	return code >= 400 && code <= 499
 }
 
-func (c *Client) connect(ctx context.Context, v *validated, tr Transport, hsObs *observer) (*Session, error) {
-	if hsObs == nil {
-		hsObs = &observer{}
-	}
+func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Session, error) {
+	hsObs := &observer{}
 	sessObs := &observer{}
 	// The session context outlives Connect: the legacy SSE GET stream is
 	// opened with it and must stay up until Close.
@@ -117,7 +117,7 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport, hsObs 
 
 	hc := *c.hc
 	hc.Timeout = 0 // per-operation contexts bound requests; see doc.go
-	hc.Transport = &roundTripper{base: c.hc.Transport, headers: v.headers}
+	hc.Transport = &roundTripper{base: c.hc.Transport, origin: origin(v.u), headers: v.headers, auth: c.auth}
 
 	var inner mcp.Transport
 	if tr == TransportSSE {
@@ -131,14 +131,14 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport, hsObs 
 	if err != nil {
 		stop()
 		sessCancel()
-		return nil, err
+		return nil, classify(hctx, opConnect, err, hsObs, sessObs)
 	}
 	if !stop() {
 		_ = cs.Close()
 		sessCancel()
-		return nil, context.DeadlineExceeded
+		return nil, classify(hctx, opConnect, context.DeadlineExceeded, hsObs, sessObs)
 	}
-	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel}, nil
+	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel, obs: sessObs}, nil
 }
 
 // detached connects the inner transport with the session context instead
