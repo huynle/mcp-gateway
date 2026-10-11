@@ -153,8 +153,8 @@ func (w *world) factory() fedportal.ClientFactory {
 // reviewAs discovers the server as who (the owner, or an admin when
 // admin is set; the session uses who's credential) and approves the new
 // snapshot with the tools in enable switched on (none when empty), then
-// reloads the registry. It returns the approved record.
-func (w *world) reviewAs(who user, admin bool, server *store.MCPServer, enable ...string) *snapshot.Record {
+// reloads the registry.
+func (w *world) reviewAs(who user, admin bool, server *store.MCPServer, enable ...string) {
 	w.t.Helper()
 	ctx := w.t.Context()
 	sess, err := w.factory().Open(ctx, server, who.id)
@@ -172,20 +172,18 @@ func (w *world) reviewAs(who user, admin bool, server *store.MCPServer, enable .
 		on := true
 		d.Tools[name] = snapshot.Decision{Enabled: &on}
 	}
-	rec, err = w.fed.Snapshots.Approve(ctx, actor, server.ID, rec.Version, d)
-	if err != nil {
+	if _, err := w.fed.Snapshots.Approve(ctx, actor, server.ID, rec.Version, d); err != nil {
 		w.t.Fatalf("approve %s: %v", server.Name, err)
 	}
 	if err := w.fed.Manager.ServerChanged(ctx, server.ID); err != nil {
 		w.t.Fatal(err)
 	}
-	return rec
 }
 
 // review is reviewAs by the owner.
-func (w *world) review(owner user, server *store.MCPServer, enable ...string) *snapshot.Record {
+func (w *world) review(owner user, server *store.MCPServer, enable ...string) {
 	w.t.Helper()
-	return w.reviewAs(owner, false, server, enable...)
+	w.reviewAs(owner, false, server, enable...)
 }
 
 // publish publishes the server to the named roles (an admin action) and
@@ -275,6 +273,12 @@ func (u *upstream) URL() string { return u.srv.URL }
 func (u *upstream) setGate(g func(w http.ResponseWriter, r *http.Request) bool) {
 	u.mu.Lock()
 	u.gate = g
+	u.mu.Unlock()
+}
+
+func (u *upstream) reset() {
+	u.mu.Lock()
+	u.reqs = nil
 	u.mu.Unlock()
 }
 
