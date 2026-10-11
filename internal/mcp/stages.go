@@ -349,7 +349,7 @@ func auditEvent(ctx context.Context, cc *CallContext, res connectors.Result, err
 		}
 	case err != nil:
 		ev.Outcome = "failed"
-		ev.ErrorClass = "tool_error"
+		ev.ErrorClass = errorClass(err, "tool_error")
 	default:
 		ev.Outcome = "succeeded"
 		switch {

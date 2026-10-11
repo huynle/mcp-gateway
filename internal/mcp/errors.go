@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -97,6 +98,25 @@ func (e *ToolError) RetryAfterSeconds() int64 {
 		return 0
 	}
 	return int64((e.RetryAfter + time.Second - 1) / time.Second)
+}
+
+// ClassedError is a tool handler error that names its own short error
+// class (the federation connector's tunnel_offline, upstream_timeout,
+// ...). The audit row and a failed ledger operation record that class
+// instead of the generic "tool_error"; the class must be a fixed
+// identifier, never upstream text.
+type ClassedError interface {
+	error
+	ErrorClass() string
+}
+
+// errorClass returns err's ClassedError class, or fallback.
+func errorClass(err error, fallback string) string {
+	var ce ClassedError
+	if errors.As(err, &ce) && ce.ErrorClass() != "" {
+		return ce.ErrorClass()
+	}
+	return fallback
 }
 
 // ErrToolNotFound is the one error for a tool that does not exist or that
