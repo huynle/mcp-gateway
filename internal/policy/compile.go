@@ -46,6 +46,7 @@ type Compiled struct {
 	set         *cedar.PolicySet
 	ids         map[cedar.PolicyID]string
 	assignments map[string][]string
+	owners      map[string]bool
 }
 
 // RolesFor returns the role names assigned to userID in sorted order, or
@@ -59,7 +60,7 @@ func (c *Compiled) RolesFor(userID string) []string {
 // created since the last compile).
 func (c *Compiled) KnowsUser(userID string) bool {
 	_, ok := c.assignments[userID]
-	return ok
+	return ok || c.owners[userID]
 }
 
 // Compile turns roles, assignments and restrictions into a Cedar policy
@@ -69,6 +70,17 @@ func (c *Compiled) KnowsUser(userID string) bool {
 // token-narrowing forbids are part of every policy set (decision
 // uamxx6ba: a token narrows below the role, never widens).
 func Compile(roles []Role, assignments []Assignment, restrictions []UserRestriction) (*Compiled, error) {
+	return CompileWithOwners(roles, assignments, restrictions, nil)
+}
+
+// CompileWithOwners is Compile plus the implicit owner layer of private
+// user-added MCP servers (OwnerGrant). Without grants it produces exactly
+// what Compile does.
+func CompileWithOwners(roles []Role, assignments []Assignment, restrictions []UserRestriction, owners []OwnerGrant) (*Compiled, error) {
+	owners, err := normalizeOwners(owners)
+	if err != nil {
+		return nil, err
+	}
 	roles = slices.Clone(roles)
 	byName := map[string]bool{}
 	for i := range roles {
@@ -115,6 +127,11 @@ func Compile(roles []Role, assignments []Assignment, restrictions []UserRestrict
 	for _, r := range roles {
 		w.role(r)
 	}
+	ownerSet := map[string]bool{}
+	for _, g := range owners {
+		w.owner(g)
+		ownerSet[g.UserID] = true
+	}
 	var warnings []string
 	for _, u := range restrictions {
 		warnings = append(warnings, w.restriction(u)...)
@@ -141,6 +158,7 @@ func Compile(roles []Role, assignments []Assignment, restrictions []UserRestrict
 		set:         set,
 		ids:         ids,
 		assignments: assigned,
+		owners:      ownerSet,
 	}, nil
 }
 
