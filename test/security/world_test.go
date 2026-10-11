@@ -48,6 +48,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors/github"
 	slackconn "github.com/huynle/mcp-gateway/internal/connectors/slack"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -166,6 +167,14 @@ type options struct {
 	approvalWait time.Duration
 	// rateUser / rateApp override the limiter budgets (0: defaults).
 	rateUser, rateApp int
+	// federation wires user-added MCP servers as cmd/gateway does
+	// (fed_world_test.go): connector.Wire with the store-backed netguard
+	// allow list, the Manager's decider, account source and resource
+	// provider, the servers portal, the admin pages, the upstream OAuth
+	// connect pages and the tunnel endpoint.
+	federation bool
+	// fedTimeout bounds each upstream operation (0: client default).
+	fedTimeout time.Duration
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the
@@ -189,6 +198,7 @@ type world struct {
 	reg      *connectors.Registry
 	limiter  *mcp.TokenBucketLimiter
 	srv      *httptest.Server
+	fed      *connector.Federation // nil unless options.federation
 
 	admin, alice, bob    user
 	aliceAcc             string // alice's company fake account (connections row)
@@ -330,6 +340,13 @@ func newWorld(t *testing.T, opts options) *world {
 	w.conn.MapApp(github.App, connections.VendorGitHub)
 	w.conn.MapApp(slackconn.App, connections.VendorSlack)
 
+	// User-added MCP servers, as cmd/gateway's newFederation wires them.
+	var decider mcp.Decider = w.policy
+	var accounts connectors.AccountSource = w.conn
+	if opts.federation {
+		decider, accounts = w.wireFederation(keys, log, opts)
+	}
+
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL
 	w.ledger, err = ledger.New(lcfg, ledger.NewPostgresStore(st), ledger.Options{
@@ -356,7 +373,7 @@ func newWorld(t *testing.T, opts options) *world {
 
 	confirm := approvals.NewConfirmHandler(w.approval, metrics, log)
 	confirm.DeferConsumption(true)
-	visibility := mcp.PolicyVisibility{Decider: w.policy, Log: log}
+	visibility := mcp.PolicyVisibility{Decider: decider, Log: log}
 	rateUser, rateApp := cfg.RateUserPerMin, cfg.RateAppPerMin
 	if opts.rateUser > 0 {
 		rateUser = opts.rateUser
@@ -366,7 +383,7 @@ func newWorld(t *testing.T, opts options) *world {
 	}
 	w.limiter = mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: rateUser, AppPerMinute: rateApp})
 	pipeline, err := mcp.DefaultPipeline(mcp.PipelineDeps{
-		Registry: w.reg, Visibility: visibility, RateLimiter: w.limiter, Accounts: w.conn, Policy: w.policy, Confirm: confirm,
+		Registry: w.reg, Visibility: visibility, RateLimiter: w.limiter, Accounts: accounts, Policy: decider, Confirm: confirm,
 		Audit: w.rec, Metrics: metrics, Log: log, BaseURL: baseURL,
 	})
 	if err != nil {
@@ -375,11 +392,17 @@ func newWorld(t *testing.T, opts options) *world {
 	if err := pipeline.Insert(mcp.Before, mcp.StageRateLimit, mcp.LedgerStage(w.ledger, log)); err != nil {
 		t.Fatal(err)
 	}
-	mcpHandler, err := mcp.Handler(mcp.Options{
+	mopts := mcp.Options{
 		Registry: w.reg, Pipeline: pipeline, Visibility: visibility, Authenticator: authserver.Composite(w.tokens, w.auth.Authenticator()),
 		Auth:    tokens.MiddlewareOptions{Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow), Metrics: metrics, Log: log},
 		BaseURL: baseURL, MaxBody: cfg.MCPMaxBody, Log: log, Version: "security",
-	})
+	}
+	if w.fed != nil {
+		// Resources and prompts of user-added servers, audited and rate
+		// limited like tool calls (cmd/gateway's newMCPWithResources).
+		mopts.Resources, mopts.Audit, mopts.RateLimiter = w.fed.Manager.ResourceProvider(), w.rec, w.limiter
+	}
+	mcpHandler, err := mcp.Handler(mopts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,11 +446,17 @@ func newWorld(t *testing.T, opts options) *world {
 	w.idSvc.OnDisable(w.tokens.DisableHook())
 	w.idSvc.OnDisable(w.conn.DisableHook())
 	w.idSvc.OnDisable(w.auth.DisableHook())
+	if w.fed != nil {
+		w.mountFederationPages(p, session, log)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", observability.Liveness())
 	mux.Handle("/mcp", mcpHandler)
 	w.auth.Mount(mux)
+	if w.fed != nil {
+		w.mountFederationRoutes(mux)
+	}
 	mux.Handle("/", p.Handler())
 	w.srv = httptest.NewServer(observability.RequestID(metrics.HTTPMiddleware(mux)))
 	t.Cleanup(w.srv.Close)
