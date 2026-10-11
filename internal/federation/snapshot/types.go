@@ -148,8 +148,10 @@ type Decision struct {
 }
 
 // ReviewDecisions is what a reviewer submits when approving a snapshot.
-// EnableReads enables every read tool (effective kind) the reviewer did not
-// decide on individually; writes are only ever enabled one by one.
+// EnableReads enables every read tool (effective kind) that no reviewer has
+// decided on yet and that has no Enabled decision here; a tool a reviewer
+// explicitly disabled stays disabled, and writes are only ever enabled one
+// by one.
 type ReviewDecisions struct {
 	Tools       map[string]Decision `json:"tools,omitempty"`
 	EnableReads bool                `json:"enableReads,omitempty"`

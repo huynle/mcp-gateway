@@ -16,7 +16,8 @@
 //   - nothing is enabled implicitly: every tool of a first snapshot, and every
 //     new or changed tool of a refresh, stays disabled until a reviewer
 //     enables it. ReviewDecisions.EnableReads is an explicit opt-in that
-//     enables the read tools a reviewer did not decide on individually;
+//     enables the read tools no reviewer has decided on yet (a tool a
+//     reviewer disabled stays disabled); writes are enabled one by one;
 //   - approving a refresh keeps the review of unchanged tools and drops
 //     removed ones.
 //
