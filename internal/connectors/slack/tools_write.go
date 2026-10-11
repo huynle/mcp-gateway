@@ -36,6 +36,10 @@ const (
 const (
 	ScopeChatWrite      = "chat:write"
 	ScopeReactionsWrite = "reactions:write"
+	// ScopeIMWrite lets post_message / reply_in_thread open a direct
+	// message with a user (conversations.open). Optional: without it
+	// only channels work and a DM attempt answers missing_scope.
+	ScopeIMWrite = "im:write"
 )
 
 // MarkerEventType is the metadata event_type the marker-reconciled
@@ -75,7 +79,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 			Description: "Post a message to a Slack channel as the connected user; with thread_ts, post it as a reply in that thread. " +
 				"Returns the new message's channel id and ts.",
 			InputSchema: objectSchema([]property{
-				channelProperty, textProperty,
+				postTargetProperty, textProperty,
 				{"thread_ts", "string", "Optional: the parent message timestamp to reply under instead of posting to the channel.", nil},
 			}, []string{"channel", "text"}),
 			RequiredScopes:   []string{ScopeChatWrite},
@@ -89,7 +93,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 			Description: "Reply in a Slack thread as the connected user: the channel and the parent message's thread_ts. " +
 				"Returns the new reply's channel id, ts and thread_ts.",
 			InputSchema: objectSchema([]property{
-				channelProperty,
+				postTargetProperty,
 				{"thread_ts", "string", "The thread's parent message timestamp (e.g. 1700002000.000100).", nil},
 				textProperty,
 			}, []string{"channel", "thread_ts", "text"}),
@@ -171,15 +175,24 @@ func hasMarker(meta goslack.SlackMetadata, operationID string) bool {
 // marker when marker reconciliation is on) and returns the new
 // message's identifiers. Only the post itself can be an unknown outcome.
 func (c *Connector) post(ctx context.Context, api *goslack.Client, call connectors.Call, action, threadTS string) (connectors.Result, error) {
-	id, name, err := channelArg(call.Args)
-	if err != nil {
-		return connectors.Result{}, err
+	raw, _ := call.Args["channel"].(string)
+	dmUser := parseUserRef(raw)
+	var id, name string
+	var err error
+	if dmUser == "" {
+		if id, name, err = channelArg(call.Args); err != nil {
+			return connectors.Result{}, err
+		}
 	}
 	text, err := textArg(call.Args)
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	id, _, err = c.resolveChannel(ctx, api, id, name)
+	if dmUser != "" {
+		id, err = c.openDM(ctx, api, dmUser)
+	} else {
+		id, _, err = c.resolveChannel(ctx, api, id, name)
+	}
 	if err != nil {
 		return connectors.Result{}, err
 	}
@@ -284,4 +297,18 @@ func reactionArg(args map[string]any) (string, error) {
 		return "", invalid("name is required: an emoji name without colons, such as thumbsup")
 	}
 	return v, nil
+}
+
+// openDM returns the id of the direct message between the connected user
+// and user (conversations.open, idempotent; needs im:write). Its failure
+// is a known outcome: nothing was posted yet.
+func (c *Connector) openDM(ctx context.Context, api *goslack.Client, user string) (string, error) {
+	ch, _, _, err := api.OpenConversationContext(ctx, &goslack.OpenConversationParameters{Users: []string{user}, ReturnIM: true})
+	if err != nil {
+		return "", classify("open direct message", err)
+	}
+	if ch == nil || ch.ID == "" {
+		return "", &Error{Class: ClassUnavailable, Message: "Slack opened no direct message"}
+	}
+	return ch.ID, nil
 }

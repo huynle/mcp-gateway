@@ -401,6 +401,7 @@ type channelsPage struct {
 		Name       string `json:"name"`
 		IsPrivate  bool   `json:"is_private"`
 		IsArchived bool   `json:"is_archived"`
+		IsMember   bool   `json:"is_member"`
 		NumMembers int    `json:"num_members"`
 		Topic      string `json:"topic"`
 		Purpose    string `json:"purpose"`
@@ -432,6 +433,13 @@ func TestListChannels(t *testing.T) {
 	}
 	if !page.Channels[1].IsPrivate || page.Channels[1].Name != "eng-leads" {
 		t.Errorf("second channel = %+v", page.Channels[1])
+	}
+	// users.conversations lists only the user's own conversations but
+	// leaves is_member unset (as in the fixture): every row is a member.
+	for _, ch := range page.Channels {
+		if !ch.IsMember {
+			t.Errorf("%s: is_member = false, want true (users.conversations returns only the user's conversations)", ch.Name)
+		}
 	}
 	noMarkers(t, res)
 	form := srv.Last(t, "users.conversations").Form
