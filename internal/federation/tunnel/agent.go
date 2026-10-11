@@ -277,8 +277,12 @@ func (a *Agent) handle(ctx, life context.Context, ws *websocket.Conn, f *frame) 
 	w := &responseWriter{req: ctx, life: life, ws: ws, id: f.ID, header: http.Header{}}
 	defer func() {
 		if p := recover(); p != nil {
-			a.o.Log.Error("tunnel: local handler panicked", "panic", fmt.Sprint(p))
-			w.abort("handler_panic")
+			// http.ErrAbortHandler is how a proxying handler reports a
+			// broken upstream stream (as in net/http); anything else is a bug.
+			if p != http.ErrAbortHandler { //nolint:errorlint // sentinel compared as a panic value, like net/http
+				a.o.Log.Error("tunnel: local handler panicked", "panic", fmt.Sprint(p))
+			}
+			w.abort("aborted")
 			return
 		}
 		w.finish()
