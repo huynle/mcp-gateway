@@ -156,7 +156,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL))
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
@@ -310,7 +310,7 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 		svc.OnDisable(connSvc.DisableHook())
 	}
 	for _, extra := range extras {
-		extra(svc, p.MountUser, session, log)
+		extra(svc, portalMount(p), session, log)
 	}
 	return p.Handler(), nil
 }
