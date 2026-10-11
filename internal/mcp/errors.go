@@ -80,7 +80,9 @@ func (e *ToolError) Class() string { return e.class }
 func (e *ToolError) Denial() bool {
 	switch e.class {
 	case "tool_not_found", "denied", "identity_unresolved", "rate_limited", "vendor_rate_limited", "unauthenticated",
-		"approval_mismatch", "approval_denied", "approval_used", "approval_expired", "pending_verification":
+		"approval_mismatch", "approval_denied", "approval_used", "approval_expired", "pending_verification",
+		// Federated tools the server's review does not allow (connector).
+		"tool_disabled", "tool_not_reviewed", "tool_changed":
 		return true
 	}
 	return false

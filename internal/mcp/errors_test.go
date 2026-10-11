@@ -93,3 +93,19 @@ func TestGatewayErrorsReachTheSDKClientAsJSONRPCErrors(t *testing.T) {
 		})
 	}
 }
+
+// Federated-tool refusals (the review refused the tool) are gateway
+// denials in the audit row, like policy denials; credential and argument
+// problems are failures.
+func TestFederationRefusalsAreDenials(t *testing.T) {
+	for _, class := range []string{"tool_disabled", "tool_not_reviewed", "tool_changed"} {
+		if !mcp.NewToolError(mcp.CodeDenied, class, "x").Denial() {
+			t.Errorf("%s is not a denial", class)
+		}
+	}
+	for _, class := range []string{"args_invalid", "auth_required", "needs_reconnect"} {
+		if mcp.NewToolError(mcp.CodeNoAccount, class, "x").Denial() {
+			t.Errorf("%s is a denial", class)
+		}
+	}
+}
