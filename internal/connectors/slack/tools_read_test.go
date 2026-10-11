@@ -401,6 +401,7 @@ type channelsPage struct {
 		Name       string `json:"name"`
 		IsPrivate  bool   `json:"is_private"`
 		IsArchived bool   `json:"is_archived"`
+		IsMember   bool   `json:"is_member"`
 		NumMembers int    `json:"num_members"`
 		Topic      string `json:"topic"`
 		Purpose    string `json:"purpose"`
