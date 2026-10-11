@@ -1,5 +1,3 @@
-// Package client talks to remote MCP servers as an MCP client, always
-// through an injected netguard HTTP client.
 package client
 
 import (
