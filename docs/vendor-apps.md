@@ -167,6 +167,7 @@ Slack requires **HTTPS** for every redirect URL, so `localhost` cannot be regist
 | `search:read` | read | `slack.search_messages` (user token only; Slack has no bot equivalent) |
 | `users:read` | read | `slack.get_user` |
 | `chat:write` | write | `slack.post_message`, `slack.reply_in_thread` |
+| `im:write` | write | `slack.post_message`, `slack.reply_in_thread` to a user id: opens the direct message (`conversations.open`), e.g. a note to yourself. Optional: without it only channels work |
 | `reactions:write` | write | `slack.add_reaction` |
 
 Optional, only if DMs/group DMs should be readable through the gateway: `im:read`,
@@ -223,6 +224,7 @@ oauth_config:
       - search:read
       - users:read
       - chat:write
+      - im:write
       - reactions:write
     bot:
       - chat:write
