@@ -19,19 +19,24 @@ import (
 // verifier), authenticated, and useless to anyone else. One use is
 // enforced by the ReplayGuard on its ID; expiry by Exp.
 type flowState struct {
-	ID            string   `json:"id"`
-	UserID        string   `json:"u"`
-	ServerID      string   `json:"s"`
-	Verifier      string   `json:"v"`
-	Issuer        string   `json:"iss"`
-	IssRequired   bool     `json:"iss_req,omitempty"`
-	TokenEndpoint string   `json:"te"`
-	ClientID      string   `json:"cid"`
-	ClientMethod  string   `json:"cm"`
-	AuthMethod    string   `json:"am"`
-	Resource      string   `json:"res"`
-	Scopes        []string `json:"sc,omitempty"`
-	Exp           int64    `json:"exp"`
+	ID            string `json:"id"`
+	UserID        string `json:"u"`
+	ServerID      string `json:"s"`
+	Verifier      string `json:"v"`
+	Issuer        string `json:"iss"`
+	IssRequired   bool   `json:"iss_req,omitempty"`
+	TokenEndpoint string `json:"te"`
+	ClientID      string `json:"cid"`
+	ClientMethod  string `json:"cm"`
+	AuthMethod    string `json:"am"`
+	Resource      string `json:"res"`
+	// ServerURL is the server's URL when the flow started: the callback
+	// refuses to store a token for a server whose URL changed meanwhile
+	// (the token was minted for the old resource and would be sent to
+	// the new address).
+	ServerURL string   `json:"url"`
+	Scopes    []string `json:"sc,omitempty"`
+	Exp       int64    `json:"exp"`
 }
 
 // sealedState is the wire form of the envelope.

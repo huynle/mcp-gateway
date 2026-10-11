@@ -117,7 +117,7 @@ func (s *Service) sharedBundle(ctx context.Context, server *store.MCPServer) (*s
 		return nil, fmt.Errorf("auth: load shared credential: %w", err)
 	}
 	var b secretBundle
-	if err := s.open(ctx, aadShared(server.ID, server.AuthKind), sec.Secret, &b); err != nil {
+	if err := s.open(ctx, aadShared(server), sec.Secret, &b); err != nil {
 		return nil, fmt.Errorf("%w: shared credential unreadable", ErrNotConfigured)
 	}
 	return &b, nil

@@ -188,12 +188,12 @@ func (s *Service) ensureClient(ctx context.Context, server *store.MCPServer, asm
 			if row.Issuer != "" && strings.TrimSuffix(row.Issuer, "/") != strings.TrimSuffix(asm.Issuer, "/") {
 				return nil, "", fmt.Errorf("%w: the static client is for another issuer", ErrNoClient)
 			}
-			secret, err := s.clientSecret(ctx, row)
+			secret, err := s.clientSecret(ctx, server, row)
 			return row, secret, err
 		case row.Issuer == asm.Issuer && row.Method == store.MCPOAuthClientCIMD && row.ClientID == s.ClientMetadataURL():
 			return row, "", nil
 		case row.Issuer == asm.Issuer && row.Method == store.MCPOAuthClientDCR:
-			secret, err := s.clientSecret(ctx, row)
+			secret, err := s.clientSecret(ctx, server, row)
 			return row, secret, err
 		}
 	}
@@ -283,7 +283,7 @@ func (s *Service) register(ctx context.Context, server *store.MCPServer, asm *Au
 	clear(body)
 	row := &store.MCPOAuthClient{ServerID: server.ID, Method: store.MCPOAuthClientDCR, ClientID: reg.ClientID, Issuer: asm.Issuer}
 	if reg.ClientSecret != "" {
-		enc, err := s.seal(ctx, aadOAuthClient(server.ID, store.MCPOAuthClientDCR), reg.ClientSecret)
+		enc, err := s.seal(ctx, aadOAuthClient(server, store.MCPOAuthClientDCR), reg.ClientSecret)
 		if err != nil {
 			return nil, "", err
 		}
@@ -357,7 +357,7 @@ func (s *Service) ConnectURL(ctx context.Context, userID, serverID string) (stri
 		ID: id, UserID: userID, ServerID: server.ID, Verifier: verifier,
 		Issuer: asm.Issuer, IssRequired: asm.AuthorizationResponseIssParameterSupported,
 		TokenEndpoint: asm.TokenEndpoint, ClientID: cl.ClientID, ClientMethod: cl.Method,
-		AuthMethod: tokenAuthMethod(secret, asm), Resource: det.Resource, Scopes: scopes,
+		AuthMethod: tokenAuthMethod(secret, asm), Resource: det.Resource, Scopes: scopes, ServerURL: server.URL,
 		Exp: s.clock().Add(s.ttl).Unix(),
 	}
 	state, err := s.encodeState(ctx, st)
@@ -435,6 +435,10 @@ func (s *Service) CompleteConnect(ctx context.Context, req CallbackRequest) (str
 	if server.AuthKind != store.MCPAuthOAuth || server.CredentialMode != store.MCPCredentialPerUser {
 		return st.ServerID, fmt.Errorf("%w: the server's authentication changed", ErrFlowInvalid)
 	}
+	if server.URL != st.ServerURL {
+		s.log.Warn("oauth callback rejected", "event", "federation.auth_flow_rejected", "user_id", req.UserID, "server_id", st.ServerID, "reason", "server_url_changed")
+		return st.ServerID, fmt.Errorf("%w: the server's address changed", ErrFlowInvalid)
+	}
 	secret := ""
 	if st.AuthMethod != authMethodNone {
 		row, err := s.loadClient(ctx, server.ID)
@@ -444,7 +448,7 @@ func (s *Service) CompleteConnect(ctx context.Context, req CallbackRequest) (str
 		if row == nil || row.ClientID != st.ClientID {
 			return st.ServerID, fmt.Errorf("%w: the OAuth client changed", ErrFlowInvalid)
 		}
-		if secret, err = s.clientSecret(ctx, row); err != nil {
+		if secret, err = s.clientSecret(ctx, server, row); err != nil {
 			return st.ServerID, err
 		}
 	}
@@ -478,7 +482,7 @@ func (s *Service) storeUserToken(ctx context.Context, server *store.MCPServer, u
 				bundle.Headers = old.Headers
 			}
 		}
-		enc, err := s.seal(ctx, aadUserConnection(userID, server.ID, server.AuthKind), bundle)
+		enc, err := s.seal(ctx, aadUserConnection(userID, server), bundle)
 		if err != nil {
 			return err
 		}
@@ -586,7 +590,7 @@ func (s *Service) userToken(ctx context.Context, server *store.MCPServer, userID
 		}
 		secret := ""
 		if t.AuthMethod != authMethodNone && clientRow != nil && clientRow.ClientID == t.ClientID {
-			if secret, err = s.clientSecret(ctx, clientRow); err != nil {
+			if secret, err = s.clientSecret(ctx, server, clientRow); err != nil {
 				return err
 			}
 		}
