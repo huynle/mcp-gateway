@@ -6,6 +6,7 @@ toolchain go1.26.9
 
 require (
 	github.com/cedar-policy/cedar-go v1.8.0
+	github.com/coder/websocket v1.8.14
 	github.com/google/go-github/v90 v90.0.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0

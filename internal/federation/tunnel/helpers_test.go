@@ -80,6 +80,12 @@ func (m *memStore) TouchTunnel(_ context.Context, id string, at time.Time) error
 	return nil
 }
 
+func (m *memStore) touchCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.touches
+}
+
 const (
 	ownerA = "11111111-1111-4111-8111-111111111111"
 	ownerB = "22222222-2222-4222-8222-222222222222"

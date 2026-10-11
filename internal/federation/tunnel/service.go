@@ -109,7 +109,7 @@ func (s *Service) Revoke(ctx context.Context, ownerUserID, tunnelID string) erro
 		}
 		return fmt.Errorf("tunnel: revoke: %w", err)
 	}
-	s.reg.drop(tunnelID, closeRevoked)
+	s.reg.drop(tunnelID, closeRevoked, "revoked")
 	return nil
 }
 
