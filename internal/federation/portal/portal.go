@@ -144,7 +144,7 @@ var templateFS embed.FS
 //	GET  /servers/{id}                     details, my connection, refresh
 //	POST /servers/{id}/credential          my API key / bearer / header values
 //	POST /servers/{id}/disconnect          delete my connection
-//	POST /servers/{id}/refresh             rediscover with my credential -> review
+//	POST /servers/{id}/refresh             owner: rediscover with my credential -> review
 //	GET  /servers/{id}/review              pending snapshot vs approved
 //	POST /servers/{id}/review              approve with per-tool decisions
 //	GET  /servers/{id}/resources           approved resources, templates, prompts
@@ -203,7 +203,7 @@ func (p *Portal) Mount(mountUser func(pattern string, h http.Handler)) {
 	mountUser("GET /servers/{id}", p.server(p.detail))
 	mountUser("POST /servers/{id}/credential", p.server(p.setCredential))
 	mountUser("POST /servers/{id}/disconnect", p.server(p.disconnect))
-	mountUser("POST /servers/{id}/refresh", p.server(p.refresh))
+	mountUser("POST /servers/{id}/refresh", p.owner(p.refresh))
 	mountUser("GET /servers/{id}/review", p.server(p.review))
 	mountUser("POST /servers/{id}/review", p.server(p.approve))
 	mountUser("GET /servers/{id}/resources", p.server(p.resources))
