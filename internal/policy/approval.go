@@ -65,7 +65,7 @@ func normalizeServers(servers []ServerApproval, owners []OwnerGrant) (map[string
 		if err := s.Validate(); err != nil {
 			return nil, err
 		}
-		list := append(out[s.App], s.AutoRun...)
+		list := slices.Concat(out[s.App], s.AutoRun)
 		slices.Sort(list)
 		out[s.App] = slices.Compact(list)
 	}

@@ -116,7 +116,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 	fedportal.NewPortal(fedportal.Deps{
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 		ClientFactory: factory, Hook: serverChangedHook{w: w, log: log}, Permissions: fed.Permissions,
-		Policy: w.policy, Identity: identityFn, Log: log, BaseURL: baseURL,
+		Policy: w.policy, Identity: identityFn, Audit: w.rec, Log: log, BaseURL: baseURL,
 	}).Mount(p.MountUser)
 	as := fedadmin.NewStore(w.st)
 	fedadmin.NewAdmin(fedadmin.Deps{
@@ -361,6 +361,8 @@ func (w *world) toolText(cs *sdk.ClientSession, tool string, args map[string]any
 }
 
 // roleID reads a role's ID by name (the admin publish form posts IDs).
+//
+//nolint:unparam // every test publishes to the restricted role today; the helper stays general
 func (w *world) roleID(name string) string {
 	w.t.Helper()
 	var id string

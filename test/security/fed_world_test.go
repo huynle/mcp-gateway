@@ -117,7 +117,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 	fedportal.NewPortal(fedportal.Deps{
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 		ClientFactory: factory, Hook: hookFunc(func(ctx context.Context, id string) { _ = fed.Manager.ServerChanged(ctx, id) }),
-		Permissions: fed.Permissions, Policy: w.policy, Identity: identityFn, Log: log, BaseURL: baseURL,
+		Permissions: fed.Permissions, Policy: w.policy, Identity: identityFn, Audit: w.rec, Log: log, BaseURL: baseURL,
 	}).Mount(p.MountUser)
 	as := fedadmin.NewStore(w.st)
 	fedadmin.NewAdmin(fedadmin.Deps{

@@ -9,13 +9,13 @@ import (
 
 func approvalDecision(a Approval) Decision { return Decision{Approval: &a} }
 
-func withEnabled(d Decision, on bool) Decision { d.Enabled = &on; return d }
+func enabledWith(d Decision) Decision { on := true; d.Enabled = &on; return d }
 
 // Writes default to ask, reads count as auto; a reviewer sets auto per
 // write tool and it is recorded with who and when.
 func TestApprovalDefaultsAndDecision(t *testing.T) {
 	r, err := BuildReview(nil, nil, firstSnapshot(), ReviewDecisions{Tools: map[string]Decision{
-		"send":   withEnabled(approvalDecision(ApprovalAuto), true),
+		"send":   enabledWith(approvalDecision(ApprovalAuto)),
 		"delete": enable(true),
 		"list":   enable(true),
 	}}, "alice", t0)
@@ -48,7 +48,7 @@ func TestApprovalDefaultsAndDecision(t *testing.T) {
 // without approval); an invalid value is refused.
 func TestApprovalDecisionValidation(t *testing.T) {
 	r, err := BuildReview(nil, nil, firstSnapshot(), ReviewDecisions{Tools: map[string]Decision{
-		"list": withEnabled(approvalDecision(ApprovalAsk), true),
+		"list": enabledWith(approvalDecision(ApprovalAsk)),
 	}}, "alice", t0)
 	if err != nil {
 		t.Fatal(err)
@@ -69,8 +69,8 @@ func TestApprovalDecisionValidation(t *testing.T) {
 func TestApprovalCarryOver(t *testing.T) {
 	base := firstSnapshot()
 	baseReview, err := BuildReview(nil, nil, base, ReviewDecisions{Tools: map[string]Decision{
-		"send":   withEnabled(approvalDecision(ApprovalAuto), true),
-		"delete": withEnabled(approvalDecision(ApprovalAuto), true),
+		"send":   enabledWith(approvalDecision(ApprovalAuto)),
+		"delete": enabledWith(approvalDecision(ApprovalAuto)),
 	}}, "alice", t0)
 	if err != nil {
 		t.Fatal(err)
