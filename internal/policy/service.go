@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -285,7 +286,7 @@ func (s *Service) SaveRole(ctx context.Context, actorID string, r Role) error {
 	if err := s.store.SaveRole(ctx, r); err != nil {
 		return err
 	}
-	return s.afterChange(ctx, actorID, "role_saved", r.Name)
+	return s.afterChange(ctx, actorID, "role_saved", r.Name, map[string]string{"may_add_servers": strconv.FormatBool(r.MayAddServers)})
 }
 
 // DeleteRole removes an unassigned role.
@@ -293,7 +294,7 @@ func (s *Service) DeleteRole(ctx context.Context, actorID, name string) error {
 	if err := s.store.DeleteRole(ctx, name); err != nil {
 		return err
 	}
-	return s.afterChange(ctx, actorID, "role_deleted", name)
+	return s.afterChange(ctx, actorID, "role_deleted", name, nil)
 }
 
 // SetDefaultRole flags the role new users receive.
@@ -301,7 +302,7 @@ func (s *Service) SetDefaultRole(ctx context.Context, actorID, name string) erro
 	if err := s.store.SetDefaultRole(ctx, name); err != nil {
 		return err
 	}
-	return s.afterChange(ctx, actorID, "default_role_set", name)
+	return s.afterChange(ctx, actorID, "default_role_set", name, nil)
 }
 
 // DefaultRole returns the flagged default role's name, or "" when none is
@@ -320,16 +321,20 @@ func (s *Service) DefaultRole(ctx context.Context) (string, error) {
 }
 
 // afterChange recompiles under the actor and records the audit event
-// with the version now in force.
-func (s *Service) afterChange(ctx context.Context, actorID, action, role string) error {
+// with the version now in force; extra adds resource identity keys.
+func (s *Service) afterChange(ctx context.Context, actorID, action, role string, extra map[string]string) error {
 	c, err := s.refresh(ctx, actorID)
 	if err != nil {
 		return err
 	}
+	resource := map[string]string{"action": action, "role": role}
+	for k, v := range extra {
+		resource[k] = v
+	}
 	ev := audit.Event{
 		Time:             s.now(),
 		UserID:           actorID,
-		ResourceIdentity: map[string]string{"action": action, "role": role},
+		ResourceIdentity: resource,
 		Decision:         "allow",
 		PolicyVersion:    c.ID, // the row id: audit_events.policy_version_id is a uuid
 		Outcome:          "succeeded",

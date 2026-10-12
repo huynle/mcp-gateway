@@ -218,8 +218,16 @@ func TestIntegrationRolesVersionsAndAssignments(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := svc.Role(ctx, "auditor")
-	if err != nil || got.Description != "Read everything" || got.PersonalAccounts["fake"] != policy.AllowanceDeny || len(got.Rules) != 1 {
+	if err != nil || got.Description != "Read everything" || got.PersonalAccounts["fake"] != policy.AllowanceDeny || len(got.Rules) != 1 || got.MayAddServers {
 		t.Errorf("auditor round trip = %+v, %v", got, err)
+	}
+	// The "May add MCP servers" flag is stored with the role (schema 16).
+	got.MayAddServers = true
+	if err := svc.SaveRole(ctx, adminID, got); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = svc.Role(ctx, "auditor"); err != nil || !got.MayAddServers || len(got.Rules) != 1 {
+		t.Errorf("auditor with may_add_servers = %+v, %v", got, err)
 	}
 	if err := svc.SetDefaultRole(ctx, adminID, "auditor"); err != nil {
 		t.Fatal(err)

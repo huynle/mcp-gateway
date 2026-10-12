@@ -136,7 +136,7 @@ func TestEditorHasNoRawPolicyInput(t *testing.T) {
 				t.Errorf("%s: form field %q looks like a raw policy input", path, name)
 			}
 			switch {
-			case name == "_csrf", name == "name", name == "description", name == "role", name == "default_role":
+			case name == "_csrf", name == "name", name == "description", name == "role", name == "default_role", name == "may_add_servers":
 			case strings.HasPrefix(name, "outcome."), strings.HasPrefix(name, "personal."):
 			case strings.HasPrefix(name, "cond."):
 			default:
@@ -314,5 +314,65 @@ func TestEditorOffersBlankConditionRows(t *testing.T) {
 	}
 	if strings.Contains(body, `name="cond.0.`) {
 		t.Error("rows are numbered from 0; the parser expects 1")
+	}
+}
+
+// "May add MCP servers" (schema 16, decision bnneszc1): a checkbox per
+// role, saved with the role, shown in the list, audited with the save.
+func TestEditorMayAddServers(t *testing.T) {
+	p := newPages(t)
+	ctx := context.Background()
+	body := p.do(t, http.MethodGet, "/admin/roles/member", nil, true).Body.String()
+	box := regexp.MustCompile(`<input[^>]*name="may_add_servers"[^>]*>`).FindString(body)
+	if box == "" || !strings.Contains(box, `type="checkbox"`) || strings.Contains(box, "checked") {
+		t.Fatalf("editor checkbox = %q, want an unchecked checkbox", box)
+	}
+	if !strings.Contains(body, "May add MCP servers") {
+		t.Error("editor lacks the checkbox label")
+	}
+
+	form := url.Values{"description": {"Default"}, "outcome.fake.list_items": {"allow"}, "may_add_servers": {"on"}}
+	if rec := p.do(t, http.MethodPost, "/admin/roles/member", form, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST = %d:\n%s", rec.Code, firstLines(rec.Body.String()))
+	}
+	role, err := p.svc.Role(ctx, "member")
+	if err != nil || !role.MayAddServers || len(role.Rules) != 1 {
+		t.Fatalf("saved role = %+v, %v", role, err)
+	}
+	if ev := p.rec.last(); ev.ResourceIdentity["action"] != "role_saved" || ev.ResourceIdentity["role"] != "member" || ev.ResourceIdentity["may_add_servers"] != "true" {
+		t.Errorf("audit = %+v", ev)
+	}
+	body = p.do(t, http.MethodGet, "/admin/roles/member", nil, true).Body.String()
+	if box := regexp.MustCompile(`<input[^>]*name="may_add_servers"[^>]*>`).FindString(body); !strings.Contains(box, "checked") {
+		t.Errorf("saved flag not checked: %q", box)
+	}
+	list := p.do(t, http.MethodGet, "/admin/roles", nil, true).Body.String()
+	if !strings.Contains(list, "may add servers") {
+		t.Errorf("role list does not show the permission:\n%s", list)
+	}
+
+	// Saving without the box clears it.
+	form.Del("may_add_servers")
+	if rec := p.do(t, http.MethodPost, "/admin/roles/member", form, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST = %d", rec.Code)
+	}
+	if role, _ := p.svc.Role(ctx, "member"); role.MayAddServers {
+		t.Error("flag kept after saving without the box")
+	}
+	if ev := p.rec.last(); ev.ResourceIdentity["may_add_servers"] != "false" {
+		t.Errorf("audit = %+v", ev)
+	}
+
+	// A new role can be created with it.
+	form = url.Values{"name": {"builders"}, "may_add_servers": {"on"}}
+	if rec := p.do(t, http.MethodPost, "/admin/roles/new", form, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST new = %d:\n%s", rec.Code, firstLines(rec.Body.String()))
+	}
+	if role, _ := p.svc.Role(ctx, "builders"); !role.MayAddServers {
+		t.Error("new role lost the flag")
+	}
+	// Non-admins still cannot reach the editor.
+	if rec := p.do(t, http.MethodPost, "/admin/roles/member", url.Values{"may_add_servers": {"on"}}, false); rec.Code != http.StatusNotFound {
+		t.Errorf("member POST = %d, want 404", rec.Code)
 	}
 }
