@@ -63,7 +63,9 @@ func notesServerV2(r *http.Request) *sdk.Server {
 // tool whose schema changed are refused (and the upstream is not
 // contacted) until re-reviewed; arguments outside the pinned schema
 // (extra properties, type confusion, deep nesting, non-object) are
-// refused before the upstream.
+// refused before the upstream, and for a write before any approval is
+// asked for; a review change between approval and retry still refuses
+// the retry.
 func TestSecurityFedSnapshotBypass(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	ctx := t.Context()
@@ -84,10 +86,13 @@ func TestSecurityFedSnapshotBypass(t *testing.T) {
 	}
 	up.reset()
 
-	// Arguments outside the pinned schema. For the read tool they are
-	// refused at once; for the write tool the confirm stage asks for an
-	// approval first (finding: validation happens at dispatch), and the
-	// approved retry is refused before the upstream.
+	// Arguments outside the pinned schema are refused at once, for the
+	// read tool and the write tool alike: the precheck runs before policy
+	// (Brain task 8ky7l4e6), so no approval is created or announced and
+	// no ledger operation is recorded for a write that can never run.
+	countRows := func(table string) string {
+		return w.queryString(`SELECT count(*)::text FROM `+table+` WHERE user_id = $1 AND tool = 'snapnotes.create_note'`, w.alice.id)
+	}
 	for name, args := range map[string]map[string]any{
 		"type confusion (number)": {"title": 7},
 		"type confusion (array)":  {"title": []any{"a"}},
@@ -102,21 +107,49 @@ func TestSecurityFedSnapshotBypass(t *testing.T) {
 		if _, err := w.call(alice, "snapnotes.search", readArgs); !isRPC(err, mcp.CodeInvalidParams) {
 			t.Errorf("read, %s: %v, want invalid params", name, err)
 		}
-		_, err := w.call(alice, "snapnotes.create_note", args)
-		if isRPC(err, mcp.CodeInvalidParams) {
-			continue
+		if _, err := w.call(alice, "snapnotes.create_note", args); !isRPC(err, mcp.CodeInvalidParams) {
+			t.Errorf("write, %s: %v, want invalid params before any approval", name, err)
 		}
-		id := approvalRequired(t, err)
-		if code, _, _ := w.post(w.alice, "/approvals/"+id+"/approve", nil); code != http.StatusSeeOther {
-			t.Fatalf("approve = %d", code)
-		}
-		retry := map[string]any{"approval_id": id}
-		for k, v := range args {
-			retry[k] = v
-		}
-		if _, err := w.call(alice, "snapnotes.create_note", retry); !isRPC(err, mcp.CodeInvalidParams) {
-			t.Errorf("write, %s, approved retry: %v, want invalid params", name, err)
-		}
+	}
+	if a, l, n := countRows("approvals"), countRows("ledger_operations"), w.notified.count(); a != "0" || l != "0" || n != 0 {
+		t.Errorf("schema-invalid writes left %s approvals, %s ledger operations, %d notifications; want none", a, l, n)
+	}
+	if got := w.queryString(`SELECT count(*)::text FROM audit_events WHERE user_id = $1 AND tool = 'snapnotes.create_note'
+		AND decision = 'deny' AND outcome = 'denied' AND details->>'error_class' = 'args_invalid'`, w.alice.id); got != "5" {
+		t.Errorf("audited args_invalid denials of the write = %s, want 5", got)
+	}
+	// A valid write asks for an approval as before.
+	id := approvalRequired(t, firstErr(w.call(alice, "snapnotes.create_note", map[string]any{"title": "ok"})))
+	if a, n := countRows("approvals"), w.notified.count(); a != "1" || n != 1 {
+		t.Errorf("valid write: %s approvals, %d notifications; want 1 and 1", a, n)
+	}
+	if code, _, _ := w.post(w.alice, "/approvals/"+id+"/approve", nil); code != http.StatusSeeOther {
+		t.Fatalf("approve = %d", code)
+	}
+	// The review changes between the approval and the retry (on another
+	// replica: no reload here, the tool is still registered): the retry
+	// is refused before the upstream.
+	cur, err := w.fed.Snapshots.Current(ctx, actor, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if _, err := w.fed.Snapshots.Approve(ctx, actor, s.ID, cur.Version, snapshot.ReviewDecisions{
+		Tools: map[string]snapshot.Decision{"create_note": {Enabled: &off}}}); err != nil {
+		t.Fatal(err)
+	}
+	up.reset()
+	_ = rpcError(t, firstErr(w.call(alice, "snapnotes.create_note", map[string]any{"title": "ok", "approval_id": id})), mcp.CodeDenied)
+	if n := len(up.requests()); n != 0 {
+		t.Errorf("the approved retry of a write disabled since reached the upstream (%d requests)", n)
+	}
+	on := true
+	if _, err := w.fed.Snapshots.Approve(ctx, actor, s.ID, cur.Version, snapshot.ReviewDecisions{
+		Tools: map[string]snapshot.Decision{"create_note": {Enabled: &on}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.fed.Manager.ServerChanged(ctx, s.ID); err != nil {
+		t.Fatal(err)
 	}
 	deep := strings.Repeat(`{"n":`, 2000) + `"leaf"` + strings.Repeat(`}`, 2000)
 	tok := w.token(w.alice, tokens.CreateRequest{})
@@ -294,3 +327,6 @@ func TestSecurityFedResourceAndPromptBypass(t *testing.T) {
 		t.Errorf("refused reads reached the upstream (%d requests)", n)
 	}
 }
+
+// firstErr returns the error of a (result, error) pair.
+func firstErr[T any](_ T, err error) error { return err }

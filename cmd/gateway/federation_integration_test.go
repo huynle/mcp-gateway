@@ -27,6 +27,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/client"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
+	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -183,9 +184,20 @@ func TestIntegrationFederationTunnelThroughMux(t *testing.T) {
 		t.Fatalf("newFederation = %v, %v", fed, err)
 	}
 	mcpHandler, err := newMCP(cfg, registry, federationAccounts(fed, connectors.NewStaticAccountSource()), tokenSvc,
-		federationDecider(fed, policySvc), nil, audit.NopRecorder{}, metrics, log)
+		federationDecider(fed, policySvc), nil, audit.NopRecorder{}, metrics, log, withFederationPrecheck(fed, log))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The precheck sits right before policy (Brain task 8ky7l4e6).
+	pl, err := mcp.DefaultPipeline(mcp.PipelineDeps{Registry: registry, Policy: policySvc, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := withFederationPrecheck(fed, log)(pl, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(pl.Names(), ","); !strings.Contains(got, "precheck,policy") {
+		t.Errorf("stages = %s, want precheck before policy", got)
 	}
 	// Exactly the production handler chain.
 	srv := httptest.NewServer(observability.RequestID(metrics.HTTPMiddleware(
