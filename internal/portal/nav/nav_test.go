@@ -2,6 +2,7 @@ package nav_test
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/portal/nav/navtest"
+	"github.com/huynle/mcp-gateway/internal/portal/static"
 )
 
 func render(t *testing.T, d nav.Data) string {
@@ -86,5 +88,93 @@ func TestFromRequest(t *testing.T) {
 	want.Active = "/operations"
 	if got := nav.FromRequest(r); got != want {
 		t.Errorf("FromRequest = %+v, want %+v", got, want)
+	}
+}
+
+// page renders a minimal page on the shared shell: the "page.head"
+// partial inside <head> and the nav bar.
+func page(t *testing.T, d nav.Data) string {
+	t.Helper()
+	tpl := template.Must(nav.Add(template.New("page")))
+	tpl = template.Must(tpl.Parse(`<!doctype html><html lang="en"><head>{{template "page.head"}}<title>x</title></head><body>{{template "nav" .}}<main></main></body></html>`))
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, d); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+// The shared head links the one stylesheet and the theme script, so every
+// module's layout that includes it looks the same.
+func TestPageHeadIsTheSharedShell(t *testing.T) {
+	for _, d := range []nav.Data{{}, {SignedIn: true, IsAdmin: true, CSRFToken: "c"}} {
+		body := page(t, d)
+		navtest.AssertShell(t, fmt.Sprintf("signed in %v", d.SignedIn), body)
+		htmx, _ := static.URL("htmx.min.js")
+		for _, want := range []string{
+			`<meta charset="utf-8">`,
+			`<meta name="viewport" content="width=device-width, initial-scale=1">`,
+			`<meta name="referrer" content="no-referrer">`,
+			`<meta name="color-scheme" content="light dark">`,
+			`<script src="` + htmx + `" defer></script>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("head lacks %s:\n%s", want, body)
+			}
+		}
+	}
+}
+
+// The shell assertion catches a page that drifted: its own <style>, no
+// shared stylesheet, no toggle.
+func TestShellProblemsCatchesDrift(t *testing.T) {
+	drifted := `<!doctype html><html lang="en"><head><style>body{}</style></head><body><header><nav class="site-nav"></nav></header><h1>x</h1></body></html>`
+	got := strings.Join(navtest.ShellProblems(drifted), "\n")
+	for _, want := range []string{"shared stylesheet", "theme script", "theme toggle", "<main>", "<style>"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("drifted page: problems lack %q:\n%s", want, got)
+		}
+	}
+}
+
+// The theme toggle is on every page, signed in or not: three buttons
+// (light, system, dark) in a labelled group, each with aria-pressed. It is
+// rendered hidden; theme.js reveals it, so without JavaScript there is no
+// dead control and the page follows the system setting.
+func TestThemeToggleIsAccessibleAndHiddenWithoutJS(t *testing.T) {
+	for _, d := range []nav.Data{{}, {SignedIn: true, CSRFToken: "c"}} {
+		body := render(t, d)
+		at := strings.Index(body, `data-theme-toggle`)
+		if at < 0 {
+			t.Fatalf("no toggle (signed in %v):\n%s", d.SignedIn, body)
+		}
+		toggle, _, _ := strings.Cut(body[at:], "</div>")
+		open, _, _ := strings.Cut(body[strings.LastIndex(body[:at], "<"):], ">")
+		for _, want := range []string{`role="group"`, `aria-label="Color theme"`, "hidden"} {
+			if !strings.Contains(open, want) {
+				t.Errorf("toggle element %q lacks %s", open, want)
+			}
+		}
+		for _, choice := range []string{"light", "system", "dark"} {
+			want := `<button type="button" class="theme-choice" data-theme-choice="` + choice + `" aria-pressed="`
+			if !strings.Contains(toggle, want) {
+				t.Errorf("toggle lacks the %s button (%s):\n%s", choice, want, toggle)
+			}
+		}
+		if strings.Count(toggle, "<button") != 3 {
+			t.Errorf("toggle has %d buttons, want 3:\n%s", strings.Count(toggle, "<button"), toggle)
+		}
+	}
+}
+
+// /servers (a member's servers) and /admin/servers (every server) must not
+// share a label in the admin's bar.
+func TestAdminServersLinkIsLabelledAllServers(t *testing.T) {
+	body := render(t, nav.Data{SignedIn: true, IsAdmin: true})
+	if !strings.Contains(body, `href="/admin/servers">All servers</a>`) {
+		t.Errorf("admin servers link is not labelled All servers:\n%s", body)
+	}
+	if n := strings.Count(body, ">Servers</a>"); n != 1 {
+		t.Errorf("%d links labelled Servers, want 1:\n%s", n, body)
 	}
 }

@@ -92,7 +92,7 @@ func TestReviewPageHasGroupsSelectControlsAndSummary(t *testing.T) {
 		t.Fatalf("review %d", r.code)
 	}
 	mustContain(t, r.body,
-		`data-review`, `src="/static/review.js"`, `href="/static/review.css"`,
+		`data-review`, `src="/static/review.js?v=`, `href="/static/review.css?v=`,
 		`class="review-bar"`, `data-select="all"`, `data-select="none"`, `data-review-filter`,
 		`0 of 4 selected`, `name="action" value="approve"`, `name="action" value="approve_all"`, "Approve with all tools enabled",
 		`data-group="attachment"`, `data-group="attention"`, `data-group="search"`, `data-group-check`, `0/2`,

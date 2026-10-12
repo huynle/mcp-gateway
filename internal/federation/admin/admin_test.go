@@ -366,7 +366,7 @@ func TestAdminReviewUsesTheSharedViewAndApproveAll(t *testing.T) {
 	for _, want := range []string{
 		`action="/admin/servers/` + s.ID + `/review"`, `name="_csrf" value="` + csrf + `"`, `data-review`, `class="review-bar"`,
 		`data-select="all"`, `data-select="read"`, `data-group="attachment"`, `data-group-check`, `0 of 3 selected`,
-		`name="action" value="approve_all"`, "Approve as admin", `<b>3</b> total`, `src="/static/review.js"`,
+		`name="action" value="approve_all"`, "Approve as admin", `<b>3</b> total`, `src="/static/review.js?v=`,
 		`<span class="tool-summary">Get an attachment.</span>`, `<details class="tool-more">`,
 	} {
 		if !strings.Contains(b, want) {

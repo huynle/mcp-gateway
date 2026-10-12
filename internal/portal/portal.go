@@ -2,7 +2,6 @@ package portal
 
 import (
 	"errors"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
+	"github.com/huynle/mcp-gateway/internal/portal/static"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -152,11 +152,7 @@ func (p *Portal) MountAdmin(pattern string, h http.Handler) {
 
 // static serves the embedded assets without directory listings.
 func (p *Portal) static() http.Handler {
-	sub, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		panic(err)
-	}
-	files := http.FileServer(http.FS(sub))
+	files := http.FileServer(http.FS(static.FS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/") {
 			p.notFound(w, r)
