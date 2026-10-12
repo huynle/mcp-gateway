@@ -20,7 +20,7 @@ Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (servers start private; froz
 | `POST /admin/servers/{id}/delete` | Delete the server, its snapshots, credentials and every user's connection. `confirm` must be the server's name (else 422). |
 | `POST /admin/servers/{id}/refresh` | Rediscover the server's tools through the servers portal's `ClientFactory` as the owner would: with the shared credential (shared mode) or **the owner's own connection** (per-user mode). Stores a pending snapshot and redirects to the review. With no usable credential the page says what is missing (ask the owner to connect, or set a shared credential); other failures are class-level (502). |
 | `GET /admin/servers/{id}/review` | Latest snapshot vs the approved one, the same page as the servers portal's review (`BuildReviewView` and the shared `review-tools` template: summary, sticky action bar, groups, compact rows; same pre-check rule: unchanged enabled tools are checked, new and changed ones are not). See [plugins-portal.md](plugins-portal.md#review). |
-| `POST /admin/servers/{id}/review` | `snapshot.Approve` with `Actor{UserID, Admin: true}` (any server, private or published); the posted `version` must still be the latest (else 409). `action=approve_all` ("Approve with all tools enabled") enables every tool, writes included. |
+| `POST /admin/servers/{id}/review` | `snapshot.Approve` with `Actor{UserID, Admin: true}` (any server, private or published); the posted `version` must still be the latest (else 409). `action=approve_all` ("Approve with all tools enabled") enables every tool, writes included, and every resource, resource template and prompt. |
 | `GET /admin/tunnels` | Every user's tunnel: owner, name, created, last seen, revoked, **online** (this replica's view). |
 | `POST /admin/tunnels/{id}/revoke` | Revoke any tunnel (`tunnel.Service.Revoke` as the tunnel's owner, which the service requires): its token stops working and its live connection is closed. An already revoked tunnel is a no-op. |
 | `GET /admin/network/allow-hosts` | The SSRF allow-list (`netguard_allow_hosts`) with the warning below. |
@@ -61,13 +61,13 @@ Changes apply at once on the replica that served the request (`Invalidate`, belo
 
 ## Publishing and the owner's access
 
-Publishing changes who may **see** a server and also who may **use its tools**:
+Publishing **shares** a server with the chosen roles (task `fekckdrt`, decision `q7vbxlyk` point 1):
 
-- A **private** active server gets the implicit **owner layer** (`policy.OwnerGrant`, decision `mrvsu07m`): its owner may list and call every tool (reads allowed, writes confirmed) without any role grant.
-- A **published** server has **no owner layer**: its tools are hidden for every user, **the owner included**, until a role allows them in the role editor (`<server>.*` or single tools). The owner still sees the server in `/servers` (they own it), but after publishing they lose its tools unless a role they hold is granted them.
-- Unpublishing restores the owner layer.
+- Every **active** server, private or published, gets the implicit **owner layer** (`policy.OwnerGrant`, decision `mrvsu07m`): its owner may list and call every tool (reads allowed, writes confirmed) and use its resources and prompts, without any role grant. The owner **keeps access** after publishing.
+- Holders of the published roles see the server in `/servers`, but its tools, resources and prompts stay **hidden for them** until a role allows them in the role editor (`/admin/roles`): `<server>.*` (everything), single tools, `<server>.resources/read` (resources and resource templates) and `<server>.prompts/get` (prompts). A tool grant does not grant resources or prompts. Only *allow* grants the two per-server actions (no approval exists for reads of resources and prompts, so *confirm* refuses them).
+- Role **denials still win** over the owner layer: an admin can take a server away from its owner with a deny rule on a role the owner holds (an unconditional deny hides the tools). The admin role gets nothing from the owner layer.
 
-So after publishing, grant the tools in the role editor (`/admin/roles`) to the published roles and, if the owner should keep using the server, to a role the owner holds. The detail page says so in its Publish section and in the "Published" notice. This task leaves the connector unchanged; a warning on the page that names the owner explicitly (or a one-click grant to the owner's role) is a recorded follow-up.
+The detail page says so in its Publish section and in the "Published" notice ("… The owner keeps access.").
 
 ## Changing a published server's address
 
@@ -81,6 +81,10 @@ An admin may change those columns (through `gateway_jobs`). For a published serv
 4. **Refresh** discovers what the new address serves, then the review (all tools start disabled: there is no approved snapshot to carry decisions from) approves it, and the tools are back.
 
 The detail page has the **Address** form for this; it accepts https URLs only. Other settings of a published server: unpublish it, let the owner edit it, review and republish. Publishing again is the admin's decision on the server as it now is (address and approved snapshot are on the detail page).
+
+## Resources and prompts in the review
+
+The admin review page is the servers portal's (`BuildReviewView`, shared `review-tools` template): resources, resource templates and prompts appear in their own groups next to the tool groups with the same compact rows and checkboxes (`enable_resource`, `enable_template`, `enable_prompt`, by index). Unchanged enabled items are pre-checked, new and changed ones are not. `approve_all` and "Select all" cover them; "Select read-only" picks among tools only. Only enabled items are listed and served on `/mcp` (task `bdb5zcud`). A snapshot approved before these toggles counts as all enabled until the next approval.
 
 ## Audit events
 
@@ -128,6 +132,6 @@ fedadmin.NewAdmin(fedadmin.Deps{
 
 ## Tests
 
-`go test ./internal/federation/admin/` (fakes): non-admins and anonymous callers get 404 on every route and reach no service; POSTs without the CSRF token are 403; list and filters; review queue; publish calls the store, the hook and the audit; unknown or no roles refused; unpublish; the shared credential and the static client secret are never rendered; shared credential needs shared mode; disable, enable, delete with name confirmation; the address form changes the URL, calls the hook, audits the hosts and flags the re-review (bad, tunnel and unchanged URLs are 422; `address_test.go`); malformed and unknown IDs are 404; refresh with the owner's connection or an explanation; admin review approves as admin and calls the hook; the admin page uses the shared review view and `approve_all` enables every tool of a published server (CSRF and stale version still refused); tunnels list and revoke; allow-list add, validation, duplicates, delete, and `Invalidate`; `NewAdmin` panics without required deps. `go test ./internal/policy/` checks the role editor grants a published server's tools (`TestRoleEditorGrantsServerAppTools`). `go test ./cmd/gateway/` checks the admin patterns go behind the admin check and nothing mounts without federation.
+`go test ./internal/federation/admin/` (fakes): non-admins and anonymous callers get 404 on every route and reach no service; POSTs without the CSRF token are 403; list and filters; review queue; publish calls the store, the hook and the audit; unknown or no roles refused; unpublish; the shared credential and the static client secret are never rendered; shared credential needs shared mode; disable, enable, delete with name confirmation; malformed and unknown IDs are 404; refresh with the owner's connection or an explanation; admin review approves as admin and calls the hook; the address form changes the URL, calls the hook, audits the hosts and flags the re-review (bad, tunnel and unchanged URLs are 422; `address_test.go`); the admin page uses the shared review view and `approve_all` enables every tool of a published server (CSRF and stale version still refused); tunnels list and revoke; allow-list add, validation, duplicates, delete, and `Invalidate`; `NewAdmin` panics without required deps. `go test ./internal/policy/` checks the role editor grants a published server's tools (`TestRoleEditorGrantsServerAppTools`) and its `resources/read` / `prompts/get` actions (`TestRoleEditorGrantsServerResourcesAndPrompts`). `go test ./cmd/gateway/` checks the admin patterns go behind the admin check and nothing mounts without federation.
 
 `make test-integration` adds `TestIntegrationAdminPublishMakesServerVisibleToRole` (the acceptance test: publish a member's server to a role and the role's users see it, other roles do not, unpublish hides it, replacing the role set drops a role) , `TestIntegrationAdminStore` and `TestIntegrationAdminAddressChangeWithdrawsApproval` (an admin's new address withdraws the approval; the owner's is refused; re-approval serves again) (own database `gateway_fedadmin_test`), and `TestIntegrationAdminServersMounted` in `cmd/gateway` (real portal: anonymous users are sent to sign in, members get 404 on GET and POST, admins get the pages, POST without CSRF is 403, an added allow-list entry reaches netguard's allow list at once).

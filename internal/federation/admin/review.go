@@ -15,6 +15,8 @@ type reviewData struct {
 	Caller caller
 	Server serverRow
 	Error  string
+	// Skipped is what the refresh that rendered this page left out.
+	Skipped []snapshot.Skipped
 }
 
 // review shows the latest snapshot against the approved one with the same
@@ -25,13 +27,19 @@ func (a *Admin) review(w http.ResponseWriter, r *http.Request, c caller, s *Serv
 }
 
 func (a *Admin) renderReview(w http.ResponseWriter, r *http.Request, c caller, s *Server, status int, msg string) {
+	a.renderReviewSkipped(w, r, c, s, status, msg, nil)
+}
+
+// renderReviewSkipped is renderReview listing the items a refresh just
+// skipped (snapshot.Skipped: display-safe names).
+func (a *Admin) renderReviewSkipped(w http.ResponseWriter, r *http.Request, c caller, s *Server, status int, msg string, skipped []snapshot.Skipped) {
 	ctx := r.Context()
 	byID, _, err := a.roleMap(r)
 	if err != nil {
 		a.fail(w, r, "list roles", err)
 		return
 	}
-	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: rowOf(s, byID), Error: msg}
+	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: rowOf(s, byID), Error: msg, Skipped: skipped}
 	data.Page = fedportal.ReviewPage{ServerName: data.Server.Name, Action: "/admin/servers/" + s.ID + "/review",
 		CSRFToken: c.CSRFToken, Approve: "Approve as admin"}
 	latest, err := a.d.Snapshots.Latest(ctx, c.snapActor(), s.ID)

@@ -45,6 +45,40 @@ type ReviewGroup struct {
 	Checked int // pre-checked tools in the group
 }
 
+// Form fields of the item checkboxes (value: the item's index in the
+// snapshot list, never its upstream key).
+const (
+	FieldEnableResource = "enable_resource"
+	FieldEnableTemplate = "enable_template"
+	FieldEnablePrompt   = "enable_prompt"
+)
+
+// ReviewItem is one resource, resource template or prompt of the snapshot
+// under review (task bdb5zcud), shown like a tool row. Key is the
+// display-safe URI, URI template or prompt name.
+type ReviewItem struct {
+	Index       int
+	Field       string // FieldEnable*
+	Key         string
+	Name        string
+	Title       string
+	Description string
+	Summary     string
+	MIMEType    string
+	Status      string // added | changed | unchanged
+	Enabled     bool   // enabled in the approved review
+	Checked     bool   // pre-checked: unchanged and enabled
+}
+
+// ReviewItemGroup is the resources, the resource templates or the
+// prompts of a snapshot (ID: resources | resource-templates | prompts).
+type ReviewItemGroup struct {
+	ID      string
+	Name    string
+	Items   []ReviewItem
+	Checked int
+}
+
 // ReviewCounts summarises a review: tools in the latest snapshot, those
 // enabled in the approved review, new, changed and removed ones.
 type ReviewCounts struct{ Total, Enabled, New, Changed, Removed int }
@@ -52,18 +86,22 @@ type ReviewCounts struct{ Total, Enabled, New, Changed, Removed int }
 // ReviewView is the latest snapshot compared with the approved one, as
 // the review pages show it (BuildReviewView).
 type ReviewView struct {
-	Version   int // latest version (0: no snapshot)
-	From      int // approved version (0: none)
-	UpToDate  bool
-	Tools     []ReviewTool  // snapshot order
-	Groups    []ReviewGroup // by name prefix, in name order
-	Counts    ReviewCounts
-	Selected  int  // pre-checked tools
-	HasReads  bool // any tool whose effective kind is read
-	Removed   []string
-	Resources KeyDiffView
-	Templates KeyDiffView
-	Prompts   KeyDiffView
+	Version  int // latest version (0: no snapshot)
+	From     int // approved version (0: none)
+	UpToDate bool
+	Tools    []ReviewTool  // snapshot order
+	Groups   []ReviewGroup // by name prefix, in name order
+	Counts   ReviewCounts
+	Selected int  // pre-checked tools and items
+	HasReads bool // any tool whose effective kind is read
+	// Items are the resources, resource templates and prompts, one group
+	// each (empty groups left out); Selectable counts tools and items.
+	Items      []ReviewItemGroup
+	Selectable int
+	Removed    []string
+	Resources  KeyDiffView
+	Templates  KeyDiffView
+	Prompts    KeyDiffView
 }
 
 // MaxSummary caps DescriptionSummary (runes, "…" included).
@@ -128,6 +166,8 @@ type reviewData struct {
 	CanApprove bool
 	NeedsAdmin bool
 	Error      string
+	// Skipped is what the refresh that rendered this page left out.
+	Skipped []snapshot.Skipped
 }
 
 // ReviewPage is the data of the shared "review-tools" template
@@ -236,10 +276,79 @@ func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 		v.Tools = append(v.Tools, tv)
 	}
 	v.Groups = groupTools(v.Tools)
+	v.Selectable = len(v.Tools)
+	v.buildItems(latest, current, diff)
 	v.Removed = displayKeys(diff.Removed)
 	v.Counts.Removed = len(v.Removed)
 	v.Resources, v.Templates, v.Prompts = keyView(diff.Resources), keyView(diff.ResourceTemplates), keyView(diff.Prompts)
 	return v
+}
+
+// buildItems adds the resources, templates and prompts of latest. An item
+// is enabled when the approved snapshot has it and its review enables it
+// (an approved snapshot without content review counts as all enabled);
+// unchanged enabled items are pre-checked, new and changed ones never are.
+func (v *ReviewView) buildItems(latest, current *snapshot.Record, diff snapshot.Diff) {
+	var cur *snapshot.Snapshot
+	var content *snapshot.ContentReview
+	if current != nil && current.Snapshot != nil {
+		cur, content = current.Snapshot, current.Content
+	}
+	status := func(k snapshot.KeyDiff, key string) string {
+		switch {
+		case slices.Contains(k.Added, key):
+			return "added"
+		case slices.Contains(k.Changed, key):
+			return "changed"
+		}
+		return "unchanged"
+	}
+	add := func(g *ReviewItemGroup, it ReviewItem) {
+		it.Description = snapshot.DisplayDescription(it.Description)
+		it.Summary = DescriptionSummary(it.Description)
+		it.Checked = it.Enabled && it.Status == "unchanged"
+		if it.Checked {
+			g.Checked++
+			v.Selected++
+		}
+		g.Items = append(g.Items, it)
+	}
+	res := ReviewItemGroup{ID: "resources", Name: "Resources"}
+	for i, r := range latest.Snapshot.Resources {
+		add(&res, ReviewItem{Index: i, Field: FieldEnableResource, Key: snapshot.DisplayTitle(r.URI), Name: snapshot.DisplayName(r.Name),
+			Title: snapshot.DisplayTitle(r.Title), Description: r.Description, MIMEType: snapshot.DisplayName(r.MIMEType),
+			Status: status(diff.Resources, r.URI), Enabled: hasResource(cur, r.URI) && content.ResourceEnabled(r.URI)})
+	}
+	tpl := ReviewItemGroup{ID: "resource-templates", Name: "Resource templates"}
+	for i, t := range latest.Snapshot.ResourceTemplates {
+		add(&tpl, ReviewItem{Index: i, Field: FieldEnableTemplate, Key: snapshot.DisplayTitle(t.URITemplate), Name: snapshot.DisplayName(t.Name),
+			Title: snapshot.DisplayTitle(t.Title), Description: t.Description, MIMEType: snapshot.DisplayName(t.MIMEType),
+			Status: status(diff.ResourceTemplates, t.URITemplate), Enabled: hasTemplate(cur, t.URITemplate) && content.TemplateEnabled(t.URITemplate)})
+	}
+	prm := ReviewItemGroup{ID: "prompts", Name: "Prompts"}
+	for i, p := range latest.Snapshot.Prompts {
+		add(&prm, ReviewItem{Index: i, Field: FieldEnablePrompt, Key: snapshot.DisplayName(p.Name), Name: snapshot.DisplayName(p.Name),
+			Title: snapshot.DisplayTitle(p.Title), Description: p.Description,
+			Status: status(diff.Prompts, p.Name), Enabled: hasPrompt(cur, p.Name) && content.PromptEnabled(p.Name)})
+	}
+	for _, g := range []ReviewItemGroup{res, tpl, prm} {
+		if len(g.Items) > 0 {
+			v.Items = append(v.Items, g)
+			v.Selectable += len(g.Items)
+		}
+	}
+}
+
+func hasResource(s *snapshot.Snapshot, uri string) bool {
+	return s != nil && slices.ContainsFunc(s.Resources, func(r snapshot.Resource) bool { return r.URI == uri })
+}
+
+func hasTemplate(s *snapshot.Snapshot, t string) bool {
+	return s != nil && slices.ContainsFunc(s.ResourceTemplates, func(r snapshot.ResourceTemplate) bool { return r.URITemplate == t })
+}
+
+func hasPrompt(s *snapshot.Snapshot, name string) bool {
+	return s != nil && slices.ContainsFunc(s.Prompts, func(p snapshot.Prompt) bool { return p.Name == name })
 }
 
 func (v *ReviewView) count(t ReviewTool) {
@@ -266,9 +375,15 @@ func (p *Portal) review(w http.ResponseWriter, r *http.Request, c caller, s *sto
 }
 
 func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string) {
+	p.renderReviewSkipped(w, r, c, s, status, msg, nil)
+}
+
+// renderReviewSkipped is renderReview listing the items a refresh just
+// skipped (snapshot.Skipped: display-safe names).
+func (p *Portal) renderReviewSkipped(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string, skipped []snapshot.Skipped) {
 	ctx := r.Context()
 	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: p.view(ctx, c, s), Error: msg,
-		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished}
+		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished, Skipped: skipped}
 	data.Page = ReviewPage{ServerName: data.Server.Name, Approve: "Approve"}
 	if data.CanApprove {
 		data.Page.Action, data.Page.CSRFToken = "/servers/"+s.ID+"/review", c.CSRFToken
@@ -335,9 +450,10 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 }
 
 // ReviewDecisionsFromForm turns a posted review form (fields enable=<i>,
-// kind_<i>, enable_reads, action) into decisions for latest; current is
-// the approved record (nil when none). action=approve_all enables every
-// tool of latest, writes included (the "Approve with all tools enabled"
+// kind_<i>, enable_reads, enable_resource / enable_template /
+// enable_prompt=<i>, action) into decisions for latest; current is the
+// approved record (nil when none). action=approve_all enables every tool,
+// resource, template and prompt of latest, writes included (the "Approve with all tools enabled"
 // button; writes still go through the policy's confirmation per call).
 // Otherwise every checked tool is enabled; every unchecked tool disabled,
 // except read tools when "enable all read tools" is on (left to
@@ -377,6 +493,30 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 			dec.Enabled = enabled(false)
 		}
 		d.Tools[t.Name] = dec
+	}
+	// Resources, templates and prompts: checked (or approve_all) enables,
+	// unchecked disables.
+	picked := func(field string) map[int]bool {
+		out := map[int]bool{}
+		for _, v := range form[field] {
+			if i, err := strconv.Atoi(v); err == nil {
+				out[i] = true
+			}
+		}
+		return out
+	}
+	res, tpl, prm := picked(FieldEnableResource), picked(FieldEnableTemplate), picked(FieldEnablePrompt)
+	d.Resources = map[string]bool{}
+	for i, r := range latest.Snapshot.Resources {
+		d.Resources[r.URI] = all || res[i]
+	}
+	d.ResourceTemplates = map[string]bool{}
+	for i, t := range latest.Snapshot.ResourceTemplates {
+		d.ResourceTemplates[t.URITemplate] = all || tpl[i]
+	}
+	d.Prompts = map[string]bool{}
+	for i, p := range latest.Snapshot.Prompts {
+		d.Prompts[p.Name] = all || prm[i]
 	}
 	return d
 }

@@ -91,7 +91,9 @@ func (s *Service) Create(ctx context.Context, a Actor, serverID string, sess Ses
 // snapshot. When nothing changed since the latest snapshot, no version is
 // added and the latest is returned. Discovery runs outside the database
 // transaction. Calls keep being served from the approved snapshot until a
-// reviewer approves the new one.
+// reviewer approves the new one. The returned record's Skipped lists the
+// upstream items discovery left out (NUL or control characters in a key,
+// NUL in a schema key; sanitize.go), even when no version was added.
 func (s *Service) Refresh(ctx context.Context, a Actor, serverID string, sess Session) (*Record, Diff, error) {
 	snap, err := Discover(ctx, sess)
 	if err != nil {
@@ -128,7 +130,9 @@ func (s *Service) Refresh(ctx context.Context, a Actor, serverID string, sess Se
 	if err != nil {
 		return nil, Diff{}, err
 	}
-	return rec, diff, nil
+	out := *rec
+	out.Skipped = snap.Skipped
+	return &out, diff, nil
 }
 
 // Diff compares the server's latest snapshot with its approved one
@@ -186,9 +190,12 @@ func (s *Service) Current(ctx context.Context, a Actor, serverID string) (*Recor
 }
 
 // Approve approves snapshot version of the server with the reviewer's
-// decisions (see BuildReview): the review starts from the approved
-// snapshot's, so unchanged tools keep their state, and new or changed tools
-// stay disabled unless enabled here. version must be the latest snapshot
+// decisions (see BuildReview and BuildContentReview): the review starts
+// from the approved snapshot's, so unchanged tools, resources, templates
+// and prompts keep their state (items of a snapshot approved before they
+// had toggles count as enabled), and new or changed ones stay disabled
+// unless enabled here. The review column is written in the current layout
+// (tools plus content review). version must be the latest snapshot
 // (approving a refresh) or the approved one (changing decisions);
 // otherwise ErrStaleVersion. A user actor may approve only a private
 // server it owns; anything else returns ErrReviewNotAllowed and changes
@@ -218,14 +225,20 @@ func (s *Service) Approve(ctx context.Context, a Actor, serverID string, version
 		}
 		var base *Snapshot
 		var baseReview Review
+		var baseContent *ContentReview
 		if approved != nil {
-			base, baseReview = approved.Snapshot, approved.Review
+			base, baseReview, baseContent = approved.Snapshot, approved.Review, approved.Content
 		}
-		review, err := BuildReview(base, baseReview, target.Snapshot, d, a.UserID, s.now())
+		now := s.now()
+		review, err := BuildReview(base, baseReview, target.Snapshot, d, a.UserID, now)
 		if err != nil {
 			return err
 		}
-		raw, err := encodeReview(review)
+		content, err := BuildContentReview(base, baseContent, target.Snapshot, d, a.UserID, now)
+		if err != nil {
+			return err
+		}
+		raw, err := encodeFullReview(review, content)
 		if err != nil {
 			return err
 		}

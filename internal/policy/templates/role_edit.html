@@ -19,7 +19,7 @@
   </div>
 
   <h2>Tools</h2>
-  <p class="muted">Pick an outcome per tool, or for every tool of an app with the <code>*</code> row. A tool row overrides the <code>*</code> row. <em>Allow</em> runs the call; <em>confirm</em> asks the user to approve each call first; <em>deny</em> refuses it; <em>hidden</em> keeps the tool out of the list (a blank keeps whatever other roles say).</p>
+  <p class="muted">Pick an outcome per tool, or for every tool of an app with the <code>*</code> row. A tool row overrides the <code>*</code> row. <em>Allow</em> runs the call; <em>confirm</em> asks the user to approve each call first; <em>deny</em> refuses it; <em>hidden</em> keeps the tool out of the list (a blank keeps whatever other roles say). User-added MCP servers also list <code>resources/read</code> (list and read their resources and resource templates) and <code>prompts/get</code> (list and get their prompts): only <em>allow</em> grants them (there is no approval for reads of resources or prompts, so <em>confirm</em> refuses them like <em>deny</em>). Their owner keeps access unless a role denies it.</p>
   {{range .Apps}}
   <section class="grid-app">
     <header>
@@ -37,7 +37,7 @@
       {{range .Tools}}
         <tr{{if .Wildcard}} class="wildcard"{{end}}>
           <td>{{.Name}}{{if .Unknown}} <span class="pill">not registered</span>{{end}}</td>
-          <td class="muted">{{if .Wildcard}}every tool of the app{{else}}{{.Kind}}{{end}}</td>
+          <td class="muted">{{if .Wildcard}}every tool, resource and prompt of the app{{else if .Access}}{{if eq .Short "resources/read"}}list and read its resources{{else}}list and get its prompts{{end}}{{else}}{{.Kind}}{{end}}</td>
           <td>
             <select name="outcome.{{.Name}}">
               <option value=""{{if not .Outcome}} selected{{end}}>—</option>
@@ -60,7 +60,7 @@
       <tr>
         <td class="muted">{{$n}}</td>
         <td><input type="text" name="cond.{{$n}}.app" value="{{$c.App}}" size="10" pattern="[a-z0-9_-]*"></td>
-        <td><input type="text" name="cond.{{$n}}.tool" value="{{$c.Tool}}" size="16" pattern="[a-z0-9_*-]*"></td>
+        <td><input type="text" name="cond.{{$n}}.tool" value="{{$c.Tool}}" size="16" pattern="[a-z0-9_*/-]*"></td>
         <td><select name="cond.{{$n}}.outcome">{{range outcomes}}<option value="{{.}}"{{if eq . $c.Outcome}} selected{{end}}>{{.}}</option>{{end}}</select></td>
         <td><input type="text" name="cond.{{$n}}.key" value="{{$c.Key}}" size="10" pattern="[a-z0-9_-]*"></td>
         <td><select name="cond.{{$n}}.op">{{range ops}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{.}}</option>{{end}}</select></td>

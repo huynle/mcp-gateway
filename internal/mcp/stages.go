@@ -14,13 +14,16 @@ import (
 )
 
 // Stage names, the anchors for Pipeline.Insert. The default order is
-// authenticate, audit, resolve, strip, [account,] ratelimit, dispatch:
-// audit sits right after authenticate so it wraps every later stage and
-// records the outcome whether the call was denied, rate limited or
-// dispatched; account (StageAccount, account.go) is present when an
-// AccountSource is configured; policy (StagePolicy, pipeline_policy.go)
-// follows it when a Decider is configured. The confirm and ledger tasks
-// insert themselves between policy and dispatch.
+// authenticate, audit, resolve, strip, [account, scope,] [precheck,]
+// [policy,] ratelimit, dispatch: audit sits right after authenticate so
+// it wraps every later stage and records the outcome whether the call was
+// denied, rate limited or dispatched; account (StageAccount, account.go)
+// and scope are present when an AccountSource is configured; precheck
+// (StagePrecheck, precheck.go) when a Prechecker is configured, so a call
+// that can never run is refused before policy asks for an approval;
+// policy (StagePolicy, pipeline_policy.go) when a Decider is configured.
+// The confirm and ledger tasks insert themselves between policy and
+// dispatch.
 const (
 	StageAuthenticate = "authenticate"
 	StageAudit        = "audit"
@@ -61,7 +64,8 @@ func (NopRateLimiter) Allow(context.Context, string, string) (bool, time.Duratio
 // connector unchecked (only acceptable in tests). Policy enables the
 // policy stage (Confirm is its confirm hook, nil for
 // DefaultConfirmHandler); without it every visible call is allowed (only
-// acceptable in tests).
+// acceptable in tests). Precheck enables the precheck stage before
+// policy (cmd/gateway: the federation connector's snapshot check).
 type PipelineDeps struct {
 	Registry    *connectors.Registry
 	Visibility  Visibility
@@ -69,6 +73,7 @@ type PipelineDeps struct {
 	Accounts    connectors.AccountSource
 	Policy      Decider
 	Confirm     ConfirmHandler
+	Precheck    Prechecker
 	Audit       audit.Recorder
 	// Metrics counts vendor rate limits (vendor_rate_limited_total); nil
 	// counts nothing.
@@ -103,8 +108,9 @@ func (d *PipelineDeps) defaults() error {
 }
 
 // DefaultPipeline builds the standard pipeline: authenticate, audit,
-// resolve, strip, account and scope (when deps.Accounts is set), policy
-// (when deps.Policy is set), ratelimit, dispatch.
+// resolve, strip, account and scope (when deps.Accounts is set), precheck
+// (when deps.Precheck is set), policy (when deps.Policy is set),
+// ratelimit, dispatch.
 func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	if err := deps.defaults(); err != nil {
 		return nil, err
@@ -117,6 +123,9 @@ func DefaultPipeline(deps PipelineDeps) (*Pipeline, error) {
 	}
 	if deps.Accounts != nil {
 		stages = append(stages, AccountStage(deps.Accounts, deps.Log), ScopeStage(deps.Registry, deps.BaseURL))
+	}
+	if deps.Precheck != nil {
+		stages = append(stages, PrecheckStage(deps.Precheck, deps.Log))
 	}
 	if deps.Policy != nil {
 		stages = append(stages, PolicyStage(deps.Policy, deps.Confirm, deps.Registry, deps.Log))

@@ -180,8 +180,8 @@ func validateRules(rules []ToolRule) error {
 		if !identRE.MatchString(rule.App) {
 			return fmt.Errorf("%w: rule %d: app %q must be a lower-case identifier", ErrInvalidRole, i+1, rule.App)
 		}
-		if rule.Tool != Wildcard && !identRE.MatchString(rule.Tool) {
-			return fmt.Errorf("%w: rule %d: tool %q must be a lower-case identifier or *", ErrInvalidRole, i+1, rule.Tool)
+		if rule.Tool != Wildcard && !identRE.MatchString(rule.Tool) && !IsServerAccessTool(rule.Tool) {
+			return fmt.Errorf("%w: rule %d: tool %q must be a lower-case identifier, *, %s or %s", ErrInvalidRole, i+1, rule.Tool, ResourcesReadTool, PromptsGetTool)
 		}
 		if !rule.Outcome.Valid() {
 			return fmt.Errorf("%w: rule %d: outcome %q must be allow, confirm, deny or hidden", ErrInvalidRole, i+1, rule.Outcome)

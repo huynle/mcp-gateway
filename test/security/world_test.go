@@ -192,6 +192,9 @@ type world struct {
 	tokens   *tokens.Service
 	conn     *connections.Service
 	approval *approvals.Service
+	// notified counts approval notifications (what the Slack DM notifier
+	// would send).
+	notified *countingNotifier
 	ledger   *ledger.Service
 	auth     *authserver.Service
 	fake     *fake.Connector
@@ -221,7 +224,7 @@ func newWorld(t *testing.T, opts options) *world {
 	t.Helper()
 	st := openTestStore(t)
 	ctx := t.Context()
-	w := &world{t: t, st: st, logs: &syncBuffer{}, secrets: map[string]string{}, tokensByUser: map[string][]string{}}
+	w := &world{t: t, st: st, logs: &syncBuffer{}, secrets: map[string]string{}, tokensByUser: map[string][]string{}, notified: &countingNotifier{}}
 	w.now = func() time.Time {
 		w.nowMu.Lock()
 		defer w.nowMu.Unlock()
@@ -305,7 +308,7 @@ func newWorld(t *testing.T, opts options) *world {
 	w.bobSlack = w.connect(w.bob, slApp.ID, connections.SlackAccountID("TACME", "UBOB"), "bob@acme", slackScopes)
 
 	w.approval, err = approvals.New(approvals.Config{TTL: 15 * time.Minute, Wait: opts.approvalWait, BaseURL: baseURL}, approvals.NewPostgresStore(st), keys, approvals.Options{
-		Audit: w.rec, Metrics: metrics, Notifier: approvals.PortalNotifier{}, Log: log,
+		Audit: w.rec, Metrics: metrics, Notifier: w.notified, Log: log,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -398,6 +401,13 @@ func newWorld(t *testing.T, opts options) *world {
 	if err := pipeline.Insert(mcp.Before, mcp.StageRateLimit, mcp.LedgerStage(w.ledger, log)); err != nil {
 		t.Fatal(err)
 	}
+	if w.fed != nil {
+		// The federation's pre-policy check (cmd/gateway's
+		// withFederationPrecheck, Brain task 8ky7l4e6).
+		if err := pipeline.Insert(mcp.Before, mcp.StagePolicy, mcp.PrecheckStage(w.fed.Manager.Precheck(), log)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	mopts := mcp.Options{
 		Registry: w.reg, Pipeline: pipeline, Visibility: visibility, Authenticator: authserver.Composite(w.tokens, w.auth.Authenticator()),
 		Auth:    tokens.MiddlewareOptions{Limiter: tokens.NewFailureLimiter(tokens.DefaultFailureBurst, tokens.DefaultFailureWindow), Metrics: metrics, Log: log},
@@ -406,7 +416,7 @@ func newWorld(t *testing.T, opts options) *world {
 	if w.fed != nil {
 		// Resources and prompts of user-added servers, audited and rate
 		// limited like tool calls (cmd/gateway's newMCPWithResources).
-		mopts.Resources, mopts.Audit, mopts.RateLimiter = w.fed.Manager.ResourceProvider(), w.rec, w.limiter
+		mopts.Resources, mopts.Audit, mopts.RateLimiter = w.fed.Manager.ResourceProvider(w.policy), w.rec, w.limiter
 	}
 	mcpHandler, err := mcp.Handler(mopts)
 	if err != nil {

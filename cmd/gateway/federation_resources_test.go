@@ -80,7 +80,7 @@ func (f resRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { retur
 // resources); with one, newMCPWithResources serves it on /mcp with the
 // audit recorder of tool calls.
 func TestNewMCPServesFederationResources(t *testing.T) {
-	if federationResources(nil) != nil {
+	if federationResources(nil, nil) != nil {
 		t.Error("a provider without a federation")
 	}
 	log := slog.New(slog.DiscardHandler)

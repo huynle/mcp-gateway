@@ -154,6 +154,7 @@ type gridTool struct {
 	Outcome  Outcome // the unconditional rule's outcome, "" for none
 	Unknown  bool    // not in the registry (kept from the stored role)
 	Wildcard bool
+	Access   bool // a server's resources/read or prompts/get action
 }
 
 // gridApp groups the grid by app.
@@ -352,6 +353,16 @@ func (p *Portal) renderEditor(w http.ResponseWriter, r *http.Request, c caller, 
 		a := ensureApp(t.App)
 		a.Tools = append(a.Tools, gridTool{Name: t.FullName(), Short: t.Name, Kind: string(t.Kind)})
 		known[t.FullName()] = true
+	}
+	// User-added MCP servers also have their resources and prompts as
+	// grantable actions (task bdb5zcud), listed after the tools.
+	for _, app := range p.registry.ServerApps() {
+		a := ensureApp(app)
+		for _, name := range []string{ResourcesReadTool, PromptsGetTool} {
+			t := ServerAccessTool(app, name)
+			a.Tools = append(a.Tools, gridTool{Name: t.FullName(), Short: name, Kind: string(t.Kind), Access: true})
+			known[t.FullName()] = true
+		}
 	}
 	var conds []condRow
 	for _, rule := range role.Rules {

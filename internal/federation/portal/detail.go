@@ -231,8 +231,9 @@ func (p *Portal) disconnect(w http.ResponseWriter, r *http.Request, c caller, s 
 func (p *Portal) refresh(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
 	ctx := r.Context()
 	sess, err := p.d.ClientFactory.Open(ctx, s, c.UserID)
+	var rec *snapshot.Record
 	if err == nil {
-		_, _, err = p.d.Snapshots.Refresh(ctx, c.snapActor(), s.ID, sess)
+		rec, _, err = p.d.Snapshots.Refresh(ctx, c.snapActor(), s.ID, sess)
 		if cerr := sess.Close(); cerr != nil {
 			p.log.Debug("close upstream session", "server_id", s.ID, "error", cerr.Error())
 		}
@@ -242,7 +243,13 @@ func (p *Portal) refresh(w http.ResponseWriter, r *http.Request, c caller, s *st
 		p.renderDetailError(w, r, c, s, http.StatusBadGateway, "Refresh failed: "+sessionMessage(err))
 		return
 	}
-	p.log.Info("server refreshed", "event", "federation.server_refreshed", "user_id", c.UserID, "server_id", s.ID)
+	p.log.Info("server refreshed", "event", "federation.server_refreshed", "user_id", c.UserID, "server_id", s.ID,
+		"skipped", len(rec.Skipped))
+	if len(rec.Skipped) > 0 {
+		// The skipped list is not stored: show it with the review now.
+		p.renderReviewSkipped(w, r, c, s, http.StatusOK, "", rec.Skipped)
+		return
+	}
 	http.Redirect(w, r, "/servers/"+s.ID+"/review", http.StatusSeeOther)
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -133,9 +134,18 @@ type Deps struct {
 	ClientFactory ClientFactory
 	Hook          ToolsChanged
 	Permissions   AddServerPermission
-	Identity      Identity
-	Log           *slog.Logger
-	BaseURL       string
+	// Policy decides the per-server actions resources/read and
+	// prompts/get for the browse pages (*policy.Service; Brain task
+	// bdb5zcud). Nil: only the owner may browse.
+	Policy   ResourcePolicy
+	Identity Identity
+	Log      *slog.Logger
+	BaseURL  string
+}
+
+// ResourcePolicy is the part of *policy.Service the browse pages use.
+type ResourcePolicy interface {
+	Permits(ctx context.Context, in policy.Input) (bool, error)
 }
 
 //go:embed templates/*.html

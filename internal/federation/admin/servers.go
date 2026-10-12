@@ -10,6 +10,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
+	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -166,7 +167,7 @@ type detailData struct {
 }
 
 var notices = map[string]string{
-	"published":   "Published. Grant its tools to the roles in the role editor: published servers' tools are hidden until a role allows them.",
+	"published":   "Published: the server is shared with the chosen roles. Grant its tools, resources and prompts to those roles in the role editor; they stay hidden for the role until a rule allows them. The owner keeps access.",
 	"unpublished": "Unpublished: the server is private to its owner again.",
 	"credential":  "Shared credential saved.",
 	"client":      "Static OAuth client saved.",
@@ -433,8 +434,9 @@ func (a *Admin) delete(w http.ResponseWriter, r *http.Request, c caller, s *Serv
 func (a *Admin) refresh(w http.ResponseWriter, r *http.Request, c caller, s *Server) {
 	ctx := r.Context()
 	sess, err := a.d.ClientFactory.Open(ctx, &s.MCPServer, s.OwnerUserID)
+	var rec *snapshot.Record
 	if err == nil {
-		_, _, err = a.d.Snapshots.Refresh(ctx, c.snapActor(), s.ID, sess)
+		rec, _, err = a.d.Snapshots.Refresh(ctx, c.snapActor(), s.ID, sess)
 		if cerr := sess.Close(); cerr != nil {
 			a.log.Debug("close upstream session", "server_id", s.ID, "error", cerr.Error())
 		}
@@ -446,6 +448,11 @@ func (a *Admin) refresh(w http.ResponseWriter, r *http.Request, c caller, s *Ser
 		return
 	}
 	a.record(ctx, c, "mcp_server.refreshed", serverResource(s))
+	if len(rec.Skipped) > 0 {
+		// The skipped list is not stored: show it with the review now.
+		a.renderReviewSkipped(w, r, c, s, http.StatusOK, "", rec.Skipped)
+		return
+	}
 	http.Redirect(w, r, "/admin/servers/"+s.ID+"/review", http.StatusSeeOther)
 }
 

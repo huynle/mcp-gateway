@@ -147,6 +147,18 @@ func review(t *testing.T, w *world, owner user, server *store.MCPServer, refresh
 	for name, on := range enable {
 		decisions.Tools[name] = snapshot.Decision{Enabled: &on}
 	}
+	// Every resource, template and prompt enabled (their review toggles
+	// have their own scenario, TestE2EPluginsResourceReviewAndGrants).
+	decisions.Resources, decisions.ResourceTemplates, decisions.Prompts = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, r := range rec.Snapshot.Resources {
+		decisions.Resources[r.URI] = true
+	}
+	for _, x := range rec.Snapshot.ResourceTemplates {
+		decisions.ResourceTemplates[x.URITemplate] = true
+	}
+	for _, p := range rec.Snapshot.Prompts {
+		decisions.Prompts[p.Name] = true
+	}
 	if _, err := w.fed.Snapshots.Approve(ctx, actor, server.ID, rec.Version, decisions); err != nil {
 		t.Fatalf("approve: %v", err)
 	}

@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="{{asset "review.css"}}">
 <section class="review-summary">
   <div class="review-head"><strong>{{.ServerName}}</strong> <span class="muted">version {{.Version}}</span></div>
-  <p class="review-status">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools stay disabled until you enable them.{{end}}</p>
+  <p class="review-status">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools, resources and prompts stay disabled until you enable them.{{end}}</p>
   <p class="review-stats"><span class="stat"><b>{{.Counts.Total}}</b> total</span><span class="stat"><b>{{.Counts.Enabled}}</b> enabled</span><span class="stat added"><b>{{.Counts.New}}</b> new</span><span class="stat changed"><b>{{.Counts.Changed}}</b> changed</span><span class="stat removed"><b>{{.Counts.Removed}}</b> removed</span></p>
   {{if .Removed}}<p class="removed">Removed tools: {{range .Removed}}<code>{{.}}</code> {{end}}</p>{{end}}
   {{if not .Resources.Empty}}<p>Resources: {{range .Resources.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Resources.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Resources.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
@@ -22,7 +22,7 @@
       {{if .HasReads}}<button class="btn small" type="button" data-select="read">Select read-only</button>{{end}}
     </span>
     <input type="search" class="review-filter" data-review-filter data-js hidden placeholder="Filter tools" aria-label="Filter tools">
-    <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Counts.Total}} selected</span>
+    <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Selectable}} selected</span>
     <span class="review-submit">
       <button class="btn primary" type="submit" name="action" value="approve">{{.Approve}}</button>
       <button class="btn" type="submit" name="action" value="approve_all">Approve with all tools enabled</button>
@@ -61,10 +61,34 @@
   </ul>
 </details>
 {{end}}
+{{range .Items}}
+<details class="tool-group" open data-group="{{.ID}}">
+  <summary>{{if $.Action}}<input type="checkbox" class="group-check" data-group-check data-js hidden aria-label="Select all {{.Name}}">{{end}}<span class="group-name">{{.Name}}</span> <span class="group-count muted" data-group-count>{{.Checked}}/{{len .Items}}</span></summary>
+  <ul class="tool-list">
+  {{range .Items}}
+    <li class="tool-row" data-tool data-item data-name="{{.Key}}">
+      <div class="tool-line">
+        {{if $.Action}}<label class="tool-pick"><input type="checkbox" name="{{.Field}}" value="{{.Index}}"{{if .Checked}} checked{{end}} aria-label="Enable {{.Key}}"> <code class="tool-name">{{.Key}}</code></label>
+        {{else}}<span class="chip {{if .Enabled}}on{{else}}off{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span> <code class="tool-name">{{.Key}}</code>{{end}}
+        {{if eq .Status "added"}}<span class="chip status-added">new</span>{{else if eq .Status "changed"}}<span class="chip status-changed">changed</span>{{end}}
+        {{if .MIMEType}}<span class="chip">{{.MIMEType}}</span>{{end}}
+        {{if .Summary}}<span class="tool-summary">{{.Summary}}</span>{{end}}
+      </div>
+      {{if or .Title .Description (ne .Name .Key)}}<details class="tool-more"><summary>Details</summary>
+        {{if ne .Name .Key}}<p class="muted">Name: {{.Name}}</p>{{end}}
+        {{if .Title}}<p><strong>{{.Title}}</strong></p>{{end}}
+        {{if .Description}}<div class="desc">{{.Description}}</div>{{end}}
+        {{if .Enabled}}<p class="muted">Currently enabled.</p>{{end}}
+      </details>{{end}}
+    </li>
+  {{end}}
+  </ul>
+</details>
+{{end}}
 </div>
 {{if .Action}}
   <div class="review-foot">
-    <p class="muted">Tools without a read-only annotation count as writes. Writes still need approval on each call under the default policy, and tools that are new or changed on a refresh start disabled.</p>
+    <p class="muted">Tools without a read-only annotation count as writes. Writes still need approval on each call under the default policy. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
     {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
   </div>
 </form>

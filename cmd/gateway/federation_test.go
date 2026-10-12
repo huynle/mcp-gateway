@@ -10,6 +10,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
+	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 )
 
@@ -33,6 +34,13 @@ func TestFederationNotMountedWithoutKeys(t *testing.T) {
 	}
 	if federationDecider(fed, nil) != nil {
 		t.Error("decider replaced without a federation")
+	}
+	p, err := mcp.NewPipeline(mcp.AuthenticateStage(), mcp.DispatchStage())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := withFederationPrecheck(fed, log)(p, nil); err != nil || len(p.Names()) != 2 {
+		t.Errorf("precheck without a federation: %v, stages %v", err, p.Names())
 	}
 	// No federation, no gateway.* tools: every wrapper passes through.
 	reg := connectors.NewRegistry()

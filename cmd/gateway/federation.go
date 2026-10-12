@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
@@ -86,6 +87,26 @@ func federationAccounts(fed *connector.Federation, base connectors.AccountSource
 	return fed.Manager.Accounts(base)
 }
 
+// withFederationPrecheck inserts the federation's pre-policy check
+// (mcp.StagePrecheck, Brain task 8ky7l4e6) before the policy stage, or
+// before ratelimit when there is no policy stage: a federated call the
+// approved snapshot refuses (arguments outside the pinned schema, tool
+// disabled or not reviewed) is answered before any approval is asked for.
+// The connector checks again at dispatch.
+func withFederationPrecheck(fed *connector.Federation, log *slog.Logger) mcpExtra {
+	return func(p *mcp.Pipeline, _ mcp.ConfirmHandler) error {
+		if fed == nil {
+			return nil
+		}
+		stage := mcp.PrecheckStage(fed.Manager.Precheck(), log)
+		anchor := mcp.StagePolicy
+		if !slices.Contains(p.Names(), anchor) {
+			anchor = mcp.StageRateLimit
+		}
+		return p.Insert(mcp.Before, anchor, stage)
+	}
+}
+
 // federationDecider adds server visibility (owner of a private server, or
 // a role it is published to) to the policy for tools/list, resolve and
 // the policy stage.
@@ -116,8 +137,10 @@ func withFederationRoutes(fed *connector.Federation) muxExtra {
 // withFederationPages mounts the upstream OAuth connect flow behind the
 // portal's signed-in check: GET /servers/{id}/connect starts it (302 to
 // the server's authorization server), GET /servers/oauth/callback
-// finishes it. The servers portal (its own package) links to them.
-func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string) portalExtra {
+// finishes it. The servers portal (its own package) links to them; its
+// resource and prompt pages ask pol (the policy service) for the
+// per-server actions.
+func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string, pol fedportal.ResourcePolicy) portalExtra {
 	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
 		if fed == nil {
 			return
@@ -144,7 +167,7 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 		fedportal.NewPortal(fedportal.Deps{
 			Store: fedportal.NewStore(st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log}, Permissions: fed.Permissions,
-			Identity: identityFn, Log: log, BaseURL: baseURL,
+			Policy: pol, Identity: identityFn, Log: log, BaseURL: baseURL,
 		}).Mount(mountUser)
 	}
 }

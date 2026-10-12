@@ -334,32 +334,75 @@ func TestSecurityFedServerInitiatedRequestsRefused(t *testing.T) {
 	}
 }
 
-// TestSecurityFedNULInUpstreamTextFailsClosed (finding, low): a NUL
-// character in any upstream string cannot be stored in the snapshot
-// (PostgreSQL jsonb), so discovery fails: the refresh stores nothing, the
-// approved snapshot stays in force and the page shows no database text.
-func TestSecurityFedNULInUpstreamTextFailsClosed(t *testing.T) {
+// TestSecurityFedNULInUpstreamTextSanitized (finding 6 of report
+// 25175i87, Brain task jsb8470s): a NUL in upstream text used to make
+// every refresh fail (PostgreSQL jsonb refuses U+0000), so a hostile
+// upstream could block its own re-review. Now the refresh succeeds: items
+// whose key (tool name, resource URI, prompt argument name) or schema key
+// carries NUL are left out and listed on the review page, NUL is removed
+// from every other text, and the clean items are stored and usable.
+func TestSecurityFedNULInUpstreamTextSanitized(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	w.allowLoopback()
 	up := newUpstream(t, notesServer)
 	s := w.addServer(w.alice, "nul", up.URL(), nil)
 	w.review(w.alice, s, "search")
-	up.setBuild(func(r *http.Request) *sdk.Server {
-		srv := notesServer(r)
-		srv.AddTool(&sdk.Tool{Name: "evil", Description: "a\x00b", InputSchema: json.RawMessage(`{"type":"object"}`)},
-			func(context.Context, *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
-				return &sdk.CallToolResult{}, nil
-			})
-		return srv
+	obj := map[string]any{"type": "object"}
+	lists := map[string]any{
+		"tools/list": map[string]any{"tools": []any{
+			map[string]any{"name": "search", "description": "Search\x00 notes.", "annotations": map[string]any{"readOnlyHint": true},
+				"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string", "description": "query\x00"}}}},
+			map[string]any{"name": "ev\x00il", "description": "nul in the name", "inputSchema": obj},
+			map[string]any{"name": "badkey", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"a\x00b": obj}}},
+		}},
+		"resources/list": map[string]any{"resources": []any{
+			map[string]any{"uri": "notes://readme", "name": "read\x00me"},
+			map[string]any{"uri": "notes://bad\x00", "name": "bad"},
+		}},
+		"resources/templates/list": map[string]any{"resourceTemplates": []any{}},
+		"prompts/list": map[string]any{"prompts": []any{
+			map[string]any{"name": "summarize", "description": "Sum\x00marize."},
+			map[string]any{"name": "badarg", "arguments": []any{map[string]any{"name": "to\x00pic", "required": true}}},
+		}},
+	}
+	up.setGate(func(rw http.ResponseWriter, r *http.Request) bool {
+		id, m := rpcID(readAll(r))
+		res, ok := lists[m]
+		if ok {
+			writeRPC(rw, id, res)
+		}
+		return ok
 	})
 	code, _, body := w.post(w.alice, "/servers/"+s.ID+"/refresh", nil)
-	if code < 400 || strings.Contains(body, "SQLSTATE") || strings.Contains(body, "Unicode") {
-		t.Errorf("refresh with a NUL = %d %q", code, excerpt(body, ""))
+	if code != http.StatusOK {
+		t.Fatalf("refresh with NUL upstream text = %d %q", code, excerpt(body, ""))
 	}
-	if got := w.queryString(`SELECT count(*)::text FROM mcp_server_snapshots WHERE server_id = $1`, s.ID); got != "1" {
-		t.Errorf("snapshots = %s, want only the approved one", got)
+	for _, want := range []string{"tool evil: skipped (invalid name)", "tool badkey: skipped (invalid schema)",
+		"resource notes://bad: skipped (invalid name)", "prompt badarg: skipped (invalid argument)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("review page lacks %q", want)
+		}
 	}
+	if strings.Contains(body, "SQLSTATE") || strings.ContainsRune(body, 0) {
+		t.Errorf("review page = %q", excerpt(body, ""))
+	}
+	if got := w.queryString(`SELECT count(*)::text FROM mcp_server_snapshots WHERE server_id = $1`, s.ID); got != "2" {
+		t.Errorf("snapshots = %s, want the approved one and the refresh", got)
+	}
+	stored := w.queryString(`SELECT tools::text || resources::text || prompts::text FROM mcp_server_snapshots
+		WHERE server_id = $1 ORDER BY version DESC LIMIT 1`, s.ID)
+	if strings.Contains(stored, `\u0000`) || strings.Contains(stored, "evil") || strings.Contains(stored, "badkey") ||
+		strings.Contains(stored, "notes://bad") || strings.Contains(stored, "badarg") {
+		t.Errorf("stored snapshot = %s", stored)
+	}
+	for _, want := range []string{"Search notes.", "notes://readme", "readme", "Summarize."} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("stored snapshot lacks clean item %q: %s", want, stored)
+		}
+	}
+	// The approved snapshot keeps serving until the refresh is approved.
+	up.setGate(nil)
 	if res, err := w.call(w.client(w.alice), "nul.search", map[string]any{"q": "x"}); err != nil || res.IsError {
-		t.Errorf("approved snapshot after the failed refresh: %v %+v", err, res)
+		t.Errorf("approved snapshot after the refresh: %v %+v", err, res)
 	}
 }
