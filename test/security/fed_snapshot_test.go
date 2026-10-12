@@ -166,7 +166,8 @@ func TestSecurityFedSnapshotBypass(t *testing.T) {
 // sanitizing (case variants), unicode lookalikes, dots, slashes, bidi
 // controls and built-in-looking names never produce a gateway tool name
 // outside <server>.[a-z0-9_-], never collide with another app, and
-// colliding names are all dropped; reserved server names are refused.
+// colliding names are all dropped; names with control characters never
+// enter the snapshot; reserved server names are refused.
 func TestSecurityFedToolNameTricks(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	ctx := t.Context()
@@ -191,7 +192,18 @@ func TestSecurityFedToolNameTricks(t *testing.T) {
 		}
 	}
 	s := w.addServer(w.alice, "tricks", up.URL(), nil)
-	w.review(w.alice, s, names...)
+	// A name with a control character is left out of the snapshot at
+	// discovery (Brain task jsb8470s), so it cannot be enabled.
+	var reviewable []string
+	for _, n := range names {
+		if n != "tool\x01ctl" {
+			reviewable = append(reviewable, n)
+		}
+	}
+	w.review(w.alice, s, reviewable...)
+	if _, _, err := w.fed.Snapshots.Allowed(ctx, snapshot.Actor{UserID: w.alice.id}, s.ID, "tool\x01ctl", map[string]any{}); !errors.Is(err, snapshot.ErrToolNotReviewed) {
+		t.Errorf("control-character name: %v, want not reviewed (skipped at discovery)", err)
+	}
 	listed := toolNames(t, w.client(w.alice))
 	valid := regexp.MustCompile(`^[a-z0-9_-]+\.[a-z0-9_-]+$`)
 	seen := map[string]bool{}

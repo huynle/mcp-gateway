@@ -234,6 +234,8 @@ type fakeSnapshots struct {
 	actors    []snapshot.Actor
 	approvals []snapshot.ReviewDecisions
 	refreshed []string
+	// skipped is what the next Refresh reports as left out.
+	skipped []snapshot.Skipped
 }
 
 func newFakeSnapshots() *fakeSnapshots {
@@ -256,7 +258,9 @@ func (f *fakeSnapshots) Refresh(_ context.Context, a snapshot.Actor, serverID st
 	f.refreshed = append(f.refreshed, serverID)
 	f.mu.Unlock()
 	f.pending(serverID, &snapshot.Snapshot{Tools: []snapshot.Tool{{Name: "search", Annotations: &snapshot.Annotations{ReadOnlyHint: true}}}})
-	return f.latest[serverID], snapshot.Diff{}, nil
+	rec := *f.latest[serverID]
+	rec.Skipped = f.skipped
+	return &rec, snapshot.Diff{}, nil
 }
 
 func (f *fakeSnapshots) Latest(_ context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error) {

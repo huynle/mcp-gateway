@@ -3,6 +3,8 @@
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 <p class="muted">Names and descriptions below come from the server <strong>{{.Server.Name}}</strong> (owner {{.Server.Owner}}), not from the gateway: they are the upstream's own claims. Tools are shown to models as <code>{{.Server.Name}}.&lt;tool&gt;</code>.</p>
 {{if eq .Server.Audience "published"}}<p class="notice">This server is published to {{join .Server.Roles ", "}}: enabling a tool here makes it available to those roles wherever the role editor allows it.</p>{{end}}
+{{if .Skipped}}<div class="notice" role="status"><p>This refresh skipped {{len .Skipped}} upstream item(s): their names or schema keys contain characters the gateway cannot store or match (a NUL or another control character). They are not in the snapshot and cannot be enabled.</p>
+<ul>{{range .Skipped}}<li>{{.Kind}} {{.Name}}: skipped ({{.Reason}})</li>{{end}}</ul></div>{{end}}
 {{if not .Page.Version}}
 <p>No snapshot yet. Use Refresh on the <a href="/admin/servers/{{.Server.ID}}">server page</a> to discover its tools.</p>
 {{else}}
