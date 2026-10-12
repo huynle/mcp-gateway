@@ -102,7 +102,7 @@ func TestReviewPageHasGroupsSelectControlsAndSummary(t *testing.T) {
 	// per-row kind select outside the details.
 	mustNotContain(t, r.body, `data-select="read"`, `name="enable_reads"`, "may be destructive")
 	// Groups are in name order; attachment's tools are listed by name.
-	if a, b, c := strings.Index(r.body, `data-group="attachment"`), strings.Index(r.body, `data-group="attention"`), strings.Index(r.body, `data-group="search"`); !(a < b && b < c) {
+	if a, b, c := strings.Index(r.body, `data-group="attachment"`), strings.Index(r.body, `data-group="attention"`), strings.Index(r.body, `data-group="search"`); a >= b || b >= c {
 		t.Errorf("group order %d %d %d", a, b, c)
 	}
 	if add, get := strings.Index(r.body, `aria-label="Enable attachment_add"`), strings.Index(r.body, `aria-label="Enable attachment_get"`); add < 0 || get < 0 || add > get {

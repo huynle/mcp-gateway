@@ -279,6 +279,18 @@ func (w *world) approve(u user, serverID, body string, enable ...string) {
 	mustRedirect(w.t, "approve", w.submit(u, "/servers/"+serverID+"/review", form), "/servers/"+serverID+"?approved=1")
 }
 
+// approveAll submits the owner's review form with "Approve with all tools
+// enabled" (action=approve_all) and nothing checked.
+func (w *world) approveAll(u user, serverID, body string) {
+	w.t.Helper()
+	if !strings.Contains(body, `name="action" value="approve_all"`) {
+		w.t.Fatalf("review page without approve_all:\n%s", snippet(body))
+	}
+	version, _, _ := reviewForm(w.t, body)
+	mustRedirect(w.t, "approve all", w.submit(u, "/servers/"+serverID+"/review", url.Values{"version": {version}, "action": {"approve_all"}}),
+		"/servers/"+serverID+"?approved=1")
+}
+
 // allowLoopback allow-lists 127.0.0.1 (where the fake upstreams listen)
 // on the admin allow-list page, as an admin would for an internal host.
 func (w *world) allowLoopback() {

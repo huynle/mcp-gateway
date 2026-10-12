@@ -47,7 +47,7 @@
         {{if .Title}}<p><strong>{{.Title}}</strong></p>{{end}}
         {{if eq .Status "changed"}}<p class="changed">Changed: {{join .Fields ", "}}</p>{{end}}
         {{if .Description}}<div class="desc">{{.Description}}</div>{{end}}
-        <p class="muted">Annotated as {{.HintKind}}{{if .Destructive}}, destructive{{end}}.{{if .Enabled}} Currently enabled.{{end}}</p>
+        <p class="muted">Annotated as {{.HintKind}}{{if and (eq .HintKind "write") .Destructive}}, destructive{{end}}.{{if .Enabled}} Currently enabled.{{end}}</p>
         {{if $.Action}}<div class="advanced"><span class="muted">Advanced</span>
           <label class="check">Kind <select name="kind_{{.Index}}" aria-label="Kind of {{.Name}}">
             <option value=""{{if not .Override}} selected{{end}}>as annotated ({{.HintKind}})</option>

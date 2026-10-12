@@ -174,17 +174,20 @@ func TestE2EPluginsPortalAddDetectConnectReviewAndApprove(t *testing.T) {
 	// 4. The upstream changes recall's schema and adds forget.
 	brain.v2.Store(true)
 	review = w.refresh(w.alice, brainID)
-	for _, want := range []string{"Version 2 is waiting for review (approved: version 1)", `<span class="changed">changed:`, `<span class="added">added</span>`} {
+	for _, want := range []string{"Version 2 is waiting for review (approved: version 1)", `class="chip status-changed">changed<`, `class="chip status-added">new<`,
+		`<b>1</b> changed`, `<b>1</b> new`, `<p class="changed">Changed: `, "inputSchema"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("review after refresh lacks %q", want)
 		}
 	}
-	if !regexp.MustCompile(`(?s)<code>recall</code></strong>.{0,80}<span class="changed">changed:`).MatchString(review) ||
-		!regexp.MustCompile(`(?s)<code>forget</code></strong>.{0,80}<span class="added">added</span>`).MatchString(review) {
+	if !regexp.MustCompile(`(?s)aria-label="Enable recall">.{0,120}<span class="chip status-changed">changed</span>`).MatchString(review) ||
+		!regexp.MustCompile(`(?s)aria-label="Enable forget">.{0,120}<span class="chip status-added">new</span>`).MatchString(review) {
 		t.Errorf("review does not mark recall changed and forget added:\n%s", review)
 	}
-	if _, _, checked := reviewForm(t, review); len(checked) != 0 {
-		t.Errorf("refresh review pre-checks %v; changed, new and write tools must start unchecked", checked)
+	// Only the unchanged, enabled tool (the write save) stays checked; the
+	// changed and the new tool start unchecked.
+	if _, _, checked := reviewForm(t, review); !slices.Equal(checked, []string{"save"}) {
+		t.Errorf("refresh review pre-checks %v; want only the unchanged enabled save", checked)
 	}
 	// Until it is approved, the pinned (old) schema still applies.
 	_, err = w.call(alice, "brain.recall", map[string]any{"q": "plans", "limit": 2})
@@ -202,7 +205,9 @@ func TestE2EPluginsPortalAddDetectConnectReviewAndApprove(t *testing.T) {
 	if !strings.Contains(review, "Version 2 is the approved snapshot") {
 		t.Errorf("review page after approval:\n%s", snippet(review))
 	}
-	w.approve(w.alice, brainID, review, "recall", "save", "forget")
+	// "Approve with all tools enabled" (action=approve_all) enables every
+	// tool; the write forget still needs approval per call.
+	w.approveAll(w.alice, brainID, review)
 	alice = w.client(w.alice)
 	if got := w.toolText(alice, "brain.recall", map[string]any{"q": "plans", "limit": 2}); got != "recall v2: plans" {
 		t.Errorf("re-enabled brain.recall = %q", got)
