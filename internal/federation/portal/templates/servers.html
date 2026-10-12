@@ -2,7 +2,8 @@
 {{if .Notice}}<p class="ok">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <p class="muted">MCP servers you added, and servers an admin published to you. Their tools appear in your harnesses as <code>&lt;server&gt;.&lt;tool&gt;</code> once a reviewer enabled them.</p>
-<p><a class="btn primary" href="/servers/new">Add server</a></p>
+{{if .CanAdd}}<p><a class="btn primary" href="/servers/new">Add server</a></p>
+{{else}}<p class="muted">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers. Servers you already added keep working.</p>{{end}}
 
 {{define "serverRows"}}
 <table>

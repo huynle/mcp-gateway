@@ -110,13 +110,19 @@ type noopHook struct{}
 
 func (noopHook) ServerChanged(context.Context, string) {}
 
+// AddServerPermission says whether a user may add MCP servers (admin, or a
+// role with "May add MCP servers"; *permissions.Service). It fails closed.
+type AddServerPermission interface {
+	CanAddServers(ctx context.Context, userID string) bool
+}
+
 // Identity resolves the caller of a page: the session's user ID (empty when
 // not signed in), its CSRF token (echoed by every form) and whether the
 // user is an admin.
 type Identity func(r *http.Request) (userID, csrfToken string, isAdmin bool)
 
 // Deps are the Portal's collaborators. Store, Snapshots, Auth, Tunnels,
-// ClientFactory and Identity are required; Hook defaults to a no-op and
+// ClientFactory, Permissions and Identity are required; Hook defaults to a no-op and
 // Log to slog.Default(). BaseURL is the gateway's public URL (shown in the
 // tunnel command).
 type Deps struct {
@@ -126,6 +132,7 @@ type Deps struct {
 	Tunnels       Tunnels
 	ClientFactory ClientFactory
 	Hook          ToolsChanged
+	Permissions   AddServerPermission
 	Identity      Identity
 	Log           *slog.Logger
 	BaseURL       string
@@ -162,6 +169,10 @@ var templateFS embed.FS
 // Every route answers 401 without a user, checks the CSRF token on POST
 // (403), sets Cache-Control: no-store, and answers a server the user cannot
 // see (or an owner-only page of someone else's server) with the 404 page.
+// Adding a server (GET and POST /servers/new, detect included) and moving
+// one to a new address need the add-server permission (Permissions; Brain
+// decision bnneszc1): without it the Add server button is hidden and the
+// form answers 403. Servers a user already owns keep working.
 type Portal struct {
 	d   Deps
 	log *slog.Logger
@@ -171,8 +182,8 @@ type Portal struct {
 // NewPortal builds the pages. It panics when a required dependency is
 // missing (a wiring error).
 func NewPortal(d Deps) *Portal {
-	if d.Store == nil || d.Snapshots == nil || d.Auth == nil || d.Tunnels == nil || d.ClientFactory == nil || d.Identity == nil {
-		panic("federation portal: Store, Snapshots, Auth, Tunnels, ClientFactory and Identity are required")
+	if d.Store == nil || d.Snapshots == nil || d.Auth == nil || d.Tunnels == nil || d.ClientFactory == nil || d.Permissions == nil || d.Identity == nil {
+		panic("federation portal: Store, Snapshots, Auth, Tunnels, ClientFactory, Permissions and Identity are required")
 	}
 	if d.Hook == nil {
 		d.Hook = noopHook{}
@@ -196,8 +207,8 @@ func NewPortal(d Deps) *Portal {
 // checks both again).
 func (p *Portal) Mount(mountUser func(pattern string, h http.Handler)) {
 	mountUser("GET /servers", p.user(p.list))
-	mountUser("GET /servers/new", p.user(p.newForm))
-	mountUser("POST /servers/new", p.user(p.create))
+	mountUser("GET /servers/new", p.user(p.adder(p.newForm)))
+	mountUser("POST /servers/new", p.user(p.adder(p.create)))
 	mountUser("POST /servers/tunnels", p.user(p.createTunnel))
 	mountUser("POST /servers/tunnels/revoke", p.user(p.revokeTunnel))
 	mountUser("GET /servers/{id}", p.server(p.detail))
@@ -282,6 +293,23 @@ func (p *Portal) server(h serverHandler) http.Handler {
 		}
 		h(w, r, c, s)
 	})
+}
+
+// mayAddMessage is shown wherever adding a server is refused.
+const mayAddMessage = "Your roles do not allow adding MCP servers. Ask an admin for a role that may add MCP servers. Servers you already added keep working."
+
+// adder is user for the add-server form: a caller without the add-server
+// permission gets the 403 page (after the CSRF check, so a forged request
+// is still refused as forged).
+func (p *Portal) adder(h handler) handler {
+	return func(w http.ResponseWriter, r *http.Request, c caller) {
+		if !p.d.Permissions.CanAddServers(r.Context(), c.UserID) {
+			p.log.Info("add server refused", "event", "federation.portal_add_refused", "user_id", c.UserID)
+			p.render(w, r, http.StatusForbidden, "message.html", messageData{Title: "Adding servers needs permission", Message: mayAddMessage})
+			return
+		}
+		h(w, r, c)
+	}
 }
 
 // owner is server for owner-only pages: anyone else gets the 404 page.

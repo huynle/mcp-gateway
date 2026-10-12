@@ -107,6 +107,7 @@ type newTunnel struct {
 type listData struct {
 	Title     string
 	Caller    caller
+	CanAdd    bool
 	Mine      []serverRow
 	Shared    []serverRow
 	Tunnels   []tunnelRow
@@ -131,7 +132,7 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request, c caller) {
 }
 
 func (p *Portal) loadList(ctx context.Context, c caller) (listData, error) {
-	data := listData{Title: "Servers", Caller: c}
+	data := listData{Title: "Servers", Caller: c, CanAdd: p.d.Permissions.CanAddServers(ctx, c.UserID)}
 	servers, err := p.d.Store.ListVisibleServers(ctx, c.UserID)
 	if err != nil {
 		return data, err

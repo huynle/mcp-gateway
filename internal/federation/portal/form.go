@@ -653,6 +653,11 @@ func (p *Portal) save(w http.ResponseWriter, r *http.Request, c caller, s *store
 	f := parseServerForm(r)
 	f.Name = s.Name
 	v, err := p.validate(ctx, c, &f, s, info)
+	if err == nil && v.url != s.URL && !p.d.Permissions.CanAddServers(ctx, c.UserID) {
+		// A new address is a different server: adding one needs the
+		// permission.
+		err = bad("Changing the address needs permission to add MCP servers. Ask an admin for a role that may add MCP servers.")
+	}
 	if err == nil {
 		next := *s
 		next.URL, next.CredentialMode, next.AuthKind, next.AuthConfig, next.HeaderConfig = v.url, f.CredentialMode, f.AuthKind, v.authConfig, v.headerConfig
