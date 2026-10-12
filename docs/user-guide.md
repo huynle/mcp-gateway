@@ -4,7 +4,7 @@ For coworkers using the gateway from an AI harness. Replace `https://gw.example.
 
 ## 1. Sign in to the portal
 
-Open `https://gw.example.com` and press *Continue with <your company provider>*. You sign in with your normal company account; the gateway never sees your password. The first sign-in creates your user with the default role; an admin assigns other roles on `/admin/users`. You will need to sign in again at least every **30 days**: every harness token you own stops working until you do (the harness shows *"sign in to the portal to reactivate your tokens"*), and signing in reactivates all of them at once.
+Open `https://gw.example.com` and press *Continue with <your company provider>*. You sign in with your normal company account; the gateway never sees your password. The first sign-in creates your user with the default role; an admin assigns other roles on `/admin/users`. The *Light / System / Dark* switch at the top right of every page sets the colour theme for this browser (*System* follows your operating system). You will need to sign in again at least every **30 days**: every harness token you own stops working until you do (the harness shows *"sign in to the portal to reactivate your tokens"*), and signing in reactivates all of them at once.
 
 ## 2. Connect a harness
 
