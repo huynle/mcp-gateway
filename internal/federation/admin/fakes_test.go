@@ -235,11 +235,32 @@ type fakeSnapshots struct {
 	approvals []snapshot.ReviewDecisions
 	refreshed []string
 	// skipped is what the next Refresh reports as left out.
-	skipped []snapshot.Skipped
+	skipped   []snapshot.Skipped
+	modeEdits []map[string]snapshot.Approval
 }
 
 func newFakeSnapshots() *fakeSnapshots {
 	return &fakeSnapshots{latest: map[string]*snapshot.Record{}, current: map[string]*snapshot.Record{}}
+}
+
+// SetApprovalModes applies the modes like the real service.
+func (f *fakeSnapshots) SetApprovalModes(_ context.Context, a snapshot.Actor, serverID string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.actors = append(f.actors, a)
+	c := f.current[serverID]
+	if c == nil {
+		return nil, 0, snapshot.ErrNoSnapshot
+	}
+	review, n, err := snapshot.ApplyApprovals(c.Review, modes, a.UserID, time.Now())
+	if err != nil {
+		return nil, 0, err
+	}
+	rec := *c
+	rec.Review = review
+	f.current[serverID] = &rec
+	f.modeEdits = append(f.modeEdits, modes)
+	return &rec, n, nil
 }
 
 func (f *fakeSnapshots) pending(serverID string, snap *snapshot.Snapshot) {

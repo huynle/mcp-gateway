@@ -17,10 +17,13 @@
   </tbody>
 </table>
 {{end}}
+{{with .Approval}}<h2>Approval before running</h2>
+<p class="muted">Ask or Auto per write tool. For a published server this is the default for the roles whose rules allow the tool: a role <em>allow</em> plus <strong>Auto</strong> runs without asking, plus <strong>Ask</strong> needs an approval; a role <em>confirm</em> always asks and a role <em>deny</em> always wins. The owner gets the same modes.</p>
+{{template "approval-modes" .}}{{end}}
 {{if eq .Server.CredentialMode "shared"}}<p class="notice">This server uses a <strong>shared credential</strong>: every user it is published to acts with the same upstream account.</p>{{end}}
 
 <h2>Publish</h2>
-<p class="muted">Publishing shares the server with holders of the chosen roles. For them its tools, resources and prompts stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code>, single tools, <code>{{.Server.Name}}.resources/read</code> and <code>{{.Server.Name}}.prompts/get</code>). The owner keeps access (reads allowed, writes confirmed) unless a role denies it.</p>
+<p class="muted">Publishing shares the server with holders of the chosen roles. For them its tools, resources and prompts stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code>, single tools, <code>{{.Server.Name}}.resources/read</code> and <code>{{.Server.Name}}.prompts/get</code>). The owner keeps access (reads allowed, writes as set under Approval before running) unless a role denies it.</p>
 <form method="post" action="/admin/servers/{{.Server.ID}}/publish" class="stack">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
   {{range .Roles}}<label class="check"><input type="checkbox" name="roles" value="{{.ID}}"{{if .Checked}} checked{{end}}> {{.Name}}</label>{{else}}<p class="muted">No roles yet.</p>{{end}}
