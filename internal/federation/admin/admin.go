@@ -72,6 +72,11 @@ type Store interface {
 	// it private again.
 	SetPublishedRoles(ctx context.Context, serverID string, roleIDs []string) error
 	SetStatus(ctx context.Context, serverID, status string) error
+	// UpdateAddress changes the server's URL. On a published server the
+	// approved snapshot is withdrawn in the same transaction (schema 17):
+	// tools, resources and prompts disappear until an admin approves a
+	// snapshot again.
+	UpdateAddress(ctx context.Context, serverID, rawURL string) error
 	DeleteServer(ctx context.Context, serverID string) error
 	ListTunnels(ctx context.Context) ([]Tunnel, error)
 	GetTunnel(ctx context.Context, id string) (*Tunnel, error)
@@ -110,7 +115,7 @@ type Tunnels interface {
 }
 
 // Hook is told after a server was published, unpublished, disabled,
-// enabled, deleted, reviewed or given credentials, so the gateway's tool
+// enabled, deleted, reviewed, given credentials or a new address, so the gateway's tool
 // registry and visibility follow (*connector.Manager satisfies it). A
 // failure is logged; the connector's periodic reload catches up.
 type Hook interface {
@@ -155,6 +160,7 @@ var templateFS embed.FS
 //	POST /admin/servers/{id}/unpublish            back to private
 //	POST /admin/servers/{id}/shared-credential    set / replace the shared credential (write-only)
 //	POST /admin/servers/{id}/static-client        set / replace the static OAuth client (secret write-only)
+//	POST /admin/servers/{id}/address              change the URL (https); a published server needs a re-review
 //	POST /admin/servers/{id}/disable              status disabled
 //	POST /admin/servers/{id}/enable               status active
 //	POST /admin/servers/{id}/delete               delete (confirm = the server's name)
@@ -219,6 +225,7 @@ func (a *Admin) Mount(mountAdmin func(pattern string, h http.Handler)) {
 	mountAdmin("POST /admin/servers/{id}/unpublish", a.server(a.unpublish))
 	mountAdmin("POST /admin/servers/{id}/shared-credential", a.server(a.setSharedCredential))
 	mountAdmin("POST /admin/servers/{id}/static-client", a.server(a.setStaticClient))
+	mountAdmin("POST /admin/servers/{id}/address", a.server(a.changeAddress))
 	mountAdmin("POST /admin/servers/{id}/disable", a.server(a.disable))
 	mountAdmin("POST /admin/servers/{id}/enable", a.server(a.enable))
 	mountAdmin("POST /admin/servers/{id}/delete", a.server(a.delete))

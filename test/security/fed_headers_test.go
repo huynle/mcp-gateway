@@ -110,6 +110,9 @@ func TestSecurityFedHeaderInjection(t *testing.T) {
 	for name, h := range map[string]map[string]string{
 		"CRLF value": {"X-A": "v\r\nX-Injected: 1"}, "Host": {"Host": "internal"}, "Mcp-Session-Id": {"Mcp-Session-Id": "x"},
 		"Content-Length": {"Content-Length": "0"}, "bad name": {"X A": "v"}, "Proxy-Authorization": {"Proxy-Authorization": "x"},
+		// Credentials as static headers (Brain task 68ss4tpc), any case.
+		"Authorization": {"authorization": "Bearer stolen"}, "Cookie": {"COOKIE": "session=1"}, "X-Api-Key": {"x-api-key": "k"},
+		"Connection": {"connection": "close"},
 	} {
 		if _, err := c.Connect(ctx, client.Endpoint{URL: "https://mcp.example.com/mcp", Headers: h}); !errors.Is(err, client.ErrInvalidEndpoint) {
 			t.Errorf("endpoint header %s: %v, want ErrInvalidEndpoint", name, err)

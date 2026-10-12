@@ -64,7 +64,7 @@ func (a *Admin) revokeTunnel(w http.ResponseWriter, r *http.Request, c caller) {
 			a.fail(w, r, "revoke tunnel", err)
 			return
 		}
-		a.record(r.Context(), c, "tunnel.revoked", map[string]string{"tunnel_id": t.ID, "tunnel": truncate(t.Name, 128), "owner_user_id": t.OwnerUserID})
+		a.record(r.Context(), c, "tunnel.revoked", map[string]string{"tunnel_id": t.ID, "tunnel": truncate(t.Name), "owner_user_id": t.OwnerUserID})
 	}
 	http.Redirect(w, r, "/admin/tunnels?done=revoked", http.StatusSeeOther)
 }

@@ -276,8 +276,8 @@ func mustJSON(v any) string {
 // TestSecurityFedServerInitiatedRequestsRefused: an upstream asking the
 // gateway for sampling (createMessage), elicitation or roots during a
 // tool call gets a refusal: the gateway's client declares none of those
-// capabilities (roots is declared by the go-sdk default and answered with
-// an empty list) and never forwards the request to the user's harness.
+// capabilities (not even the go-sdk's default roots: Brain task 68ss4tpc)
+// and never forwards the request to the user's harness.
 func TestSecurityFedServerInitiatedRequestsRefused(t *testing.T) {
 	w := newWorld(t, options{federation: true, fedTimeout: 5 * time.Second})
 	w.allowLoopback()
@@ -324,12 +324,13 @@ func TestSecurityFedServerInitiatedRequestsRefused(t *testing.T) {
 		} `json:"params"`
 	}
 	_ = json.Unmarshal([]byte(initBody), &init)
-	// roots is declared by the go-sdk client by default; it answers with
-	// no roots (checked above), so it reveals nothing.
-	for _, c := range []string{"sampling", "elicitation"} {
+	for _, c := range []string{"sampling", "elicitation", "roots"} {
 		if _, ok := init.Params.Capabilities[c]; ok {
 			t.Errorf("the gateway's client declares %s: %s", c, initBody)
 		}
+	}
+	if len(init.Params.Capabilities) != 0 {
+		t.Errorf("the gateway's client declares capabilities: %s", initBody)
 	}
 }
 

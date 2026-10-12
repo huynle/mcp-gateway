@@ -20,7 +20,7 @@
   <tbody>
   {{range .Servers}}
   <tr>
-    <td><a href="/admin/servers/{{.ID}}">{{.Name}}</a>{{if .Pending}} <a class="badge" href="/admin/servers/{{.ID}}/review">pending review</a>{{end}}</td>
+    <td><a href="/admin/servers/{{.ID}}">{{.Name}}</a>{{if .ReReview}} <a class="badge" href="/admin/servers/{{.ID}}/review">re-review required</a>{{else if .Pending}} <a class="badge" href="/admin/servers/{{.ID}}/review">pending review</a>{{end}}</td>
     <td>{{.Owner}}</td>
     <td><code>{{.Host}}</code></td>
     <td>{{.Audience}}{{if .Roles}}: {{join .Roles ", "}}{{end}}</td>

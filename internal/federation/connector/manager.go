@@ -298,7 +298,9 @@ func (m *Manager) CreateServer(ctx context.Context, s *store.MCPServer) error {
 }
 
 // UpdateServer validates the (possibly new) name, stores the server's
-// editable settings as userID and reloads.
+// editable settings as userID and reloads. A published server's address
+// and sign-in settings cannot change on this (request) path:
+// store.ErrMCPServerLocked (schema 17, decision q7vbxlyk point 3).
 func (m *Manager) UpdateServer(ctx context.Context, userID string, s *store.MCPServer) error {
 	if err := ValidateServerName(s.Name); err != nil {
 		return err

@@ -151,7 +151,11 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Sess
 		inner = &mcp.StreamableClientTransport{Endpoint: v.u.String(), HTTPClient: &hc,
 			DisableStandaloneSSE: true, MaxRetries: -1, MaxEventSize: int(c.maxBody) + sseSlack}
 	}
-	cl := mcp.NewClient(c.impl, &mcp.ClientOptions{Logger: c.log})
+	// No client capabilities: the gateway serves no roots, sampling or
+	// elicitation to upstreams (an empty, non-nil Capabilities turns off
+	// the go-sdk's default roots capability; sampling and elicitation are
+	// only declared when a handler is set, and none is).
+	cl := mcp.NewClient(c.impl, &mcp.ClientOptions{Logger: c.log, Capabilities: &mcp.ClientCapabilities{}})
 	cs, err := cl.Connect(hctx, &detached{inner: inner, ctx: sessCtx}, nil)
 	if err != nil {
 		stop()

@@ -61,7 +61,8 @@ type Authorizer interface {
 
 - Every request is built by the MCP SDK from scratch. Nothing from the inbound gateway request (its `Authorization`, cookies, `Mcp-Session-Id`) is forwarded, only `Endpoint.Headers` plus what the `Authorizer` adds.
 - Every request must stay on the endpoint's **origin** (scheme, host, port). A redirect, or a legacy SSE `endpoint` event pointing elsewhere, is refused before `Authorize` runs (`ClassBlocked`, `Reason "cross_origin"`), so credentials only ever go to the configured server. netguard additionally re-validates each redirect hop and refuses https→http.
-- `Endpoint.Headers` may not set transport-owned headers (`Host`, `Content-Type`, `Accept`, `Content-Length`, hop-by-hop headers, `Proxy-Authorization`, `Last-Event-Id`, `Cache-Control`, any `Mcp-*`). Names must be RFC 9110 tokens and values must contain no control characters. Violations return `ErrInvalidEndpoint` from `Connect` (the message never echoes the URL).
+- `Endpoint.Headers` may not set transport-owned headers (`Host`, `Content-Type`, `Accept`, `Accept-Encoding`, `Content-Length`, `Last-Event-Id`, `Cache-Control`, any `Mcp-*`), hop-by-hop headers (`Connection`, `Keep-Alive`, `Proxy-Connection`, `Te`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Proxy-Authenticate`) or **credentials** (`Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`), compared case-insensitively. Credentials belong in the `Authorizer` (sealed per user and URL); a static header would send one plain-text value on every user's calls. The servers portal refuses them too; the client check is defence in depth for a `header_config` written any other way (Brain task `68ss4tpc`). Names must be RFC 9110 tokens and values must contain no control characters. Violations return `ErrInvalidEndpoint` from `Connect` (the message never echoes the URL).
+- The client declares **no client capabilities** in `initialize` (`capabilities: {}`): the gateway serves no roots, sampling or elicitation to upstreams, so the go-sdk's default `roots` capability is switched off (`ClientOptions.Capabilities = &mcp.ClientCapabilities{}`), and sampling or elicitation requests from an upstream are refused.
 
 ## Transport fallback heuristic
 
@@ -129,6 +130,7 @@ Classification uses facts recorded at the HTTP layer (status, challenge, transpo
 - pagination; hostile servers: over-cap lists, empty-page and cursor loops, huge results (JSON and SSE), slow call and slow handshake → `timeout`, malformed JSON → `protocol_error`, JSON-RPC errors
 - netguard blocking private, loopback and metadata URLs; cross-origin redirect and SSE endpoint; unreachable; 5xx
 - `OnCall` reporting; protocol version negotiation
+- endpoint static headers: credential, hop-by-hop and transport headers refused in any case; `initialize` declares no client capabilities (`endpoint_test.go`)
 - stateful go-sdk upstream (default options): two sequential sessions with list + call, also when connecting from inside a go-sdk server handler whose downstream speaks 2026-07-28 (`stateful_test.go`); a stateless upstream still negotiates 2026-07-28 there; no SSE fallback on 400 `-32022`
 
 `test/e2e` `TestE2EPluginsStatefulUpstream` covers the same through the whole gateway: review, then two `tools/call` via `/mcp` against a stateful upstream, checking each upstream `initialize` header matches its body.
