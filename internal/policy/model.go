@@ -120,6 +120,10 @@ type Role struct {
 	Description      string               `json:"description,omitempty"`
 	Rules            []ToolRule           `json:"rules,omitempty"`
 	PersonalAccounts map[string]Allowance `json:"personal_accounts,omitempty"`
+	// MayAddServers lets the role's holders add MCP servers (schema 16,
+	// roles.may_add_servers; decision bnneszc1). It is a column, not part
+	// of the compiled Cedar: it grants no tools.
+	MayAddServers bool `json:"may_add_servers,omitempty"`
 }
 
 // UserRestriction narrows one user below their roles (decision 0ft3v5mh):

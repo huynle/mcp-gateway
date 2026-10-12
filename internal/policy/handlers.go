@@ -276,7 +276,8 @@ func (p *Portal) parseForm(w http.ResponseWriter, r *http.Request, name string) 
 	if err := r.ParseForm(); err != nil {
 		return Role{}, fmt.Errorf("%w: the form could not be read", ErrInvalidRole)
 	}
-	role := Role{Name: name, Description: strings.TrimSpace(r.PostForm.Get("description"))}
+	role := Role{Name: name, Description: strings.TrimSpace(r.PostForm.Get("description")),
+		MayAddServers: r.PostForm.Get("may_add_servers") != ""}
 	if name == "" {
 		role.Name = strings.ToLower(strings.TrimSpace(r.PostForm.Get("name")))
 	}

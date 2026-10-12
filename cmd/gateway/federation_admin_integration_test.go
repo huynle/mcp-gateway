@@ -62,7 +62,7 @@ func TestIntegrationAdminServersMounted(t *testing.T) {
 		idSvc = s
 	}
 	// The real identity store: allow-list rows reference the admin user.
-	portalHandler, err := newPortal(cfg, identity.NewPostgresStore(st), noReader{}, tokenSvc, policySvc, nil, nil, registry, log,
+	portalHandler, err := newPortal(cfg, identity.NewPostgresStore(st), noReader{}, tokenSvc, policySvc, nil, nil, registry, nil, log,
 		withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, audit.NopRecorder{}), capture)
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)

@@ -447,6 +447,21 @@ func (f *fakeFactory) Open(_ context.Context, server *store.MCPServer, userID st
 	return f.sess, nil
 }
 
+// fakePerms answers CanAddServers: everyone but the denied users may add
+// servers.
+type fakePerms struct {
+	mu     sync.Mutex
+	denied map[string]bool
+	asked  []string
+}
+
+func (f *fakePerms) CanAddServers(_ context.Context, userID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, userID)
+	return userID != "" && !f.denied[userID]
+}
+
 type fakeHook struct {
 	mu      sync.Mutex
 	changed []string
@@ -468,15 +483,17 @@ type env struct {
 	tun  *fakeTunnels
 	fac  *fakeFactory
 	hook *fakeHook
+	perm *fakePerms
 	mux  *http.ServeMux
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	e := &env{t: t, st: newFakeStore(), snap: newFakeSnapshots(), auth: &fakeAuth{}, fac: &fakeFactory{sess: &fakeSession{}}, hook: &fakeHook{}}
+	e := &env{t: t, st: newFakeStore(), snap: newFakeSnapshots(), auth: &fakeAuth{}, fac: &fakeFactory{sess: &fakeSession{}}, hook: &fakeHook{},
+		perm: &fakePerms{denied: map[string]bool{}}}
 	e.tun = &fakeTunnels{st: e.st, online: map[string]bool{}}
 	p := NewPortal(Deps{
-		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook,
+		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm,
 		Identity: func(r *http.Request) (string, string, bool) {
 			u := r.Header.Get("X-Test-User")
 			if u == "" {

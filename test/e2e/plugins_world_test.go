@@ -114,7 +114,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 	}
 	fedportal.NewPortal(fedportal.Deps{
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
-		ClientFactory: factory, Hook: serverChangedHook{w: w, log: log},
+		ClientFactory: factory, Hook: serverChangedHook{w: w, log: log}, Permissions: fed.Permissions,
 		Identity: identityFn, Log: log, BaseURL: baseURL,
 	}).Mount(p.MountUser)
 	as := fedadmin.NewStore(w.st)
@@ -122,6 +122,30 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 		Store: as, Roles: as, Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels, ClientFactory: factory,
 		Hook: fed.Manager, AllowList: fed.AllowList, Identity: identityFn, Audit: w.rec, Log: log,
 	}).Mount(p.MountAdmin)
+}
+
+// roleServerBuilders may add MCP servers (and nothing else).
+const roleServerBuilders = "server_builders"
+
+// grantAddServers gives u, besides their roles, one an admin marked "May
+// add MCP servers" (the admin path: the policy service saves the role,
+// the bypass scope assigns it).
+func (w *world) grantAddServers(u user) {
+	w.t.Helper()
+	ctx := w.t.Context()
+	if err := w.policy.SaveRole(ctx, w.admin.id, policy.Role{Name: roleServerBuilders, Description: "May add MCP servers", MayAddServers: true}); err != nil {
+		w.t.Fatalf("SaveRole %s: %v", roleServerBuilders, err)
+	}
+	err := w.st.WithJobs(ctx, func(tx store.Tx) error {
+		r, err := store.FindRoleByName(ctx, tx, roleServerBuilders)
+		if err != nil {
+			return err
+		}
+		return store.AssignRoleIfMissing(ctx, tx, u.id, r.ID, nil)
+	})
+	if err != nil {
+		w.t.Fatalf("assign %s: %v", roleServerBuilders, err)
+	}
 }
 
 // serverChangedHook is cmd/gateway's adapter of the Manager to the

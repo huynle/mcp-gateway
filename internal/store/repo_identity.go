@@ -90,10 +90,10 @@ type roleRepo struct{ q Querier }
 
 func (r roleRepo) Create(ctx context.Context, role *Role) error {
 	err := r.q.QueryRow(ctx, `
-		INSERT INTO roles (name, description, definition, is_default)
-		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb), $4)
+		INSERT INTO roles (name, description, definition, is_default, may_add_servers)
+		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb), $4, $5)
 		RETURNING id, definition, created_at, updated_at`,
-		role.Name, role.Description, role.Definition, role.IsDefault,
+		role.Name, role.Description, role.Definition, role.IsDefault, role.MayAddServers,
 	).Scan(&role.ID, &role.Definition, &role.CreatedAt, &role.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create role: %w", err)
@@ -104,9 +104,9 @@ func (r roleRepo) Create(ctx context.Context, role *Role) error {
 func (r roleRepo) Get(ctx context.Context, id string) (*Role, error) {
 	var role Role
 	err := r.q.QueryRow(ctx, `
-		SELECT id, name, description, definition, is_default, created_at, updated_at
+		SELECT id, name, description, definition, is_default, may_add_servers, created_at, updated_at
 		FROM roles WHERE id = $1`, id,
-	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.CreatedAt, &role.UpdatedAt)
+	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.MayAddServers, &role.CreatedAt, &role.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/netguard"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -44,6 +45,9 @@ type WireOptions struct {
 	// ConnectFinish renders the end of the upstream OAuth connect flow
 	// (auth.Options.Finish); nil keeps the auth package's default.
 	ConnectFinish func(w http.ResponseWriter, r *http.Request, serverID string, err error)
+	// Permissions gates Manager.CreateServer; nil uses
+	// permissions.NewPostgres over Store.
+	Permissions AddServerPermission
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -59,6 +63,10 @@ type Federation struct {
 	// AllowList is the store-backed allow list (nil when overridden);
 	// admin pages call Invalidate after editing netguard_allow_hosts.
 	AllowList *netguard.CachedAllowList
+	// Permissions is the add-server permission check the Manager uses
+	// (WireOptions.Permissions or permissions.NewPostgres); the servers
+	// portal gates Add server on it too.
+	Permissions AddServerPermission
 }
 
 // Wire builds the federation. Nothing is loaded yet: call Start (or
@@ -103,9 +111,14 @@ func Wire(o WireOptions) (*Federation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("federation: tunnel: %w", err)
 	}
+	perms := o.Permissions
+	if perms == nil {
+		perms = permissions.NewPostgres(o.Store, permissions.Options{Log: o.Log})
+	}
+	f.Permissions = perms
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: NewPostgresStore(o.Store, o.Keys), Snapshots: f.Snapshots,
-		Credentials: f.Auth, Tunnels: f.Tunnels, HTTPClient: f.Guard.Client(),
+		Credentials: f.Auth, Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
 		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, OnChange: o.OnChange, Log: o.Log,
 	})
 	if err != nil {

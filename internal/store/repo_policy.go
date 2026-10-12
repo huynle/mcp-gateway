@@ -62,15 +62,17 @@ func ListUserRestrictions(ctx context.Context, q Querier) ([]UserRestriction, er
 	return out, rows.Err()
 }
 
-// UpsertRole creates the role called name or replaces its description and
-// definition.
-func UpsertRole(ctx context.Context, q Querier, name, description string, definition json.RawMessage) error {
+// UpsertRole creates the role called name or replaces its description,
+// definition and may-add-servers flag. Admin path only: gateway_app has no
+// write privilege on roles (schema 16).
+func UpsertRole(ctx context.Context, q Querier, name, description string, definition json.RawMessage, mayAddServers bool) error {
 	if _, err := q.Exec(ctx, `
-		INSERT INTO roles (name, description, definition)
-		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb))
+		INSERT INTO roles (name, description, definition, may_add_servers)
+		VALUES ($1, $2, coalesce($3::jsonb, '{}'::jsonb), $4)
 		ON CONFLICT (name) DO UPDATE
-		SET description = excluded.description, definition = excluded.definition, updated_at = now()`,
-		name, description, definition); err != nil {
+		SET description = excluded.description, definition = excluded.definition,
+		    may_add_servers = excluded.may_add_servers, updated_at = now()`,
+		name, description, definition, mayAddServers); err != nil {
 		return fmt.Errorf("store: upsert role: %w", err)
 	}
 	return nil
@@ -124,9 +126,9 @@ func SetDefaultRole(ctx context.Context, q Querier, name string) error {
 func FindDefaultRole(ctx context.Context, q Querier) (*Role, error) {
 	var role Role
 	err := q.QueryRow(ctx, `
-		SELECT id, name, description, definition, is_default, created_at, updated_at
+		SELECT id, name, description, definition, is_default, may_add_servers, created_at, updated_at
 		FROM roles WHERE is_default`,
-	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.CreatedAt, &role.UpdatedAt)
+	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.MayAddServers, &role.CreatedAt, &role.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

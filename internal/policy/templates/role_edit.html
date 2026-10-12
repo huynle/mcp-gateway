@@ -14,6 +14,8 @@
     <label>Description
       <input type="text" name="description" value="{{.Role.Description}}" maxlength="200">
     </label>
+    <label class="check"><input type="checkbox" name="may_add_servers" value="on"{{if .Role.MayAddServers}} checked{{end}}> May add MCP servers</label>
+    <span class="muted">Holders may add their own MCP servers on the Servers page and, when they switch it on in My account, through the gateway.* tools. Admins always may. It grants no tools; servers start private.</span>
   </div>
 
   <h2>Tools</h2>

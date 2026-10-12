@@ -53,6 +53,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -411,6 +412,8 @@ func newWorld(t *testing.T, opts options) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// My account: "Gateway management tools", as cmd/gateway wires it.
+	p.SetGatewayTools(permissions.NewPostgres(w.st, permissions.Options{Audit: w.rec, Log: log}))
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {

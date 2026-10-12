@@ -52,7 +52,34 @@ func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts o
 	}
 	fed.Start(w.t.Context())
 	w.fed = fed
+	// Adding MCP servers needs permission (decision bnneszc1): the
+	// cross-user cases need both alice and bob able to add servers.
+	w.grantAddServers(w.alice)
+	w.grantAddServers(w.bob)
 	return fed.Manager.Decider(w.policy), fed.Manager.Accounts(w.conn)
+}
+
+// roleServerBuilders may add MCP servers (and nothing else).
+const roleServerBuilders = "server_builders"
+
+// grantAddServers gives u, besides their roles, one an admin marked "May
+// add MCP servers" (policy service saves it, the bypass scope assigns it).
+func (w *world) grantAddServers(u user) {
+	w.t.Helper()
+	ctx := w.t.Context()
+	if err := w.policy.SaveRole(ctx, w.admin.id, policy.Role{Name: roleServerBuilders, Description: "May add MCP servers", MayAddServers: true}); err != nil {
+		w.t.Fatalf("SaveRole %s: %v", roleServerBuilders, err)
+	}
+	err := w.st.WithJobs(ctx, func(tx store.Tx) error {
+		r, err := store.FindRoleByName(ctx, tx, roleServerBuilders)
+		if err != nil {
+			return err
+		}
+		return store.AssignRoleIfMissing(ctx, tx, u.id, r.ID, nil)
+	})
+	if err != nil {
+		w.t.Fatalf("assign %s: %v", roleServerBuilders, err)
+	}
 }
 
 // mountFederationPages mounts the upstream OAuth connect pages, the
@@ -81,7 +108,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 	fedportal.NewPortal(fedportal.Deps{
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 		ClientFactory: factory, Hook: hookFunc(func(ctx context.Context, id string) { _ = fed.Manager.ServerChanged(ctx, id) }),
-		Identity: identityFn, Log: log, BaseURL: baseURL,
+		Permissions: fed.Permissions, Identity: identityFn, Log: log, BaseURL: baseURL,
 	}).Mount(p.MountUser)
 	as := fedadmin.NewStore(w.st)
 	fedadmin.NewAdmin(fedadmin.Deps{

@@ -123,7 +123,7 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 		}
 		fedportal.NewPortal(fedportal.Deps{
 			Store: fedportal.NewStore(st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
-			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log},
+			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log}, Permissions: fed.Permissions,
 			Identity: identityFn, Log: log, BaseURL: baseURL,
 		}).Mount(mountUser)
 	}

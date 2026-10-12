@@ -39,6 +39,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
@@ -156,7 +157,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, rec))
+		// Who may add MCP servers, and each user's "Gateway management
+		// tools" setting (internal/permissions; decision bnneszc1).
+		perms := permissions.NewPostgres(st, permissions.Options{Audit: rec, Log: log})
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, perms, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
@@ -259,7 +263,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -273,6 +277,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	p, err := portal.New(svc, log)
 	if err != nil {
 		return nil, fmt.Errorf("portal: %w", err)
+	}
+	if gatewayTools != nil {
+		p.SetGatewayTools(gatewayTools) // My account: "Gateway management tools"
 	}
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())

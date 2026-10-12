@@ -2,7 +2,7 @@
 
 The admins' pages for **user-added MCP servers** ("plugins"): every server with its owner, audience, credentials and review state; publishing to roles and back to private; shared credentials and static OAuth clients (write-only); disable, enable, delete; refresh and admin review of snapshots; every tunnel with revoke; the netguard SSRF allow-list. The users' pages are in [plugins-portal.md](plugins-portal.md).
 
-Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (everyone may add; servers start private; frozen snapshots), `17iv8p3b` (owner writes; admin-only publish and published review; admin data access through `WithJobs`), `d6sitdqi` (snapshot review), `mrvsu07m` (connector, owner layer), `ocyf34pb` (servers portal); task `1d9i8b07`.
+Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (servers start private; frozen snapshots), `bnneszc1` (adding servers needs a role with "May add MCP servers"), `17iv8p3b` (owner writes; admin-only publish and published review; admin data access through `WithJobs`), `d6sitdqi` (snapshot review), `mrvsu07m` (connector, owner layer), `ocyf34pb` (servers portal); task `1d9i8b07`.
 
 ## Pages
 
@@ -28,9 +28,17 @@ Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (everyone may add; servers s
 
 Every route is mounted with `portal.MountAdmin` (anonymous users are sent to sign in) and checks again itself: a caller who is not a signed-in admin gets the **404 page**, before any CSRF check, so the routes are not revealed. POSTs need the CSRF token (`_csrf` field or `X-CSRF-Token`, else 403). Every response is `Cache-Control: no-store`. A malformed or unknown server, tunnel or allow-list ID is the 404 page. Upstream text on the review page goes through the snapshot `Display*` helpers before `html/template` escapes it. The nav gains **Servers** in the admin links.
 
+## Who may add servers
+
+Users add servers only when they are an **admin** or hold a role with **May add MCP servers** (decision `bnneszc1`, schema 16, task `ds5tjou2`). Admins set it per role in the role editor (`/admin/roles/{name}` and `/admin/roles/new`: the checkbox under the description; the role list shows a "may add servers" pill). It is stored in `roles.may_add_servers` with the role and audited with the save (`role_saved` event, `ResourceIdentity["may_add_servers"] = "true" | "false"`). It grants no tools and is not part of the compiled Cedar policy.
+
+New roles start without it, and existing roles were migrated without it: after upgrading to schema 16, **members who are not admins can no longer add servers** until an admin ticks the box on one of their roles (or gives them a role that has it). Servers they already own keep working. The same permission lets a user switch on **Gateway management tools** in My account (the `gateway.*` MCP tools); see [plugins-portal.md](plugins-portal.md#who-may-add-servers).
+
+Schema 16 also tightens privileges: the request path (`gateway_app`) can no longer write `roles` or `role_assignments` (only the admin path, through `gateway_jobs`, can), and may update only the `gateway_tools_enabled` column of the signed-in user's own `users` row.
+
 ## SSRF allow-list warning
 
-netguard refuses to connect user-added servers (and their OAuth endpoints) to loopback, private, link-local, CGNAT and cloud-metadata addresses. **Every allow-list entry lifts that protection for the host or network, for every user**: anyone who may add a server (everyone, decision `yhd5kcaz`) can then make the gateway reach it. Add only what must be reachable, as narrowly as possible (one host rather than a network, a `/32` rather than a `/16`), and say why in the note. The page shows this warning above the list.
+netguard refuses to connect user-added servers (and their OAuth endpoints) to loopback, private, link-local, CGNAT and cloud-metadata addresses. **Every allow-list entry lifts that protection for the host or network, for every user**: anyone who may add a server (admins and holders of a role with "May add MCP servers", decision `bnneszc1`) can then make the gateway reach it. Add only what must be reachable, as narrowly as possible (one host rather than a network, a `/32` rather than a `/16`), and say why in the note. The page shows this warning above the list.
 
 Changes apply at once on the replica that served the request (`Invalidate`, below) and within `netguard.DefaultAllowListTTL` (30 s) on the others.
 

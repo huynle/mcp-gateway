@@ -15,6 +15,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
@@ -64,6 +65,12 @@ type Tunnels interface {
 	HTTPClient(base *http.Client) *http.Client
 }
 
+// AddServerPermission says whether a user may add MCP servers
+// (*permissions.Service: admin, or a role with "May add MCP servers").
+type AddServerPermission interface {
+	CanAddServers(ctx context.Context, userID string) bool
+}
+
 // Defaults.
 const (
 	// DefaultVisibilityTTL bounds how long a user's visible servers are
@@ -82,6 +89,8 @@ type Options struct {
 	Store       Store
 	Snapshots   Snapshots
 	Credentials Credentials
+	// Permissions gates CreateServer (decision bnneszc1).
+	Permissions AddServerPermission
 	// Tunnels serves tunnel:// servers; nil refuses them
 	// (tunnel_unavailable).
 	Tunnels Tunnels
@@ -148,6 +157,8 @@ func New(o Options) (*Manager, error) {
 		return nil, errors.New("federation: snapshots are required")
 	case o.Credentials == nil:
 		return nil, errors.New("federation: credentials are required")
+	case o.Permissions == nil:
+		return nil, errors.New("federation: the add-server permission check is required")
 	case o.HTTPClient == nil:
 		return nil, errors.New("federation: the netguard HTTP client is required")
 	}
@@ -263,10 +274,16 @@ func (m *Manager) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// CreateServer validates the name (ValidateServerName: reserved built-in
-// names are refused), stores the private server for s.OwnerUserID and
-// reloads. The servers portal creates servers through it.
+// CreateServer checks that s.OwnerUserID may add MCP servers
+// (permissions.ErrNotPermitted otherwise; defense in depth behind the
+// portal, decision bnneszc1), validates the name (ValidateServerName:
+// reserved built-in names are refused), stores the private server for
+// s.OwnerUserID and reloads. The gateway.* tools create servers through it.
 func (m *Manager) CreateServer(ctx context.Context, s *store.MCPServer) error {
+	if !m.o.Permissions.CanAddServers(ctx, s.OwnerUserID) {
+		m.log.Info("server create refused: not permitted", "event", "federation.create_refused", "user_id", s.OwnerUserID)
+		return permissions.ErrNotPermitted
+	}
 	if err := ValidateServerName(s.Name); err != nil {
 		return err
 	}

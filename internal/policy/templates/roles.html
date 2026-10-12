@@ -10,7 +10,7 @@
   <tbody>
   {{range .Roles}}
     <tr>
-      <td><a href="/admin/roles/{{.Name}}">{{.Name}}</a> {{if .IsDefault}}<span class="pill default">default</span>{{end}}</td>
+      <td><a href="/admin/roles/{{.Name}}">{{.Name}}</a> {{if .IsDefault}}<span class="pill default">default</span>{{end}} {{if .MayAddServers}}<span class="pill">may add servers</span>{{end}}</td>
       <td>{{.Description}}</td>
       <td>{{.Rules}}</td>
       <td>

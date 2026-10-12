@@ -8,4 +8,19 @@
   <dt>Session</dt><dd><code>{{.Principal.SessionID}}</code></dd>
 </dl>
 <p><a href="/tokens">Harness tokens</a> let OpenCode, Claude Code and other harnesses call the gateway as you. App connections and approvals appear here as those features land.</p>
+{{with .Data}}{{with .GatewayTools}}
+<section class="card setting" id="gateway-tools">
+  <h2>Gateway management tools</h2>
+  <p id="gateway-tools-help">Lets your MCP apps (for example OpenCode) list and add MCP servers for you through the <code>gateway.*</code> tools. Secrets, signing in to a server and approving its tools still happen here in the portal: the tools answer with a link.</p>
+  <form method="post" action="/account/gateway-tools" hx-post="/account/gateway-tools" hx-trigger="change" hx-target="#gateway-tools" hx-select="#gateway-tools" hx-swap="outerHTML">
+    <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+    <label class="switch-row">
+      <input type="checkbox" class="switch" role="switch" name="enabled" value="on" aria-describedby="gateway-tools-help"{{if .Enabled}} checked{{end}}{{if not .Permitted}} disabled{{end}}>
+      <span>Enable gateway management tools</span>
+    </label>
+    {{if .Permitted}}<p><button class="btn small" type="submit">Save</button></p>
+    {{else}}<p class="muted">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers.</p>{{end}}
+  </form>
+</section>
+{{end}}{{end}}
 {{end}}

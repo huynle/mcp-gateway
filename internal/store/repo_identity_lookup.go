@@ -54,9 +54,9 @@ func RecordSignIn(ctx context.Context, q Querier, userID, identityID, displayNam
 func FindRoleByName(ctx context.Context, q Querier, name string) (*Role, error) {
 	var role Role
 	err := q.QueryRow(ctx, `
-		SELECT id, name, description, definition, is_default, created_at, updated_at
+		SELECT id, name, description, definition, is_default, may_add_servers, created_at, updated_at
 		FROM roles WHERE name = $1`, name,
-	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.CreatedAt, &role.UpdatedAt)
+	).Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.MayAddServers, &role.CreatedAt, &role.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -78,14 +78,14 @@ func EnsureRole(ctx context.Context, q Querier, name, description string) (*Role
 // ListRoles returns every role ordered by name.
 func ListRoles(ctx context.Context, q Querier) ([]Role, error) {
 	return scanRoles(q.Query(ctx, `
-		SELECT id, name, description, definition, is_default, created_at, updated_at
+		SELECT id, name, description, definition, is_default, may_add_servers, created_at, updated_at
 		FROM roles ORDER BY name`))
 }
 
 // RolesForUser returns the roles assigned to userID ordered by name.
 func RolesForUser(ctx context.Context, q Querier, userID string) ([]Role, error) {
 	return scanRoles(q.Query(ctx, `
-		SELECT r.id, r.name, r.description, r.definition, r.is_default, r.created_at, r.updated_at
+		SELECT r.id, r.name, r.description, r.definition, r.is_default, r.may_add_servers, r.created_at, r.updated_at
 		FROM role_assignments a JOIN roles r ON r.id = a.role_id
 		WHERE a.user_id = $1 ORDER BY r.name`, userID))
 }
@@ -98,7 +98,7 @@ func scanRoles(rows pgx.Rows, err error) ([]Role, error) {
 	var out []Role
 	for rows.Next() {
 		var role Role
-		if err := rows.Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.CreatedAt, &role.UpdatedAt); err != nil {
+		if err := rows.Scan(&role.ID, &role.Name, &role.Description, &role.Definition, &role.IsDefault, &role.MayAddServers, &role.CreatedAt, &role.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, role)

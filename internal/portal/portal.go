@@ -15,10 +15,11 @@ import (
 
 // Portal serves the web UI and the sign-in routes.
 type Portal struct {
-	svc    *identity.Service
-	log    *slog.Logger
-	tpl    *templates
-	mounts []mount
+	svc          *identity.Service
+	log          *slog.Logger
+	tpl          *templates
+	mounts       []mount
+	gatewayTools GatewayTools // nil: no "Gateway management tools" section
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -44,6 +45,7 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /                         redirect to /account or /signin
 //	GET  /signin                   provider buttons
 //	GET  /account                  my account
+//	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
 //	GET  /admin/users              admin: list users
 //	POST /admin/users/{id}/disable admin
 //	POST /admin/users/{id}/enable  admin
@@ -70,6 +72,9 @@ func (p *Portal) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", p.home)
 	mux.HandleFunc("GET /signin", p.signIn)
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))
+	if p.gatewayTools != nil {
+		mux.Handle("POST /account/gateway-tools", p.requireUser(p.csrf(http.HandlerFunc(p.setGatewayTools))))
+	}
 	// Role gating runs before the CSRF check so a non-admin's POST is the
 	// same 404 as an unknown page rather than a 403 that reveals the route.
 	mux.Handle("GET /admin/users", p.requireAdmin(http.HandlerFunc(p.adminUsers)))
@@ -222,10 +227,6 @@ func (p *Portal) signIn(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	p.render(w, r, http.StatusOK, "signin.html", data)
-}
-
-func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
-	p.render(w, r, http.StatusOK, "account.html", nil)
 }
 
 type adminUsersData struct {

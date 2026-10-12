@@ -30,6 +30,7 @@ func (p postgresStore) Load(ctx context.Context) (Snapshot, error) {
 			if err != nil {
 				return err
 			}
+			role.MayAddServers = r.MayAddServers
 			snap.Roles = append(snap.Roles, StoredRole{Role: role, IsDefault: r.IsDefault})
 		}
 		assignments, err := store.ListRoleAssignments(ctx, tx)
@@ -73,7 +74,7 @@ func (p postgresStore) SaveRole(ctx context.Context, r Role) error {
 		return err
 	}
 	return p.st.WithJobs(ctx, func(tx store.Tx) error {
-		return store.UpsertRole(ctx, tx, r.Name, r.Description, def)
+		return store.UpsertRole(ctx, tx, r.Name, r.Description, def, r.MayAddServers)
 	})
 }
 
