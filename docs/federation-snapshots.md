@@ -23,7 +23,7 @@ The **review** (`review` jsonb column) is a map from tool name to:
 | First snapshot approved with no decisions | every tool listed, **none enabled** |
 | `ReviewDecisions.Tools[name].Enabled` | sets that tool's state, recorded with who/when |
 | `ReviewDecisions.Tools[name].Kind` | `read`/`write` override (who/when recorded); `""` clears it |
-| `ReviewDecisions.EnableReads` (explicit opt-in, e.g. an "enable all read tools" button) | enables read tools **no reviewer has decided on yet**. Tools a reviewer disabled stay disabled, and writes are never bulk-enabled |
+| `ReviewDecisions.EnableReads` (explicit opt-in, e.g. an "enable all read tools" button) | enables read tools **no reviewer has decided on yet**. Tools a reviewer disabled stay disabled, and `EnableReads` never enables writes. (The review pages' "Approve with all tools enabled" sends an explicit `Enabled: true` per tool instead, writes included: decision `ome8yn5a`.) |
 | Refresh: unchanged tool | keeps its review (enabled state, override, reviewer) |
 | Refresh: changed tool (title, description, input/output schema, annotations) | **disabled** until re-enabled; a `write` override is kept, a `read` override is dropped |
 | Refresh: added tool | disabled, kind from its hint |
