@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
@@ -84,6 +85,26 @@ func federationAccounts(fed *connector.Federation, base connectors.AccountSource
 		return base
 	}
 	return fed.Manager.Accounts(base)
+}
+
+// withFederationPrecheck inserts the federation's pre-policy check
+// (mcp.StagePrecheck, Brain task 8ky7l4e6) before the policy stage, or
+// before ratelimit when there is no policy stage: a federated call the
+// approved snapshot refuses (arguments outside the pinned schema, tool
+// disabled or not reviewed) is answered before any approval is asked for.
+// The connector checks again at dispatch.
+func withFederationPrecheck(fed *connector.Federation, log *slog.Logger) mcpExtra {
+	return func(p *mcp.Pipeline, _ mcp.ConfirmHandler) error {
+		if fed == nil {
+			return nil
+		}
+		stage := mcp.PrecheckStage(fed.Manager.Precheck(), log)
+		anchor := mcp.StagePolicy
+		if !slices.Contains(p.Names(), anchor) {
+			anchor = mcp.StageRateLimit
+		}
+		return p.Insert(mcp.Before, anchor, stage)
+	}
 }
 
 // federationDecider adds server visibility (owner of a private server, or

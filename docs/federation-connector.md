@@ -3,8 +3,8 @@
 User-added MCP servers' tools in the gateway pipeline: **visible per user, policed, approved, ledgered and audited** like built-in tools. This package ties together [netguard](netguard.md), the [federation client](federation-client.md), [upstream auth](federation-auth.md), [snapshots](federation-snapshots.md) and the [tunnel](tunnel.md), and `cmd/gateway/federation.go` wires it. Design: Brain plan `0omkv2e1` (step 4), decisions `yhd5kcaz`, `17iv8p3b`, `mrvsu07m`; task `fybs78bs`.
 
 ```
-harness ─/mcp─▶ authenticate ▸ audit ▸ resolve ▸ strip ▸ account ▸ scope ▸ policy ▸ ledger ▸ ratelimit ▸ dispatch ─▶ Manager.call
-                              (Decider wrapper: server visibility)   (anchor account)  (owner layer / roles; confirm → approval)
+harness ─/mcp─▶ authenticate ▸ audit ▸ resolve ▸ strip ▸ account ▸ scope ▸ precheck ▸ policy ▸ ledger ▸ ratelimit ▸ dispatch ─▶ Manager.call
+                              (Decider wrapper: server visibility)   (anchor account)  (Manager.Precheck: review)  (owner layer / roles; confirm → approval)
 Manager.call ─▶ snapshot.Allowed (as caller) ▸ auth.ForUser ▸ netguard client | tunnel transport ▸ client Connect + CallTool (auth.Reauth) ─▶ upstream
 ```
 
@@ -64,6 +64,12 @@ Without an account the account stage answers `no_account` (connect first). The `
 
 ## Calls and errors
 
+### Pre-policy check (`precheck` stage)
+
+`Manager.Precheck()` is an `mcp.Prechecker`; `cmd/gateway` inserts `mcp.PrecheckStage` right before the policy stage (`withFederationPrecheck`; before ratelimit when there is no policy stage). For a federated tool it runs the review part of the call path (`Manager.check`, shared with the handler): the server is still active, and `snapshot.Allowed` as the caller accepts the tool (in the approved snapshot, enabled, arguments valid against the pinned schema, not re-reviewed from read to write). So a call that can never run (schema-invalid, disabled or unreviewed) is refused **before policy**: no approval is created, no approval notification (Slack DM) goes out, no ledger operation is recorded (Brain task `8ky7l4e6`). Credentials are not checked there (the handler's `auth_required` answer carries the connect link); built-in tools pass through. The refusal is audited as a **denial** with its class (`args_invalid`, `tool_disabled`, `tool_not_reviewed`, `tool_changed`), never with argument values. The handler keeps its own check (defence in depth): a review that changes between an approval and its retry still refuses the call before the upstream.
+
+### Handler
+
 The handler: server still active → `snapshot.Allowed` as the caller (in the approved snapshot, enabled, args valid against the pinned schema) → a tool listed as a read that the review now marks a write is refused and the registry reloaded → `auth.ForUser` (per_user: the caller's connection; shared: the server's secret; none) → endpoint (netguard's client, or for `tunnel://` URLs `tunnel.Authorize(server owner, tunnel)` + the tunnel transport; `header_config.static` as headers) → `Connect` + `CallTool` under `auth.Reauth` → the upstream `CallToolResult` passed through whole (content, structuredContent, isError; bounded by the client).
 
 **Gateway credentials are never forwarded**: the client builds every upstream request from the endpoint and the Authorizer (tests check with a capturing upstream and a tunnel-side capture).
@@ -71,7 +77,7 @@ The handler: server still active → `snapshot.Allowed` as the caller (in the ap
 | Class | Kind | Meaning |
 |---|---|---|
 | `tool_not_found` | JSON-RPC (same as unknown tool) | server gone, disabled, or not visible to the caller |
-| `args_invalid` | JSON-RPC `-32602` | arguments do not match the pinned schema (never echoed) |
+| `args_invalid` | JSON-RPC `-32602`, audited as a denial | arguments do not match the pinned schema (never echoed); refused by the precheck before any approval, and again at dispatch |
 | `tool_disabled`, `tool_not_reviewed`, `tool_changed` | JSON-RPC `-32030`, audited as denials | the review does not allow the call (`tool_changed`: re-reviewed as a write since listed; list again) |
 | `auth_required`, `needs_reconnect` | JSON-RPC `-32031` | connect / reconnect on the portal: the message carries `<BASE_URL>/servers/<id>` |
 | `server_not_configured`, `shared_credential_rejected` | JSON-RPC `-32031` | ask the server's owner |
@@ -120,7 +126,7 @@ Only with a database **and** a key provider (like app connections):
 fed, _ := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log) // connector.Wire + Start
 gw, _ := newGatewayTools(fed, st, registry, perms, cfg.BaseURL, log) // gateway.* tools (gateway-management.md)
 accounts = gw.Accounts(federationAccounts(fed, accounts)) // anchors for server apps and the gateway app
-newMCPWithResources(..., gw.Decider(federationDecider(fed, policySvc)), ..., federationResources(fed), ...) // gate + server visibility for list/resolve/policy; resources/prompts
+newMCPWithResources(..., gw.Decider(federationDecider(fed, policySvc)), ..., federationResources(fed), withFederationPrecheck(fed, log), withLedgerStage(ledgerSvc)) // gate + server visibility for list/resolve/policy; resources/prompts; precheck before policy
 ```
 
 | Route | Where | Handler |
@@ -136,6 +142,8 @@ netguard uses `netguard.CachedAllowList` over `netguard_allow_hosts` (30 s TTL, 
 
 ## Tests
 
+- `go test -race ./internal/federation/connector/ ./internal/mcp/`: the precheck (`TestManagerPrecheck`: schema-invalid, disabled, unreviewed, changed, hidden and disabled-server calls refused without the upstream; `TestManagerDispatchStillChecksAfterPrecheck`; `TestPrecheckRunsBeforePolicyAndConfirm`: no confirm hook for a refused call, audited deny/denied/args_invalid).
+- `make test-security`: `TestSecurityFedSnapshotBypass` (schema-invalid writes: `-32602`, no approval row, no ledger operation, no approval notification, five audited `args_invalid` denials; a valid write asks for an approval; a review change after the approval refuses the retry before the upstream).
 - `go test -race ./internal/federation/connector/`: names, sanitizing, tool building, load/reload, visibility and decider, accounts, the call path against an in-process go-sdk upstream through the real netguard (header capture, pinned-schema refusal, disabled/changed tools, credential errors, upstream isError, slow write = unknown outcome, unreachable, tunnel transport, offline and forbidden tunnels), reserved names.
 - `make test-integration`: `TestIntegrationPostgresStore` (anchors under RLS, concurrent first use, allow-list loader), `TestIntegrationFederationTunnelThroughMux` (cmd/gateway: tunnel agent through the real mux, a tunnel-backed server reviewed, listed and called through `/mcp`, no gateway credential at the local server, CIMD route).
 - `go test -race ./internal/federation/connector/ ./internal/mcp/`: gateway URI and prompt-name round trips (queries, fragments, odd characters, template expansion), template matching, audit identity; resource/prompt lists per visibility and token scope, live reads with the caller's credential, refusals of hidden / unreviewed / non-matching URIs without reaching the upstream, class-level errors; the `/mcp` methods (capabilities, cursor paging, not-found shape, upstream code, audit rows, rate limit).

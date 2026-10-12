@@ -217,6 +217,11 @@ func (f *fakeSnapshots) Refresh(ctx context.Context, a snapshot.Actor, serverID 
 	}
 	rec := &snapshot.Record{ServerID: serverID, Version: v, Status: store.MCPSnapshotPending, Snapshot: f.next[serverID]}
 	f.latest[serverID] = rec
+	if rec.Snapshot != nil && len(rec.Snapshot.Skipped) > 0 {
+		out := *rec
+		out.Skipped = rec.Snapshot.Skipped
+		return &out, snapshot.Compare(nil, rec.Snapshot), nil
+	}
 	var from *snapshot.Snapshot
 	if c := f.current[serverID]; c != nil {
 		from = c.Snapshot

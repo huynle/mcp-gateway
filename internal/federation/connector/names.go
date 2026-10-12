@@ -114,8 +114,15 @@ const maxResultBytes = 4 << 20
 // enabled tool, or whose schema is not a JSON object schema, are left out
 // and returned in skipped (upstream names, sorted).
 func buildTools(server *store.MCPServer, rec *snapshot.Record, handler func(upstream string, kind connectors.Kind) connectors.Handler) (tools []connectors.Tool, skipped []string) {
+	tools, skipped, _ = buildToolsNamed(server, rec, handler)
+	return tools, skipped
+}
+
+// buildToolsNamed is buildTools that also returns each registered tool's
+// upstream name, keyed by its sanitized name (the precheck needs it).
+func buildToolsNamed(server *store.MCPServer, rec *snapshot.Record, handler func(upstream string, kind connectors.Kind) connectors.Handler) (tools []connectors.Tool, skipped []string, upstream map[string]string) {
 	if rec == nil || rec.Snapshot == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	type candidate struct {
 		up     snapshot.Tool
@@ -173,7 +180,11 @@ func buildTools(server *store.MCPServer, rec *snapshot.Record, handler func(upst
 		}
 		tools = append(tools, t)
 	}
-	return tools, skipped
+	upstream = make(map[string]string, len(kept))
+	for _, c := range kept {
+		upstream[keptNames[c.up.Name]] = c.up.Name
+	}
+	return tools, skipped, upstream
 }
 
 // objectSchema returns the pinned input schema when it is a JSON object
