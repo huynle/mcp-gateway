@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -13,6 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
+	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -91,21 +94,67 @@ func newPromptView(pr snapshot.Prompt) promptView {
 	return v
 }
 
+// permits reports whether the caller may use the per-server action op
+// (policy.ResourcesReadTool or policy.PromptsGetTool) on s: the policy's
+// answer (the owner layer, or a role grant; Brain task bdb5zcud), or,
+// without a policy, only for the owner. Errors fail closed.
+func (p *Portal) permits(ctx context.Context, c caller, s *store.MCPServer, op string) bool {
+	if p.d.Policy == nil {
+		return s.OwnerUserID == c.UserID
+	}
+	ok, err := p.d.Policy.Permits(ctx, policy.Input{UserID: c.UserID, Tool: policy.ServerAccessTool(s.Name, op)})
+	if err != nil {
+		p.log.Error("policy check failed", "event", "federation.policy_failed", "user_id", c.UserID, "server_id", s.ID,
+			"action", op, "error", observability.RedactError(err))
+		return false
+	}
+	return ok
+}
+
+// browsable returns the resources, templates and prompts of rec the
+// caller may see: enabled by the review and permitted by policy.
+func (p *Portal) browsable(ctx context.Context, c caller, s *store.MCPServer, rec *snapshot.Record) (res []snapshot.Resource, tpl []snapshot.ResourceTemplate, prm []snapshot.Prompt) {
+	if rec == nil || rec.Snapshot == nil {
+		return nil, nil, nil
+	}
+	if p.permits(ctx, c, s, policy.ResourcesReadTool) {
+		for _, r := range rec.Snapshot.Resources {
+			if rec.Content.ResourceEnabled(r.URI) {
+				res = append(res, r)
+			}
+		}
+		for _, t := range rec.Snapshot.ResourceTemplates {
+			if rec.Content.TemplateEnabled(t.URITemplate) {
+				tpl = append(tpl, t)
+			}
+		}
+	}
+	if p.permits(ctx, c, s, policy.PromptsGetTool) {
+		for _, pr := range rec.Snapshot.Prompts {
+			if rec.Content.PromptEnabled(pr.Name) {
+				prm = append(prm, pr)
+			}
+		}
+	}
+	return res, tpl, prm
+}
+
 func (p *Portal) browseData(ctx context.Context, c caller, s *store.MCPServer, rec *snapshot.Record) browseData {
 	d := browseData{Title: s.Name + ": resources and prompts", Caller: c, Server: p.view(ctx, c, s)}
 	if rec == nil || rec.Snapshot == nil {
 		return d
 	}
 	d.HasSnapshot, d.Version = true, rec.Version
-	for _, r := range rec.Snapshot.Resources {
+	resources, templates, prompts := p.browsable(ctx, c, s, rec)
+	for _, r := range resources {
 		d.Resources = append(d.Resources, resourceView{URI: snapshot.DisplayTitle(r.URI), RawURI: r.URI, Name: snapshot.DisplayName(r.Name),
 			Title: snapshot.DisplayTitle(r.Title), Description: snapshot.DisplayDescription(r.Description), MIMEType: snapshot.DisplayName(r.MIMEType)})
 	}
-	for _, t := range rec.Snapshot.ResourceTemplates {
+	for _, t := range templates {
 		d.Templates = append(d.Templates, templateView{URITemplate: snapshot.DisplayTitle(t.URITemplate), Name: snapshot.DisplayName(t.Name),
 			Title: snapshot.DisplayTitle(t.Title), Description: snapshot.DisplayDescription(t.Description), MIMEType: snapshot.DisplayName(t.MIMEType)})
 	}
-	for _, pr := range rec.Snapshot.Prompts {
+	for _, pr := range prompts {
 		d.Prompts = append(d.Prompts, newPromptView(pr))
 	}
 	return d
@@ -131,14 +180,8 @@ func (p *Portal) readResource(w http.ResponseWriter, r *http.Request, c caller, 
 	}
 	data := p.browseData(ctx, c, s, rec)
 	uri := r.PostForm.Get("uri")
-	listed := rec != nil && rec.Snapshot != nil && func() bool {
-		for _, res := range rec.Snapshot.Resources {
-			if res.URI == uri {
-				return true
-			}
-		}
-		return false
-	}()
+	resources, _, _ := p.browsable(ctx, c, s, rec)
+	listed := slices.ContainsFunc(resources, func(r snapshot.Resource) bool { return r.URI == uri })
 	if !listed {
 		data.Error = "That is not a resource of the reviewed snapshot."
 		p.render(w, r, http.StatusUnprocessableEntity, "resources.html", data)
@@ -236,11 +279,10 @@ func (p *Portal) prompt(w http.ResponseWriter, r *http.Request, c caller, s *sto
 	}
 	name := r.PathValue("name")
 	var pr *snapshot.Prompt
-	if rec != nil && rec.Snapshot != nil {
-		for i := range rec.Snapshot.Prompts {
-			if rec.Snapshot.Prompts[i].Name == name {
-				pr = &rec.Snapshot.Prompts[i]
-			}
+	_, _, prompts := p.browsable(ctx, c, s, rec)
+	for i := range prompts {
+		if prompts[i].Name == name {
+			pr = &prompts[i]
 		}
 	}
 	if pr == nil {

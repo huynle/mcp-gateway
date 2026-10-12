@@ -116,8 +116,10 @@ func withFederationRoutes(fed *connector.Federation) muxExtra {
 // withFederationPages mounts the upstream OAuth connect flow behind the
 // portal's signed-in check: GET /servers/{id}/connect starts it (302 to
 // the server's authorization server), GET /servers/oauth/callback
-// finishes it. The servers portal (its own package) links to them.
-func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string) portalExtra {
+// finishes it. The servers portal (its own package) links to them; its
+// resource and prompt pages ask pol (the policy service) for the
+// per-server actions.
+func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string, pol fedportal.ResourcePolicy) portalExtra {
 	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
 		if fed == nil {
 			return
@@ -144,7 +146,7 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 		fedportal.NewPortal(fedportal.Deps{
 			Store: fedportal.NewStore(st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log}, Permissions: fed.Permissions,
-			Identity: identityFn, Log: log, BaseURL: baseURL,
+			Policy: pol, Identity: identityFn, Log: log, BaseURL: baseURL,
 		}).Mount(mountUser)
 	}
 }
