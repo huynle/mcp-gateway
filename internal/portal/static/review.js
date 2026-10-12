@@ -1,7 +1,7 @@
 // Tool review pages (/servers/{id}/review, /admin/servers/{id}/review):
 // progressive enhancement of the server-rendered form. Without this file
-// the checkboxes, "Approve" and "Approve with all tools enabled" still
-// work; with it: Select all / none / read-only, group checkboxes, a live
+// the checkboxes (tools, resources, templates, prompts), "Approve" and
+// "Approve with all tools enabled" still work; with it: Select all / none / read-only, group checkboxes, a live
 // "N of M selected" count and a filter box. Loaded as a same-origin
 // script (CSP script-src 'self'); no inline handlers.
 (function () {
@@ -17,7 +17,9 @@
 
     each(form.querySelectorAll("[data-js]"), function (el) { el.hidden = false; });
 
-    function box(row) { return row.querySelector('input[name="enable"]'); }
+    // The row's own checkbox: name="enable" for tools, enable_resource /
+    // enable_template / enable_prompt for resources, templates, prompts.
+    function box(row) { return row.querySelector('.tool-pick input[type="checkbox"]'); }
     function visible(row) { return !row.hidden; }
 
     function update() {
@@ -46,6 +48,9 @@
         var mode = btn.getAttribute("data-select");
         each(rows, function (row) {
           if (!visible(row)) { return; }
+          // "Select read-only" picks among tools; it leaves resources,
+          // templates and prompts (data-item) as they are.
+          if (mode === "read" && row.hasAttribute("data-item")) { return; }
           box(row).checked = mode === "all" || (mode === "read" && row.getAttribute("data-kind") === "read");
         });
         update();
@@ -75,7 +80,7 @@
     });
 
     form.addEventListener("change", function (ev) {
-      if (ev.target && ev.target.name === "enable") { update(); }
+      if (ev.target && /^enable(_resource|_template|_prompt)?$/.test(ev.target.name)) { update(); }
     });
 
     if (filter) {

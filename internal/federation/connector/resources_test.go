@@ -71,7 +71,7 @@ func errClass(err error) string {
 
 func TestResourceProviderListsApprovedSnapshotForVisibleServersOnly(t *testing.T) {
 	f := newFixture(t)
-	rp := f.m.ResourceProvider()
+	rp := f.m.ResourceProvider(f.pol)
 	ctx := t.Context()
 
 	rs, err := rp.ListResources(ctx, principal(alice))
@@ -134,7 +134,7 @@ func TestResourceProviderSkipsUnsafePromptNames(t *testing.T) {
 	if err := f.m.Load(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	ps, err := f.m.ResourceProvider().ListPrompts(t.Context(), principal(alice))
+	ps, err := f.m.ResourceProvider(f.pol).ListPrompts(t.Context(), principal(alice))
 	if err != nil || len(ps) != 1 || ps[0].Name != "notes.summarize" {
 		t.Fatalf("prompts = %+v, %v", ps, err)
 	}
@@ -142,7 +142,7 @@ func TestResourceProviderSkipsUnsafePromptNames(t *testing.T) {
 
 func TestResourceProviderReadsLiveWithTheCallersCredential(t *testing.T) {
 	f := newFixture(t)
-	rp := f.m.ResourceProvider()
+	rp := f.m.ResourceProvider(f.pol)
 	a := &admits{}
 	f.up.reset()
 	res, err := rp.ReadResource(t.Context(), principal(alice), "mcpgw://notes/notes://readme", a.hook())
@@ -186,7 +186,7 @@ func TestResourceProviderRefusesWhatIsNotVisibleOrApproved(t *testing.T) {
 		func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
 			return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, Text: "secret"}}}, nil
 		})
-	rp := f.m.ResourceProvider()
+	rp := f.m.ResourceProvider(f.pol)
 	ctx := t.Context()
 	for _, c := range []struct {
 		user, uri string
@@ -232,7 +232,7 @@ func TestResourceProviderAdmitRefusalStopsBeforeUpstream(t *testing.T) {
 	f := newFixture(t)
 	f.up.reset()
 	refuse := mcp.NewToolError(mcp.CodeRateLimited, "rate_limited", "slow down")
-	_, err := f.m.ResourceProvider().ReadResource(t.Context(), principal(alice), "mcpgw://notes/notes://readme",
+	_, err := f.m.ResourceProvider(f.pol).ReadResource(t.Context(), principal(alice), "mcpgw://notes/notes://readme",
 		func(context.Context, mcp.Access) error { return refuse })
 	if !errors.Is(err, refuse) {
 		t.Fatalf("err = %v, want the admit error as is", err)
@@ -244,7 +244,7 @@ func TestResourceProviderAdmitRefusalStopsBeforeUpstream(t *testing.T) {
 
 func TestResourceProviderUpstreamAndCredentialErrorsAreClassLevel(t *testing.T) {
 	f := newFixture(t)
-	rp := f.m.ResourceProvider()
+	rp := f.m.ResourceProvider(f.pol)
 	ctx := t.Context()
 	f.creds.errs[alice] = auth.ErrNeedsReconnect
 	_, err := rp.ReadResource(ctx, principal(alice), "mcpgw://notes/notes://readme", (&admits{}).hook())
@@ -272,7 +272,7 @@ func TestResourceProviderUpstreamAndCredentialErrorsAreClassLevel(t *testing.T) 
 
 func TestResourceProviderGetsApprovedPromptsWithArguments(t *testing.T) {
 	f := newFixture(t)
-	rp := f.m.ResourceProvider()
+	rp := f.m.ResourceProvider(f.pol)
 	a := &admits{}
 	res, err := rp.GetPrompt(t.Context(), principal(alice), "notes.summarize", map[string]string{"topic": "plans"}, a.hook())
 	if err != nil {
@@ -313,7 +313,7 @@ func TestResourceProviderUpstreamRefusalIsClassLevel(t *testing.T) {
 	if err := f.m.Load(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	_, err := f.m.ResourceProvider().ReadResource(t.Context(), principal(alice), "mcpgw://notes/notes://gone", (&admits{}).hook())
+	_, err := f.m.ResourceProvider(f.pol).ReadResource(t.Context(), principal(alice), "mcpgw://notes/notes://gone", (&admits{}).hook())
 	if errClass(err) != "upstream_refused" || err.Error() != "notes: the server refused the request" {
 		t.Errorf("err = %v (%s)", err, errClass(err))
 	}

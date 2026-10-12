@@ -394,7 +394,7 @@ func newWorld(t *testing.T, opts options) *world {
 	// limited like tool calls (cmd/gateway's newMCP does the same).
 	var resources mcp.ResourceProvider
 	if w.fed != nil {
-		resources = w.fed.Manager.ResourceProvider()
+		resources = w.fed.Manager.ResourceProvider(w.policy)
 	}
 	mcpHandler, err := mcp.Handler(mcp.Options{
 		Registry: reg, Pipeline: pipeline, Visibility: visibility, Authenticator: w.tokens,

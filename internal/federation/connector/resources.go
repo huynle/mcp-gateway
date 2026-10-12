@@ -16,15 +16,16 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
 
 // Tool-like access names (audit rows, the rate limiter, token
-// allow-lists): "<server>.resources/read", "<server>.prompts/get".
+// allow-lists, policy): "<server>.resources/read", "<server>.prompts/get".
 const (
-	opReadResource = "resources/read"
-	opGetPrompt    = "prompts/get"
+	opReadResource = policy.ResourcesReadTool
+	opGetPrompt    = policy.PromptsGetTool
 )
 
 // maxKeyLen bounds an upstream resource URI, template or prompt name the
@@ -35,22 +36,66 @@ const maxKeyLen = 4096
 // user-added MCP servers on the gateway's /mcp (mcp.Options.Resources).
 //
 // Lists are the union, over the servers the caller may use (the same
-// visibility as their tools: owner of a private server, or a role it is
-// published to; and a narrowed token must name the server), of each
-// server's approved snapshot as of the last load, never a live listing.
-// Resources keep their upstream URI behind the server's namespace
-// (GatewayResourceURI), prompts are "<server>.<prompt>"; titles and
-// descriptions carry "[<server>] " (provenance) and are cleaned like tool
-// descriptions.
+// visibility as their tools: owner of a server, or a role it is published
+// to; and a narrowed token must name the server), of each server's
+// approved snapshot as of the last load, never a live listing. Only items
+// the review enabled are listed (snapshot.ContentReview; a snapshot
+// approved before the toggles counts as all enabled), and only when pol
+// permits the per-server action: "<server>.resources/read" for resources
+// and templates, "<server>.prompts/get" for prompts (Brain task bdb5zcud;
+// the owner layer grants both, published roles need a role rule). A nil
+// pol permits nothing. Resources keep their upstream URI behind the
+// server's namespace (GatewayResourceURI), prompts are "<server>.<prompt>";
+// titles and descriptions carry "[<server>] " (provenance) and are cleaned
+// like tool descriptions.
 //
-// resources/read and prompts/get check again (server active, visible,
-// the URI listed in the approved snapshot or matching one of its
-// templates, the prompt in it) and then go upstream live with the
-// caller's credential, endpoint and tunnel exactly like a tool call. Policy
-// is server-level only for now: no per-resource or per-prompt rules.
-func (m *Manager) ResourceProvider() mcp.ResourceProvider { return resourceProvider{m: m} }
+// resources/read and prompts/get check again (policy, server active and
+// visible, the URI an enabled resource of the approved snapshot or an
+// expansion of one of its enabled templates, the prompt enabled in it) and
+// then go upstream live with the caller's credential, endpoint and tunnel
+// exactly like a tool call. Anything refused answers like not found.
+// Resource URIs in the results (contents, resource links and embedded
+// resources of prompt messages) are rewritten to gateway URIs.
+func (m *Manager) ResourceProvider(pol ResourcePolicy) mcp.ResourceProvider {
+	return resourceProvider{m: m, pol: pol}
+}
 
-type resourceProvider struct{ m *Manager }
+// ResourcePolicy decides the per-server actions resources/read and
+// prompts/get (*policy.Service): allow only, confirm counts as refused.
+type ResourcePolicy interface {
+	Permits(ctx context.Context, in policy.Input) (bool, error)
+}
+
+type resourceProvider struct {
+	m   *Manager
+	pol ResourcePolicy
+}
+
+// permits reports whether policy allows p the per-server action op on
+// server. Errors fail closed.
+func (r resourceProvider) permits(ctx context.Context, p *tokens.Principal, server, op string) bool {
+	if r.pol == nil || p == nil || p.UserID == "" {
+		return false
+	}
+	ok, err := r.pol.Permits(ctx, policy.Input{UserID: p.UserID, TokenID: p.TokenID, TokenScope: p.Scope, Tool: policy.ServerAccessTool(server, op)})
+	if err != nil {
+		r.m.log.Error("policy check failed; federated resources hidden", "event", "federation.policy_failed",
+			"user_id", p.UserID, "server", server, "action", op, "error", observability.RedactError(err))
+		return false
+	}
+	return ok
+}
+
+// entries returns the loaded servers p may use for op, permitted by policy.
+func (r resourceProvider) entries(ctx context.Context, p *tokens.Principal, op string) []*entry {
+	var out []*entry
+	for _, e := range r.m.usableEntries(ctx, p, op) {
+		if r.permits(ctx, p, e.server.Name, op) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 // usableEntries returns the loaded servers p may use for op, by name.
 func (m *Manager) usableEntries(ctx context.Context, p *tokens.Principal, op string) []*entry {
@@ -102,10 +147,10 @@ func provenanceDescription(server, desc string) string {
 
 func (r resourceProvider) ListResources(ctx context.Context, p *tokens.Principal) ([]*sdk.Resource, error) {
 	out := []*sdk.Resource{}
-	for _, e := range r.m.usableEntries(ctx, p, opReadResource) {
+	for _, e := range r.entries(ctx, p, opReadResource) {
 		name := e.server.Name
 		for _, res := range e.snap.Resources {
-			if !safeKey(res.URI) {
+			if !safeKey(res.URI) || !e.content.ResourceEnabled(res.URI) {
 				continue
 			}
 			out = append(out, &sdk.Resource{
@@ -122,11 +167,11 @@ func (r resourceProvider) ListResources(ctx context.Context, p *tokens.Principal
 
 func (r resourceProvider) ListResourceTemplates(ctx context.Context, p *tokens.Principal) ([]*sdk.ResourceTemplate, error) {
 	out := []*sdk.ResourceTemplate{}
-	for _, e := range r.m.usableEntries(ctx, p, opReadResource) {
+	for _, e := range r.entries(ctx, p, opReadResource) {
 		name := e.server.Name
 		for _, t := range e.snap.ResourceTemplates {
 			gw := GatewayResourceTemplate(name, t.URITemplate)
-			if !safeKey(t.URITemplate) {
+			if !safeKey(t.URITemplate) || !e.content.TemplateEnabled(t.URITemplate) {
 				continue
 			}
 			if _, err := uritemplate.New(gw); err != nil {
@@ -146,10 +191,10 @@ func (r resourceProvider) ListResourceTemplates(ctx context.Context, p *tokens.P
 
 func (r resourceProvider) ListPrompts(ctx context.Context, p *tokens.Principal) ([]*sdk.Prompt, error) {
 	out := []*sdk.Prompt{}
-	for _, e := range r.m.usableEntries(ctx, p, opGetPrompt) {
+	for _, e := range r.entries(ctx, p, opGetPrompt) {
 		name := e.server.Name
 		for _, pr := range e.snap.Prompts {
-			if !safeKey(pr.Name) {
+			if !safeKey(pr.Name) || !e.content.PromptEnabled(pr.Name) {
 				continue
 			}
 			args := make([]*sdk.PromptArgument, 0, len(pr.Arguments))
@@ -172,14 +217,14 @@ func (r resourceProvider) ListPrompts(ctx context.Context, p *tokens.Principal) 
 func (r resourceProvider) ReadResource(ctx context.Context, p *tokens.Principal, uri string, admit mcp.Admit) (*sdk.ReadResourceResult, error) {
 	notFound := mcp.ErrResourceNotFound(uri)
 	name, upstream, ok := ParseGatewayResourceURI(uri)
-	if !ok || !safeKey(upstream) {
+	if !ok || !safeKey(upstream) || !r.permits(ctx, p, name, opReadResource) {
 		return nil, notFound
 	}
-	server, snap, err := r.m.approvedFor(ctx, p, name, opReadResource, notFound)
+	server, rec, err := r.m.approvedFor(ctx, p, name, opReadResource, notFound)
 	if err != nil {
 		return nil, err
 	}
-	if !resourceApproved(snap, upstream) {
+	if !resourceApproved(rec.Snapshot, rec.Content, upstream) {
 		return nil, notFound
 	}
 	label := name + "." + opReadResource
@@ -215,14 +260,14 @@ func (r resourceProvider) ReadResource(ctx context.Context, p *tokens.Principal,
 func (r resourceProvider) GetPrompt(ctx context.Context, p *tokens.Principal, gwName string, args map[string]string, admit mcp.Admit) (*sdk.GetPromptResult, error) {
 	notFound := mcp.ErrPromptNotFound(gwName)
 	name, prompt, ok := ParseGatewayPromptName(gwName)
-	if !ok || !safeKey(prompt) {
+	if !ok || !safeKey(prompt) || !r.permits(ctx, p, name, opGetPrompt) {
 		return nil, notFound
 	}
-	server, snap, err := r.m.approvedFor(ctx, p, name, opGetPrompt, notFound)
+	server, rec, err := r.m.approvedFor(ctx, p, name, opGetPrompt, notFound)
 	if err != nil {
 		return nil, err
 	}
-	if !promptApproved(snap, prompt) {
+	if !promptApproved(rec.Snapshot, rec.Content, prompt) {
 		return nil, notFound
 	}
 	label := name + "." + opGetPrompt
@@ -241,14 +286,41 @@ func (r resourceProvider) GetPrompt(ctx context.Context, p *tokens.Principal, gw
 	if res == nil {
 		res = &sdk.GetPromptResult{}
 	}
+	rewritePromptResult(name, res)
 	return res, nil
+}
+
+// rewritePromptResult names the resources a prompt result points at in the
+// gateway's namespace: resource links and embedded resources get
+// GatewayResourceURI(server, uri), like resources/read contents, so a
+// client reads them back through the gateway (and its checks). Empty URIs
+// and text stay as they are.
+func rewritePromptResult(server string, res *sdk.GetPromptResult) {
+	if res == nil {
+		return
+	}
+	for _, msg := range res.Messages {
+		if msg == nil {
+			continue
+		}
+		switch c := msg.Content.(type) {
+		case *sdk.ResourceLink:
+			if c != nil && c.URI != "" {
+				c.URI = GatewayResourceURI(server, c.URI)
+			}
+		case *sdk.EmbeddedResource:
+			if c != nil && c.Resource != nil && c.Resource.URI != "" {
+				c.Resource.URI = GatewayResourceURI(server, c.Resource.URI)
+			}
+		}
+	}
 }
 
 // approvedFor resolves a server by name for p and op: loaded, usable by
 // p (visibility, token allow-list), still active under the same name, and
 // its approved snapshot as read in p's own scope (row-level security
 // again). Anything missing or hidden is notFound.
-func (m *Manager) approvedFor(ctx context.Context, p *tokens.Principal, name, op string, notFound error) (*store.MCPServer, *snapshot.Snapshot, error) {
+func (m *Manager) approvedFor(ctx context.Context, p *tokens.Principal, name, op string, notFound error) (*store.MCPServer, *snapshot.Record, error) {
 	e, ok := m.entry(name)
 	if !ok || !m.usable(ctx, p, e, op) {
 		return nil, nil, notFound
@@ -274,30 +346,30 @@ func (m *Manager) approvedFor(ctx context.Context, p *tokens.Principal, name, op
 	case rec == nil || rec.Snapshot == nil:
 		return nil, nil, notFound
 	}
-	return server, rec.Snapshot, nil
+	return server, rec, nil
 }
 
-// resourceApproved reports whether upstream is a resource of snap or an
-// expansion of one of its templates.
-func resourceApproved(snap *snapshot.Snapshot, upstream string) bool {
+// resourceApproved reports whether upstream is an enabled resource of snap
+// or an expansion of one of its enabled templates (content: the review).
+func resourceApproved(snap *snapshot.Snapshot, content *snapshot.ContentReview, upstream string) bool {
 	for _, r := range snap.Resources {
-		if r.URI == upstream {
+		if r.URI == upstream && content.ResourceEnabled(r.URI) {
 			return true
 		}
 	}
 	for _, t := range snap.ResourceTemplates {
-		if safeKey(t.URITemplate) && templateMatches(t.URITemplate, upstream) {
+		if safeKey(t.URITemplate) && content.TemplateEnabled(t.URITemplate) && templateMatches(t.URITemplate, upstream) {
 			return true
 		}
 	}
 	return false
 }
 
-// promptApproved reports whether snap has the prompt.
-func promptApproved(snap *snapshot.Snapshot, prompt string) bool {
+// promptApproved reports whether snap has the prompt and it is enabled.
+func promptApproved(snap *snapshot.Snapshot, content *snapshot.ContentReview, prompt string) bool {
 	for _, p := range snap.Prompts {
 		if p.Name == prompt {
-			return true
+			return content.PromptEnabled(prompt)
 		}
 	}
 	return false

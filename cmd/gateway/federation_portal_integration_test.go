@@ -51,7 +51,7 @@ func TestIntegrationServersPortalMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, nil, registry, nil, log,
-		withFederationPages(fed, st, cfg.BaseURL))
+		withFederationPages(fed, st, cfg.BaseURL, policySvc))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}

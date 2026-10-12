@@ -70,9 +70,9 @@ func TestSecurityFedURLSwapNeverCarriesOtherUsersCredentials(t *testing.T) {
 	}
 	_, errNotes := w.call(bob, "notes.search", map[string]any{"q": "after"})
 	_, errWiki := w.call(bob, "wiki.search", map[string]any{"q": "after"})
-	// Alice (owner) holds no role granting the published tools (no owner
-	// layer once published), so her call never resolves; it must not
-	// leak her stored key either way.
+	// Alice (owner) keeps the owner layer on her published server (task
+	// fekckdrt), so her call resolves; her stored key must still not
+	// follow the server to the new URL.
 	_, _ = w.call(w.client(w.alice), "notes.search", map[string]any{"q": "after"})
 	if evil.sawValue(bobKey) {
 		t.Error("bob's per-user API key reached the URL the owner switched to")

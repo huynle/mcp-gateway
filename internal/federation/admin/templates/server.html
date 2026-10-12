@@ -20,7 +20,7 @@
 {{if eq .Server.CredentialMode "shared"}}<p class="notice">This server uses a <strong>shared credential</strong>: every user it is published to acts with the same upstream account.</p>{{end}}
 
 <h2>Publish</h2>
-<p class="muted">Publishing makes the server visible to holders of the chosen roles. Its tools stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code> or single tools).</p>
+<p class="muted">Publishing shares the server with holders of the chosen roles. For them its tools, resources and prompts stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code>, single tools, <code>{{.Server.Name}}.resources/read</code> and <code>{{.Server.Name}}.prompts/get</code>). The owner keeps access (reads allowed, writes confirmed) unless a role denies it.</p>
 <form method="post" action="/admin/servers/{{.Server.ID}}/publish" class="stack">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
   {{range .Roles}}<label class="check"><input type="checkbox" name="roles" value="{{.ID}}"{{if .Checked}} checked{{end}}> {{.Name}}</label>{{else}}<p class="muted">No roles yet.</p>{{end}}

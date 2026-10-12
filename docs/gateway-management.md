@@ -24,7 +24,7 @@ The gate wraps the policy decider (`Gate.Decider`, outermost, around the federat
 
 ## Policy
 
-The compiled Cedar set has an implicit **gateway layer** (`internal/policy/gateway.go`, like the owner layer of private servers): every principal may list and call `gateway.*` without a role grant, and `gateway.delete_server` needs a confirmation.
+The compiled Cedar set has an implicit **gateway layer** (`internal/policy/gateway.go`, like the owner layer of user-added servers): every principal may list and call `gateway.*` without a role grant, and `gateway.delete_server` needs a confirmation.
 
 ```
 @id("gateway/management")           permit list, call   on App::"gateway"

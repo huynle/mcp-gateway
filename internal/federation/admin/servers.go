@@ -161,7 +161,7 @@ type detailData struct {
 }
 
 var notices = map[string]string{
-	"published":   "Published. Grant its tools to the roles in the role editor: published servers' tools are hidden until a role allows them.",
+	"published":   "Published: the server is shared with the chosen roles. Grant its tools, resources and prompts to those roles in the role editor; they stay hidden for the role until a rule allows them. The owner keeps access.",
 	"unpublished": "Unpublished: the server is private to its owner again.",
 	"credential":  "Shared credential saved.",
 	"client":      "Static OAuth client saved.",

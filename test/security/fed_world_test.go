@@ -117,7 +117,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 	fedportal.NewPortal(fedportal.Deps{
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 		ClientFactory: factory, Hook: hookFunc(func(ctx context.Context, id string) { _ = fed.Manager.ServerChanged(ctx, id) }),
-		Permissions: fed.Permissions, Identity: identityFn, Log: log, BaseURL: baseURL,
+		Permissions: fed.Permissions, Policy: w.policy, Identity: identityFn, Log: log, BaseURL: baseURL,
 	}).Mount(p.MountUser)
 	as := fedadmin.NewStore(w.st)
 	fedadmin.NewAdmin(fedadmin.Deps{
@@ -208,6 +208,19 @@ func (w *world) reviewAs(who user, admin bool, server *store.MCPServer, enable .
 	for _, name := range enable {
 		on := true
 		d.Tools[name] = snapshot.Decision{Enabled: &on}
+	}
+	// Every resource, template and prompt of the snapshot is enabled
+	// (their review toggles, task bdb5zcud, are covered by the e2e and
+	// unit tests); the suites here probe what is enabled.
+	d.Resources, d.ResourceTemplates, d.Prompts = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, r := range rec.Snapshot.Resources {
+		d.Resources[r.URI] = true
+	}
+	for _, t := range rec.Snapshot.ResourceTemplates {
+		d.ResourceTemplates[t.URITemplate] = true
+	}
+	for _, p := range rec.Snapshot.Prompts {
+		d.Prompts[p.Name] = true
 	}
 	if _, err := w.fed.Snapshots.Approve(ctx, actor, server.ID, rec.Version, d); err != nil {
 		w.t.Fatalf("approve %s: %v", server.Name, err)

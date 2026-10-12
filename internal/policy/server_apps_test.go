@@ -16,7 +16,8 @@ import (
 // registry (federation connector). The role editor lists them like any
 // app, an admin can grant `<server>.<tool>` or `<server>.*`, and the
 // compiled policy then allows them for the role's members (task 1d9i8b07:
-// publishing alone keeps them hidden until a role grants them).
+// publishing alone keeps them hidden for the role until a role grants
+// them; the owner keeps the owner layer, task fekckdrt).
 func TestRoleEditorGrantsServerAppTools(t *testing.T) {
 	p := newPages(t)
 	handler := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
@@ -57,5 +58,43 @@ func TestRoleEditorGrantsServerAppTools(t *testing.T) {
 	}
 	if d, err := p.svc.Decide(ctx, policy.Input{UserID: memberUser, Tool: create}); err != nil || d.Outcome != policy.OutcomeConfirm {
 		t.Errorf("wiki.create_page after the grant: %v, %v; want confirm", d.Outcome, err)
+	}
+}
+
+// The role editor lists a server app's resources/read and prompts/get
+// actions next to its tools (task bdb5zcud) and saves grants of them.
+func TestRoleEditorGrantsServerResourcesAndPrompts(t *testing.T) {
+	p := newPages(t)
+	handler := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
+	if err := p.reg.AddServerTools("wiki", []connectors.Tool{
+		{App: "wiki", Name: "search", Description: "[wiki] search", InputSchema: json.RawMessage(`{"type":"object"}`),
+			Kind: connectors.KindRead, Handler: handler},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := p.do(t, http.MethodGet, "/admin/roles/member", nil, true).Body.String()
+	for _, want := range []string{`name="outcome.wiki.resources/read"`, `name="outcome.wiki.prompts/get"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("role editor lacks %s", want)
+		}
+	}
+	// Built-in apps get no such rows.
+	if strings.Contains(body, `name="outcome.fake.resources/read"`) {
+		t.Error("role editor offers resources/read for a built-in app")
+	}
+	res := policy.ServerAccessTool("wiki", policy.ResourcesReadTool)
+	ctx := context.Background()
+	if ok, _ := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: res}); ok {
+		t.Fatal("resources permitted before the grant")
+	}
+	form := url.Values{"description": {"Default"}, "outcome.fake.list_items": {"allow"}, "outcome.wiki.resources/read": {"allow"}}
+	if rec := p.do(t, http.MethodPost, "/admin/roles/member", form, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save role = %d:\n%s", rec.Code, rec.Body)
+	}
+	if ok, err := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: res}); err != nil || !ok {
+		t.Errorf("resources after the grant: %v, %v", ok, err)
+	}
+	if ok, _ := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: policy.ServerAccessTool("wiki", policy.PromptsGetTool)}); ok {
+		t.Error("prompts permitted by a resources grant")
 	}
 }

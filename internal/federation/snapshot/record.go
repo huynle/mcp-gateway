@@ -24,6 +24,10 @@ type Record struct {
 	ApprovedAt   *time.Time
 	Snapshot     *Snapshot
 	Review       Review
+	// Content is the review of the resources, resource templates and
+	// prompts; nil for a snapshot approved before they had review
+	// toggles, which counts as all enabled (ContentReview).
+	Content *ContentReview
 	// Skipped is what the discovery that returned this record left out
 	// (Refresh / Create only; never stored, so nil on records read back).
 	Skipped []Skipped
@@ -90,13 +94,18 @@ func decodeRecord(row *store.MCPSnapshot) (*Record, error) {
 		{row.Resources, &rec.Snapshot.Resources},
 		{row.ResourceTemplates, &rec.Snapshot.ResourceTemplates},
 		{row.Prompts, &rec.Snapshot.Prompts},
-		{row.Review, &rec.Review},
 	} {
 		if normNull(f.raw) == nil {
 			continue
 		}
 		if err := json.Unmarshal(f.raw, f.dst); err != nil {
 			return nil, ErrCorrupt
+		}
+	}
+	if normNull(row.Review) != nil {
+		var err error
+		if rec.Review, rec.Content, err = decodeReviewColumn(row.Review); err != nil {
+			return nil, err
 		}
 	}
 	if rec.Review == nil {

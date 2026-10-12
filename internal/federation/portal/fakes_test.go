@@ -489,16 +489,17 @@ type env struct {
 	fac  *fakeFactory
 	hook *fakeHook
 	perm *fakePerms
+	pol  *fakePolicy
 	mux  *http.ServeMux
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	e := &env{t: t, st: newFakeStore(), snap: newFakeSnapshots(), auth: &fakeAuth{}, fac: &fakeFactory{sess: &fakeSession{}}, hook: &fakeHook{},
-		perm: &fakePerms{denied: map[string]bool{}}}
+		perm: &fakePerms{denied: map[string]bool{}}, pol: &fakePolicy{denied: map[string]bool{}}}
 	e.tun = &fakeTunnels{st: e.st, online: map[string]bool{}}
 	p := NewPortal(Deps{
-		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm,
+		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm, Policy: e.pol,
 		Identity: func(r *http.Request) (string, string, bool) {
 			u := r.Header.Get("X-Test-User")
 			if u == "" {

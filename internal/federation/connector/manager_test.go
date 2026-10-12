@@ -329,6 +329,7 @@ type fixture struct {
 	creds    *fakeCreds
 	tunnels  *fakeTunnels
 	perms    *fakePerms
+	pol      *fakePolicy
 	up       *upstream
 	changes  int
 	changeMu sync.Mutex
@@ -339,7 +340,7 @@ const srvID = "33333333-3333-4333-8333-333333333333"
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{reg: connectors.NewRegistry(), st: newFakeStore(), creds: &fakeCreds{errs: map[string]error{}}, tunnels: &fakeTunnels{},
-		perms: &fakePerms{denied: map[string]bool{}}}
+		perms: &fakePerms{denied: map[string]bool{}}, pol: &fakePolicy{denied: map[string]bool{}}}
 	if err := f.reg.Register(stubTool("github", "list_issues", connectors.KindRead)); err != nil {
 		t.Fatal(err)
 	}

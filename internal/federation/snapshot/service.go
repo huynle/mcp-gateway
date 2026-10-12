@@ -190,9 +190,12 @@ func (s *Service) Current(ctx context.Context, a Actor, serverID string) (*Recor
 }
 
 // Approve approves snapshot version of the server with the reviewer's
-// decisions (see BuildReview): the review starts from the approved
-// snapshot's, so unchanged tools keep their state, and new or changed tools
-// stay disabled unless enabled here. version must be the latest snapshot
+// decisions (see BuildReview and BuildContentReview): the review starts
+// from the approved snapshot's, so unchanged tools, resources, templates
+// and prompts keep their state (items of a snapshot approved before they
+// had toggles count as enabled), and new or changed ones stay disabled
+// unless enabled here. The review column is written in the current layout
+// (tools plus content review). version must be the latest snapshot
 // (approving a refresh) or the approved one (changing decisions);
 // otherwise ErrStaleVersion. A user actor may approve only a private
 // server it owns; anything else returns ErrReviewNotAllowed and changes
@@ -222,14 +225,20 @@ func (s *Service) Approve(ctx context.Context, a Actor, serverID string, version
 		}
 		var base *Snapshot
 		var baseReview Review
+		var baseContent *ContentReview
 		if approved != nil {
-			base, baseReview = approved.Snapshot, approved.Review
+			base, baseReview, baseContent = approved.Snapshot, approved.Review, approved.Content
 		}
-		review, err := BuildReview(base, baseReview, target.Snapshot, d, a.UserID, s.now())
+		now := s.now()
+		review, err := BuildReview(base, baseReview, target.Snapshot, d, a.UserID, now)
 		if err != nil {
 			return err
 		}
-		raw, err := encodeReview(review)
+		content, err := BuildContentReview(base, baseContent, target.Snapshot, d, a.UserID, now)
+		if err != nil {
+			return err
+		}
+		raw, err := encodeFullReview(review, content)
 		if err != nil {
 			return err
 		}

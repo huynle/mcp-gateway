@@ -416,7 +416,7 @@ func newWorld(t *testing.T, opts options) *world {
 	if w.fed != nil {
 		// Resources and prompts of user-added servers, audited and rate
 		// limited like tool calls (cmd/gateway's newMCPWithResources).
-		mopts.Resources, mopts.Audit, mopts.RateLimiter = w.fed.Manager.ResourceProvider(), w.rec, w.limiter
+		mopts.Resources, mopts.Audit, mopts.RateLimiter = w.fed.Manager.ResourceProvider(w.policy), w.rec, w.limiter
 	}
 	mcpHandler, err := mcp.Handler(mopts)
 	if err != nil {

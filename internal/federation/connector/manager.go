@@ -137,8 +137,9 @@ type Manager struct {
 // load (resources.go lists the snapshot's resources, templates and
 // prompts).
 type entry struct {
-	server store.MCPServer
-	snap   *snapshot.Snapshot
+	server  store.MCPServer
+	snap    *snapshot.Snapshot
+	content *snapshot.ContentReview // nil: approved before the toggles, all enabled
 	// upstream maps each registered tool name to its upstream name.
 	upstream map[string]string
 }
@@ -222,7 +223,7 @@ func (m *Manager) Load(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("federation: server %s: register: %w", s.ID, err))
 			continue
 		}
-		next[s.Name] = &entry{server: s, snap: rec.Snapshot, upstream: upstream}
+		next[s.Name] = &entry{server: s, snap: rec.Snapshot, content: rec.Content, upstream: upstream}
 	}
 	for _, app := range m.o.Registry.ServerApps() {
 		if _, ok := next[app]; !ok {

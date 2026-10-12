@@ -7,16 +7,19 @@ import (
 	"strings"
 )
 
-// OwnerGrant is the implicit policy layer for the owner of a private
-// user-added MCP server (Brain task fybs78bs, decision recorded with it):
+// OwnerGrant is the implicit policy layer for the owner of an active
+// user-added MCP server (Brain task fybs78bs, decision mrvsu07m):
 // the owner may list and call every tool of the server's app (App is the
 // server name, the tool prefix), reads are allowed and writes need a
 // confirmation. It is compiled into the same Cedar set as the roles, so
 // the token-narrowing forbids and user restrictions still apply, a role
 // can add confirmations or denials but never lift the write confirmation,
 // and the admin role gets nothing from it (admin is only a role name).
-// Published servers have no owner layer: their tools are hidden for every
-// role until an admin grants them in that role.
+// The layer applies whether the server is private or published (decision
+// q7vbxlyk, task fekckdrt): publishing shares the server with the chosen
+// roles, whose holders still need a role grant, and the owner keeps
+// access. The layer also covers the server's resources/read and
+// prompts/get actions (ResourcesReadTool, PromptsGetTool): they are reads.
 type OwnerGrant struct {
 	UserID string
 	App    string
