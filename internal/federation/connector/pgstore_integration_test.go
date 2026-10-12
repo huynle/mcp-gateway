@@ -31,7 +31,7 @@ const (
 	jobsPass    = "gateway-jobs-test"
 )
 
-func openTestStore(t *testing.T) (*store.Store, string) {
+func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	raw := os.Getenv("GATEWAY_TEST_DATABASE_URL")
 	if raw == "" {
@@ -83,7 +83,7 @@ func openTestStore(t *testing.T) (*store.Store, string) {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(st.Close)
-	return st, superURL
+	return st
 }
 
 func execRetrying(ctx context.Context, conn *pgx.Conn, stmt string) error {
@@ -124,7 +124,7 @@ func testKeys(t *testing.T) crypto.KeyProvider {
 }
 
 func TestIntegrationPostgresStore(t *testing.T) {
-	st, _ := openTestStore(t)
+	st := openTestStore(t)
 	ctx := t.Context()
 	ps := NewPostgresStore(st, testKeys(t))
 	owner, other := newUser(t, st, "Owner"), newUser(t, st, "Other")
@@ -250,7 +250,7 @@ func TestIntegrationPostgresStore(t *testing.T) {
 // the user, under the disabled "mcp" vendor app, external id
 // "gateway-management", label company).
 func TestIntegrationPostgresStoreNameTakenAndGatewayAccount(t *testing.T) {
-	st, _ := openTestStore(t)
+	st := openTestStore(t)
 	ctx := t.Context()
 	ps := NewPostgresStore(st, testKeys(t))
 	owner, other := newUser(t, st, "Owner"), newUser(t, st, "Other")
