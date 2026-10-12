@@ -16,7 +16,8 @@ import (
 // registry (federation connector). The role editor lists them like any
 // app, an admin can grant `<server>.<tool>` or `<server>.*`, and the
 // compiled policy then allows them for the role's members (task 1d9i8b07:
-// publishing alone keeps them hidden until a role grants them).
+// publishing alone keeps them hidden for the role until a role grants
+// them; the owner keeps the owner layer, task fekckdrt).
 func TestRoleEditorGrantsServerAppTools(t *testing.T) {
 	p := newPages(t)
 	handler := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }

@@ -26,10 +26,9 @@ const (
 // the portal; an admin publishes it to the restricted role and replaces
 // the shared key on the admin pages; once the role grants the tool, bob
 // and carol (both restricted) call it with the shared key, never their
-// own. The owner loses the tool when it is published (no owner layer on
-// published servers, docs/plugins-admin.md) until a role she holds is
-// granted it: current behaviour, follow-up idea 5kq4ka2z (warn the admin,
-// offer a grant to the owner's role).
+// own. The owner keeps the tool after it is published (the owner layer
+// covers published servers too, task fekckdrt / decision q7vbxlyk) and
+// calls it with the server's shared credential, now the admin's key.
 func TestE2EPluginsSharedKeyPublishedByAdmin(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	w.forbid(crmOwnerKey, "shared API key (owner)")
@@ -98,17 +97,13 @@ func TestE2EPluginsSharedKeyPublishedByAdmin(t *testing.T) {
 		t.Errorf("bob's server page = %d:\n%s", p.status, snippet(p.body))
 	}
 
-	// The owner: current behaviour (idea 5kq4ka2z) — publishing removed
-	// the owner layer, and her role (member) grants nothing yet.
+	// The owner keeps the tool without any grant to her role (member).
 	alice = w.client(w.alice)
-	if contains(toolNames(t, alice), "crm.lookup") {
-		t.Error("owner still sees the published tool without a role grant (owner layer should be gone)")
+	if !contains(toolNames(t, alice), "crm.lookup") {
+		t.Error("owner lost the published tool (the owner layer covers published servers)")
 	}
-	_, err := w.call(alice, "crm.lookup", map[string]any{"q": "a"})
-	_ = rpcError(t, err, mcp.CodeToolNotFound)
-	w.grant(roleMember, policy.ToolRule{App: "crm", Tool: "lookup", Outcome: policy.OutcomeAllow})
 	if got := w.toolText(alice, "crm.lookup", map[string]any{"q": "a"}); got != "lookup a with admin-key" {
-		t.Errorf("owner after a grant to her role = %q", got)
+		t.Errorf("owner after publish = %q", got)
 	}
 
 	// The upstream only ever saw the shared key.
@@ -200,8 +195,8 @@ func docsSurface(t *testing.T, cs *sdk.ClientSession) surface {
 // w2cd39bc): private → only the owner; published to a role → that role's
 // users get the resources, templates and prompts at once (server-level
 // policy) and the tool once the role grants it, including a templated
-// read through the published server; the owner keeps the resources but
-// loses the tool (idea 5kq4ka2z); a user of another role sees nothing;
+// read through the published server; the owner keeps everything (task
+// fekckdrt); a user of another role sees nothing;
 // unpublishing restores the private view.
 func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	w := newWorld(t, options{federation: true})
@@ -247,7 +242,7 @@ func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 		"/admin/servers/"+id+"?done=")
 	cs = clients()
 	resourcesOnly := surface{resource: true, template: true, prompt: true}
-	check("published, not granted", map[string]surface{"alice": resourcesOnly, "bob": resourcesOnly, "carol": none}, cs)
+	check("published, not granted", map[string]surface{"alice": all, "bob": resourcesOnly, "carol": none}, cs)
 	page, err := cs["bob"].ReadResource(ctx, &sdk.ReadResourceParams{URI: "mcpgw://handbook/docs://page/intro"})
 	if err != nil || len(page.Contents) != 1 || page.Contents[0].Text != "page intro" || page.Contents[0].URI != "mcpgw://handbook/docs://page/intro" {
 		t.Fatalf("bob's templated read through the published server = %+v, %v", page, err)
@@ -262,7 +257,7 @@ func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	// 3. The role grants the tool.
 	w.grant(roleRestricted, policy.ToolRule{App: "handbook", Tool: "search", Outcome: policy.OutcomeAllow})
 	cs = clients()
-	check("published, granted", map[string]surface{"alice": resourcesOnly, "bob": all, "carol": none}, cs)
+	check("published, granted", map[string]surface{"alice": all, "bob": all, "carol": none}, cs)
 	if got := w.toolText(cs["bob"], "handbook.search", map[string]any{"q": "tunnels"}); got != "docs about tunnels" {
 		t.Errorf("bob's call = %q", got)
 	}
