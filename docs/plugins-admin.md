@@ -8,9 +8,10 @@ Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (servers start private; froz
 
 | Route | What |
 |---|---|
-| `GET /admin/servers` | Every server: name, owner, host (`tunnel` for a tunnel URL), audience and roles, credential mode / auth kind, shared credential stored or not, user connections, status and last error class, **pending review** badge. Filters `?status=active\|disabled\|error` and `?pending=1`. |
+| `GET /admin/servers` | Every server: name, owner, host (`tunnel` for a tunnel URL), audience and roles, credential mode / auth kind, shared credential stored or not, user connections, status and last error class, **pending review** badge (**re-review required** for a published server without an approved snapshot). Filters `?status=active\|disabled\|error` and `?pending=1`. |
 | `GET /admin/servers/reviews` | The review queue: servers whose newest snapshot is not the approved one. |
-| `GET /admin/servers/{id}` | Details and the admin forms below. A shared-credential server shows a notice that every user it is published to acts with the same upstream account. |
+| `GET /admin/servers/{id}` | Details and the admin forms below. A shared-credential server shows a notice that every user it is published to acts with the same upstream account. A published server without an approved snapshot shows **Re-review required** with a link to the review. |
+| `POST /admin/servers/{id}/address` | Change the server's URL (`url`: https, no user info or fragment, at most 2048 bytes; not the current one; else 422). Tunnel addresses are the owner's to choose. On a **published** server this withdraws the approved snapshot (below). |
 | `POST /admin/servers/{id}/publish` | Publish to the posted `roles` (IDs from the role list; the set **replaces** the previous one). Unknown role IDs or an empty set: 422. |
 | `POST /admin/servers/{id}/unpublish` | Back to private (no roles). |
 | `POST /admin/servers/{id}/shared-credential` | Set / replace the shared API key (`api_key`), bearer token (`bearer`) or `Name: value` header lines (`headers`) through `auth.SetSharedCredential(Actor{Admin: true})`. Only for `credential_mode = shared` servers of those kinds (else 422; the owner chooses the mode). **Write-only**: never rendered, not even on a validation error. |
@@ -50,6 +51,7 @@ Changes apply at once on the replica that served the request (`Invalidate`, belo
 | publish, unpublish | `SetPublishedRoles` | `Hook.ServerChanged` |
 | shared credential, static client | `auth.Service` | `Hook.ServerChanged` |
 | disable, enable | `SetStatus` | `Hook.ServerChanged` |
+| address | `UpdateAddress` (published: approved snapshot superseded in the same transaction) | `Hook.ServerChanged` |
 | delete | `DeleteServer` | `Hook.ServerChanged` |
 | admin review | `snapshot.Approve` | `Hook.ServerChanged` |
 | refresh | `snapshot.Refresh` | nothing: a pending snapshot changes no tools until approved |
@@ -79,9 +81,24 @@ Publishing **shares** a server with the chosen roles (task `fekckdrt`, decision 
 
 The detail page says so in its Publish section and in the "Published" notice ("… The owner keeps access.").
 
+## Changing a published server's address
+
+Published servers are **admin-governed** (Brain task `mpszh6h0`, decision `q7vbxlyk` point 3, schema 17). Their owner can no longer change the URL, transport, authentication kind, auth config (scopes, API key placement), extra headers or static OAuth client (portal 422, database trigger `mcp_servers_published_lock` on the request path). The owner may still switch the credential mode and rotate the shared secret.
+
+An admin may change those columns (through `gateway_jobs`). For a published server the trigger then marks the **approved snapshot superseded** in the same transaction, so:
+
+1. its tools, resources and prompts disappear for everyone at once (`Hook.ServerChanged`);
+2. the list and detail pages show **re-review required**;
+3. stored credentials were sealed to the old URL (decision `4l6dik46`): users reconnect, and a shared credential or static OAuth client must be set again;
+4. **Refresh** discovers what the new address serves, then the review (all tools start disabled: there is no approved snapshot to carry decisions from) approves it, and the tools are back.
+
+The detail page has the **Address** form for this; it accepts https URLs only. Other settings of a published server: unpublish it, let the owner edit it, review and republish. Publishing again is the admin's decision on the server as it now is (address and approved snapshot are on the detail page).
+
 ## Resources and prompts in the review
 
 The admin review page is the servers portal's (`BuildReviewView`, shared `review-tools` template): resources, resource templates and prompts appear in their own groups next to the tool groups with the same compact rows and checkboxes (`enable_resource`, `enable_template`, `enable_prompt`, by index). Unchanged enabled items are pre-checked, new and changed ones are not. `approve_all` and "Select all" cover them; "Select read-only" picks among tools only. Only enabled items are listed and served on `/mcp` (task `bdb5zcud`). A snapshot approved before these toggles counts as all enabled until the next approval.
+
+## Audit events
 
 Every change is audited through `audit.Recorder` with the admin as `UserID`, decision `allow`, outcome `succeeded` and the request ID. `ResourceIdentity["action"]` names the event; no secrets are recorded (only names, IDs and counts). The same name is the `event` of an info log line.
 
@@ -91,6 +108,7 @@ Every change is audited through `audit.Recorder` with the admin as `UserID`, dec
 | `mcp_server.unpublished` | `server_id`, `server`, `owner_user_id` |
 | `mcp_server.shared_credential_set` | `server_id`, `server`, `owner_user_id`, `auth_kind` |
 | `mcp_server.static_client_set` | `server_id`, `server`, `owner_user_id` |
+| `mcp_server.address_changed` | `server_id`, `server`, `owner_user_id`, `old_host`, `new_host` (hosts only, at most 128 bytes), `audience` |
 | `mcp_server.disabled`, `mcp_server.enabled` | `server_id`, `server`, `owner_user_id` |
 | `mcp_server.deleted` | `server_id`, `server`, `owner_user_id` |
 | `mcp_server.refreshed` | `server_id`, `server`, `owner_user_id` |
@@ -122,10 +140,10 @@ fedadmin.NewAdmin(fedadmin.Deps{
 }).Mount(portalSrv.MountAdmin)
 ```
 
-`cmd/gateway/federation.go` (`withFederationAdmin`) does this when federation is configured; without it nothing is mounted. `NewAdmin` panics when a required dependency is missing. Exported: `Admin` (`NewAdmin`, `Mount`), `Deps`, `Store`, `Roles`, `Snapshots`, `Auth`, `Tunnels`, `Hook`, `Invalidator`, `Identity`, `Server` (`PendingReview()`), `Tunnel`, `Role`, `PGStore` (`NewStore`), `ErrDuplicate`. The store package adds `ListAdminMCPServers`, `GetAdminMCPServer`, `ListAdminMCPTunnels` and `GetAdminMCPTunnel` over the secret-free views `admin_mcp_servers` and `admin_mcp_tunnels` (migration 00014; run them under `WithJobs`).
+`cmd/gateway/federation.go` (`withFederationAdmin`) does this when federation is configured; without it nothing is mounted. `NewAdmin` panics when a required dependency is missing. `Store.UpdateAddress` is new in schema 17. Exported: `Admin` (`NewAdmin`, `Mount`), `Deps`, `Store`, `Roles`, `Snapshots`, `Auth`, `Tunnels`, `Hook`, `Invalidator`, `Identity`, `Server` (`PendingReview()`), `Tunnel`, `Role`, `PGStore` (`NewStore`), `ErrDuplicate`. The store package adds `ListAdminMCPServers`, `GetAdminMCPServer`, `ListAdminMCPTunnels` and `GetAdminMCPTunnel` over the secret-free views `admin_mcp_servers` and `admin_mcp_tunnels` (migration 00014; run them under `WithJobs`).
 
 ## Tests
 
-`go test ./internal/federation/admin/` (fakes): non-admins and anonymous callers get 404 on every route and reach no service; POSTs without the CSRF token are 403; list and filters; review queue; publish calls the store, the hook and the audit; unknown or no roles refused; unpublish; the shared credential and the static client secret are never rendered; shared credential needs shared mode; disable, enable, delete with name confirmation; malformed and unknown IDs are 404; refresh with the owner's connection or an explanation; admin review approves as admin and calls the hook; the admin page uses the shared review view and `approve_all` enables every tool of a published server (CSRF and stale version still refused); tunnels list and revoke; allow-list add, validation, duplicates, delete, and `Invalidate`; `NewAdmin` panics without required deps. `go test ./internal/policy/` checks the role editor grants a published server's tools (`TestRoleEditorGrantsServerAppTools`) and its `resources/read` / `prompts/get` actions (`TestRoleEditorGrantsServerResourcesAndPrompts`). `go test ./cmd/gateway/` checks the admin patterns go behind the admin check and nothing mounts without federation. Approval modes (`approval_test.go`): the detail page shows the modes and the form for a published server; `POST /admin/servers/{id}/approval` as admin (audited, hooked), member 404, CSRF 403, stale 409, bad mode 422; the admin review carries `approve_auto` into the decisions.
+`go test ./internal/federation/admin/` (fakes): non-admins and anonymous callers get 404 on every route and reach no service; POSTs without the CSRF token are 403; list and filters; review queue; publish calls the store, the hook and the audit; unknown or no roles refused; unpublish; the shared credential and the static client secret are never rendered; shared credential needs shared mode; disable, enable, delete with name confirmation; malformed and unknown IDs are 404; refresh with the owner's connection or an explanation; admin review approves as admin and calls the hook; the address form changes the URL, calls the hook, audits the hosts and flags the re-review (bad, tunnel and unchanged URLs are 422; `address_test.go`); the admin page uses the shared review view and `approve_all` enables every tool of a published server (CSRF and stale version still refused); tunnels list and revoke; allow-list add, validation, duplicates, delete, and `Invalidate`; `NewAdmin` panics without required deps. `go test ./internal/policy/` checks the role editor grants a published server's tools (`TestRoleEditorGrantsServerAppTools`) and its `resources/read` / `prompts/get` actions (`TestRoleEditorGrantsServerResourcesAndPrompts`). `go test ./cmd/gateway/` checks the admin patterns go behind the admin check and nothing mounts without federation; `NewAdmin` panics without required deps. `go test ./internal/policy/` checks the role editor grants a published server's tools (`TestRoleEditorGrantsServerAppTools`) and its `resources/read` / `prompts/get` actions (`TestRoleEditorGrantsServerResourcesAndPrompts`). `go test ./cmd/gateway/` checks the admin patterns go behind the admin check and nothing mounts without federation. Approval modes (`approval_test.go`): the detail page shows the modes and the form for a published server; `POST /admin/servers/{id}/approval` as admin (audited, hooked), member 404, CSRF 403, stale 409, bad mode 422; the admin review carries `approve_auto` into the decisions.
 
-`make test-integration` adds `TestIntegrationAdminPublishMakesServerVisibleToRole` (the acceptance test: publish a member's server to a role and the role's users see it, other roles do not, unpublish hides it, replacing the role set drops a role) and `TestIntegrationAdminStore` (own database `gateway_fedadmin_test`), and `TestIntegrationAdminServersMounted` in `cmd/gateway` (real portal: anonymous users are sent to sign in, members get 404 on GET and POST, admins get the pages, POST without CSRF is 403, an added allow-list entry reaches netguard's allow list at once).
+`make test-integration` adds `TestIntegrationAdminPublishMakesServerVisibleToRole` (the acceptance test: publish a member's server to a role and the role's users see it, other roles do not, unpublish hides it, replacing the role set drops a role) , `TestIntegrationAdminStore` and `TestIntegrationAdminAddressChangeWithdrawsApproval` (an admin's new address withdraws the approval; the owner's is refused; re-approval serves again) (own database `gateway_fedadmin_test`), and `TestIntegrationAdminServersMounted` in `cmd/gateway` (real portal: anonymous users are sent to sign in, members get 404 on GET and POST, admins get the pages, POST without CSRF is 403, an added allow-list entry reaches netguard's allow list at once).

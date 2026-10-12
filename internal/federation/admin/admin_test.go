@@ -36,6 +36,7 @@ func TestNonAdminsGet404OnEveryRoute(t *testing.T) {
 		"/admin/servers/" + s.ID + "/disable", "/admin/servers/" + s.ID + "/enable",
 		"/admin/servers/" + s.ID + "/delete", "/admin/servers/" + s.ID + "/refresh", "/admin/servers/" + s.ID + "/review",
 		"/admin/servers/" + s.ID + "/approval",
+		"/admin/servers/" + s.ID + "/address",
 		"/admin/tunnels/30000000-0000-4000-8000-000000000001/revoke",
 		"/admin/network/allow-hosts", "/admin/network/allow-hosts/40000000-0000-4000-8000-000000000001/delete",
 	}
@@ -50,7 +51,7 @@ func TestNonAdminsGet404OnEveryRoute(t *testing.T) {
 		for _, p := range posts {
 			r := who
 			r.method, r.path = http.MethodPost, p
-			r.form = url.Values{"roles": {roleEng}, "confirm": {"brain"}, "pattern": {"10.1.0.0/16"}, "api_key": {"k"}}
+			r.form = url.Values{"roles": {roleEng}, "confirm": {"brain"}, "pattern": {"10.1.0.0/16"}, "api_key": {"k"}, "url": {"https://x.example.com/mcp"}}
 			if rec := h.do(t, r); rec.Code != http.StatusNotFound {
 				t.Errorf("POST %s as %+v = %d, want 404", p, who, rec.Code)
 			}

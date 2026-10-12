@@ -362,3 +362,62 @@ func TestIntegrationAdminStore(t *testing.T) {
 		t.Errorf("delete again: %v", err)
 	}
 }
+
+// TestIntegrationAdminAddressChangeWithdrawsApproval: an admin's new
+// address for a published server supersedes the approved snapshot (schema
+// 17 trigger), so the server needs a re-review; the owner cannot make the
+// same change (Brain task mpszh6h0).
+func TestIntegrationAdminAddressChangeWithdrawsApproval(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	as := admin.NewStore(st)
+	owner, reader := newUser(t, st, "Olivia Owner"), newUser(t, st, "Rita Reader")
+	eng := newRole(t, st, "engineering", reader)
+	srv := &store.MCPServer{Name: "wiki", URL: "https://wiki.example/mcp", OwnerUserID: owner, AuthKind: store.MCPAuthNone}
+	if err := st.WithUser(ctx, owner, func(tx store.Tx) error { return store.CreateMCPServer(ctx, tx, srv) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		return store.CreateMCPSnapshot(ctx, tx, &store.MCPSnapshot{ServerID: srv.ID, Tools: []byte(`[]`)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snaps := snapshot.NewService(st)
+	if _, err := snaps.Approve(ctx, snapshot.Actor{UserID: owner}, srv.ID, 1, snapshot.ReviewDecisions{}); err != nil {
+		t.Fatalf("owner approve while private: %v", err)
+	}
+	if err := as.SetPublishedRoles(ctx, srv.ID, []string{eng}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The owner may not move the published server.
+	moved := *srv
+	moved.URL = "https://attacker.example/mcp"
+	if err := st.WithUser(ctx, owner, func(tx store.Tx) error { return store.UpdateMCPServer(ctx, tx, &moved) }); !errors.Is(err, store.ErrMCPServerLocked) {
+		t.Fatalf("owner URL change of a published server = %v, want ErrMCPServerLocked", err)
+	}
+	if s, _ := as.GetServer(ctx, srv.ID); s.ApprovedVersion != 1 || s.URL != srv.URL {
+		t.Fatalf("after the refused owner edit: %+v", s)
+	}
+
+	if err := as.UpdateAddress(ctx, srv.ID, "https://wiki-v2.example/mcp"); err != nil {
+		t.Fatalf("admin UpdateAddress: %v", err)
+	}
+	s, err := as.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.URL != "https://wiki-v2.example/mcp" || s.ApprovedVersion != 0 || s.LatestVersion != 1 || !s.PendingReview() {
+		t.Errorf("after the admin's address change: url %q approved %d latest %d", s.URL, s.ApprovedVersion, s.LatestVersion)
+	}
+	if _, err := snaps.Current(ctx, snapshot.Actor{UserID: reader}, srv.ID); !errors.Is(err, snapshot.ErrNoSnapshot) {
+		t.Errorf("reader's current snapshot = %v, want ErrNoSnapshot", err)
+	}
+	// Re-approval as admin serves it again.
+	if _, err := snaps.Approve(ctx, snapshot.Actor{UserID: owner, Admin: true}, srv.ID, 1, snapshot.ReviewDecisions{}); err != nil {
+		t.Fatalf("re-approve: %v", err)
+	}
+	if s, _ := as.GetServer(ctx, srv.ID); s.ApprovedVersion != 1 {
+		t.Errorf("after re-approval: approved %d", s.ApprovedVersion)
+	}
+}

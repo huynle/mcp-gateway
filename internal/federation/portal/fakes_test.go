@@ -40,6 +40,8 @@ type fakeStore struct {
 	creds   map[string]CredentialInfo
 	tunnels []store.MCPTunnel
 	deleted []string
+	// updateErr, when set, is UpdateServer's answer.
+	updateErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -123,6 +125,9 @@ func (f *fakeStore) UpdateServer(_ context.Context, userID string, s *store.MCPS
 	o, ok := f.servers[s.ID]
 	if !ok || o.OwnerUserID != userID {
 		return store.ErrNotFound
+	}
+	if f.updateErr != nil {
+		return f.updateErr
 	}
 	c := *s
 	c.OwnerUserID, c.Audience, c.Status = o.OwnerUserID, o.Audience, o.Status

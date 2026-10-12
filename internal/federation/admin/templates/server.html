@@ -17,6 +17,11 @@
   </tbody>
 </table>
 {{end}}
+{{if .Server.ReReview}}
+<div class="notice" role="status">
+  <p><strong>Re-review required.</strong> This server is published but has no approved snapshot, so its tools, resources and prompts are not offered to anyone. Refresh it (below) to discover what its address serves now, then <a href="/admin/servers/{{.Server.ID}}/review">review and approve it</a>.</p>
+</div>
+{{end}}
 {{with .Approval}}<h2>Approval before running</h2>
 <p class="muted">Ask or Auto per write tool. For a published server this is the default for the roles whose rules allow the tool: a role <em>allow</em> plus <strong>Auto</strong> runs without asking, plus <strong>Ask</strong> needs an approval; a role <em>confirm</em> always asks and a role <em>deny</em> always wins. The owner gets the same modes.</p>
 {{template "approval-modes" .}}{{end}}
@@ -59,6 +64,14 @@
   <p><button class="btn primary" type="submit">Save OAuth client</button></p>
 </form>
 {{end}}
+
+<h2>Address</h2>
+<p class="muted">{{if eq .Server.Audience "published"}}The server is published: only admins change its address and sign-in settings. A new address withdraws the approved tools until you refresh and review the server again.{{else}}The owner can change a private server's settings on the servers page.{{end}} Stored credentials are sealed to the address: after a change users reconnect, and a shared credential or static OAuth client must be set again.</p>
+<form method="post" action="/admin/servers/{{.Server.ID}}/address" class="stack" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+  <label>New https URL <input type="url" name="url" value="" placeholder="https://example.com/mcp" maxlength="2048" required></label>
+  <p><button class="btn" type="submit">Change address</button></p>
+</form>
 
 <h2>Discovery</h2>
 <form method="post" action="/admin/servers/{{.Server.ID}}/refresh">

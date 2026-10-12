@@ -160,6 +160,23 @@ func (f *fakeStore) SetStatus(_ context.Context, serverID, status string) error 
 	return nil
 }
 
+// UpdateAddress mimics the schema 17 trigger: an address change of a
+// published server withdraws its approved snapshot.
+func (f *fakeStore) UpdateAddress(_ context.Context, serverID, rawURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.servers[serverID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if s.URL != rawURL && s.Audience == store.MCPAudiencePublished {
+		s.ApprovedVersion = 0
+	}
+	s.URL = rawURL
+	f.writes = append(f.writes, "address:"+serverID+":"+rawURL)
+	return nil
+}
+
 func (f *fakeStore) DeleteServer(_ context.Context, serverID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
