@@ -126,13 +126,22 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
 		}
+		// Who may add MCP servers, and each user's "Gateway management
+		// tools" setting (internal/permissions; decision bnneszc1).
+		perms := permissions.NewPostgres(st, permissions.Options{Audit: rec, Log: log})
 		// User-added MCP servers: their tools join the registry after the
 		// built-in connectors (federation.go).
-		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, metrics, log)
+		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log)
 		if err != nil {
 			return err
 		}
-		accounts = federationAccounts(fed, accounts)
+		// The gateway.* management tools (behind the permission and the
+		// per-user setting; gatewaytools).
+		gw, err := newGatewayTools(fed, st, registry, perms, cfg.BaseURL, log)
+		if err != nil {
+			return err
+		}
+		accounts = gw.Accounts(federationAccounts(fed, accounts))
 		muxExtras = append(muxExtras, withFederationRoutes(fed))
 		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)
 		if err != nil {
@@ -157,14 +166,13 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		// Who may add MCP servers, and each user's "Gateway management
-		// tools" setting (internal/permissions; decision bnneszc1).
-		perms := permissions.NewPostgres(st, permissions.Options{Audit: rec, Log: log})
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, perms, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, rec))
+		// My account's switch goes through the gate so switching off
+		// takes effect at once.
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), federationDecider(fed, policySvc), approvalSvc, rec, metrics, log,
+		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), gw.Decider(federationDecider(fed, policySvc)), approvalSvc, rec, metrics, log,
 			federationResources(fed), withLedgerStage(ledgerSvc))
 		if err != nil {
 			return err

@@ -67,6 +67,9 @@ type Federation struct {
 	// (WireOptions.Permissions or permissions.NewPostgres); the servers
 	// portal gates Add server on it too.
 	Permissions AddServerPermission
+	// GatewayAccounts supplies the anchor account of the gateway.*
+	// management tools (internal/federation/gatewaytools).
+	GatewayAccounts GatewayAccounts
 }
 
 // Wire builds the federation. Nothing is loaded yet: call Start (or
@@ -116,8 +119,10 @@ func Wire(o WireOptions) (*Federation, error) {
 		perms = permissions.NewPostgres(o.Store, permissions.Options{Log: o.Log})
 	}
 	f.Permissions = perms
+	ps := &pgStore{st: o.Store, keys: o.Keys}
+	f.GatewayAccounts = ps
 	f.Manager, err = New(Options{
-		Registry: o.Registry, Store: NewPostgresStore(o.Store, o.Keys), Snapshots: f.Snapshots,
+		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,
 		Credentials: f.Auth, Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
 		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, OnChange: o.OnChange, Log: o.Log,
 	})

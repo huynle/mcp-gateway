@@ -17,7 +17,7 @@ import (
 // routes, and the decider and account source are the ones passed in.
 func TestFederationNotMountedWithoutKeys(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
-	fed, err := newFederation(t.Context(), config.Default(), nil, nil, connectors.NewRegistry(), nil, nil, log)
+	fed, err := newFederation(t.Context(), config.Default(), nil, nil, connectors.NewRegistry(), nil, nil, nil, log)
 	if err != nil || fed != nil {
 		t.Fatalf("newFederation without store/keys = %v, %v; want nil, nil", fed, err)
 	}
@@ -33,5 +33,17 @@ func TestFederationNotMountedWithoutKeys(t *testing.T) {
 	}
 	if federationDecider(fed, nil) != nil {
 		t.Error("decider replaced without a federation")
+	}
+	// No federation, no gateway.* tools: every wrapper passes through.
+	reg := connectors.NewRegistry()
+	gw, err := newGatewayTools(fed, nil, reg, nil, "https://gw.example.com", log)
+	if err != nil || gw != nil {
+		t.Fatalf("newGatewayTools without federation = %v, %v", gw, err)
+	}
+	if len(reg.List()) != 0 {
+		t.Error("gateway tools registered without a federation")
+	}
+	if gw.Accounts(base) != connectors.AccountSource(base) || gw.Decider(nil) != nil || gw.Setting(nil) != nil {
+		t.Error("nil gateway tools changed a wrapper")
 	}
 }

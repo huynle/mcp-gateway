@@ -178,7 +178,7 @@ func TestIntegrationFederationTunnelThroughMux(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := connectors.NewRegistry()
-	fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, metrics, log)
+	fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, nil, metrics, log)
 	if err != nil || fed == nil {
 		t.Fatalf("newFederation = %v, %v", fed, err)
 	}

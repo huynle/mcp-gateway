@@ -49,7 +49,7 @@ func TestIntegrationAdminServersMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := connectors.NewRegistry()
-	fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, observability.NewMetrics(), log)
+	fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, nil, observability.NewMetrics(), log)
 	if err != nil || fed == nil {
 		t.Fatalf("newFederation = %v, %v", fed, err)
 	}

@@ -14,6 +14,7 @@ import (
 	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/identity"
@@ -32,14 +33,14 @@ import (
 // It loads the servers and keeps reloading them until ctx ends. Like app
 // connections it needs a database and a key provider (credentials are
 // sealed); without either it returns nil and nothing is mounted.
-func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys crypto.KeyProvider, registry *connectors.Registry, policySvc *policy.Service, metrics *observability.Metrics, log *slog.Logger) (*connector.Federation, error) {
+func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys crypto.KeyProvider, registry *connectors.Registry, policySvc *policy.Service, perms connector.AddServerPermission, metrics *observability.Metrics, log *slog.Logger) (*connector.Federation, error) {
 	if st == nil || keys == nil {
 		log.Warn("no key provider: user-added MCP servers are not mounted")
 		return nil, nil
 	}
 	opts := connector.WireOptions{
 		Store: st, Keys: keys, Registry: registry, BaseURL: cfg.BaseURL, Version: version, Log: log,
-		ConnectFinish: connectFinish(log),
+		ConnectFinish: connectFinish(log), Permissions: perms,
 	}
 	if policySvc != nil {
 		opts.OnChange = policySvc.Invalidate
@@ -55,6 +56,25 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	log.Info("user-added MCP servers ready", "server_apps", len(registry.ServerApps()),
 		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath)
 	return fed, nil
+}
+
+// newGatewayTools registers the gateway.* management tools (Brain task
+// 99b5yzdb, docs/gateway-management.md) over the federation: visible and
+// callable only for users permitted to add MCP servers who switched them
+// on in My account. Without a federation (no key provider) there are none
+// and the returned nil *Tools leaves every wrapper unchanged.
+func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
+	if fed == nil {
+		return nil, nil
+	}
+	gw, err := gatewaytools.Wire(gatewaytools.WireOptions{
+		Federation: fed, Store: st, Registry: registry, Activity: activity, BaseURL: baseURL, Log: log,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gateway tools: %w", err)
+	}
+	log.Info("gateway management tools registered", "app", gatewaytools.App, "gate_ttl", gatewaytools.DefaultGateTTL)
+	return gw, nil
 }
 
 // federationAccounts routes server apps to the federation's anchor
