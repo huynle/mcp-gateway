@@ -173,7 +173,7 @@ func run() error {
 			return err
 		}
 		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), gw.Decider(federationDecider(fed, policySvc)), approvalSvc, rec, metrics, log,
-			federationResources(fed), withLedgerStage(ledgerSvc))
+			federationResources(fed, policySvc), withLedgerStage(ledgerSvc))
 		if err != nil {
 			return err
 		}
