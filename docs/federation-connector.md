@@ -31,7 +31,7 @@ Manager.call ─▶ snapshot.Allowed (as caller) ▸ auth.ForUser ▸ netguard c
 
 `atlassian calendar confluence contacts docs drive fake github gmail google jira mcp microsoft sheets slack tasks`
 
-(`mcp` is the anchor vendor, below.) `Manager.CreateServer` / `UpdateServer` validate before writing, so the portal should create and edit servers through them. The loader also skips servers with a reserved name that already exist in the database.
+(`mcp` is the anchor vendor, below.) `Manager.CreateServer` / `UpdateServer` validate before writing, so the portal should create and edit servers through them. `CreateServer` first checks that the owner may add MCP servers (`Options.Permissions`, required; `Wire` defaults it to `permissions.NewPostgres` and exposes it as `Federation.Permissions`) and returns `permissions.ErrNotPermitted` otherwise (decision `bnneszc1`). The loader also skips servers with a reserved name that already exist in the database.
 
 ## Visibility
 
@@ -143,5 +143,6 @@ netguard uses `netguard.CachedAllowList` over `netguard_allow_hosts` (30 s TTL, 
   - `TestE2EPluginsSharedKeyPublishedByAdmin`: a shared API key server published to a role and its key replaced on the admin pages; two users of the role call with the shared key once the role grants the tool; the owner loses the tool on publish until her role is granted it (current behaviour, idea `5kq4ka2z`); the owner cannot approve a published server's review (403); admin actions audited without the key.
   - `TestE2EPluginsPrivateVsPublishedVisibility`: tools, resources, templates and prompts per user while private, published (resources/prompts at once, the tool after the role grant, a templated read through the published server; the owner keeps resources and prompts but not the tool), and unpublished again.
   - `TestE2EPluginsTunnelStdioServer`: the real `mcp-gateway-tunnel` binary (built by the test) with `--stdio` next to a stdio server; tunnel created on the portal (token shown once), server `tunnel://<id>/` reviewed and called through `/mcp`; client stopped → `tunnel_offline`; admin revoke → client exits 1, calls refused `tunnel_unavailable`, the revoked token is refused.
+  - `TestE2EPluginsAddServerNeedsPermission`: a member without "May add MCP servers" gets no Add server button, 403 on create and detect, a refusing connector and a disabled Gateway management tools switch; once an admin assigns a role with the flag, the member adds a server.
   - `TestE2EPluginsLegacySSEUpstream`: a legacy HTTP+SSE-only server detected, added, refreshed and called (automatic fallback from Streamable HTTP observed at the upstream).
   - The fake upstreams are `httptest` **TLS** servers (the portal accepts only https and netguard verifies TLS against the system roots). The e2e test binary trusts the httptest certificate through `x509.SetFallbackRoots` with `//go:debug x509usefallbackroots=1` (`test/e2e/plugins_world_test.go`); 127.0.0.1 is allow-listed through the admin allow-list page. Production code is unchanged.

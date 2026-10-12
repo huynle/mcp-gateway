@@ -1,13 +1,13 @@
 # Servers portal (`internal/federation/portal`)
 
-The users' pages for **user-added MCP servers** ("plugins"): list my servers and the ones published to me, add a server, connect my account or key, refresh and review its tools, browse its resources and prompts, and manage tunnels. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (everyone may add; servers start private; frozen snapshots), `17iv8p3b` (owner writes, admin-only publish and published review), `7datr7x4` (server-rendered portal, CSRF), `u46t7kmq` (shared nav); task `9dp13dgy`. Admin pages (publish, review published servers, tunnels, allow-list) are in [plugins-admin.md](plugins-admin.md).
+The users' pages for **user-added MCP servers** ("plugins"): list my servers and the ones published to me, add a server, connect my account or key, refresh and review its tools, browse its resources and prompts, and manage tunnels. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (servers start private; frozen snapshots; its "everyone may add" is superseded by `bnneszc1`), `bnneszc1` (adding servers needs permission; task `ds5tjou2`), `17iv8p3b` (owner writes, admin-only publish and published review), `7datr7x4` (server-rendered portal, CSRF), `u46t7kmq` (shared nav); task `9dp13dgy`. Admin pages (publish, review published servers, tunnels, allow-list) are in [plugins-admin.md](plugins-admin.md).
 
 ## Pages
 
 | Route | Who | What |
 |---|---|---|
-| `GET /servers` | signed in | My servers and servers published to me: status, last error class, auth kind, my connection (**connected / needs connect / needs reconnect / shared credential / no connection needed**), **pending review** badge. Tunnels section: my live tunnels (online on this replica / offline, last seen), create, revoke. |
-| `GET /servers/new`, `POST /servers/new` | signed in | Add form. `action=detect` re-renders with what detection found; anything else creates the server. |
+| `GET /servers` | signed in | **Add server** button only for users who may add servers (otherwise: "Ask an admin for a role that may add MCP servers"). My servers and servers published to me: status, last error class, auth kind, my connection (**connected / needs connect / needs reconnect / shared credential / no connection needed**), **pending review** badge. Tunnels section: my live tunnels (online on this replica / offline, last seen), create, revoke. |
+| `GET /servers/new`, `POST /servers/new` | may add servers | Add form. `action=detect` re-renders with what detection found; anything else creates the server. Anyone else gets a **403** page (shared shell) saying to ask an admin for a role that may add MCP servers; detection does not run. |
 | `POST /servers/tunnels` | signed in | Create a tunnel. The response shows the token **once** (no redirect, `no-store`) with `mcp-gateway-tunnel --gateway <BaseURL> --token … --stdio "…"` and the `MCP_GATEWAY_TUNNEL_TOKEN=…` variant. |
 | `POST /servers/tunnels/revoke` | tunnel owner | Revoke (form field `id`); another user's tunnel is the 404 page. |
 | `GET /servers/{id}` | can see the server | Settings (no secrets: "a secret is stored"), my connection with **Connect / Reconnect** (OAuth: link to `/servers/{id}/connect`) or a form for my API key / bearer / headers and per-user header values, **Disconnect**, approved-snapshot summary, links to review and resources. Owner: stored-credential summary, **Refresh**, Edit, Delete. |
@@ -19,11 +19,23 @@ The users' pages for **user-added MCP servers** ("plugins"): list my servers and
 | `GET /servers/{id}/resources` | can see | Resources, resource templates and prompts (with arguments) of the **approved** snapshot. No upstream call. |
 | `POST /servers/{id}/resources/read` | can see | Reads one resource **listed in the approved snapshot** (others: 422, no upstream call) live with my credential; bounded preview. |
 | `GET /servers/{id}/prompts/{name}`, `POST …` | can see | A prompt of the approved snapshot with its argument form; POST gets it live (required arguments checked) and previews the messages. |
-| `GET/POST /servers/{id}/edit`, `POST /servers/{id}/delete` | owner | Edit (the name is fixed: it is the tool prefix) / delete. Both call the hook. |
+| `GET/POST /servers/{id}/edit`, `POST /servers/{id}/delete` | owner | Edit (the name is fixed: it is the tool prefix) / delete. Both call the hook. Changing the **address** needs the add-server permission (a new address is a different server: 422 otherwise); everything else stays editable. |
 
 Every route: 401 without a user; `Cache-Control: no-store`; POSTs need the CSRF token (`_csrf` field or `X-CSRF-Token`, else 403), checked here as well as by the portal's own middleware. A server the caller cannot see, a malformed ID and owner-only routes of someone else's server all render the same **404 page** ("Page not found"), so existence is not revealed.
 
 The OAuth connect routes `GET /servers/{id}/connect` and `GET /servers/oauth/callback` belong to `internal/federation/auth` and are mounted by the gateway wiring; they coexist with these patterns on one mux (checked).
+
+## Who may add servers
+
+Adding a server needs **permission** (decision `bnneszc1`, schema 16): the user is an **admin**, or holds a role an admin marked **May add MCP servers** in the role editor (`roles.may_add_servers`). One check answers everywhere: `permissions.Service.CanAddServers(ctx, userID)` (`internal/permissions`), run in the user's own database scope and failing closed. It gates:
+
+- the **Add server** button and the add form (`GET`/`POST /servers/new`, create and detect): hidden / 403;
+- a change of an owned server's address on edit (422);
+- `connector.Manager.CreateServer` (defense in depth: `permissions.ErrNotPermitted`), which the `gateway.*` MCP tools use.
+
+Servers a user already owns **keep working** without the permission: view, connect, refresh, review, edit (same address), delete, browse. Tunnels can still be created and revoked. App connections (`/connections`) are not affected.
+
+The same permission enables the per-user **Gateway management tools** switch on My account (`/account`, `POST /account/gateway-tools`, default off, audited as `user.gateway_tools_toggled` with `enabled=true|false`). Without the permission it is shown disabled with "Ask an admin for a role that may add MCP servers"; turning it on is refused (403), turning it off always works. When on, the user's MCP apps (for example OpenCode) can list and add servers through `gateway.*` tools; secrets, sign-in to a server and tool approval still happen in the portal. `permissions.Service.GatewayToolsEnabled(ctx, userID)` reads the stored setting; `GatewayToolsActive` = permitted **and** on (what the `gateway.*` tools gate on).
 
 ## Adding a server
 
@@ -78,6 +90,7 @@ fedportal.NewPortal(fedportal.Deps{
     Tunnels:       tunnelSvc,              // *tunnel.Service (CreateTunnel, Revoke, Online)
     ClientFactory: factory,
     Hook:          registry,               // anything with ServerChanged(ctx, serverID); nil = no-op
+    Permissions:   fed.Permissions,        // CanAddServers(ctx, userID) bool; required (*permissions.Service)
     Identity:      identityFunc,           // func(r) (userID, csrfToken string, isAdmin bool)
     Log:           log,
     BaseURL:       cfg.BaseURL,
@@ -91,6 +104,8 @@ fedportal.NewPortal(fedportal.Deps{
 
 ## Tests
 
-`go test ./internal/federation/portal/` (fakes for store, auth, snapshots, tunnels, upstream sessions): list with connection states and badge; another user's private server is 404 on every route and POSTs reach no service; CSRF 403; nav shows Servers; detect pre-selects OAuth for a Brain-shaped result and shows errors by class; reserved and invalid names; bad URLs and combinations (secrets never echoed); create stores a private server, its config and the shared secret through the auth service; OAuth with a static client and a tunnel URL; edit and delete are owner-only; the shared secret is never rendered; connect / reconnect links; per-user key form; refresh, review, approve with only reads enabled; explicit decisions and kind override; `approve_all` enables every tool including writes (and still needs CSRF, the latest version and a private server); the page has the summary counts, groups, select controls and filter; descriptions are cut to the first sentence with the full text and the kind select in the row details; a refresh review pre-checks only unchanged enabled tools (writes included); a hostile description (`<script>`, ANSI, bidi, zero-width, 20k characters) is escaped and capped; a published server needs an admin; refresh errors are class-level; resources list, bounded escaped read preview, unlisted URI refused; prompt preview with required arguments; the tunnel token is shown once with the command; revoke. The client factory is tested against a go-sdk server (credential and static headers, errors, tunnel authorization by the server owner).
+`go test ./internal/federation/portal/` (fakes for store, auth, snapshots, tunnels, upstream sessions, permission): a user without the add-server permission has no Add server button, gets the 403 page (shared shell) for the form, create and detect (CSRF still checked first), keeps viewing, refreshing, reviewing, editing and deleting an owned server but cannot move it to a new address; list with connection states and badge; another user's private server is 404 on every route and POSTs reach no service; CSRF 403; nav shows Servers; detect pre-selects OAuth for a Brain-shaped result and shows errors by class; reserved and invalid names; bad URLs and combinations (secrets never echoed); create stores a private server, its config and the shared secret through the auth service; OAuth with a static client and a tunnel URL; edit and delete are owner-only; the shared secret is never rendered; connect / reconnect links; per-user key form; refresh, review, approve with only reads enabled; explicit decisions and kind override; `approve_all` enables every tool including writes (and still needs CSRF, the latest version and a private server); the page has the summary counts, groups, select controls and filter; descriptions are cut to the first sentence with the full text and the kind select in the row details; a refresh review pre-checks only unchanged enabled tools (writes included); a hostile description (`<script>`, ANSI, bidi, zero-width, 20k characters) is escaped and capped; a published server needs an admin; refresh errors are class-level; resources list, bounded escaped read preview, unlisted URI refused; prompt preview with required arguments; the tunnel token is shown once with the command; revoke. The client factory is tested against a go-sdk server (credential and static headers, errors, tunnel authorization by the server owner).
+
+`make test-e2e` adds `TestE2EPluginsAddServerNeedsPermission`: a member without the permission sees no button and gets 403 on create and detect, the connector refuses, the My account switch is disabled and refuses "on"; a permitted user switches it on and off (two audit events); after an admin creates a role with "May add MCP servers" and assigns it, the member adds a server. The e2e and security worlds give the users who add servers a `server_builders` role with the flag.
 
 `make test-integration` adds `TestIntegrationPortalStoreVisibility` (own database `gateway_portal_test`): owner vs published reader vs other user, duplicate names, owner-only writes, credential info, tunnels.
