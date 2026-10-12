@@ -144,13 +144,12 @@ func TestShellProblemsCatchesDrift(t *testing.T) {
 func TestThemeToggleIsAccessibleAndHiddenWithoutJS(t *testing.T) {
 	for _, d := range []nav.Data{{}, {SignedIn: true, CSRFToken: "c"}} {
 		body := render(t, d)
-		_, toggle, ok := strings.Cut(body, `data-theme-toggle`)
-		if !ok {
+		at := strings.Index(body, `data-theme-toggle`)
+		if at < 0 {
 			t.Fatalf("no toggle (signed in %v):\n%s", d.SignedIn, body)
 		}
-		toggle, _, _ = strings.Cut(toggle, "</div>")
-		open := body[strings.LastIndex(body[:strings.Index(body, "data-theme-toggle")], "<"):]
-		open, _, _ = strings.Cut(open, ">")
+		toggle, _, _ := strings.Cut(body[at:], "</div>")
+		open, _, _ := strings.Cut(body[strings.LastIndex(body[:at], "<"):], ">")
 		for _, want := range []string{`role="group"`, `aria-label="Color theme"`, "hidden"} {
 			if !strings.Contains(open, want) {
 				t.Errorf("toggle element %q lacks %s", open, want)

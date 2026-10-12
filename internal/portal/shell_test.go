@@ -27,7 +27,7 @@ func TestPortalPagesUseTheSharedShell(t *testing.T) {
 // This walks every templates/ directory under internal/, so a new module
 // that copies an old layout fails here even before it has page tests.
 func TestEveryLayoutUsesTheSharedHead(t *testing.T) {
-	root := filepath.Join("..")
+	root := ".."
 	var layouts int
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
