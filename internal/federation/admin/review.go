@@ -10,7 +10,7 @@ import (
 )
 
 type reviewData struct {
-	fedportal.ReviewView
+	Page   fedportal.ReviewPage // the shared "review-tools" view
 	Title  string
 	Caller caller
 	Server serverRow
@@ -32,6 +32,8 @@ func (a *Admin) renderReview(w http.ResponseWriter, r *http.Request, c caller, s
 		return
 	}
 	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: rowOf(s, byID), Error: msg}
+	data.Page = fedportal.ReviewPage{ServerName: data.Server.Name, Action: "/admin/servers/" + s.ID + "/review",
+		CSRFToken: c.CSRFToken, Approve: "Approve as admin"}
 	latest, err := a.d.Snapshots.Latest(ctx, c.snapActor(), s.ID)
 	switch {
 	case errors.Is(err, snapshot.ErrNoSnapshot):
@@ -46,7 +48,7 @@ func (a *Admin) renderReview(w http.ResponseWriter, r *http.Request, c caller, s
 		a.fail(w, r, "current snapshot", err)
 		return
 	}
-	data.ReviewView = fedportal.BuildReviewView(latest, current)
+	data.Page.ReviewView = fedportal.BuildReviewView(latest, current)
 	a.render(w, r, status, "review.html", data)
 }
 

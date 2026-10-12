@@ -310,6 +310,13 @@ func TestStaticAssetsAreEmbedded(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
 		t.Errorf("Content-Type = %q", ct)
 	}
+	// The tool review pages' script and stylesheet (federation portal and admin).
+	for path, ctype := range map[string]string{"/static/review.js": "javascript", "/static/review.css": "text/css"} {
+		rec := h.do(t, request{method: http.MethodGet, path: path})
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), ctype) || !strings.Contains(rec.Body.String(), "review") {
+			t.Errorf("GET %s = %d %q", path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
 	if rec := h.do(t, request{method: http.MethodGet, path: "/static/../templates/layout.html"}); rec.Code == http.StatusOK {
 		t.Error("templates must not be served as static files")
 	}

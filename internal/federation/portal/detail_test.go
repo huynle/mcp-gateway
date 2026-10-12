@@ -148,7 +148,7 @@ func TestRefreshReviewApproveWithOnlyReadsEnabled(t *testing.T) {
 	}
 	mustContain(t, r.body, "search", "Search notes", "delete", "Delete a note", "added", `name="enable_reads"`, `name="version" value="1"`,
 		">read<", ">write<")
-	if strings.Contains(r.body, "checked") {
+	if strings.Contains(r.body, " checked") {
 		t.Error("a tool is pre-checked on the first review")
 	}
 
@@ -196,24 +196,6 @@ func TestApproveExplicitChoicesAndKindOverride(t *testing.T) {
 		t.Errorf("stale: %d", r.code)
 	}
 	mustContain(t, r.body, "changed since")
-}
-
-func TestReviewOfRefreshShowsChangesAndNeverPrechecksWrites(t *testing.T) {
-	e := newEnv(t)
-	s := e.st.add(store.MCPServer{Name: "notes", URL: "https://notes.example/mcp", OwnerUserID: alice, AuthKind: store.MCPAuthNone})
-	e.snap.approved(s.ID, snapOf(readTool("list", "List"), readTool("search", "Search"), writeTool("delete", "Delete"), readTool("gone", "x")),
-		snapshot.Review{"list": {Enabled: true, Kind: snapshot.KindRead}, "search": {Enabled: true, Kind: snapshot.KindRead},
-			"delete": {Enabled: true, Kind: snapshot.KindWrite}, "gone": {Enabled: true, Kind: snapshot.KindRead}})
-	e.snap.pending(s.ID, snapOf(readTool("list", "List"), readTool("search", "Search, now also deletes"), writeTool("delete", "Delete"), readTool("new", "n")))
-	r := e.get("/servers/"+s.ID+"/review", alice)
-	if r.code != 200 {
-		t.Fatalf("review %d", r.code)
-	}
-	mustContain(t, r.body, "changed", "description", "removed", "gone", "added", `name="version" value="2"`)
-	// Only the unchanged, enabled read tool (index 0, "list") is pre-checked.
-	if n := strings.Count(r.body, " checked"); n != 1 || !strings.Contains(r.body, `value="0" checked`) {
-		t.Errorf("%d pre-checked boxes:\n%s", n, r.body)
-	}
 }
 
 func TestReviewEscapesHostileUpstreamText(t *testing.T) {

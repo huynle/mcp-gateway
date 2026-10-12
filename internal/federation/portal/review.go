@@ -1,11 +1,16 @@
 package portal
 
 import (
+	"embed"
 	"errors"
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -20,15 +25,29 @@ type ReviewTool struct {
 	Index       int
 	Name        string
 	Title       string
-	Description string
+	Description string // full (display-safe) description
+	Summary     string // its first line or sentence (DescriptionSummary)
 	HintKind    snapshot.Kind
 	Override    snapshot.Kind // current reviewer override, if any
+	Kind        snapshot.Kind // effective kind: Override, else HintKind
 	Destructive bool
 	Status      string // added | changed | unchanged
 	Fields      []string
 	Enabled     bool // enabled in the approved review
-	Checked     bool // pre-checked: an unchanged read tool that is enabled
+	Checked     bool // pre-checked: an unchanged tool that is enabled
 }
+
+// ReviewGroup is the tools sharing a name prefix (the text before the
+// first "_"), listed by name.
+type ReviewGroup struct {
+	Name    string
+	Tools   []ReviewTool
+	Checked int // pre-checked tools in the group
+}
+
+// ReviewCounts summarises a review: tools in the latest snapshot, those
+// enabled in the approved review, new, changed and removed ones.
+type ReviewCounts struct{ Total, Enabled, New, Changed, Removed int }
 
 // ReviewView is the latest snapshot compared with the approved one, as
 // the review pages show it (BuildReviewView).
@@ -36,15 +55,73 @@ type ReviewView struct {
 	Version   int // latest version (0: no snapshot)
 	From      int // approved version (0: none)
 	UpToDate  bool
-	Tools     []ReviewTool
+	Tools     []ReviewTool  // snapshot order
+	Groups    []ReviewGroup // by name prefix, in name order
+	Counts    ReviewCounts
+	Selected  int  // pre-checked tools
+	HasReads  bool // any tool whose effective kind is read
 	Removed   []string
 	Resources KeyDiffView
 	Templates KeyDiffView
 	Prompts   KeyDiffView
 }
 
+// MaxSummary caps DescriptionSummary (runes, "…" included).
+const MaxSummary = 160
+
+// DescriptionSummary is the first line of a display-safe description, cut
+// after its first sentence (a ".", "!" or "?" followed by a space and an
+// upper-case letter or digit) and capped at MaxSummary runes.
+func DescriptionSummary(desc string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(desc), "\n")
+	line = strings.TrimSpace(line)
+	rs := []rune(line)
+	for i := 0; i+2 < len(rs); i++ {
+		if (rs[i] == '.' || rs[i] == '!' || rs[i] == '?') && unicode.IsSpace(rs[i+1]) &&
+			(unicode.IsUpper(rs[i+2]) || unicode.IsDigit(rs[i+2])) {
+			line = string(rs[:i+1])
+			break
+		}
+	}
+	if utf8.RuneCountInString(line) > MaxSummary {
+		line = strings.TrimSpace(string([]rune(line)[:MaxSummary-1])) + "…"
+	}
+	return line
+}
+
+// groupName is the text before the first "_" of a tool name, or the whole
+// name when there is none (or it starts with "_").
+func groupName(name string) string {
+	if prefix, _, ok := strings.Cut(name, "_"); ok && prefix != "" {
+		return prefix
+	}
+	return name
+}
+
+func groupTools(tools []ReviewTool) []ReviewGroup {
+	sorted := slices.Clone(tools)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	var groups []ReviewGroup
+	at := map[string]int{}
+	for _, t := range sorted {
+		g := groupName(t.Name)
+		i, ok := at[g]
+		if !ok {
+			i = len(groups)
+			at[g] = i
+			groups = append(groups, ReviewGroup{Name: g})
+		}
+		groups[i].Tools = append(groups[i].Tools, t)
+		if t.Checked {
+			groups[i].Checked++
+		}
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+	return groups
+}
+
 type reviewData struct {
-	ReviewView
+	Page       ReviewPage
 	Title      string
 	Caller     caller
 	Server     serverView
@@ -52,6 +129,26 @@ type reviewData struct {
 	NeedsAdmin bool
 	Error      string
 }
+
+// ReviewPage is the data of the shared "review-tools" template
+// (ReviewTemplateFS): the view plus the form it posts. Action empty
+// renders the tools read-only, without a form.
+type ReviewPage struct {
+	ReviewView
+	ServerName string
+	Action     string // form action (path); "" = no form
+	CSRFToken  string
+	Approve    string // label of the primary submit button
+}
+
+// ReviewTemplateFS holds the shared review template ("review-tools"),
+// ReviewTemplate its path, for the admin pages to parse into their set.
+//
+//go:embed templates/_review_tools.html
+var ReviewTemplateFS embed.FS
+
+// ReviewTemplate is the path of the shared review template in ReviewTemplateFS.
+const ReviewTemplate = "templates/_review_tools.html"
 
 // KeyDiffView is a KeyDiff with display-safe keys.
 type KeyDiffView struct{ Added, Removed, Changed []string }
@@ -78,8 +175,8 @@ func canApprove(c caller, s *store.MCPServer) bool {
 }
 
 // BuildReviewView compares latest with current (the approved record, nil
-// when none) for the review pages. Writes are never pre-checked; neither
-// is anything new or changed.
+// when none) for the review pages. Unchanged tools that are enabled are
+// pre-checked, reads and writes alike; new and changed tools never are.
 func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 	var v ReviewView
 	if latest == nil {
@@ -106,6 +203,7 @@ func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 			Index: i, Name: snapshot.DisplayName(t.Name), Title: snapshot.DisplayTitle(t.Title),
 			Description: snapshot.DisplayDescription(t.Description), HintKind: t.HintKind(), Status: "unchanged",
 		}
+		tv.Summary = DescriptionSummary(tv.Description)
 		if t.Annotations != nil {
 			if tv.Title == "" {
 				tv.Title = snapshot.DisplayTitle(t.Annotations.Title)
@@ -126,17 +224,41 @@ func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 				tv.Override = rv.Override.Kind
 			}
 		}
-		eff := tv.HintKind
+		tv.Kind = tv.HintKind
 		if tv.Override != "" {
-			eff = tv.Override
+			tv.Kind = tv.Override
 		}
-		// Writes are never pre-checked; neither is anything new or changed.
-		tv.Checked = tv.Enabled && tv.Status == "unchanged" && eff == snapshot.KindRead
+		// New and changed tools start unchecked (decision d6sitdqi);
+		// everything already enabled stays so (the user's bulk-approve
+		// decision overrides the earlier "writes never pre-checked").
+		tv.Checked = tv.Enabled && tv.Status == "unchanged"
+		v.count(tv)
 		v.Tools = append(v.Tools, tv)
 	}
+	v.Groups = groupTools(v.Tools)
 	v.Removed = displayKeys(diff.Removed)
+	v.Counts.Removed = len(v.Removed)
 	v.Resources, v.Templates, v.Prompts = keyView(diff.Resources), keyView(diff.ResourceTemplates), keyView(diff.Prompts)
 	return v
+}
+
+func (v *ReviewView) count(t ReviewTool) {
+	v.Counts.Total++
+	switch t.Status {
+	case "added":
+		v.Counts.New++
+	case "changed":
+		v.Counts.Changed++
+	}
+	if t.Enabled {
+		v.Counts.Enabled++
+	}
+	if t.Checked {
+		v.Selected++
+	}
+	if t.Kind == snapshot.KindRead {
+		v.HasReads = true
+	}
 }
 
 func (p *Portal) review(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
@@ -147,6 +269,10 @@ func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, 
 	ctx := r.Context()
 	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: p.view(ctx, c, s), Error: msg,
 		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished}
+	data.Page = ReviewPage{ServerName: data.Server.Name, Approve: "Approve"}
+	if data.CanApprove {
+		data.Page.Action, data.Page.CSRFToken = "/servers/"+s.ID+"/review", c.CSRFToken
+	}
 	latest, err := p.d.Snapshots.Latest(ctx, c.snapActor(), s.ID)
 	switch {
 	case errors.Is(err, snapshot.ErrNoSnapshot):
@@ -162,7 +288,7 @@ func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, 
 		p.fail(w, r, "current snapshot", err)
 		return
 	}
-	data.ReviewView = BuildReviewView(latest, current)
+	data.Page.ReviewView = BuildReviewView(latest, current)
 	p.render(w, r, status, "review.html", data)
 }
 
@@ -209,11 +335,14 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 }
 
 // ReviewDecisionsFromForm turns a posted review form (fields enable=<i>,
-// kind_<i>, enable_reads) into decisions for latest; current is the
-// approved record (nil when none). Every checked tool is enabled; every
-// unchecked tool disabled, except read tools when "enable all read tools"
-// is on (left to EnableReads, which never re-enables a tool a reviewer
-// disabled before and never enables writes).
+// kind_<i>, enable_reads, action) into decisions for latest; current is
+// the approved record (nil when none). action=approve_all enables every
+// tool of latest, writes included (the "Approve with all tools enabled"
+// button; writes still go through the policy's confirmation per call).
+// Otherwise every checked tool is enabled; every unchecked tool disabled,
+// except read tools when "enable all read tools" is on (left to
+// EnableReads, which never re-enables a tool a reviewer disabled before
+// and never enables writes).
 func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) snapshot.ReviewDecisions {
 	var review snapshot.Review
 	if current != nil {
@@ -225,7 +354,8 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 			checked[i] = true
 		}
 	}
-	d := snapshot.ReviewDecisions{Tools: map[string]snapshot.Decision{}, EnableReads: form.Get("enable_reads") != ""}
+	all := form.Get("action") == ActionApproveAll
+	d := snapshot.ReviewDecisions{Tools: map[string]snapshot.Decision{}, EnableReads: !all && form.Get("enable_reads") != ""}
 	for i, t := range latest.Snapshot.Tools {
 		var dec snapshot.Decision
 		eff := t.HintKind()
@@ -239,7 +369,7 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 			}
 		}
 		switch {
-		case checked[i]:
+		case all, checked[i]:
 			dec.Enabled = enabled(true)
 		case d.EnableReads && eff == snapshot.KindRead:
 			// left to EnableReads
@@ -250,5 +380,9 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 	}
 	return d
 }
+
+// ActionApproveAll is the review form's action value that enables every
+// tool of the posted version.
+const ActionApproveAll = "approve_all"
 
 func enabled(b bool) *bool { return &b }

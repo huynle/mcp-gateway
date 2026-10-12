@@ -352,6 +352,55 @@ func TestAdminReviewApprovesAsAdmin(t *testing.T) {
 	mustStatus(t, rec.Code, http.StatusConflict, "stale approve")
 }
 
+func TestAdminReviewUsesTheSharedViewAndApproveAll(t *testing.T) {
+	h := newHarness(t)
+	s := h.st.add(admin.Server{MCPServer: store.MCPServer{Name: "brain", Audience: store.MCPAudiencePublished}, PublishedRoleIDs: []string{roleEng}})
+	h.snaps.pending(s.ID, &snapshot.Snapshot{Tools: []snapshot.Tool{
+		{Name: "attachment_get", Description: "Get an attachment. Long details follow.\nMore."},
+		{Name: "attachment_add"},
+		{Name: "search", Annotations: &snapshot.Annotations{ReadOnlyHint: true}},
+	}})
+	rec := h.do(t, req{path: "/admin/servers/" + s.ID + "/review"})
+	mustStatus(t, rec.Code, http.StatusOK, "review page")
+	b := rec.Body.String()
+	for _, want := range []string{
+		`action="/admin/servers/` + s.ID + `/review"`, `name="_csrf" value="` + csrf + `"`, `data-review`, `class="review-bar"`,
+		`data-select="all"`, `data-select="read"`, `data-group="attachment"`, `data-group-check`, `0 of 3 selected`,
+		`name="action" value="approve_all"`, "Approve as admin", `<b>3</b> total`, `src="/static/review.js"`,
+		`<span class="tool-summary">Get an attachment.</span>`, `<details class="tool-more">`,
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("admin review page lacks %q", want)
+		}
+	}
+
+	// approve_all as an admin enables every tool of a published server.
+	rec = h.do(t, req{method: http.MethodPost, path: "/admin/servers/" + s.ID + "/review", form: url.Values{"version": {"1"}, "action": {"approve_all"}}})
+	mustStatus(t, rec.Code, http.StatusSeeOther, "approve all")
+	d := h.snaps.approvals[0]
+	for _, name := range []string{"attachment_get", "attachment_add", "search"} {
+		if e := d.Tools[name].Enabled; e == nil || !*e {
+			t.Errorf("%s not enabled by approve_all", name)
+		}
+	}
+	if last := h.snaps.actors[len(h.snaps.actors)-1]; !last.Admin {
+		t.Errorf("approve actor = %+v, want admin", last)
+	}
+	if ev := h.audit.last(); ev.ResourceIdentity["enabled_tools"] != "3" {
+		t.Errorf("audit = %+v", ev)
+	}
+
+	// approve_all still needs the CSRF token and the latest version.
+	n := len(h.snaps.approvals)
+	rec = h.do(t, req{method: http.MethodPost, path: "/admin/servers/" + s.ID + "/review", form: url.Values{"version": {"1"}, "action": {"approve_all"}}, noCSRF: true})
+	mustStatus(t, rec.Code, http.StatusForbidden, "approve all without CSRF")
+	rec = h.do(t, req{method: http.MethodPost, path: "/admin/servers/" + s.ID + "/review", form: url.Values{"version": {"7"}, "action": {"approve_all"}}})
+	mustStatus(t, rec.Code, http.StatusConflict, "stale approve all")
+	if len(h.snaps.approvals) != n {
+		t.Error("a refused approve_all reached the snapshot service")
+	}
+}
+
 func TestTunnelsListAndRevoke(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()

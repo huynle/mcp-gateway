@@ -1,0 +1,73 @@
+{{/* Shared by the servers portal and the admin review pages (fedportal.ReviewTemplateFS).
+     Data: fedportal.ReviewPage. Upstream text has been through the snapshot Display helpers;
+     html/template escapes it. Field names use the tool's index, never its upstream name. */}}
+{{define "review-tools"}}
+<link rel="stylesheet" href="/static/review.css">
+<section class="review-summary">
+  <div class="review-head"><strong>{{.ServerName}}</strong> <span class="muted">version {{.Version}}</span></div>
+  <p class="review-status">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools stay disabled until you enable them.{{end}}</p>
+  <p class="review-stats"><span class="stat"><b>{{.Counts.Total}}</b> total</span><span class="stat"><b>{{.Counts.Enabled}}</b> enabled</span><span class="stat added"><b>{{.Counts.New}}</b> new</span><span class="stat changed"><b>{{.Counts.Changed}}</b> changed</span><span class="stat removed"><b>{{.Counts.Removed}}</b> removed</span></p>
+  {{if .Removed}}<p class="removed">Removed tools: {{range .Removed}}<code>{{.}}</code> {{end}}</p>{{end}}
+  {{if not .Resources.Empty}}<p>Resources: {{range .Resources.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Resources.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Resources.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+  {{if not .Templates.Empty}}<p>Resource templates: {{range .Templates.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Templates.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Templates.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+  {{if not .Prompts.Empty}}<p>Prompts: {{range .Prompts.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Prompts.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Prompts.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+</section>
+{{if .Action}}<form method="post" action="{{.Action}}" class="review-form" data-review>
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+  <input type="hidden" name="version" value="{{.Version}}">
+  <div class="review-bar">
+    <span class="review-select" data-js hidden>
+      <button class="btn small" type="button" data-select="all">Select all</button>
+      <button class="btn small" type="button" data-select="none">Select none</button>
+      {{if .HasReads}}<button class="btn small" type="button" data-select="read">Select read-only</button>{{end}}
+    </span>
+    <input type="search" class="review-filter" data-review-filter data-js hidden placeholder="Filter tools" aria-label="Filter tools">
+    <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Counts.Total}} selected</span>
+    <span class="review-submit">
+      <button class="btn primary" type="submit" name="action" value="approve">{{.Approve}}</button>
+      <button class="btn" type="submit" name="action" value="approve_all">Approve with all tools enabled</button>
+    </span>
+  </div>
+{{end}}
+<div class="tool-groups">
+{{range .Groups}}
+<details class="tool-group" open data-group="{{.Name}}">
+  <summary>{{if $.Action}}<input type="checkbox" class="group-check" data-group-check data-js hidden aria-label="Select all {{.Name}} tools">{{end}}<code class="group-name">{{.Name}}</code> <span class="group-count muted" data-group-count>{{.Checked}}/{{len .Tools}}</span></summary>
+  <ul class="tool-list">
+  {{range .Tools}}
+    <li class="tool-row" data-tool data-kind="{{.Kind}}" data-hint="{{.HintKind}}" data-name="{{.Name}}">
+      <div class="tool-line">
+        {{if $.Action}}<label class="tool-pick"><input type="checkbox" name="enable" value="{{.Index}}"{{if .Checked}} checked{{end}} aria-label="Enable {{.Name}}"> <code class="tool-name">{{.Name}}</code></label>
+        {{else}}<span class="chip {{if .Enabled}}on{{else}}off{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span> <code class="tool-name">{{.Name}}</code>{{end}}
+        {{if eq .Status "added"}}<span class="chip status-added">new</span>{{else if eq .Status "changed"}}<span class="chip status-changed">changed</span>{{end}}
+        <span class="chip kind-{{.Kind}}">{{.Kind}}</span>{{if and (eq .Kind "write") .Destructive}}<span class="destructive" title="Destructive: the server does not declare this tool non-destructive" aria-label="destructive">●</span>{{end}}
+        {{if .Summary}}<span class="tool-summary">{{.Summary}}</span>{{end}}
+      </div>
+      <details class="tool-more"><summary>Details</summary>
+        {{if .Title}}<p><strong>{{.Title}}</strong></p>{{end}}
+        {{if eq .Status "changed"}}<p class="changed">Changed: {{join .Fields ", "}}</p>{{end}}
+        {{if .Description}}<div class="desc">{{.Description}}</div>{{end}}
+        <p class="muted">Annotated as {{.HintKind}}{{if and (eq .HintKind "write") .Destructive}}, destructive{{end}}.{{if .Enabled}} Currently enabled.{{end}}</p>
+        {{if $.Action}}<div class="advanced"><span class="muted">Advanced</span>
+          <label class="check">Kind <select name="kind_{{.Index}}" aria-label="Kind of {{.Name}}">
+            <option value=""{{if not .Override}} selected{{end}}>as annotated ({{.HintKind}})</option>
+            <option value="read"{{if eq .Override "read"}} selected{{end}}>read</option>
+            <option value="write"{{if eq .Override "write"}} selected{{end}}>write</option>
+          </select></label>
+        </div>{{else if .Override}}<p class="muted">Reviewer: {{.Override}}</p>{{end}}
+      </details>
+    </li>
+  {{end}}
+  </ul>
+</details>
+{{end}}
+</div>
+{{if .Action}}
+  <div class="review-foot">
+    <p class="muted">Tools without a read-only annotation count as writes. Writes still need approval on each call under the default policy, and tools that are new or changed on a refresh start disabled.</p>
+    {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
+  </div>
+</form>
+<script src="/static/review.js" defer></script>
+{{end}}
+{{end}}

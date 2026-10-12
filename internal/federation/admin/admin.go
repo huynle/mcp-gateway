@@ -198,6 +198,7 @@ func NewAdmin(d Deps) *Admin {
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
 		"join":    strings.Join,
 	}).ParseFS(templateFS, "templates/*.html"))
+	tpl = template.Must(tpl.ParseFS(fedportal.ReviewTemplateFS, fedportal.ReviewTemplate))
 	return &Admin{d: d, log: d.Log, tpl: tpl}
 }
 
