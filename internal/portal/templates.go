@@ -14,14 +14,11 @@ import (
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
-// Templates and static assets are embedded so the portal ships inside the
-// single gateway binary (decision 7datr7x4).
+// Templates are embedded so the portal ships inside the single gateway
+// binary (decision 7datr7x4); the static assets live in package static.
 //
 //go:embed templates/*.html
 var templateFS embed.FS
-
-//go:embed static/htmx.min.js static/review.js static/review.css
-var staticFS embed.FS
 
 // page is the data every template receives.
 type page struct {
