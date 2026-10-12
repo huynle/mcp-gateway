@@ -1,0 +1,48 @@
+/* Tool review pages (/servers/{id}/review, /admin/servers/{id}/review).
+   Uses the layout's custom properties (--fg, --bg, --muted, --line, --accent, --ok, --warn, --danger). */
+.review-summary { margin: 0 0 1rem; }
+.review-summary p { margin: .25rem 0; }
+.review-head { font-size: 1.05rem; }
+.review-stats { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; color: var(--muted); font-size: .9rem; }
+.review-stats b { color: var(--fg); font-weight: 600; }
+.review-stats .added b { color: var(--ok); } .review-stats .changed b { color: var(--warn); } .review-stats .removed b { color: var(--danger); }
+
+.review-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+  padding: .6rem 0; margin-bottom: .5rem; background: var(--bg); border-bottom: 1px solid var(--line); }
+.review-bar[hidden], .review-bar [hidden] { display: none; }
+.review-select { display: inline-flex; gap: .35rem; }
+.review-filter { flex: 1 1 12rem; min-width: 10rem; font: inherit; padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+.review-count { white-space: nowrap; font-size: .9rem; }
+.review-submit { margin-left: auto; display: inline-flex; gap: .4rem; flex-wrap: wrap; }
+.btn.small { padding: .2rem .6rem; font-size: .85rem; }
+
+.tool-groups { display: grid; gap: .25rem; }
+.tool-group { border: 1px solid var(--line); border-radius: 6px; }
+.tool-group[hidden] { display: none; }
+.tool-group > summary { cursor: pointer; padding: .4rem .6rem; display: flex; align-items: center; gap: .5rem; list-style-position: inside; }
+.tool-group > summary .group-name { font-weight: 600; }
+.tool-group > summary .group-count { font-size: .8rem; }
+.tool-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.tool-row { padding: .3rem .6rem .3rem 1.6rem; border-bottom: 1px solid var(--line); }
+.tool-row:last-child { border-bottom: 0; }
+.tool-row[hidden] { display: none; }
+.tool-line { display: flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.tool-pick { display: inline-flex; align-items: baseline; gap: .4rem; cursor: pointer; }
+.tool-name { font-weight: 500; }
+.tool-summary { color: var(--muted); font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+
+.chip { display: inline-block; padding: 0 .4rem; border-radius: 999px; font-size: .72rem; line-height: 1.4; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.kind-read { color: var(--ok); border-color: var(--ok); }
+.chip.status-added { color: var(--ok); border-color: var(--ok); }
+.chip.status-changed { color: var(--warn); border-color: var(--warn); }
+.chip.on { color: var(--ok); border-color: var(--ok); }
+.destructive { color: var(--danger); font-size: .55rem; opacity: .7; cursor: help; align-self: center; }
+
+.tool-more { margin: .1rem 0 .2rem; font-size: .85rem; }
+.tool-more > summary { cursor: pointer; color: var(--muted); width: max-content; }
+.tool-more[open] { padding-bottom: .4rem; }
+.tool-more .desc { margin: .35rem 0; }
+.tool-more p { margin: .3rem 0; }
+.advanced { display: flex; align-items: center; gap: .75rem; margin-top: .3rem; }
+.advanced .check { display: inline-flex; }
+.review-foot { margin-top: 1rem; }

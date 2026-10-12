@@ -20,7 +20,7 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js
+//go:embed static/htmx.min.js static/review.js static/review.css
 var staticFS embed.FS
 
 // page is the data every template receives.
