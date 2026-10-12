@@ -49,6 +49,7 @@ import (
 	slackconn "github.com/huynle/mcp-gateway/internal/connectors/slack"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -200,6 +201,8 @@ type world struct {
 	limiter  *mcp.TokenBucketLimiter
 	srv      *httptest.Server
 	fed      *connector.Federation // nil unless options.federation
+	gw       *gatewaytools.Tools   // nil unless options.federation
+	perms    *permissions.Service
 
 	admin, alice, bob    user
 	aliceAcc             string // alice's company fake account (connections row)
@@ -341,6 +344,8 @@ func newWorld(t *testing.T, opts options) *world {
 	w.conn.MapApp(github.App, connections.VendorGitHub)
 	w.conn.MapApp(slackconn.App, connections.VendorSlack)
 
+	// Who may add MCP servers and the "Gateway management tools" setting.
+	w.perms = permissions.NewPostgres(w.st, permissions.Options{Audit: w.rec, Log: log})
 	// User-added MCP servers, as cmd/gateway's newFederation wires them.
 	var decider mcp.Decider = w.policy
 	var accounts connectors.AccountSource = w.conn
@@ -412,8 +417,9 @@ func newWorld(t *testing.T, opts options) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// My account: "Gateway management tools", as cmd/gateway wires it.
-	p.SetGatewayTools(permissions.NewPostgres(w.st, permissions.Options{Audit: w.rec, Log: log}))
+	// My account: "Gateway management tools", as cmd/gateway wires it
+	// (through the gate when the gateway tools are wired).
+	p.SetGatewayTools(w.gw.Setting(w.perms))
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {

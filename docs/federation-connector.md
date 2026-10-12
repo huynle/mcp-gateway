@@ -29,9 +29,9 @@ Manager.call ─▶ snapshot.Allowed (as caller) ▸ auth.ForUser ▸ netguard c
 
 `ValidateServerName` refuses names that are not `^[a-z0-9_-]{1,63}$` (`ErrInvalidServerName`) and the built-in app names (`ErrReservedServerName`):
 
-`atlassian calendar confluence contacts docs drive fake github gmail google jira mcp microsoft sheets slack tasks`
+`atlassian calendar confluence contacts docs drive fake gateway github gmail google jira mcp microsoft sheets slack tasks`
 
-(`mcp` is the anchor vendor, below.) `Manager.CreateServer` / `UpdateServer` validate before writing, so the portal should create and edit servers through them. `CreateServer` first checks that the owner may add MCP servers (`Options.Permissions`, required; `Wire` defaults it to `permissions.NewPostgres` and exposes it as `Federation.Permissions`) and returns `permissions.ErrNotPermitted` otherwise (decision `bnneszc1`). The loader also skips servers with a reserved name that already exist in the database.
+(`mcp` is the anchor vendor, below; `gateway` is the built-in `gateway.*` management app, [gateway-management.md](gateway-management.md).) A duplicate name is `ErrServerNameTaken` (the Postgres store maps the unique violation). `Manager.CreateServer` / `UpdateServer` validate before writing, so the portal should create and edit servers through them. `CreateServer` first checks that the owner may add MCP servers (`Options.Permissions`, required; `Wire` defaults it to `permissions.NewPostgres` and exposes it as `Federation.Permissions`) and returns `permissions.ErrNotPermitted` otherwise (decision `bnneszc1`). The loader also skips servers with a reserved name that already exist in the database.
 
 ## Visibility
 
@@ -57,6 +57,8 @@ Approvals and ledger operations reference `connections(id, user_id)`, so every f
 |---|---|---|
 | `per_user` + oauth / api_key / bearer / headers | only when the user has a credential row (not revoked); a row that needs reconnecting still yields it so the call can say "reconnect" | `personal` |
 | `per_user` + `none`, or `shared` | always (the synthetic shared account) | `company` |
+
+The `gateway.*` management tools use the same vendor app: one anchor per user with `external_account_id = gateway-management`, label `company`, display name `gateway` (`GatewayAccounts`, exposed as `Federation.GatewayAccounts`; see [gateway-management.md](gateway-management.md)).
 
 Without an account the account stage answers `no_account` (connect first). The `/connections` page lists enabled vendor apps only, so anchors do not appear there. The connections keep-alive job logs a daily warning per anchor (no token to refresh), as it does for fake accounts.
 
@@ -115,9 +117,10 @@ Every read and get writes **one audit event**, like a tool call: tool `<server>.
 Only with a database **and** a key provider (like app connections):
 
 ```go
-fed, _ := newFederation(ctx, cfg, st, keys, registry, policySvc, metrics, log) // connector.Wire + Start
-accounts = federationAccounts(fed, accounts)            // anchors for server apps
-newMCPWithResources(..., federationDecider(fed, policySvc), ..., federationResources(fed), ...) // server visibility for list/resolve/policy; resources/prompts
+fed, _ := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log) // connector.Wire + Start
+gw, _ := newGatewayTools(fed, st, registry, perms, cfg.BaseURL, log) // gateway.* tools (gateway-management.md)
+accounts = gw.Accounts(federationAccounts(fed, accounts)) // anchors for server apps and the gateway app
+newMCPWithResources(..., gw.Decider(federationDecider(fed, policySvc)), ..., federationResources(fed), ...) // gate + server visibility for list/resolve/policy; resources/prompts
 ```
 
 | Route | Where | Handler |

@@ -290,6 +290,7 @@ deploy/smoke/           curl smoke of the fake connector's write path against th
 docs/deploy.md          Kubernetes deployment: Secrets to create, install/upgrade/rollback, key rotation, metrics + alerts, network policy, production, environments
 docs/runbooks/          operator runbooks (deploy/rollback, key rotation, unresolved operations, offboarding, vendor secrets, audit export, redaction check)
 docs/user-guide.md      coworker guide: harness, accounts, approvals, audit, errors
+docs/gateway-management.md  the gateway.* MCP tools (manage your MCP servers from your harness; permission + My account switch)
 docs/pilot-checklist.md what to collect, defaults to tune, sign-off criteria
 docs/connectors/        one page per connector (tools, resource identity, writes and reconciliation, setup)
 docs/plans/             design documents

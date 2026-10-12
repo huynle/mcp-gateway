@@ -28,6 +28,7 @@ import (
 	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
@@ -56,7 +57,15 @@ func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts o
 	// cross-user cases need both alice and bob able to add servers.
 	w.grantAddServers(w.alice)
 	w.grantAddServers(w.bob)
-	return fed.Manager.Decider(w.policy), fed.Manager.Accounts(w.conn)
+	// The gateway.* management tools, as cmd/gateway's newGatewayTools
+	// wires them (off until a user switches them on).
+	w.gw, err = gatewaytools.Wire(gatewaytools.WireOptions{
+		Federation: fed, Store: w.st, Registry: w.reg, Activity: w.perms, BaseURL: baseURL, Log: log, Timeout: opts.fedTimeout,
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return w.gw.Decider(fed.Manager.Decider(w.policy)), w.gw.Accounts(fed.Manager.Accounts(w.conn))
 }
 
 // roleServerBuilders may add MCP servers (and nothing else).

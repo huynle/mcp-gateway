@@ -23,7 +23,7 @@
 </ul>
 {{end}}
 
-<h2>My connection</h2>
+<h2 id="connection">My connection</h2>
 <p><span class="pill {{.Conn.Class}}">{{.Conn.Label}}</span></p>
 {{if .OAuth}}
 <p><a class="btn primary" href="/servers/{{.Server.ID}}/connect">{{if .Connected}}Reconnect{{else}}Connect{{end}}</a>
