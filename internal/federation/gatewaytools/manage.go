@@ -329,9 +329,18 @@ func (c *Connector) refreshServer(ctx context.Context, user string, args map[str
 		changed = append(changed, ch.Name)
 	}
 	pending := !diff.Empty()
+	// Upstream items discovery left out (NUL or control characters in a
+	// key, NUL in a schema key): display-safe names, never stored.
+	skipped := rec.Skipped
+	if skipped == nil {
+		skipped = []snapshot.Skipped{}
+	}
 	note := "Nothing was approved. New and changed tools stay disabled until you approve them in the browser at review_link."
 	if !pending {
 		note = "No changes since the approved snapshot. Nothing was approved; manage the tools in the browser at review_link."
+	}
+	if len(skipped) > 0 {
+		note += " Some upstream items were skipped (see skipped): their names or schemas contain characters the gateway cannot store or match, so they are not in the snapshot and cannot be enabled."
 	}
 	return connectors.Result{Content: map[string]any{
 		"server":       s.Name,
@@ -344,6 +353,7 @@ func (c *Connector) refreshServer(ctx context.Context, user string, args map[str
 		"resources":    len(diff.Resources.Added) + len(diff.Resources.Removed) + len(diff.Resources.Changed),
 		"templates":    len(diff.ResourceTemplates.Added) + len(diff.ResourceTemplates.Removed) + len(diff.ResourceTemplates.Changed),
 		"prompts":      len(diff.Prompts.Added) + len(diff.Prompts.Removed) + len(diff.Prompts.Changed),
+		"skipped":      skipped,
 		"review_link":  c.link(fedportal.ReviewPath(s.ID)),
 		"note":         note,
 	}}, nil

@@ -93,6 +93,9 @@ type Snapshot struct {
 	Resources         []Resource
 	ResourceTemplates []ResourceTemplate
 	Prompts           []Prompt
+	// Skipped lists the upstream items discovery left out (never stored,
+	// never compared).
+	Skipped []Skipped `json:"-"`
 }
 
 // Tool returns the snapshot's tool called name.

@@ -20,8 +20,11 @@
 //     there are several and treats any other account as unknown. The
 //     ratelimit stage is a per-user and per-app token bucket
 //     (TokenBucketLimiter) that also turns a connector's RateLimited into
-//     a retry_after for the harness and pauses the app. The policy stage
-//     (PolicyStage, with the ConfirmHandler hook) follows account; the
+//     a retry_after for the harness and pauses the app. The precheck
+//     stage (PrecheckStage, when a Prechecker is configured) refuses a
+//     call that can never run (a federated tool's arguments outside its
+//     reviewed schema) before policy, so no approval is asked for. The
+//     policy stage (PolicyStage, with the ConfirmHandler hook) follows; the
 //     ledger stage (LedgerStage, pipeline_ledger.go) is inserted before
 //     ratelimit by cmd/gateway and records every write before it runs,
 //     replays duplicates and answers CodePendingVerification. Later

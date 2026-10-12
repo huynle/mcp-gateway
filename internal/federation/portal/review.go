@@ -166,6 +166,8 @@ type reviewData struct {
 	CanApprove bool
 	NeedsAdmin bool
 	Error      string
+	// Skipped is what the refresh that rendered this page left out.
+	Skipped []snapshot.Skipped
 }
 
 // ReviewPage is the data of the shared "review-tools" template
@@ -373,9 +375,15 @@ func (p *Portal) review(w http.ResponseWriter, r *http.Request, c caller, s *sto
 }
 
 func (p *Portal) renderReview(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string) {
+	p.renderReviewSkipped(w, r, c, s, status, msg, nil)
+}
+
+// renderReviewSkipped is renderReview listing the items a refresh just
+// skipped (snapshot.Skipped: display-safe names).
+func (p *Portal) renderReviewSkipped(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, status int, msg string, skipped []snapshot.Skipped) {
 	ctx := r.Context()
 	data := reviewData{Title: "Review " + s.Name, Caller: c, Server: p.view(ctx, c, s), Error: msg,
-		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished}
+		CanApprove: canApprove(c, s), NeedsAdmin: s.Audience == store.MCPAudiencePublished, Skipped: skipped}
 	data.Page = ReviewPage{ServerName: data.Server.Name, Approve: "Approve"}
 	if data.CanApprove {
 		data.Page.Action, data.Page.CSRFToken = "/servers/"+s.ID+"/review", c.CSRFToken

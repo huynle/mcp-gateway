@@ -59,7 +59,28 @@ rec, err        := svc.Current(ctx, owner, serverID)       // approved snapshot 
 tool, kind, err := svc.Allowed(ctx, actor, serverID, toolName, args)
 ```
 
-`sess` is any `snapshot.Session` (`*client.Session` satisfies it). Discovery lists only the capabilities the server advertises. It runs outside the database transaction. Empty or duplicate tool, prompt or resource keys are refused with `ErrInvalidSnapshot`.
+`sess` is any `snapshot.Session` (`*client.Session` satisfies it). Discovery lists only the capabilities the server advertises. It runs outside the database transaction. Empty or duplicate tool, prompt or resource keys are refused with `ErrInvalidSnapshot`. Items the gateway cannot store or match are **skipped** (below); the record returned by `Create` / `Refresh` lists them in `Record.Skipped`, even when the refresh added no version.
+
+## Skipped items and NUL (chosen policy)
+
+PostgreSQL `jsonb` refuses U+0000, so one NUL anywhere in a server's answer used to make every refresh of that server fail ("unsupported Unicode escape sequence"): a hostile upstream could block its own re-review (Brain task `jsb8470s`, report `25175i87` finding 6). Discovery (`sanitize.go`) now applies this policy:
+
+| Upstream text | Result |
+|---|---|
+| tool name, prompt name, resource URI or resource template with NUL or another control character (C0, DEL, C1) | item **skipped**, reason `invalid name`. Keys are matched against calls, so they are never rewritten. |
+| prompt argument name with NUL or a control character | prompt **skipped**, reason `invalid argument` (dropping the argument would change the prompt's signature) |
+| NUL in a **key** of a tool's input or output schema (any depth) | tool **skipped**, reason `invalid schema` |
+| NUL in any other string: titles, descriptions, resource names and MIME types, annotation titles, prompt argument titles and descriptions, **string values** inside schemas | NUL **removed**, item kept |
+
+Other text is still stored as discovered (display sanitizing below). Unpaired surrogates and invalid UTF-8 cannot reach the store: the JSON decoder and `encoding/json` already turn them into U+FFFD.
+
+`snapshot.Skipped{Kind, Name, Reason}` names an item by its key passed through `DisplayName` (never raw upstream text); `Kind` is `tool`, `resource`, `resource template` or `prompt`. Skipped items are **not stored** (no column for them; no migration) and are not part of `Compare`. They are shown by the refresh that met them:
+
+- servers portal and admin **Refresh**: when anything was skipped, the review page is rendered at once (instead of the redirect) with a notice listing each item as `<kind> <name>: skipped (<reason>)`;
+- `gateway.refresh_server`: a `skipped` list (`[]` when none) and a sentence in `note`;
+- the log (`federation.server_refreshed`, count only).
+
+A later visit to the review page does not repeat the list; refresh again to see it.
 
 `Approve(version)` accepts the **latest** version (approving a refresh) or the **approved** one (changing decisions). Anything else returns `ErrStaleVersion`. The review always starts from the approved snapshot's review.
 
@@ -112,4 +133,7 @@ These helpers do **not** HTML-escape. Templates must still escape, and should sh
 
 - `go test ./internal/federation/snapshot/`: discovery mapping, `readOnlyHint` mapping, canonical JSON, diff, review rules, content review rules (first snapshot, decisions, carry-over, legacy base, both column layouts), `Check` (unknown / disabled tools, schema violations, no echo of values), display sanitizing, codec.
 - `TestIntegrationSnapshotLegacyContentReview`: a snapshot approved with the legacy flat review serves all its resources, templates and prompts; approving its refresh keeps them enabled and starts a new resource disabled.
+- `go test ./internal/federation/snapshot/`: `TestDiscoverSanitizesHostileText` (NUL in descriptions, titles, schema values, resource names and MIME types removed; NUL / C0 / C1 names, NUL schema keys, NUL resource URIs and templates, NUL prompt names and argument names skipped and listed; nothing stored carries a NUL).
+- `make test-integration`: `TestIntegrationRefreshStoresSanitizedSnapshot` (a hostile upstream refreshes into PostgreSQL, the stored row has no NUL, skipped items reported, the clean tool approved and allowed; a second refresh adds no version and reports the skipped items again).
+- `make test-security`: `TestSecurityFedNULInUpstreamTextSanitized` (portal Refresh of a hostile upstream answers 200 with the skipped list; clean items stored; the approved snapshot keeps serving).
 - `make test-integration` (`GATEWAY_TEST_DATABASE_URL`): Service against PostgreSQL in its own database `gateway_snapshot_test`. Covers the owner lifecycle (first approval enables nothing, refresh with a changed schema disables the tool until re-enabled, added tool disabled, removed tool gone, stale version refused), the owner approving while private, the owner and a reader refused once published, the admin WithJobs path approving, and visibility for readers and non-readers.

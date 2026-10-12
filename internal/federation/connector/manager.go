@@ -140,6 +140,8 @@ type entry struct {
 	server  store.MCPServer
 	snap    *snapshot.Snapshot
 	content *snapshot.ContentReview // nil: approved before the toggles, all enabled
+	// upstream maps each registered tool name to its upstream name.
+	upstream map[string]string
 }
 
 type visEntry struct {
@@ -212,7 +214,7 @@ func (m *Manager) Load(ctx context.Context) error {
 			}
 			continue
 		}
-		tools, skipped := buildTools(&s, rec, m.handlerFor(s.ID))
+		tools, skipped, upstream := buildToolsNamed(&s, rec, m.handlerFor(s.ID))
 		if len(skipped) > 0 {
 			m.log.Warn("federated tools skipped (name collision, unusable name or schema)", "event", "federation.tools_skipped",
 				"server", s.Name, "server_id", s.ID, "count", len(skipped))
@@ -221,7 +223,7 @@ func (m *Manager) Load(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("federation: server %s: register: %w", s.ID, err))
 			continue
 		}
-		next[s.Name] = &entry{server: s, snap: rec.Snapshot, content: rec.Content}
+		next[s.Name] = &entry{server: s, snap: rec.Snapshot, content: rec.Content, upstream: upstream}
 	}
 	for _, app := range m.o.Registry.ServerApps() {
 		if _, ok := next[app]; !ok {

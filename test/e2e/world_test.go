@@ -383,6 +383,13 @@ func newWorld(t *testing.T, opts options) *world {
 	if err := pipeline.Insert(mcp.Before, mcp.StageRateLimit, mcp.LedgerStage(w.ledger, log)); err != nil {
 		t.Fatal(err)
 	}
+	if w.fed != nil {
+		// The federation's pre-policy check (cmd/gateway's
+		// withFederationPrecheck, Brain task 8ky7l4e6).
+		if err := pipeline.Insert(mcp.Before, mcp.StagePolicy, mcp.PrecheckStage(w.fed.Manager.Precheck(), log)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Resources and prompts of user-added servers, audited and rate
 	// limited like tool calls (cmd/gateway's newMCP does the same).
 	var resources mcp.ResourceProvider

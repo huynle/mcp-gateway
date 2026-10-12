@@ -166,6 +166,7 @@ type fakeSnapshots struct {
 	latest    map[string]*snapshot.Record
 	current   map[string]*snapshot.Record
 	nextDiff  snapshot.Diff
+	skipped   []snapshot.Skipped
 	refreshes []string
 	refreshBy []snapshot.Actor
 	approves  int
@@ -206,7 +207,9 @@ func (f *fakeSnapshots) Refresh(_ context.Context, a snapshot.Actor, id string, 
 	f.latest[id] = rec
 	d := f.nextDiff
 	d.ToVersion = v
-	return rec, d, nil
+	out := *rec
+	out.Skipped = f.skipped
+	return &out, d, nil
 }
 
 // Approve exists only to prove nothing calls it.

@@ -28,6 +28,9 @@ type Record struct {
 	// prompts; nil for a snapshot approved before they had review
 	// toggles, which counts as all enabled (ContentReview).
 	Content *ContentReview
+	// Skipped is what the discovery that returned this record left out
+	// (Refresh / Create only; never stored, so nil on records read back).
+	Skipped []Skipped
 }
 
 // encodeSnapshot builds the pending store row for snap (empty lists are
