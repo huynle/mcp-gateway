@@ -243,3 +243,58 @@ func TestIntegrationPostgresStore(t *testing.T) {
 		t.Errorf("allow hosts = %v, %v", hosts, err)
 	}
 }
+
+// TestIntegrationPostgresStoreNameTakenAndGatewayAccount (Brain task
+// 99b5yzdb): a duplicate server name is ErrServerNameTaken, and the
+// gateway.* management tools get one anchor connection per user (owned by
+// the user, under the disabled "mcp" vendor app, external id
+// "gateway-management", label company).
+func TestIntegrationPostgresStoreNameTakenAndGatewayAccount(t *testing.T) {
+	st, _ := openTestStore(t)
+	ctx := t.Context()
+	ps := NewPostgresStore(st, testKeys(t))
+	owner, other := newUser(t, st, "Owner"), newUser(t, st, "Other")
+
+	first := &store.MCPServer{Name: "dup", URL: "https://dup.example.com/mcp", OwnerUserID: owner,
+		CredentialMode: store.MCPCredentialPerUser, AuthKind: store.MCPAuthNone}
+	if err := ps.CreateServer(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	second := &store.MCPServer{Name: "dup", URL: "https://dup2.example.com/mcp", OwnerUserID: other,
+		CredentialMode: store.MCPCredentialPerUser, AuthKind: store.MCPAuthNone}
+	if err := ps.CreateServer(ctx, second); !errors.Is(err, ErrServerNameTaken) {
+		t.Fatalf("duplicate name = %v, want ErrServerNameTaken", err)
+	}
+
+	ga, ok := ps.(GatewayAccounts)
+	if !ok {
+		t.Fatal("the Postgres store does not provide gateway accounts")
+	}
+	id1, err := ga.GatewayAccount(ctx, owner)
+	if err != nil {
+		t.Fatalf("GatewayAccount: %v", err)
+	}
+	if id2, err := ga.GatewayAccount(ctx, owner); err != nil || id2 != id1 {
+		t.Fatalf("second GatewayAccount = %s, %v; want %s", id2, err, id1)
+	}
+	idOther, err := ga.GatewayAccount(ctx, other)
+	if err != nil || idOther == id1 {
+		t.Fatalf("other user's GatewayAccount = %s, %v", idOther, err)
+	}
+	var conn *store.Connection
+	err = st.WithUser(ctx, owner, func(tx store.Tx) error {
+		var err error
+		conn, err = tx.Connections().Get(ctx, id1)
+		return err
+	})
+	if err != nil || conn.ExternalAccountID != GatewayAccountExternalID || conn.Label != store.AccountCompany || conn.Status != store.ConnectionActive {
+		t.Fatalf("gateway anchor row = %+v, %v", conn, err)
+	}
+	err = st.WithUser(ctx, other, func(tx store.Tx) error {
+		_, err := tx.Connections().Get(ctx, id1)
+		return err
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("another user reads the gateway anchor: %v", err)
+	}
+}

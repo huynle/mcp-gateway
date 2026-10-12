@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -22,7 +24,25 @@ const (
 	AnchorAppName = "federation"
 	// anchorPrefix + server ID is an anchor's external_account_id.
 	anchorPrefix = "mcp-server:"
+	// GatewayAccountExternalID is the external_account_id of a user's
+	// anchor for the gateway.* management tools (Brain task 99b5yzdb):
+	// approvals and ledger operations of gateway.delete_server and
+	// gateway.add_server reference it.
+	GatewayAccountExternalID = "gateway-management"
+	// gatewayAccountName is the anchor's display name.
+	gatewayAccountName = "gateway"
 )
+
+// ErrServerNameTaken: another server already has the name (the unique
+// index on mcp_servers.name).
+var ErrServerNameTaken = errors.New("federation: server name already taken")
+
+// GatewayAccounts supplies the account the gateway.* management tools run
+// under: one anchor connection per user (created on first use, label
+// company). NewPostgresStore's Store implements it.
+type GatewayAccounts interface {
+	GatewayAccount(ctx context.Context, userID string) (string, error)
+}
 
 // pgStore implements Store over *store.Store.
 type pgStore struct {
@@ -98,11 +118,17 @@ func (p *pgStore) UserConnection(ctx context.Context, userID, serverID string) (
 	return out, err
 }
 
-// CreateServer: user scope, as the owner.
+// CreateServer: user scope, as the owner. A duplicate name is
+// ErrServerNameTaken.
 func (p *pgStore) CreateServer(ctx context.Context, s *store.MCPServer) error {
-	return p.st.WithUser(ctx, s.OwnerUserID, func(tx store.Tx) error {
+	err := p.st.WithUser(ctx, s.OwnerUserID, func(tx store.Tx) error {
 		return store.CreateMCPServer(ctx, tx, s)
 	})
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && pg.Code == "23505" {
+		return ErrServerNameTaken
+	}
+	return err
 }
 
 // UpdateServer: user scope (only the owner's rows change).
@@ -117,11 +143,24 @@ func (p *pgStore) UpdateServer(ctx context.Context, userID string, s *store.MCPS
 // name and status (active) up to date. Concurrent first uses converge on
 // one row (the unique (user, app, external id) key; the loser re-reads).
 func (p *pgStore) AnchorAccount(ctx context.Context, userID string, server *store.MCPServer, label string) (string, error) {
+	return p.anchor(ctx, userID, anchorPrefix+server.ID, server.Name, label)
+}
+
+// GatewayAccount returns userID's anchor connection for the gateway.*
+// management tools (external id GatewayAccountExternalID, label company),
+// created under the user's own scope on first use.
+func (p *pgStore) GatewayAccount(ctx context.Context, userID string) (string, error) {
+	return p.anchor(ctx, userID, GatewayAccountExternalID, gatewayAccountName, store.AccountCompany)
+}
+
+// anchor finds or creates userID's anchor connection with external id ext
+// under the anchor vendor app and brings label, display name and status
+// (active) up to date.
+func (p *pgStore) anchor(ctx context.Context, userID, ext, display, label string) (string, error) {
 	appID, err := p.anchorApp(ctx)
 	if err != nil {
 		return "", err
 	}
-	ext := anchorPrefix + server.ID
 	var id string
 	attempt := func() error {
 		return p.st.WithUser(ctx, userID, func(tx store.Tx) error {
@@ -129,14 +168,14 @@ func (p *pgStore) AnchorAccount(ctx context.Context, userID string, server *stor
 			switch {
 			case errors.Is(err, store.ErrNotFound):
 				c = &store.Connection{UserID: userID, VendorAppID: appID, ExternalAccountID: ext,
-					Label: label, DisplayName: server.Name, Status: store.ConnectionActive}
+					Label: label, DisplayName: display, Status: store.ConnectionActive}
 				if err := tx.Connections().Create(ctx, c); err != nil {
 					return err
 				}
 			case err != nil:
 				return err
-			case c.Label != label || c.DisplayName != server.Name || c.Status != store.ConnectionActive:
-				c.Label, c.DisplayName, c.Status = label, server.Name, store.ConnectionActive
+			case c.Label != label || c.DisplayName != display || c.Status != store.ConnectionActive:
+				c.Label, c.DisplayName, c.Status = label, display, store.ConnectionActive
 				if err := store.UpdateConnection(ctx, tx, c); err != nil {
 					return err
 				}

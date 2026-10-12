@@ -29,7 +29,7 @@ func TestValidateServerName(t *testing.T) {
 			t.Errorf("ValidateServerName(%q) = %v, want ErrReservedServerName", name, err)
 		}
 	}
-	want := []string{"atlassian", "calendar", "confluence", "contacts", "docs", "drive", "fake", "github", "gmail", "google", "jira", "mcp", "microsoft", "sheets", "slack", "tasks"}
+	want := []string{"atlassian", "calendar", "confluence", "contacts", "docs", "drive", "fake", "gateway", "github", "gmail", "google", "jira", "mcp", "microsoft", "sheets", "slack", "tasks"}
 	if got := fmt.Sprint(ReservedNames()); got != fmt.Sprint(want) {
 		t.Errorf("ReservedNames = %s, want %s", got, want)
 	}
