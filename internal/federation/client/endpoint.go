@@ -24,13 +24,26 @@ type Endpoint struct {
 	Label string
 }
 
-// reservedHeaders are set by the transport or the MCP SDK; an endpoint may
-// not override them. Every Mcp-* header is reserved as well.
+// reservedHeaders may not be static endpoint headers (compared in
+// canonical form, so case-insensitively). Every Mcp-* header is reserved
+// as well.
+//   - set by the transport or the MCP SDK: Host, Content-Length,
+//     Content-Type, Accept, Accept-Encoding, Last-Event-Id, Cache-Control;
+//   - hop-by-hop / connection management (RFC 9110 7.6.1 and the legacy
+//     ones): Connection, Keep-Alive, Proxy-Connection, Te, Trailer,
+//     Transfer-Encoding, Upgrade, Proxy-Authenticate;
+//   - credentials: Authorization, Proxy-Authorization, Cookie, Set-Cookie,
+//     X-Api-Key. Credentials belong in the Authorizer, which seals them per
+//     user and server URL; a static header would send the same plain-text
+//     value on every user's calls. The servers portal refuses them too;
+//     this is defence in depth for header_config written by any other
+//     path (Brain task 68ss4tpc).
 var reservedHeaders = map[string]bool{
 	"Host": true, "Content-Length": true, "Content-Type": true, "Accept": true,
 	"Connection": true, "Transfer-Encoding": true, "Te": true, "Trailer": true,
-	"Upgrade": true, "Keep-Alive": true, "Proxy-Authorization": true,
-	"Proxy-Connection": true, "Last-Event-Id": true, "Cache-Control": true,
+	"Upgrade": true, "Keep-Alive": true, "Proxy-Authorization": true, "Proxy-Authenticate": true,
+	"Proxy-Connection": true, "Last-Event-Id": true, "Cache-Control": true, "Accept-Encoding": true,
+	"Authorization": true, "Cookie": true, "Set-Cookie": true, "X-Api-Key": true,
 }
 
 // validated is a checked Endpoint.

@@ -334,7 +334,7 @@ func lines(s string) []string {
 
 // secretHeaders may not be static headers: those are stored in plain text
 // (header_config) and shown on the edit form.
-var secretHeaders = map[string]bool{"Authorization": true, "Cookie": true, "X-Api-Key": true}
+var secretHeaders = map[string]bool{"Authorization": true, "Cookie": true, "Set-Cookie": true, "X-Api-Key": true}
 
 // parseHeaderLines reads "Name: value" lines. static refuses credential
 // headers (static headers are not secret).
