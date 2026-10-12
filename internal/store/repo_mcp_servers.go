@@ -362,6 +362,6 @@ func DeleteMCPOAuthClient(ctx context.Context, q Querier, serverID string) (int6
 const MCPServerLockedCode = "GW001"
 
 // ErrMCPServerLocked: the server is published, so its URL, transport,
-// credential mode, auth kind and auth / header config can only be changed
-// by an admin (decision q7vbxlyk point 3).
+// auth kind and auth / header config can only be changed by an admin
+// (decision q7vbxlyk point 3).
 var ErrMCPServerLocked = errors.New("store: published server settings can only be changed by an admin")

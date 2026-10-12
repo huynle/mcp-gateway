@@ -31,7 +31,7 @@ func TestPublishedServerEditFormIsReadOnlyForOwner(t *testing.T) {
 	}
 	mustContain(t, r.body, lockedNote, "https://wiki.example/mcp", "X-Client: gateway")
 	// No editable address or sign-in fields.
-	mustNotContain(t, r.body, `name="url"`, `name="auth_kind"`, `name="credential_mode"`, `name="static_headers"`,
+	mustNotContain(t, r.body, `name="url"`, `name="auth_kind"`, `name="static_headers"`,
 		`name="per_user_headers"`, `name="scopes"`, `name="client_id"`, `name="tunnel_id"`)
 }
 
@@ -44,9 +44,7 @@ func TestPublishedServerOwnerEditsRefused(t *testing.T) {
 			"static_headers", "X-Client: gateway", "shared_bearer", "tok"),
 		"new auth kind":      addForm("url", "https://wiki.example/mcp", "auth_kind", "none", "static_headers", "X-Client: gateway"),
 		"new static headers": addForm("url", "https://wiki.example/mcp", "auth_kind", "bearer", "credential_mode", "shared", "static_headers", "X-Route: evil"),
-		"per-user mode": addForm("url", "https://wiki.example/mcp", "auth_kind", "bearer", "credential_mode", "per_user",
-			"static_headers", "X-Client: gateway"),
-		"tunnel": {"url_mode": {"tunnel"}, "tunnel_id": {"5e000000-0000-4000-8000-000000000999"}},
+		"tunnel":             {"url_mode": {"tunnel"}, "tunnel_id": {"5e000000-0000-4000-8000-000000000999"}},
 	} {
 		r := e.post("/servers/"+s.ID+"/edit", alice, form)
 		if r.code != 422 {
@@ -95,4 +93,30 @@ func TestStoreLockRefusalIsTheLockedMessage(t *testing.T) {
 		t.Fatalf("locked by the store: %d", r.code)
 	}
 	mustContain(t, r.body, lockedNote)
+}
+
+// Switching between per-user and shared credentials keeps the reviewed
+// backend: the owner may still do it.
+func TestPublishedServerOwnerMaySwitchCredentialMode(t *testing.T) {
+	e := newEnv(t)
+	s := publishedBearerServer(e)
+	mustContain(t, e.get("/servers/"+s.ID+"/edit", alice).body, `name="credential_mode"`)
+	r := e.post("/servers/"+s.ID+"/edit", alice, url.Values{"credential_mode": {"per_user"}})
+	if r.code != 303 {
+		t.Fatalf("switch to per-user: %d %s", r.code, r.body)
+	}
+	got := e.serverByName("wiki")
+	if got.CredentialMode != store.MCPCredentialPerUser || got.URL != s.URL || got.AuthKind != s.AuthKind ||
+		string(got.HeaderConfig) != string(s.HeaderConfig) {
+		t.Errorf("after the switch: %+v", got)
+	}
+	// A full form that changes only the mode is fine too.
+	r = e.post("/servers/"+s.ID+"/edit", alice, addForm("url", "https://wiki.example/mcp", "auth_kind", "bearer",
+		"credential_mode", "shared", "static_headers", "X-Client: gateway", "shared_bearer", "tok3"))
+	if r.code != 303 {
+		t.Fatalf("switch back to shared: %d %s", r.code, r.body)
+	}
+	if got := e.serverByName("wiki"); got.CredentialMode != store.MCPCredentialShared {
+		t.Errorf("mode = %q", got.CredentialMode)
+	}
 }

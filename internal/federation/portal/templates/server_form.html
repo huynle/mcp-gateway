@@ -12,12 +12,17 @@
   {{with $.Form.StaticHeaders}}<dt>Static headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
   {{with $.Form.PerUserHeaders}}<dt>Per-user headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
 </dl>
-{{if .SharedForm}}
+{{if .CredentialForm}}
 <form method="post" action="/servers/{{$.ServerID}}/edit" class="stack" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
   <fieldset>
-    <legend>Rotate the shared credential <span class="muted">(write-only: it is never shown again)</span></legend>
-    {{if $.Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with $.Info.SharedKeys}} ({{join . ", "}}){{end}}.</p>{{end}}
+    <legend>Credentials</legend>
+    <label class="check"><input type="radio" name="credential_mode" value="per_user"{{if ne $.Form.CredentialMode "shared"}} checked{{end}}> Per user: everyone connects their own key</label>
+    <label class="check"><input type="radio" name="credential_mode" value="shared"{{if eq $.Form.CredentialMode "shared"}} checked{{end}}> Shared: one credential set here, used for everyone</label>
+  </fieldset>
+  <fieldset>
+    <legend>Shared credential <span class="muted">(shared mode only; write-only: it is never shown again)</span></legend>
+    {{if $.Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with $.Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the field blank to keep it.</p>{{end}}
     {{if eq $.Form.AuthKind "api_key"}}<label>Shared API key <input type="password" name="shared_api_key" value="" autocomplete="new-password"></label>{{end}}
     {{if eq $.Form.AuthKind "bearer"}}<label>Shared bearer token <input type="password" name="shared_bearer" value="" autocomplete="new-password"></label>{{end}}
     {{if eq $.Form.AuthKind "headers"}}<label>Shared headers <span class="muted">(one “Name: value” per line)</span> <textarea name="shared_headers" rows="3" autocomplete="off"></textarea></label>{{end}}

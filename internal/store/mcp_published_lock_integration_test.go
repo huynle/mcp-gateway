@@ -12,8 +12,8 @@ import (
 )
 
 // Schema 17 (Brain task mpszh6h0, decision q7vbxlyk point 3): a published
-// server's address and sign-in settings (url, transport, credential mode,
-// auth kind, auth and header config) are admin-governed. The request path
+// server's address and sign-in settings (url, transport, auth kind, auth
+// and header config) are admin-governed. The request path
 // (gateway_app, row-level security) may not change them; an admin change
 // through the bypass role supersedes the approved snapshot, so nothing is
 // served from the new backend until an admin reviews it again.
@@ -79,12 +79,11 @@ func TestIntegrationMCPPublishedServerLockedForOwner(t *testing.T) {
 
 	// Every locked column, by raw SQL through the user scope: refused.
 	for col, set := range map[string]string{
-		"url":             `url = 'https://attacker.example.net/mcp'`,
-		"transport":       `transport = 'sse'`,
-		"credential_mode": `credential_mode = 'shared'`,
-		"auth_kind":       `auth_kind = 'none'`,
-		"auth_config":     `auth_config = '{"scopes":["admin"]}'`,
-		"header_config":   `header_config = '{"static":{"X-Route":"evil"}}'`,
+		"url":           `url = 'https://attacker.example.net/mcp'`,
+		"transport":     `transport = 'sse'`,
+		"auth_kind":     `auth_kind = 'none'`,
+		"auth_config":   `auth_config = '{"scopes":["admin"]}'`,
+		"header_config": `header_config = '{"static":{"X-Route":"evil"}}'`,
 	} {
 		err := st.WithUser(ctx, f.alice, func(tx store.Tx) error {
 			_, err := tx.Exec(ctx, `UPDATE mcp_servers SET `+set+` WHERE id = $1`, f.server.ID)
@@ -110,6 +109,12 @@ func TestIntegrationMCPPublishedServerLockedForOwner(t *testing.T) {
 		return store.SetMCPServerStatus(ctx, tx, f.server.ID, store.MCPServerError, ptr("unreachable"))
 	}); err != nil {
 		t.Errorf("owner status update = %v", err)
+	}
+	// The credential mode is not locked: the backend stays the reviewed one.
+	mode := *f.server
+	mode.CredentialMode = store.MCPCredentialShared
+	if err := st.WithUser(ctx, f.alice, func(tx store.Tx) error { return store.UpdateMCPServer(ctx, tx, &mode) }); err != nil {
+		t.Errorf("owner credential mode change = %v", err)
 	}
 	// Nothing changed and the approval stands.
 	err = st.WithJobs(ctx, func(tx store.Tx) error {

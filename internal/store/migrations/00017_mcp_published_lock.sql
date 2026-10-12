@@ -2,9 +2,9 @@
 -- q7vbxlyk point 3).
 --
 -- Once an admin has published a server, its address and sign-in settings
--- (url, transport, credential_mode, auth_kind, auth_config, header_config)
--- decide where every user's tool arguments go and where the answers come
--- from. The admin approved the snapshot for that backend, so:
+-- (url, transport, auth_kind, auth_config, header_config) decide where
+-- every user's tool arguments go, what is sent along and where the answers
+-- come from. The admin approved the snapshot for that backend, so:
 --
 --   * the request path (gateway_app, subject to row-level security) may not
 --     change those columns while the server is published: the UPDATE fails
@@ -15,9 +15,12 @@
 --     so nothing is served from the new backend until an admin reviews it
 --     again (refresh + approve).
 --
--- Other columns (name, status, last_error_class, updated_at) and private
--- servers are unaffected. "Request path" means any role without BYPASSRLS
--- (and not a superuser), so the check does not depend on role names.
+-- Other columns (name, credential_mode, status, last_error_class,
+-- updated_at) and private servers are unaffected: switching between
+-- per-user and shared credentials keeps the reviewed backend, and stored
+-- credentials stay sealed to the URL (decision 4l6dik46). "Request path"
+-- means any role without BYPASSRLS (and not a superuser), so the check
+-- does not depend on role names.
 
 -- +goose Up
 -- +goose StatementBegin
@@ -29,7 +32,6 @@ BEGIN
     END IF;
     IF NEW.url IS NOT DISTINCT FROM OLD.url
        AND NEW.transport IS NOT DISTINCT FROM OLD.transport
-       AND NEW.credential_mode IS NOT DISTINCT FROM OLD.credential_mode
        AND NEW.auth_kind IS NOT DISTINCT FROM OLD.auth_kind
        AND NEW.auth_config IS NOT DISTINCT FROM OLD.auth_config
        AND NEW.header_config IS NOT DISTINCT FROM OLD.header_config THEN

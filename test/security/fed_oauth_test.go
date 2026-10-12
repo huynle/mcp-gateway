@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
+	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -331,9 +334,11 @@ func TestSecurityFedOAuthPinnedEndpointAndRefreshIsolation(t *testing.T) {
 }
 
 // TestSecurityFedOAuthConnectFlowSurvivesNoURLChange: a connect flow that
-// started before the owner changed the server's URL must not finish: the
-// token was minted for the old resource and would be sent to the new
-// address (the owner's) on the next call.
+// started before the server's URL changed must not finish: the token was
+// minted for the old resource and would be sent to the new address on the
+// next call. Since schema 17 only an admin can move a published server
+// (the owner's attempt is refused); the admin's move, even once the
+// server is re-reviewed, must not complete the flow either.
 func TestSecurityFedOAuthConnectFlowSurvivesNoURLChange(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	ctx := t.Context()
@@ -346,13 +351,31 @@ func TestSecurityFedOAuthConnectFlowSurvivesNoURLChange(t *testing.T) {
 	w.publish(s, []policy.ToolRule{{App: "oauthnotes", Tool: "search", Outcome: policy.OutcomeAllow}}, roleRestricted)
 
 	authz, state := w.startConnect(w.bob, s.ID) // bob is at the AS sign-in page...
-	s.URL = evil.URL() + "/mcp"                 // ...while the owner repoints the server
-	if err := w.fed.Manager.UpdateServer(ctx, w.alice.id, s); err != nil {
+	moved := *s                                 // ...while the server is repointed:
+	moved.URL = evil.URL() + "/mcp"
+	if err := w.fed.Manager.UpdateServer(ctx, w.alice.id, &moved); !errors.Is(err, store.ErrMCPServerLocked) {
+		t.Fatalf("owner URL change of a published server = %v, want ErrMCPServerLocked", err)
+	}
+	// by an admin, who then re-approves the snapshot.
+	if err := fedadmin.NewStore(w.st).UpdateAddress(ctx, s.ID, moved.URL); err != nil {
+		t.Fatal(err)
+	}
+	adminActor := snapshot.Actor{UserID: w.admin.id, Admin: true}
+	latest, err := w.fed.Snapshots.Latest(ctx, adminActor, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if _, err := w.fed.Snapshots.Approve(ctx, adminActor, s.ID, latest.Version,
+		snapshot.ReviewDecisions{Tools: map[string]snapshot.Decision{"search": {Enabled: &on}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.fed.Manager.ServerChanged(ctx, s.ID); err != nil {
 		t.Fatal(err)
 	}
 	code, out := w.callback(w.bob, url.Values{"state": {state}, "code": {o.mint("bob", authz)}, "iss": {o.base}})
 	bob := w.client(w.bob)
-	_, err := w.call(bob, "oauthnotes.search", map[string]any{"q": "x"})
+	_, err = w.call(bob, "oauthnotes.search", map[string]any{"q": "x"})
 	if evil.sawValue("at-bob-") {
 		t.Errorf("bob's access token (minted for the old resource) reached the owner's new URL (callback %d %q)", code, out)
 	}

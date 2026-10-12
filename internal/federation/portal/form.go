@@ -431,10 +431,12 @@ type formPage struct {
 
 // lockedView is the read-only summary of a published server's settings.
 type lockedView struct {
-	Note       string
-	Address    string
-	AuthKind   string
-	SharedForm bool // the owner may rotate the shared secret
+	Note     string
+	Address  string
+	AuthKind string
+	// CredentialForm: the kind takes a shared secret, so the owner may
+	// switch the credential mode and rotate the shared secret.
+	CredentialForm bool
 }
 
 func (p *Portal) formPage(ctx context.Context, c caller, f serverForm, d *detectView) (formPage, error) {
@@ -661,7 +663,7 @@ func (p *Portal) renderEdit(w http.ResponseWriter, r *http.Request, c caller, s 
 		}
 		page.Locked = &lockedView{
 			Note: lockedMessage, Address: displayURL(s.URL, names), AuthKind: kindLabels[s.AuthKind],
-			SharedForm: s.CredentialMode == store.MCPCredentialShared && secretKind(s.AuthKind),
+			CredentialForm: secretKind(s.AuthKind),
 		}
 	}
 	p.renderForm(w, r, status, page)
