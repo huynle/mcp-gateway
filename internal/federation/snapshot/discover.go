@@ -14,11 +14,16 @@ import (
 // Discover lists a server's capabilities through sess into a Snapshot. Only
 // the capabilities the server advertised are listed (a server without
 // resources is not asked for them). Every list is sorted by key; empty or
-// duplicate keys return ErrInvalidSnapshot. List errors are returned
+// duplicate keys return ErrInvalidSnapshot. Items whose keys or schema
+// keys PostgreSQL cannot store or the gateway will not match (NUL, control
+// characters) are left out and listed in Snapshot.Skipped, and NUL is
+// removed from all other text (sanitize.go). List errors are returned
 // wrapped (they are the federation client's class-level errors).
 func Discover(ctx context.Context, sess Session) (*Snapshot, error) {
 	caps := sess.Capabilities()
 	snap := &Snapshot{}
+	var sk skips
+	defer func() { snap.Skipped = sk.sorted() }()
 	if caps == nil {
 		return snap, nil
 	}
@@ -27,17 +32,20 @@ func Discover(ctx context.Context, sess Session) (*Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("snapshot: discover tools: %w", err)
 		}
+		tools = keep(tools, &sk, SkippedTool, rejectTool)
 		if snap.Tools, err = convertTools(tools); err != nil {
 			return nil, err
 		}
+		snap.Tools = cleanTools(snap.Tools, &sk)
 	}
 	if caps.Resources != nil {
 		rs, err := sess.ListResources(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot: discover resources: %w", err)
 		}
+		rs = keep(rs, &sk, SkippedResource, func(r *mcp.Resource) (string, string) { return rejectKey(r.URI) })
 		if snap.Resources, err = convert(rs, "resource", func(r *mcp.Resource) (Resource, string) {
-			return Resource{URI: r.URI, Name: r.Name, Title: r.Title, Description: r.Description, MIMEType: r.MIMEType}, r.URI
+			return cleanResource(Resource{URI: r.URI, Name: r.Name, Title: r.Title, Description: r.Description, MIMEType: r.MIMEType}), r.URI
 		}); err != nil {
 			return nil, err
 		}
@@ -45,8 +53,9 @@ func Discover(ctx context.Context, sess Session) (*Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("snapshot: discover resource templates: %w", err)
 		}
+		ts = keep(ts, &sk, SkippedTemplate, func(r *mcp.ResourceTemplate) (string, string) { return rejectKey(r.URITemplate) })
 		if snap.ResourceTemplates, err = convert(ts, "resource template", func(r *mcp.ResourceTemplate) (ResourceTemplate, string) {
-			return ResourceTemplate{URITemplate: r.URITemplate, Name: r.Name, Title: r.Title, Description: r.Description, MIMEType: r.MIMEType}, r.URITemplate
+			return cleanTemplate(ResourceTemplate{URITemplate: r.URITemplate, Name: r.Name, Title: r.Title, Description: r.Description, MIMEType: r.MIMEType}), r.URITemplate
 		}); err != nil {
 			return nil, err
 		}
@@ -56,6 +65,7 @@ func Discover(ctx context.Context, sess Session) (*Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("snapshot: discover prompts: %w", err)
 		}
+		ps = keep(ps, &sk, SkippedPrompt, rejectPrompt)
 		if snap.Prompts, err = convert(ps, "prompt", convertPrompt); err != nil {
 			return nil, err
 		}
@@ -71,7 +81,7 @@ func convertPrompt(p *mcp.Prompt) (Prompt, string) {
 		}
 		out.Arguments = append(out.Arguments, PromptArgument{Name: a.Name, Title: a.Title, Description: a.Description, Required: a.Required})
 	}
-	return out, p.Name
+	return cleanPrompt(out), p.Name
 }
 
 func convertTools(in []*mcp.Tool) ([]Tool, error) {

@@ -91,7 +91,9 @@ func (s *Service) Create(ctx context.Context, a Actor, serverID string, sess Ses
 // snapshot. When nothing changed since the latest snapshot, no version is
 // added and the latest is returned. Discovery runs outside the database
 // transaction. Calls keep being served from the approved snapshot until a
-// reviewer approves the new one.
+// reviewer approves the new one. The returned record's Skipped lists the
+// upstream items discovery left out (NUL or control characters in a key,
+// NUL in a schema key; sanitize.go), even when no version was added.
 func (s *Service) Refresh(ctx context.Context, a Actor, serverID string, sess Session) (*Record, Diff, error) {
 	snap, err := Discover(ctx, sess)
 	if err != nil {
@@ -128,7 +130,9 @@ func (s *Service) Refresh(ctx context.Context, a Actor, serverID string, sess Se
 	if err != nil {
 		return nil, Diff{}, err
 	}
-	return rec, diff, nil
+	out := *rec
+	out.Skipped = snap.Skipped
+	return &out, diff, nil
 }
 
 // Diff compares the server's latest snapshot with its approved one
