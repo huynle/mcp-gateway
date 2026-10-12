@@ -131,12 +131,21 @@ type KindOverride struct {
 // ToolReview is the review state of one tool of an approved snapshot. Kind
 // is the effective kind (the override if any, else from readOnlyHint).
 // ReviewedBy / ReviewedAt record who last set Enabled.
+//
+// Approval is the write tool's approval mode (approval.go): "" (a review
+// stored before modes existed, or never decided) and ApprovalAsk mean a
+// call needs an approval, ApprovalAuto that it runs without one.
+// ApprovalBy / ApprovalAt record who last changed it. Read tools carry no
+// mode: they always run without approval (Mode answers auto).
 type ToolReview struct {
 	Enabled    bool          `json:"enabled"`
 	Kind       Kind          `json:"kind"`
 	Override   *KindOverride `json:"kindOverride,omitempty"`
 	ReviewedBy string        `json:"reviewedBy,omitempty"`
 	ReviewedAt *time.Time    `json:"reviewedAt,omitempty"`
+	Approval   Approval      `json:"approval,omitempty"`
+	ApprovalBy string        `json:"approvalBy,omitempty"`
+	ApprovalAt *time.Time    `json:"approvalAt,omitempty"`
 }
 
 // Review is the per-tool review of a snapshot, keyed by tool name (the
@@ -145,9 +154,11 @@ type Review map[string]ToolReview
 
 // Decision is a reviewer's decision about one tool. Nil fields leave the
 // state as BuildReview derived it. Kind set to "" clears an override.
+// Approval sets a write tool's approval mode (ignored for read tools).
 type Decision struct {
-	Enabled *bool `json:"enabled,omitempty"`
-	Kind    *Kind `json:"kind,omitempty"`
+	Enabled  *bool     `json:"enabled,omitempty"`
+	Kind     *Kind     `json:"kind,omitempty"`
+	Approval *Approval `json:"approval,omitempty"`
 }
 
 // ReviewDecisions is what a reviewer submits when approving a snapshot.
