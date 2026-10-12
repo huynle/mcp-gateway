@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
@@ -32,6 +33,10 @@ type serverRow struct {
 	Pending        bool
 	Latest         int
 	Approved       int
+	// ReReview: the server is published but has no approved snapshot
+	// (never reviewed, or an admin changed its address: schema 17), so it
+	// serves nothing until an admin reviews it.
+	ReReview bool
 }
 
 // hostOf shows only the host of an https URL, "tunnel" for a tunnel URL.
@@ -65,6 +70,7 @@ func rowOf(s *Server, roles map[string]string) serverRow {
 		Audience: s.Audience, Roles: roleNames(s.PublishedRoleIDs, roles), CredentialMode: s.CredentialMode,
 		AuthKind: s.AuthKind, Status: s.Status, Shared: s.HasSharedCredential, Connections: s.UserConnectionCount,
 		Pending: s.PendingReview(), Latest: s.LatestVersion, Approved: s.ApprovedVersion,
+		ReReview: s.Audience == store.MCPAudiencePublished && s.ApprovedVersion == 0,
 	}
 	if row.Owner == "" {
 		row.Owner = s.OwnerUserID
@@ -167,6 +173,7 @@ var notices = map[string]string{
 	"disabled":    "Server disabled: its tools are no longer offered.",
 	"enabled":     "Server enabled.",
 	"reviewed":    "Review saved.",
+	"address":     "Address changed. Stored credentials were sealed to the old address: users reconnect, and a shared credential or static OAuth client must be set again.",
 }
 
 func (a *Admin) detail(w http.ResponseWriter, r *http.Request, c caller, s *Server) {
@@ -230,7 +237,7 @@ func (a *Admin) publish(w http.ResponseWriter, r *http.Request, c caller, s *Ser
 		return
 	}
 	res := serverResource(s)
-	res["roles"] = truncate(strings.Join(roleNames(ids, byID), ","), 128)
+	res["roles"] = truncate(strings.Join(roleNames(ids, byID), ","))
 	a.record(r.Context(), c, "mcp_server.published", res)
 	a.changed(r.Context(), s.ID)
 	a.done(w, r, s, "published")
@@ -246,8 +253,10 @@ func (a *Admin) unpublish(w http.ResponseWriter, r *http.Request, c caller, s *S
 	a.done(w, r, s, "unpublished")
 }
 
-// truncate caps s at n bytes on a rune boundary (audit values are bounded).
-func truncate(s string, n int) string {
+// truncate caps s at audit.MaxResourceValueLen bytes on a rune boundary
+// (audit values are bounded).
+func truncate(s string) string {
+	n := audit.MaxResourceValueLen
 	if len(s) <= n {
 		return s
 	}
@@ -346,6 +355,40 @@ func (a *Admin) setStaticClient(w http.ResponseWriter, r *http.Request, c caller
 	a.record(r.Context(), c, "mcp_server.static_client_set", serverResource(s))
 	a.changed(r.Context(), s.ID)
 	a.done(w, r, s, "client")
+}
+
+// --- address -----------------------------------------------------------------------------
+
+// maxURL bounds a server URL (the servers portal's limit).
+const maxURL = 2048
+
+// changeAddress sets a new https URL. Published servers are admin-governed
+// (decision q7vbxlyk point 3): their owner cannot change the address, an
+// admin can, and the change withdraws the approved snapshot until an admin
+// reviews the server again (the store does it in the same transaction).
+// Tunnel addresses are the owner's to choose; an admin can only move a
+// server to an https URL. netguard still checks the host at dial time.
+func (a *Admin) changeAddress(w http.ResponseWriter, r *http.Request, c caller, s *Server) {
+	u := strings.TrimSpace(r.PostForm.Get("url"))
+	switch {
+	case len(u) > maxURL || !fedportal.AbsHTTPSURL(u):
+		a.renderDetail(w, r, c, s, http.StatusUnprocessableEntity, "",
+			"The address must be an https URL (no user name or password, no fragment).")
+		return
+	case u == s.URL:
+		a.renderDetail(w, r, c, s, http.StatusUnprocessableEntity, "", "That is already the server's address.")
+		return
+	}
+	if err := a.d.Store.UpdateAddress(r.Context(), s.ID, u); err != nil {
+		a.fail(w, r, "change address", err)
+		return
+	}
+	res := serverResource(s)
+	res["old_host"], res["new_host"] = truncate(hostOf(s.URL)), truncate(hostOf(u))
+	res["audience"] = s.Audience
+	a.record(r.Context(), c, "mcp_server.address_changed", res)
+	a.changed(r.Context(), s.ID)
+	a.done(w, r, s, "address")
 }
 
 // --- status and delete -----------------------------------------------------------------

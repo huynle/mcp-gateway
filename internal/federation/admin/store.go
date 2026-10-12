@@ -136,6 +136,21 @@ func (p *PGStore) SetStatus(ctx context.Context, serverID, status string) error 
 	return p.jobs(ctx, func(tx store.Tx) error { return store.SetMCPServerStatus(ctx, tx, serverID, status, nil) })
 }
 
+// UpdateAddress changes the server's URL as an admin. For a published
+// server the database (schema 17 trigger) supersedes the approved snapshot
+// in the same transaction, so nothing is served from the new address until
+// an admin approves a snapshot again.
+func (p *PGStore) UpdateAddress(ctx context.Context, serverID, rawURL string) error {
+	return p.jobs(ctx, func(tx store.Tx) error {
+		s, err := store.GetMCPServer(ctx, tx, serverID)
+		if err != nil {
+			return err
+		}
+		s.URL = rawURL
+		return store.UpdateMCPServer(ctx, tx, s)
+	})
+}
+
 // DeleteServer deletes the server with everything that cascades from it.
 func (p *PGStore) DeleteServer(ctx context.Context, serverID string) error {
 	return p.jobs(ctx, func(tx store.Tx) error { return store.DeleteMCPServer(ctx, tx, serverID) })
