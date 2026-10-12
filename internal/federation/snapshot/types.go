@@ -152,9 +152,16 @@ type Decision struct {
 // decided on yet and that has no Enabled decision here; a tool a reviewer
 // explicitly disabled stays disabled, and writes are only ever enabled one
 // by one.
+//
+// Resources, ResourceTemplates and Prompts enable (true) or disable
+// (false) one item each, keyed by resource URI, URI template and prompt
+// name; an item without a decision keeps what BuildContentReview derived.
 type ReviewDecisions struct {
-	Tools       map[string]Decision `json:"tools,omitempty"`
-	EnableReads bool                `json:"enableReads,omitempty"`
+	Tools             map[string]Decision `json:"tools,omitempty"`
+	EnableReads       bool                `json:"enableReads,omitempty"`
+	Resources         map[string]bool     `json:"resources,omitempty"`
+	ResourceTemplates map[string]bool     `json:"resourceTemplates,omitempty"`
+	Prompts           map[string]bool     `json:"prompts,omitempty"`
 }
 
 // Errors. Their messages never contain argument values or upstream text.

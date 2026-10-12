@@ -418,3 +418,94 @@ func TestIntegrationSnapshotPublishedServerReview(t *testing.T) {
 		t.Errorf("empty actor = %v, want ErrNoActor", err)
 	}
 }
+
+// contentSession is a fake upstream with resources, templates and prompts.
+type contentSession struct {
+	resources []*mcp.Resource
+	templates []*mcp.ResourceTemplate
+	prompts   []*mcp.Prompt
+}
+
+func (s *contentSession) Capabilities() *mcp.ServerCapabilities {
+	return &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}, Resources: &mcp.ResourceCapabilities{}, Prompts: &mcp.PromptCapabilities{}}
+}
+func (s *contentSession) ListTools(context.Context) ([]*mcp.Tool, error) {
+	return []*mcp.Tool{{Name: "search", InputSchema: schema(""), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}}, nil
+}
+func (s *contentSession) ListResources(context.Context) ([]*mcp.Resource, error) {
+	return s.resources, nil
+}
+func (s *contentSession) ListResourceTemplates(context.Context) ([]*mcp.ResourceTemplate, error) {
+	return s.templates, nil
+}
+func (s *contentSession) ListPrompts(context.Context) ([]*mcp.Prompt, error) { return s.prompts, nil }
+
+// TestIntegrationSnapshotLegacyContentReview: a snapshot approved before
+// resources and prompts had review toggles (Brain task bdb5zcud) stores
+// only the flat tool map in the review column. It must keep serving all
+// its resources, templates and prompts without a new review, and a later
+// approval of a refresh carries them over as enabled while new items
+// start disabled.
+func TestIntegrationSnapshotLegacyContentReview(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	alice := newUser(t, st, "alice")
+	id := newServer(t, st, alice, "legacy")
+	svc := snapshot.NewService(st)
+	actor := snapshot.Actor{UserID: alice}
+	up := &contentSession{
+		resources: []*mcp.Resource{{URI: "docs://index", Name: "index"}},
+		templates: []*mcp.ResourceTemplate{{URITemplate: "docs://page/{slug}", Name: "page"}},
+		prompts:   []*mcp.Prompt{{Name: "summarize"}},
+	}
+	rec, err := svc.Create(ctx, actor, id, up)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What the gateway wrote before the toggles: the flat tool map.
+	if err := st.WithUser(ctx, alice, func(tx store.Tx) error {
+		return store.ApproveMCPSnapshot(ctx, tx, rec.ID, alice, []byte(`{"search":{"enabled":true,"kind":"read"}}`))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := svc.Current(ctx, actor, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.Content != nil || !cur.Content.ResourceEnabled("docs://index") || !cur.Content.TemplateEnabled("docs://page/{slug}") ||
+		!cur.Content.PromptEnabled("summarize") || !cur.Review["search"].Enabled {
+		t.Fatalf("legacy approved snapshot is not all enabled: %+v / %+v", cur.Content, cur.Review)
+	}
+
+	// A refresh adds a resource; approving it with no item decisions keeps
+	// the legacy items enabled and the new one disabled.
+	up.resources = append(up.resources, &mcp.Resource{URI: "docs://secret", Name: "secret"})
+	rec2, _, err := svc.Refresh(ctx, actor, id, up)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Approve(ctx, actor, id, rec2.Version, snapshot.ReviewDecisions{}); err != nil {
+		t.Fatal(err)
+	}
+	cur, err = svc.Current(ctx, actor, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.Content == nil || !cur.Content.ResourceEnabled("docs://index") || cur.Content.ResourceEnabled("docs://secret") ||
+		!cur.Content.TemplateEnabled("docs://page/{slug}") || !cur.Content.PromptEnabled("summarize") || !cur.Review["search"].Enabled {
+		t.Errorf("after approving the refresh: %+v / %+v", cur.Content, cur.Review)
+	}
+	// Explicit decisions toggle items on the approved version.
+	if _, err := svc.Approve(ctx, actor, id, rec2.Version, snapshot.ReviewDecisions{
+		Resources: map[string]bool{"docs://secret": true}, Prompts: map[string]bool{"summarize": false},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ = svc.Current(ctx, actor, id)
+	if !cur.Content.ResourceEnabled("docs://secret") || cur.Content.PromptEnabled("summarize") || !cur.Content.ResourceEnabled("docs://index") {
+		t.Errorf("after decisions: %+v", cur.Content)
+	}
+	if _, err := svc.Approve(ctx, actor, id, rec2.Version, snapshot.ReviewDecisions{Prompts: map[string]bool{"nope": true}}); !errors.Is(err, snapshot.ErrUnknownItem) {
+		t.Errorf("unknown item = %v", err)
+	}
+}
