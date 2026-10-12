@@ -6,13 +6,19 @@ Pins what a reviewer approved of a user-added MCP server and refuses anything el
 
 A **snapshot** is a server's discovered capability set: tools (name, title, description, input schema, output schema, annotations), resources, resource templates and prompts. Each list is sorted by key. Each refresh that finds something new stores a new **version** (`pending`). Approving a version makes it the one **approved** snapshot (the previous one becomes `superseded`). Calls are only ever checked against the approved snapshot.
 
-The **review** (`review` jsonb column) is a map from tool name to:
+The **review** (`review` jsonb column) holds the tool review and the review of the resources, resource templates and prompts (task `bdb5zcud`):
 
 ```json
-{"search": {"enabled": true, "kind": "read",
-            "kindOverride": {"kind": "write", "by": "<user id>", "at": "..."},
-            "reviewedBy": "<user id>", "reviewedAt": "..."}}
+{"format": 2,
+ "tools": {"search": {"enabled": true, "kind": "read",
+                      "kindOverride": {"kind": "write", "by": "<user id>", "at": "..."},
+                      "reviewedBy": "<user id>", "reviewedAt": "..."}},
+ "content": {"resources":         {"docs://index":        {"enabled": true, "reviewedBy": "<user id>", "reviewedAt": "..."}},
+             "resourceTemplates": {"docs://page/{slug}":  {"enabled": false}},
+             "prompts":           {"summarize":           {"enabled": true}}}}
 ```
+
+`tools` decodes to `snapshot.Review` (`Record.Review`), `content` to `*snapshot.ContentReview` (`Record.Content`). **Legacy layout**: rows approved before the content toggles hold only the flat tool map (`{"search": {...}}`). They decode with `Record.Content == nil`, which counts as **every resource, template and prompt enabled** (`ContentReview.ResourceEnabled` / `TemplateEnabled` / `PromptEnabled` answer true on nil), so servers approved earlier keep serving them without a new review. The layouts are told apart by `format` being a number (every legacy value is an object, even for a tool called `format`). Every approval writes the current layout. No migration: the column is jsonb.
 
 `kind` is the effective kind. It is the override if there is one; otherwise it is `read` only when `annotations.readOnlyHint` is `true`. Missing annotations, or a `false` or absent hint, mean **write**. `destructiveHint`, `openWorldHint` and `idempotentHint` are kept in the snapshot for display only.
 
@@ -29,6 +35,7 @@ The **review** (`review` jsonb column) is a map from tool name to:
 | Refresh: added tool | disabled, kind from its hint |
 | Refresh: removed tool | dropped from the review, so calls get `ErrToolNotReviewed` |
 | Decision for a tool not in the snapshot / bad kind | `ErrUnknownTool` / `ErrInvalidKind`, nothing stored |
+| Resources, templates, prompts (`BuildContentReview`) | the same rules: first snapshot **none enabled**; `ReviewDecisions.Resources` / `ResourceTemplates` / `Prompts` (key → enabled) set one item each with who/when; on a refresh an unchanged item keeps its state, a new or changed item (any field) starts **disabled**, a removed one is dropped. Against a legacy approved snapshot (no content review) unchanged items carry over as enabled. A decision for an item not in the snapshot: `ErrUnknownItem` |
 
 Nothing is enabled implicitly, because `readOnlyHint` is the upstream's own claim. Enabling reads by default would let a hostile server label a write as read and have it enabled with no human looking at it.
 
@@ -98,10 +105,11 @@ These helpers do **not** HTML-escape. Templates must still escape, and should sh
 ## For the federation connector (task fybs78bs)
 
 - Before every upstream `tools/call`, call `svc.Allowed(ctx, snapshot.Actor{UserID: caller}, serverID, tool, args)`. With a user actor this also checks visibility through RLS. If the connector has already checked visibility, it can use `snapshot.System()` instead. Use the returned `Kind` to route writes through the write path (confirmation / approval). Map `ErrToolNotReviewed` / `ErrToolDisabled` / `ErrArgsInvalid` to class-level errors. They are safe to show.
-- `tools/list` should expose only tools that are enabled in `svc.Current(...)`, using the pinned schemas and descriptions, not the live upstream ones.
+- `tools/list` should expose only tools that are enabled in `svc.Current(...)`, using the pinned schemas and descriptions, not the live upstream ones. Resources, templates and prompts likewise: only those `Record.Content` enables (nil = all, legacy).
 - Discovery (`Create` / `Refresh`) is triggered by the servers portal (owner) or an admin action, with a session from the federation client.
 
 ## Tests
 
-- `go test ./internal/federation/snapshot/`: discovery mapping, `readOnlyHint` mapping, canonical JSON, diff, review rules, `Check` (unknown / disabled tools, schema violations, no echo of values), display sanitizing, codec.
+- `go test ./internal/federation/snapshot/`: discovery mapping, `readOnlyHint` mapping, canonical JSON, diff, review rules, content review rules (first snapshot, decisions, carry-over, legacy base, both column layouts), `Check` (unknown / disabled tools, schema violations, no echo of values), display sanitizing, codec.
+- `TestIntegrationSnapshotLegacyContentReview`: a snapshot approved with the legacy flat review serves all its resources, templates and prompts; approving its refresh keeps them enabled and starts a new resource disabled.
 - `make test-integration` (`GATEWAY_TEST_DATABASE_URL`): Service against PostgreSQL in its own database `gateway_snapshot_test`. Covers the owner lifecycle (first approval enables nothing, refresh with a changed schema disables the tool until re-enabled, added tool disabled, removed tool gone, stale version refused), the owner approving while private, the owner and a reader refused once published, the admin WithJobs path approving, and visibility for readers and non-readers.
