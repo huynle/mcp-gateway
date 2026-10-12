@@ -124,6 +124,7 @@ func CompileWithOwners(roles []Role, assignments []Assignment, restrictions []Us
 	w := &writer{}
 	w.header(assigned)
 	w.tokenPolicies()
+	w.gateway()
 	for _, r := range roles {
 		w.role(r)
 	}

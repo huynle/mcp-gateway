@@ -18,3 +18,18 @@ forbid (
 )
 when { context.token.restricted && !(context.token.apps.contains(resource.app) || context.token.tools.contains(resource.name)) };
 
+@id("gateway/management")
+permit (
+    principal,
+    action in [Action::"call", Action::"list"],
+    resource in App::"gateway"
+);
+
+@id("gateway/management/confirm_delete")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.delete_server" };
+
