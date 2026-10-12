@@ -262,6 +262,62 @@ func (s *Service) Approve(ctx context.Context, a Actor, serverID string, version
 	return rec, nil
 }
 
+// SetApprovalModes changes the approval modes (ask / auto) of tools of the
+// server's approved snapshot without a new snapshot or approval (see
+// ApplyApprovals; read tools are left alone). It returns the updated
+// record and how many tools changed. ErrNoSnapshot when nothing is
+// approved (or the server is not visible); a user actor may change only
+// a private server it owns, anything else returns ErrReviewNotAllowed and
+// changes nothing. The approval record (who approved, when) is kept;
+// each changed tool records actor and time.
+func (s *Service) SetApprovalModes(ctx context.Context, a Actor, serverID string, modes map[string]Approval) (*Record, int, error) {
+	var rec *Record
+	changed := 0
+	err := s.in(ctx, a, func(tx store.Tx) error {
+		approved, err := loadOptional(store.ApprovedMCPSnapshot(ctx, tx, serverID))
+		if err != nil {
+			return err
+		}
+		if approved == nil {
+			return ErrNoSnapshot
+		}
+		review, n, err := ApplyApprovals(approved.Review, modes, a.UserID, s.now())
+		if err != nil {
+			return err
+		}
+		changed = n
+		content := approved.Content
+		if content == nil {
+			// Keep "approved before content toggles" meaning all enabled:
+			// the current layout cannot say nil, so spell it out.
+			content, err = BuildContentReview(approved.Snapshot, nil, approved.Snapshot, ReviewDecisions{}, "", s.now())
+			if err != nil {
+				return err
+			}
+		}
+		raw, err := encodeFullReview(review, content)
+		if err != nil {
+			return err
+		}
+		if err := store.UpdateApprovedMCPSnapshotReview(ctx, tx, approved.ID, raw); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return ErrReviewNotAllowed
+			}
+			return mapWriteErr(err)
+		}
+		row, err := store.GetMCPSnapshot(ctx, tx, approved.ID)
+		if err != nil {
+			return err
+		}
+		rec, err = decodeRecord(row)
+		return err
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	return rec, changed, nil
+}
+
 // Allowed decides whether actor's call of tool on the server may go
 // upstream: the tool must be enabled in the approved snapshot and args must
 // validate against its pinned input schema (see Check). It returns the

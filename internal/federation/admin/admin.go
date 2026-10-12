@@ -100,6 +100,7 @@ type Snapshots interface {
 	Latest(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
 	Current(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
 	Approve(ctx context.Context, a snapshot.Actor, serverID string, version int, d snapshot.ReviewDecisions) (*snapshot.Record, error)
+	SetApprovalModes(ctx context.Context, a snapshot.Actor, serverID string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error)
 }
 
 // Auth is the part of *auth.Service the pages use.
@@ -167,6 +168,7 @@ var templateFS embed.FS
 //	POST /admin/servers/{id}/refresh              rediscover with the shared credential or the owner's connection
 //	GET  /admin/servers/{id}/review               pending snapshot vs approved
 //	POST /admin/servers/{id}/review               approve as admin
+//	POST /admin/servers/{id}/approval             approval modes (ask / auto) without a new review
 //	GET  /admin/tunnels                           every tunnel with its online state
 //	POST /admin/tunnels/{id}/revoke               revoke any tunnel
 //	GET  /admin/network/allow-hosts               SSRF allow-list
@@ -204,7 +206,7 @@ func NewAdmin(d Deps) *Admin {
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
 		"join":    strings.Join,
 	}).ParseFS(templateFS, "templates/*.html"))
-	tpl = template.Must(tpl.ParseFS(fedportal.ReviewTemplateFS, fedportal.ReviewTemplate))
+	tpl = template.Must(tpl.ParseFS(fedportal.ReviewTemplateFS, fedportal.ReviewTemplate, fedportal.ApprovalTemplate))
 	return &Admin{d: d, log: d.Log, tpl: tpl}
 }
 
@@ -232,6 +234,7 @@ func (a *Admin) Mount(mountAdmin func(pattern string, h http.Handler)) {
 	mountAdmin("POST /admin/servers/{id}/refresh", a.server(a.refresh))
 	mountAdmin("GET /admin/servers/{id}/review", a.server(a.review))
 	mountAdmin("POST /admin/servers/{id}/review", a.server(a.approve))
+	mountAdmin("POST /admin/servers/{id}/approval", a.server(a.setApprovalModes))
 	mountAdmin("GET /admin/tunnels", a.admin(a.tunnels))
 	mountAdmin("POST /admin/tunnels/{id}/revoke", a.admin(a.revokeTunnel))
 	mountAdmin("GET /admin/network/allow-hosts", a.admin(a.allowHosts))

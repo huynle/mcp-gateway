@@ -35,6 +35,7 @@ func TestNonAdminsGet404OnEveryRoute(t *testing.T) {
 		"/admin/servers/" + s.ID + "/shared-credential", "/admin/servers/" + s.ID + "/static-client",
 		"/admin/servers/" + s.ID + "/disable", "/admin/servers/" + s.ID + "/enable",
 		"/admin/servers/" + s.ID + "/delete", "/admin/servers/" + s.ID + "/refresh", "/admin/servers/" + s.ID + "/review",
+		"/admin/servers/" + s.ID + "/approval",
 		"/admin/servers/" + s.ID + "/address",
 		"/admin/tunnels/30000000-0000-4000-8000-000000000001/revoke",
 		"/admin/network/allow-hosts", "/admin/network/allow-hosts/40000000-0000-4000-8000-000000000001/delete",

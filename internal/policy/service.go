@@ -41,6 +41,9 @@ type Snapshot struct {
 	// Owners are the implicit owner grants of private user-added MCP
 	// servers (OwnerGrant); empty when there are none.
 	Owners []OwnerGrant
+	// Servers are the approval modes of active user-added MCP servers
+	// (ServerApproval); an owner app without one asks for every write.
+	Servers []ServerApproval
 }
 
 // Version is one policy_versions row.
@@ -177,7 +180,7 @@ func (s *Service) compile(ctx context.Context, createdBy string) (*Compiled, err
 	for _, r := range snap.Roles {
 		roles = append(roles, r.Role)
 	}
-	compiled, err := CompileWithOwners(roles, snap.Assignments, snap.Restrictions, snap.Owners)
+	compiled, err := CompileWithLayers(roles, snap.Assignments, snap.Restrictions, Layers{Owners: snap.Owners, Servers: snap.Servers})
 	if err != nil {
 		return nil, fmt.Errorf("policy: compile: %w", err)
 	}
@@ -197,7 +200,7 @@ func (s *Service) compile(ctx context.Context, createdBy string) (*Compiled, err
 	}
 	compiled.ID = v.ID
 	s.log.Info("policy compiled", "event", "policy.compiled", "version", compiled.Version, "version_id", v.ID,
-		"roles", len(roles), "assignments", len(snap.Assignments), "restrictions", len(snap.Restrictions), "owner_grants", len(snap.Owners), "created_by", createdBy)
+		"roles", len(roles), "assignments", len(snap.Assignments), "restrictions", len(snap.Restrictions), "owner_grants", len(snap.Owners), "server_approvals", len(snap.Servers), "created_by", createdBy)
 	return compiled, nil
 }
 

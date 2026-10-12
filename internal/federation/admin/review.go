@@ -80,7 +80,7 @@ func (a *Admin) approve(w http.ResponseWriter, r *http.Request, c caller, s *Ser
 		current = cur
 	}
 	d := fedportal.ReviewDecisionsFromForm(r.PostForm, latest, current)
-	_, err = a.d.Snapshots.Approve(ctx, c.snapActor(), s.ID, version, d)
+	approved, err := a.d.Snapshots.Approve(ctx, c.snapActor(), s.ID, version, d)
 	switch {
 	case errors.Is(err, snapshot.ErrStaleVersion):
 		a.renderReview(w, r, c, s, http.StatusConflict, staleMessage)
@@ -98,6 +98,7 @@ func (a *Admin) approve(w http.ResponseWriter, r *http.Request, c caller, s *Ser
 	res := serverResource(s)
 	res["version"] = strconv.Itoa(version)
 	res["enabled_tools"] = strconv.Itoa(enabled)
+	res["auto_run"] = strconv.Itoa(len(approved.Review.AutoRunWrites()))
 	a.record(ctx, c, "mcp_server.reviewed", res)
 	a.changed(ctx, s.ID)
 	http.Redirect(w, r, "/admin/servers/"+s.ID+"?done=reviewed", http.StatusSeeOther)

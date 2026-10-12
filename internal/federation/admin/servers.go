@@ -162,8 +162,11 @@ type detailData struct {
 	StaticClientID string
 	SharedForm     bool // the server takes a shared credential of its kind
 	StaticForm     bool // the server uses OAuth
-	Notice         string
-	Error          string
+	// Approval is the approved snapshot's approval modes with the edit
+	// form (nil when nothing is approved).
+	Approval *fedportal.ApprovalView
+	Notice   string
+	Error    string
 }
 
 var notices = map[string]string{
@@ -174,6 +177,7 @@ var notices = map[string]string{
 	"disabled":    "Server disabled: its tools are no longer offered.",
 	"enabled":     "Server enabled.",
 	"reviewed":    "Review saved.",
+	"modes":       "Approval modes saved.",
 	"address":     "Address changed. Stored credentials were sealed to the old address: users reconnect, and a shared credential or static OAuth client must be set again.",
 }
 
@@ -203,6 +207,10 @@ func (a *Admin) renderDetail(w http.ResponseWriter, r *http.Request, c caller, s
 	}
 	for _, ro := range roles {
 		data.Roles = append(data.Roles, roleOption{ID: ro.ID, Name: ro.Name, Checked: slices.Contains(s.PublishedRoleIDs, ro.ID)})
+	}
+	if data.Approval, err = a.approvalView(r, c, s); err != nil {
+		a.fail(w, r, "approval modes", err)
+		return
 	}
 	a.render(w, r, status, "server.html", data)
 }

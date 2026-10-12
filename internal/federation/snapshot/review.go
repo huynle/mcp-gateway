@@ -17,12 +17,16 @@ import (
 //     stricter kind); its kind is otherwise recomputed from the new hints.
 //   - Tools missing from next are dropped.
 //   - Then decisions apply: Kind (override, or "" to clear it) first, then
-//     Enabled. EnableReads enables the read tools no reviewer has decided
+//     Approval, then Enabled. A new or changed tool starts with approval
+//     mode ask; an unchanged one keeps its mode, unless its effective kind
+//     changed (then ask again). Approval decisions on read tools are
+//     ignored (reads always run without approval). EnableReads enables the read tools no reviewer has decided
 //     on yet (new, changed, or never reviewed) that got no Enabled
 //     decision; a tool a reviewer explicitly disabled stays disabled.
 //
 // Decisions naming a tool not in next return ErrUnknownTool; a kind other
-// than read, write or "" returns ErrInvalidKind.
+// than read, write or "" returns ErrInvalidKind, an approval other than
+// ask or auto ErrInvalidApproval.
 func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDecisions, actor string, now time.Time) (Review, error) {
 	if next == nil {
 		next = &Snapshot{}
@@ -33,6 +37,9 @@ func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDeci
 		}
 		if dec.Kind != nil && *dec.Kind != "" && !dec.Kind.Valid() {
 			return nil, fmt.Errorf("%w: must be read or write", ErrInvalidKind)
+		}
+		if dec.Approval != nil && !dec.Approval.Valid() {
+			return nil, fmt.Errorf("%w: must be ask or auto", ErrInvalidApproval)
 		}
 	}
 	diff := Compare(base, next)
@@ -57,9 +64,17 @@ func BuildReview(base *Snapshot, baseReview Review, next *Snapshot, d ReviewDeci
 				tr.Override = &KindOverride{Kind: *dec.Kind, By: actor, At: now}
 			}
 		}
+		prevKind := tr.Kind
 		tr.Kind = t.HintKind()
 		if tr.Override != nil {
 			tr.Kind = tr.Override.Kind
+		}
+		if prevKind != "" && prevKind != tr.Kind {
+			// A mode decided for the other kind does not carry over.
+			tr.clearApproval()
+		}
+		if decided && dec.Approval != nil {
+			tr.setApproval(*dec.Approval, actor, now)
 		}
 		switch {
 		case decided && dec.Enabled != nil:

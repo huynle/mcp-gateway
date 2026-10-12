@@ -92,6 +92,22 @@ func ListMCPSnapshots(ctx context.Context, q Querier, serverID string) ([]MCPSna
 	return out, rows.Err()
 }
 
+// UpdateApprovedMCPSnapshotReview rewrites the review of the server's
+// approved snapshot id without touching its status or approval record
+// (the approval-mode edit). ErrNotFound when the row is not the approved
+// one or the caller may not update it (row-level security: the owner
+// only while the server is private).
+func UpdateApprovedMCPSnapshotReview(ctx context.Context, q Querier, id string, review json.RawMessage) error {
+	tag, err := q.Exec(ctx, `UPDATE mcp_server_snapshots SET review = $2::jsonb WHERE id = $1 AND status = 'approved'`, id, review)
+	if err != nil {
+		return fmt.Errorf("store: update mcp snapshot review: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ApproveMCPSnapshot makes snapshot id its server's approved snapshot,
 // recording who approved it (approvedBy may be empty for a system action)
 // and, when review is not nil, the reviewer's per-tool decisions; the

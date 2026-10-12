@@ -92,9 +92,12 @@ type detailData struct {
 	CredentialField string
 	Info            CredentialInfo
 	Current         *snapshotSummary
-	PendingReview   bool
-	Notice          string
-	Error           string
+	// Approval is the approved snapshot's approval modes (nil when none
+	// is approved), with the edit form for the owner of a private server.
+	Approval      *ApprovalView
+	PendingReview bool
+	Notice        string
+	Error         string
 }
 
 func (p *Portal) detail(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {
@@ -114,6 +117,8 @@ func (p *Portal) detail(w http.ResponseWriter, r *http.Request, c caller, s *sto
 		data.Notice = "Disconnected. Your credential for this server was deleted."
 	case q.Get("approved") != "":
 		data.Notice = "Review saved. Enabled tools are available through the gateway."
+	case q.Get("modes") != "":
+		data.Notice = "Approval modes saved."
 	}
 	p.render(w, r, http.StatusOK, "server.html", data)
 }
@@ -154,6 +159,13 @@ func (p *Portal) loadDetail(ctx context.Context, c caller, s *store.MCPServer) (
 			}
 		}
 		d.Current = sum
+		d.Approval = BuildApprovalView(cur)
+		switch {
+		case canApprove(c, s):
+			d.Approval.Action, d.Approval.CSRFToken = "/servers/"+s.ID+"/approval", c.CSRFToken
+		case s.Audience == store.MCPAudiencePublished:
+			d.Approval.Note = "An admin sets the approval modes of a published server."
+		}
 	} else if !errors.Is(err, snapshot.ErrNoSnapshot) {
 		return d, err
 	}

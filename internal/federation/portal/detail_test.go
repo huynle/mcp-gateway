@@ -148,7 +148,8 @@ func TestRefreshReviewApproveWithOnlyReadsEnabled(t *testing.T) {
 	}
 	mustContain(t, r.body, "search", "Search notes", "delete", "Delete a note", "added", `name="enable_reads"`, `name="version" value="1"`,
 		">read<", ">write<")
-	if strings.Contains(r.body, " checked") {
+	// Approval radios (Ask / Auto) are pre-selected; enable boxes are not.
+	if strings.Contains(r.body, `" checked aria-label="Enable`) {
 		t.Error("a tool is pre-checked on the first review")
 	}
 

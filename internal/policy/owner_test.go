@@ -67,8 +67,9 @@ func TestOwnerGrantDefaults(t *testing.T) {
 	}
 }
 
-// A role that allows a write tool cannot lift the owner layer's confirm
-// (confirm beats allow), so an owner's write always needs an approval.
+// A role that allows a write tool cannot lift the confirmation of a write
+// in approval mode "ask" (the default; confirm beats allow). Only the
+// server's approval mode "auto" does (approval_test.go).
 func TestOwnerGrantWriteStaysConfirmWithRoleAllow(t *testing.T) {
 	roles := []Role{{Name: "notes-writer", Rules: []ToolRule{{App: "notes", Tool: "create", Outcome: OutcomeAllow}}}}
 	c, err := CompileWithOwners(roles, []Assignment{{UserID: "alice", Role: "notes-writer"}}, nil, []OwnerGrant{{UserID: "alice", App: "notes"}})

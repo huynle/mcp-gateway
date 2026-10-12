@@ -25,7 +25,9 @@
     <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Selectable}} selected</span>
     <span class="review-submit">
       <button class="btn primary" type="submit" name="action" value="approve">{{.Approve}}</button>
-      <button class="btn" type="submit" name="action" value="approve_all">Approve with all tools enabled</button>
+      <button class="btn" type="submit" name="action" value="approve_auto" title="Approve; the selected write tools run without asking">Run selected without asking</button>
+      <button class="btn" type="submit" name="action" value="approve_ask" title="Approve; the selected write tools ask before running">Ask for selected</button>
+      <button class="btn" type="submit" name="action" value="approve_all" title="Enable every tool; approval modes as chosen below">Approve with all tools enabled</button>
     </span>
   </div>
 {{end}}
@@ -41,6 +43,7 @@
         {{else}}<span class="chip {{if .Enabled}}on{{else}}off{{end}}">{{if .Enabled}}enabled{{else}}disabled{{end}}</span> <code class="tool-name">{{.Name}}</code>{{end}}
         {{if eq .Status "added"}}<span class="chip status-added">new</span>{{else if eq .Status "changed"}}<span class="chip status-changed">changed</span>{{end}}
         <span class="chip kind-{{.Kind}}">{{.Kind}}</span>{{if and (eq .Kind "write") .Destructive}}<span class="destructive" title="Destructive: the server does not declare this tool non-destructive" aria-label="destructive">●</span>{{end}}
+        {{if eq .Kind "write"}}{{if $.Action}}<span class="seg" role="radiogroup" aria-label="Approval for {{.Name}}" title="Ask: each call needs an approval. Auto: runs without asking."><label><input type="radio" name="approval_{{.Index}}" value="ask"{{if eq .Approval "ask"}} checked{{end}}> Ask</label><label><input type="radio" name="approval_{{.Index}}" value="auto"{{if eq .Approval "auto"}} checked{{end}}> Auto</label></span>{{else}}<span class="chip mode-{{.Approval}}">{{if eq .Approval "auto"}}runs without asking{{else}}asks{{end}}</span>{{end}}{{if .DestructiveHint}}<span class="destructive-auto"{{if ne .Approval "auto"}} data-when-auto{{end}} title="The server marks this tool destructive. It is allowed, but runs without a confirmation when set to Auto.">destructive</span>{{end}}{{end}}
         {{if .Summary}}<span class="tool-summary">{{.Summary}}</span>{{end}}
       </div>
       <details class="tool-more"><summary>Details</summary>
@@ -88,7 +91,7 @@
 </div>
 {{if .Action}}
   <div class="review-foot">
-    <p class="muted">Tools without a read-only annotation count as writes. Writes still need approval on each call under the default policy. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
+    <p class="muted">Tools without a read-only annotation count as writes. A write set to <strong>Ask</strong> needs an approval on each call; a write set to <strong>Auto</strong> runs without a confirmation (role denies and token limits still apply). New and changed tools start as Ask. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
     {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
   </div>
 </form>

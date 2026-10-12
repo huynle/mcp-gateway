@@ -3,8 +3,10 @@ package policy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -59,13 +61,46 @@ func (p postgresStore) Load(ctx context.Context) (Snapshot, error) {
 			return err
 		}
 		for _, s := range servers {
-			if s.Status == store.MCPServerActive {
-				snap.Owners = append(snap.Owners, OwnerGrant{UserID: s.OwnerUserID, App: s.Name})
+			if s.Status != store.MCPServerActive {
+				continue
+			}
+			snap.Owners = append(snap.Owners, OwnerGrant{UserID: s.OwnerUserID, App: s.Name})
+			// The server's approval modes (ServerApproval): the enabled
+			// writes of its approved snapshot set to auto. No approved
+			// snapshot, or a review stored before modes existed: every
+			// write asks.
+			approval, err := serverApproval(ctx, tx, s)
+			if err != nil {
+				return err
+			}
+			if len(approval.AutoRun) > 0 {
+				snap.Servers = append(snap.Servers, approval)
 			}
 		}
 		return nil
 	})
 	return snap, err
+}
+
+// serverApproval reads the approval modes of s's approved snapshot. A
+// review that does not decode counts as "every write asks" (the safe
+// default) instead of failing the whole policy load; the connector
+// refuses to load such a snapshot and logs it.
+func serverApproval(ctx context.Context, tx store.Tx, s store.MCPServer) (ServerApproval, error) {
+	out := ServerApproval{App: s.Name}
+	row, err := store.ApprovedMCPSnapshot(ctx, tx, s.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return out, nil
+	}
+	if err != nil {
+		return out, err
+	}
+	review, _, err := snapshot.DecodeReview(row.Review)
+	if err != nil {
+		return out, nil
+	}
+	out.AutoRun = review.AutoRunToolNames()
+	return out, nil
 }
 
 func (p postgresStore) SaveRole(ctx context.Context, r Role) error {

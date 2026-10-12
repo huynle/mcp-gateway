@@ -45,3 +45,21 @@
 .advanced { display: flex; align-items: center; gap: .75rem; margin-top: .3rem; }
 .advanced .check { display: inline-flex; }
 .review-foot { margin-top: 1rem; }
+
+/* Approval modes (Ask / Auto per write tool): review rows and the server pages. */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: .72rem; line-height: 1.4; white-space: nowrap; }
+.seg label { display: inline-flex; align-items: center; gap: .2rem; padding: 0 .45rem; cursor: pointer; color: var(--muted); }
+.seg label + label { border-left: 1px solid var(--line); }
+.seg input { margin: 0; accent-color: var(--accent); }
+.seg label:has(input:checked) { color: var(--fg); }
+.seg label:has(input[value="auto"]:checked) { color: var(--ok); }
+.chip.mode-auto { color: var(--ok); border-color: var(--ok); }
+.destructive-auto { color: var(--danger); font-size: .7rem; opacity: .8; cursor: help; white-space: nowrap; }
+.destructive-auto[data-when-auto] { display: none; }
+.tool-row:has(input[value="auto"]:checked) .destructive-auto, .approval-row:has(input[value="auto"]:checked) .destructive-auto { display: inline; }
+.approval-warning { font-size: .85rem; color: var(--warn); margin: .3rem 0; }
+.approval-bulk { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+.approval-list { list-style: none; margin: .3rem 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; }
+.approval-row { display: flex; align-items: baseline; gap: .45rem; padding: .25rem .6rem; border-bottom: 1px solid var(--line); min-width: 0; }
+.approval-row:last-child { border-bottom: 0; }
+.approval-details > summary { cursor: pointer; color: var(--muted); font-size: .9rem; }

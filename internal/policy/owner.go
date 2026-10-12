@@ -10,11 +10,13 @@ import (
 // OwnerGrant is the implicit policy layer for the owner of an active
 // user-added MCP server (Brain task fybs78bs, decision mrvsu07m):
 // the owner may list and call every tool of the server's app (App is the
-// server name, the tool prefix), reads are allowed and writes need a
-// confirmation. It is compiled into the same Cedar set as the roles, so
-// the token-narrowing forbids and user restrictions still apply, a role
-// can add confirmations or denials but never lift the write confirmation,
-// and the admin role gets nothing from it (admin is only a role name).
+// server name, the tool prefix). Whether a write needs a confirmation is
+// the server's approval mode (ServerApproval, compiled for every owner
+// app): writes ask unless the tool is set to auto. It is compiled into the
+// same Cedar set as the roles, so the token-narrowing forbids and user
+// restrictions still apply, a role can add confirmations or denials but
+// never lift an "ask" write's confirmation, and the admin role gets
+// nothing from it (admin is only a role name).
 // The layer applies whether the server is private or published (decision
 // q7vbxlyk, task fekckdrt): publishing shares the server with the chosen
 // roles, whose holders still need a role grant, and the owner keeps
@@ -58,12 +60,10 @@ func normalizeOwners(owners []OwnerGrant) ([]OwnerGrant, error) {
 	return slices.Compact(out), nil
 }
 
-// owner emits one owner grant: list and call every tool of the app, and
-// confirm its writes.
+// owner emits one owner grant: list and call every tool of the app. The
+// confirmation of its writes is the server approval layer's.
 func (w *writer) owner(g OwnerGrant) {
 	principal := fmt.Sprintf(`principal == %s::%s`, EntityUser, strconv.Quote(g.UserID))
 	resource := fmt.Sprintf(`resource in %s::%s`, EntityApp, strconv.Quote(g.App))
-	id := "owner/" + g.UserID + "/" + g.App
-	w.policy(id, "permit", principal, actions(ActionCall, ActionList), resource, nil, nil)
-	w.policy(id+"/confirm_writes", "permit", principal, actions(ActionConfirm), resource, []string{`resource.kind == "write"`}, nil)
+	w.policy("owner/"+g.UserID+"/"+g.App, "permit", principal, actions(ActionCall, ActionList), resource, nil, nil)
 }

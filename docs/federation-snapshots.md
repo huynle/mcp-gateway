@@ -12,13 +12,17 @@ The **review** (`review` jsonb column) holds the tool review and the review of t
 {"format": 2,
  "tools": {"search": {"enabled": true, "kind": "read",
                       "kindOverride": {"kind": "write", "by": "<user id>", "at": "..."},
-                      "reviewedBy": "<user id>", "reviewedAt": "..."}},
+                      "reviewedBy": "<user id>", "reviewedAt": "..."},
+           "save":   {"enabled": true, "kind": "write",
+                      "approval": "auto", "approvalBy": "<user id>", "approvalAt": "..."}},
  "content": {"resources":         {"docs://index":        {"enabled": true, "reviewedBy": "<user id>", "reviewedAt": "..."}},
              "resourceTemplates": {"docs://page/{slug}":  {"enabled": false}},
              "prompts":           {"summarize":           {"enabled": true}}}}
 ```
 
 `tools` decodes to `snapshot.Review` (`Record.Review`), `content` to `*snapshot.ContentReview` (`Record.Content`). **Legacy layout**: rows approved before the content toggles hold only the flat tool map (`{"search": {...}}`). They decode with `Record.Content == nil`, which counts as **every resource, template and prompt enabled** (`ContentReview.ResourceEnabled` / `TemplateEnabled` / `PromptEnabled` answer true on nil), so servers approved earlier keep serving them without a new review. The layouts are told apart by `format` being a number (every legacy value is an object, even for a tool called `format`). Every approval writes the current layout. No migration: the column is jsonb.
+
+`approval` is a write tool's **approval mode** (task auto-approve, `approval.go`): `ask` (each call needs an approval) or `auto` (runs without one). It is absent in reviews stored before modes existed and for writes nobody set: both mean **ask**, so nothing changes until someone opts in. Read tools carry no mode; `ToolReview.Mode()` answers `auto` for them (they never needed an approval). `approvalBy` / `approvalAt` record who last changed it. `Review.AutoRunWrites()` lists the enabled writes in auto mode by upstream name, `Review.AutoRunToolNames()` by registry name (`RegistryToolName`, the connector's sanitizer, moved here so the policy store can share it; names that collide after sanitizing are left out, i.e. ask). `Review.ApprovalCounts()` counts the enabled tools by mode.
 
 `kind` is the effective kind. It is the override if there is one; otherwise it is `read` only when `annotations.readOnlyHint` is `true`. Missing annotations, or a `false` or absent hint, mean **write**. `destructiveHint`, `openWorldHint` and `idempotentHint` are kept in the snapshot for display only.
 
@@ -34,7 +38,9 @@ The **review** (`review` jsonb column) holds the tool review and the review of t
 | Refresh: changed tool (title, description, input/output schema, annotations) | **disabled** until re-enabled; a `write` override is kept, a `read` override is dropped |
 | Refresh: added tool | disabled, kind from its hint |
 | Refresh: removed tool | dropped from the review, so calls get `ErrToolNotReviewed` |
-| Decision for a tool not in the snapshot / bad kind | `ErrUnknownTool` / `ErrInvalidKind`, nothing stored |
+| `ReviewDecisions.Tools[name].Approval` | `ask` / `auto` for a write (who/when recorded when it changes); ignored for a read tool |
+| Refresh: approval mode | an **unchanged** tool keeps its mode; a **changed** or **added** tool starts as `ask`; a tool whose effective kind changes (override) goes back to `ask` |
+| Decision for a tool not in the snapshot / bad kind / bad mode | `ErrUnknownTool` / `ErrInvalidKind` / `ErrInvalidApproval`, nothing stored |
 | Resources, templates, prompts (`BuildContentReview`) | the same rules: first snapshot **none enabled**; `ReviewDecisions.Resources` / `ResourceTemplates` / `Prompts` (key → enabled) set one item each with who/when; on a refresh an unchanged item keeps its state, a new or changed item (any field) starts **disabled**, a removed one is dropped. Against a legacy approved snapshot (no content review) unchanged items carry over as enabled. A decision for an item not in the snapshot: `ErrUnknownItem` |
 
 Nothing is enabled implicitly, because `readOnlyHint` is the upstream's own claim. Enabling reads by default would let a hostile server label a write as read and have it enabled with no human looking at it.
@@ -96,6 +102,8 @@ A later visit to the review page does not repeat the list; refresh again to see 
 
 A refused approval changes nothing (the transaction rolls back).
 
+`Service.SetApprovalModes(ctx, actor, serverID, map[tool]Approval)` changes approval modes of the **approved** snapshot without a new snapshot or approval (`ApplyApprovals`: reads left alone, a tool already in the requested mode keeps its record; unknown tool `ErrUnknownTool`, bad mode `ErrInvalidApproval`). It rewrites only the review column (`store.UpdateApprovedMCPSnapshotReview`; status, `approved_by` and `approved_at` stay). The same RLS rule as approving applies: a user actor may change only a private server it owns (`ErrReviewNotAllowed` once published), an admin actor any server. A legacy review is rewritten in the current layout with its resources, templates and prompts spelled out as enabled. It returns the record and how many tools changed.
+
 ## Enforcement: `Allowed` / `Check`
 
 `Allowed` passes only if all of these hold:
@@ -131,7 +139,8 @@ These helpers do **not** HTML-escape. Templates must still escape, and should sh
 
 ## Tests
 
-- `go test ./internal/federation/snapshot/`: discovery mapping, `readOnlyHint` mapping, canonical JSON, diff, review rules, content review rules (first snapshot, decisions, carry-over, legacy base, both column layouts), `Check` (unknown / disabled tools, schema violations, no echo of values), display sanitizing, codec.
+- `go test ./internal/federation/snapshot/`: discovery mapping, approval modes (`approval_test.go`: defaults, decisions, carry-over on refresh, kind change resets, legacy and format-2 decoding, `ApplyApprovals`, `AutoRunToolNames` collisions), `readOnlyHint` mapping, canonical JSON, diff, review rules, content review rules (first snapshot, decisions, carry-over, legacy base, both column layouts), `Check` (unknown / disabled tools, schema violations, no echo of values), display sanitizing, codec.
+- `make test-integration`: `TestIntegrationSetApprovalModes` (owner of a private server edits modes, approval record kept, rest of the review kept; stranger `ErrNoSnapshot`; unknown tool refused; owner of a published server `ErrReviewNotAllowed`; admin edits). `internal/policy`: `TestIntegrationServerApprovalsLoaded` (the policy store reads the modes under registry names; owner Auto write allow, Ask write confirm).
 - `TestIntegrationSnapshotLegacyContentReview`: a snapshot approved with the legacy flat review serves all its resources, templates and prompts; approving its refresh keeps them enabled and starts a new resource disabled.
 - `go test ./internal/federation/snapshot/`: `TestDiscoverSanitizesHostileText` (NUL in descriptions, titles, schema values, resource names and MIME types removed; NUL / C0 / C1 names, NUL schema keys, NUL resource URIs and templates, NUL prompt names and argument names skipped and listed; nothing stored carries a NUL).
 - `make test-integration`: `TestIntegrationRefreshStoresSanitizedSnapshot` (a hostile upstream refreshes into PostgreSQL, the stored row has no NUL, skipped items reported, the clean tool approved and allowed; a second refresh adds no version and reports the skipped items again).

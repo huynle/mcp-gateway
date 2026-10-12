@@ -54,46 +54,10 @@ func ValidateServerName(name string) error {
 	return nil
 }
 
-// maxToolNameLen bounds a sanitized tool name.
-const maxToolNameLen = 64
-
 // ToolName maps an upstream tool name onto the registry's tool rule
-// ([a-z0-9_-]): camelCase boundaries become "_", upper case is lowered,
-// every other character becomes "_", runs of "_" collapse, leading and
-// trailing "_" go, and the result is capped at 64 characters. It reports
-// false when nothing usable is left.
-func ToolName(upstream string) (string, bool) {
-	var b strings.Builder
-	prevLower := false
-	for _, r := range upstream {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			if prevLower {
-				b.WriteByte('_')
-			}
-			b.WriteRune(r + ('a' - 'A'))
-			prevLower = false
-		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevLower = true
-		case r == '-' || r == '_':
-			b.WriteRune(r)
-			prevLower = false
-		default:
-			b.WriteByte('_')
-			prevLower = false
-		}
-	}
-	name := b.String()
-	for strings.Contains(name, "__") {
-		name = strings.ReplaceAll(name, "__", "_")
-	}
-	name = strings.Trim(name, "_")
-	if len(name) > maxToolNameLen {
-		name = strings.TrimRight(name[:maxToolNameLen], "_")
-	}
-	return name, name != ""
-}
+// ([a-z0-9_-]); see snapshot.RegistryToolName, which the policy store
+// shares so approval modes name the same tools.
+func ToolName(upstream string) (string, bool) { return snapshot.RegistryToolName(upstream) }
 
 // emptySchema is the input schema of a tool that declared none: the
 // snapshot check then accepts only {}.
