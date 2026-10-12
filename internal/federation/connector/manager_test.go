@@ -23,6 +23,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/netguard"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
@@ -327,6 +328,7 @@ type fixture struct {
 	snaps    *fakeSnaps
 	creds    *fakeCreds
 	tunnels  *fakeTunnels
+	perms    *fakePerms
 	up       *upstream
 	changes  int
 	changeMu sync.Mutex
@@ -336,7 +338,8 @@ const srvID = "33333333-3333-4333-8333-333333333333"
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{reg: connectors.NewRegistry(), st: newFakeStore(), creds: &fakeCreds{errs: map[string]error{}}, tunnels: &fakeTunnels{}}
+	f := &fixture{reg: connectors.NewRegistry(), st: newFakeStore(), creds: &fakeCreds{errs: map[string]error{}}, tunnels: &fakeTunnels{},
+		perms: &fakePerms{denied: map[string]bool{}}}
 	if err := f.reg.Register(stubTool("github", "list_issues", connectors.KindRead)); err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +365,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	guard := netguard.New(netguard.Options{AllowList: allow})
 	f.m, err = New(Options{
-		Registry: f.reg, Store: f.st, Snapshots: f.snaps, Credentials: f.creds, Tunnels: f.tunnels,
+		Registry: f.reg, Store: f.st, Snapshots: f.snaps, Credentials: f.creds, Tunnels: f.tunnels, Permissions: f.perms,
 		HTTPClient: guard.Client(), BaseURL: "https://gw.example", Timeout: 2 * time.Second,
 		OnChange: func() { f.changeMu.Lock(); f.changes++; f.changeMu.Unlock() },
 		Log:      slog.New(slog.DiscardHandler),
@@ -723,6 +726,53 @@ func TestManagerCallThroughTunnel(t *testing.T) {
 type roundTrip func(*http.Request) (*http.Response, error)
 
 func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// fakePerms: everyone but the denied users may add servers.
+type fakePerms struct {
+	mu     sync.Mutex
+	denied map[string]bool
+}
+
+func (p *fakePerms) CanAddServers(_ context.Context, userID string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return userID != "" && !p.denied[userID]
+}
+
+// Defense in depth behind the portal (decision bnneszc1): the Manager
+// refuses to create a server for an owner who may not add servers.
+func TestManagerCreateServerNeedsPermission(t *testing.T) {
+	f := newFixture(t)
+	f.perms.mu.Lock()
+	f.perms.denied[bob] = true
+	f.perms.mu.Unlock()
+	changes := f.changes
+	err := f.m.CreateServer(t.Context(), &store.MCPServer{Name: "sneaky", OwnerUserID: bob, URL: "https://x.example"})
+	if !errors.Is(err, permissions.ErrNotPermitted) {
+		t.Fatalf("CreateServer without permission = %v, want ErrNotPermitted", err)
+	}
+	if err := f.m.CreateServer(t.Context(), &store.MCPServer{Name: "noowner", URL: "https://x.example"}); !errors.Is(err, permissions.ErrNotPermitted) {
+		t.Errorf("CreateServer without an owner = %v, want ErrNotPermitted", err)
+	}
+	if len(f.st.created) != 0 {
+		t.Errorf("refused servers reached the store: %v", f.st.created)
+	}
+	if f.changes != changes {
+		t.Error("a refused create reloaded the registry")
+	}
+	// Servers bob already owns keep working: updates are not gated here.
+	if err := f.m.CreateServer(t.Context(), &store.MCPServer{Name: "fine", OwnerUserID: alice, URL: "https://x.example"}); err != nil {
+		t.Fatalf("permitted CreateServer: %v", err)
+	}
+}
+
+func TestNewRequiresPermissions(t *testing.T) {
+	_, err := New(Options{Registry: connectors.NewRegistry(), Store: newFakeStore(), Snapshots: &fakeSnaps{}, Credentials: &fakeCreds{},
+		HTTPClient: http.DefaultClient})
+	if err == nil {
+		t.Error("New without Permissions succeeded")
+	}
+}
 
 func TestManagerCreateServerRefusesReservedNames(t *testing.T) {
 	f := newFixture(t)
