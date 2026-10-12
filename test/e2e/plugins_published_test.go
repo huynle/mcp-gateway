@@ -191,13 +191,13 @@ func docsSurface(t *testing.T, cs *sdk.ClientSession) surface {
 }
 
 // TestE2EPluginsPrivateVsPublishedVisibility checks, in one scenario,
-// who sees a server's tools, resources, templates and prompts (task
-// w2cd39bc): private → only the owner; published to a role → that role's
-// users get the resources, templates and prompts at once (server-level
-// policy) and the tool once the role grants it, including a templated
-// read through the published server; the owner keeps everything (task
-// fekckdrt); a user of another role sees nothing;
-// unpublishing restores the private view.
+// who sees a server's tools, resources, templates and prompts (tasks
+// w2cd39bc, fekckdrt, bdb5zcud): private → only the owner; published to a
+// role → that role's users see nothing until the role grants it: a tool
+// grant gives the tool only, "<server>.resources/read" the resources and
+// templates (a templated read included), "<server>.prompts/get" the
+// prompts; the owner keeps everything; a user of another role sees
+// nothing; unpublishing restores the private view.
 func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	w := newWorld(t, options{federation: true})
 	ctx := t.Context()
@@ -210,7 +210,7 @@ func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	if !strings.Contains(review, "docs://index") || !strings.Contains(review, "docs://page/{slug}") || !strings.Contains(review, "summarize") {
 		t.Errorf("review lacks the resource, template or prompt:\n%s", snippet(review))
 	}
-	w.approve(w.alice, id, review, "search")
+	w.approve(w.alice, id, review, "search", "docs://index", "docs://page/{slug}", "summarize")
 
 	all, none := surface{true, true, true, true}, surface{}
 	check := func(step string, want map[string]surface, clients map[string]*sdk.ClientSession) {
@@ -237,12 +237,32 @@ func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	_, err = w.call(cs["bob"], "handbook.search", map[string]any{"q": "x"})
 	_ = rpcError(t, err, mcp.CodeToolNotFound)
 
-	// 2. Published to the restricted role (bob), no tool grant yet.
+	// 2. Published to the restricted role (bob), nothing granted yet:
+	// bob sees nothing at all, the owner everything.
 	mustRedirect(t, "publish", w.submit(w.admin, "/admin/servers/"+id+"/publish", url.Values{"roles": {w.roleID(roleRestricted)}}),
 		"/admin/servers/"+id+"?done=")
 	cs = clients()
-	resourcesOnly := surface{resource: true, template: true, prompt: true}
-	check("published, not granted", map[string]surface{"alice": all, "bob": resourcesOnly, "carol": none}, cs)
+	check("published, not granted", map[string]surface{"alice": all, "bob": none, "carol": none}, cs)
+	_, err = cs["bob"].ReadResource(ctx, &sdk.ReadResourceParams{URI: "mcpgw://handbook/docs://index"})
+	if we := rpcError(t, err, mcp.CodeInvalidParams); we.Message != "Resource not found" {
+		t.Errorf("bob's read before the grant: %+v", we)
+	}
+	_, err = cs["bob"].GetPrompt(ctx, &sdk.GetPromptParams{Name: "handbook.summarize", Arguments: map[string]string{"page": "x"}})
+	_ = rpcError(t, err, mcp.CodeInvalidParams)
+
+	// 3. The role grants the tool: the tool only, not the resources.
+	w.grant(roleRestricted, policy.ToolRule{App: "handbook", Tool: "search", Outcome: policy.OutcomeAllow})
+	cs = clients()
+	check("published, tool granted", map[string]surface{"alice": all, "bob": {tool: true}, "carol": none}, cs)
+	if got := w.toolText(cs["bob"], "handbook.search", map[string]any{"q": "tunnels"}); got != "docs about tunnels" {
+		t.Errorf("bob's call = %q", got)
+	}
+
+	// 3b. Then resources/read and prompts/get.
+	w.grant(roleRestricted, policy.ToolRule{App: "handbook", Tool: policy.ResourcesReadTool, Outcome: policy.OutcomeAllow},
+		policy.ToolRule{App: "handbook", Tool: policy.PromptsGetTool, Outcome: policy.OutcomeAllow})
+	cs = clients()
+	check("published, all granted", map[string]surface{"alice": all, "bob": all, "carol": none}, cs)
 	page, err := cs["bob"].ReadResource(ctx, &sdk.ReadResourceParams{URI: "mcpgw://handbook/docs://page/intro"})
 	if err != nil || len(page.Contents) != 1 || page.Contents[0].Text != "page intro" || page.Contents[0].URI != "mcpgw://handbook/docs://page/intro" {
 		t.Fatalf("bob's templated read through the published server = %+v, %v", page, err)
@@ -253,14 +273,6 @@ func TestE2EPluginsPrivateVsPublishedVisibility(t *testing.T) {
 	}
 	_, err = cs["carol"].ReadResource(ctx, &sdk.ReadResourceParams{URI: "mcpgw://handbook/docs://index"})
 	_ = rpcError(t, err, mcp.CodeInvalidParams)
-
-	// 3. The role grants the tool.
-	w.grant(roleRestricted, policy.ToolRule{App: "handbook", Tool: "search", Outcome: policy.OutcomeAllow})
-	cs = clients()
-	check("published, granted", map[string]surface{"alice": all, "bob": all, "carol": none}, cs)
-	if got := w.toolText(cs["bob"], "handbook.search", map[string]any{"q": "tunnels"}); got != "docs about tunnels" {
-		t.Errorf("bob's call = %q", got)
-	}
 
 	// 4. Unpublished: private again.
 	mustRedirect(t, "unpublish", w.submit(w.admin, "/admin/servers/"+id+"/unpublish", url.Values{}), "/admin/servers/"+id+"?done=")

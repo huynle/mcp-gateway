@@ -209,6 +209,19 @@ func (w *world) reviewAs(who user, admin bool, server *store.MCPServer, enable .
 		on := true
 		d.Tools[name] = snapshot.Decision{Enabled: &on}
 	}
+	// Every resource, template and prompt of the snapshot is enabled
+	// (their review toggles, task bdb5zcud, are covered by the e2e and
+	// unit tests); the suites here probe what is enabled.
+	d.Resources, d.ResourceTemplates, d.Prompts = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, r := range rec.Snapshot.Resources {
+		d.Resources[r.URI] = true
+	}
+	for _, t := range rec.Snapshot.ResourceTemplates {
+		d.ResourceTemplates[t.URITemplate] = true
+	}
+	for _, p := range rec.Snapshot.Prompts {
+		d.Prompts[p.Name] = true
+	}
 	if _, err := w.fed.Snapshots.Approve(ctx, actor, server.ID, rec.Version, d); err != nil {
 		w.t.Fatalf("approve %s: %v", server.Name, err)
 	}

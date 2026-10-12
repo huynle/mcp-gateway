@@ -32,7 +32,8 @@ func TestSecurityFedStaleVisibilityAndAudit(t *testing.T) {
 	up := newUpstream(t, notesServer)
 	s := w.addServer(w.alice, "stale", up.URL(), nil)
 	w.review(w.alice, s, "search")
-	w.publish(s, []policy.ToolRule{{App: "stale", Tool: "search", Outcome: policy.OutcomeAllow}}, roleRestricted)
+	w.publish(s, []policy.ToolRule{{App: "stale", Tool: "search", Outcome: policy.OutcomeAllow},
+		{App: "stale", Tool: policy.ResourcesReadTool, Outcome: policy.OutcomeAllow}}, roleRestricted)
 	bob := w.client(w.bob)
 	if res, err := w.call(bob, "stale.search", map[string]any{"q": argCanary}); err != nil || res.IsError {
 		t.Fatalf("bob before: %v %+v", err, res)
@@ -74,8 +75,9 @@ func TestSecurityFedStaleVisibilityAndAudit(t *testing.T) {
 	w.exec(`UPDATE mcp_servers SET status = 'disabled' WHERE id = $1`, s.ID)
 	refused("after a disable elsewhere")
 	w.exec(`UPDATE mcp_servers SET status = 'active' WHERE id = $1`, s.ID)
-	// The tool disabled in the approved review on another replica.
-	w.exec(`UPDATE mcp_server_snapshots SET review = jsonb_set(review, '{search,enabled}', 'false') WHERE server_id = $1 AND status = 'approved'`, s.ID)
+	// The tool disabled in the approved review on another replica (the
+	// review column layout: {"format":2,"tools":{...},"content":{...}}).
+	w.exec(`UPDATE mcp_server_snapshots SET review = jsonb_set(review, '{tools,search,enabled}', 'false') WHERE server_id = $1 AND status = 'approved'`, s.ID)
 	up.reset()
 	if res, err := w.call(bob, "stale.search", map[string]any{"q": "x"}); err == nil && !res.IsError {
 		t.Error("a tool disabled elsewhere still runs")

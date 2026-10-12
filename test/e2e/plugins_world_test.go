@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -266,6 +267,7 @@ func (w *world) refresh(u user, serverID string) string {
 
 var (
 	enableRE  = regexp.MustCompile(`name="enable" value="(\d+)"( checked)? aria-label="Enable ([^"]+)"`)
+	itemRE    = regexp.MustCompile(`name="(enable_resource|enable_template|enable_prompt)" value="(\d+)"( checked)? aria-label="Enable ([^"]+)"`)
 	versionRE = regexp.MustCompile(`name="version" value="(\d+)"`)
 )
 
@@ -287,18 +289,39 @@ func reviewForm(t *testing.T, body string) (version string, index map[string]str
 	return v[1], index, checked
 }
 
-// approve submits the owner's review form with exactly the given tools
-// checked (every other tool disabled).
+// reviewItems parses the resources, templates and prompts of a review
+// page: key (URI, URI template, prompt name) -> form field and index, and
+// the pre-checked keys.
+func reviewItems(body string) (fields map[string][2]string, checked []string) {
+	fields = map[string][2]string{}
+	for _, m := range itemRE.FindAllStringSubmatch(body, -1) {
+		key := html.UnescapeString(m[4])
+		fields[key] = [2]string{m[1], m[2]}
+		if m[3] != "" {
+			checked = append(checked, key)
+		}
+	}
+	return fields, checked
+}
+
+// approve submits the owner's review form with exactly the given tools,
+// resources (by URI), templates (by URI template) and prompts (by name)
+// checked (everything else disabled).
 func (w *world) approve(u user, serverID, body string, enable ...string) {
 	w.t.Helper()
 	version, index, _ := reviewForm(w.t, body)
+	items, _ := reviewItems(body)
 	form := url.Values{"version": {version}}
 	for _, name := range enable {
-		i, ok := index[name]
-		if !ok {
-			w.t.Fatalf("tool %q not on the review page (have %v)", name, index)
+		if i, ok := index[name]; ok {
+			form.Add("enable", i)
+			continue
 		}
-		form.Add("enable", i)
+		f, ok := items[name]
+		if !ok {
+			w.t.Fatalf("%q not on the review page (tools %v, items %v)", name, index, items)
+		}
+		form.Add(f[0], f[1])
 	}
 	mustRedirect(w.t, "approve", w.submit(u, "/servers/"+serverID+"/review", form), "/servers/"+serverID+"?approved=1")
 }
