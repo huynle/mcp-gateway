@@ -121,11 +121,11 @@ td.top, .table-scroll td { vertical-align: top; }
 .mono, td.mono, th.mono { font-family: var(--mono); font-size: .8rem; }
 .nowrap { white-space: nowrap; }
 /* Long values: one line, ellipsis, full value in the title attribute. */
-.clip { display: block; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ids { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+.clip { display: block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ids { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; min-width: 13rem; }
 .ids li { display: flex; gap: .4rem; align-items: baseline; min-width: 0; font-family: var(--mono); font-size: .75rem; }
-.ids .k { color: var(--muted); flex: none; min-width: 4.5rem; }
-.ids .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11rem; }
+.ids .k { color: var(--muted); flex: none; min-width: 4.2rem; }
+.ids .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
 
 /* --- buttons, inputs ------------------------------------------------------- */
 .btn, button:not(.theme-choice) { display: inline-block; padding: .4rem .9rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: transparent; color: var(--fg); font: inherit; line-height: 1.3; cursor: pointer; text-decoration: none; }
@@ -199,9 +199,18 @@ form.filters input { font-size: .9rem; padding: .3rem .45rem; }
 .decision-allow { color: var(--ok); } .decision-deny { color: var(--danger); } .decision-confirm { color: var(--warn); }
 .empty { color: var(--muted); padding: 2rem 0; }
 nav.pager { margin-top: 1rem; display: flex; gap: 1rem; align-items: center; }
-dl.resource { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 .4rem; font-size: .85rem; }
+table.audit { font-size: .875rem; }
+table.audit td { padding: .45rem .5rem; }
+table.audit th { padding: .45rem .5rem; }
+dl.resource { margin: 0; display: grid; grid-template-columns: max-content minmax(6rem, 1fr); gap: 0 .4rem; font-size: .8rem; min-width: 10rem; }
 dl.resource dt { color: var(--muted); }
-dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
+dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
+
+/* Narrow screens: any table not already in a .table-scroll box scrolls
+   inside itself instead of widening the page. */
+@media (max-width: 60rem) {
+  main table:not(.table-scroll table) { display: block; overflow-x: auto; max-width: 100%; }
+}
 
 @media (max-width: 40rem) {
   main { margin: 1rem auto; padding: 0 .75rem; }
