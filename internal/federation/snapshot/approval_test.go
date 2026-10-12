@@ -173,3 +173,19 @@ func TestApplyApprovals(t *testing.T) {
 		t.Errorf("invalid mode: %v", err)
 	}
 }
+
+// AutoRunToolNames uses the registry names and leaves out tools whose
+// names collide after sanitizing (the connector registers neither).
+func TestAutoRunToolNames(t *testing.T) {
+	r := Review{
+		"saveNote":  {Enabled: true, Kind: KindWrite, Approval: ApprovalAuto},
+		"save-it":   {Enabled: true, Kind: KindWrite, Approval: ApprovalAuto},
+		"a b":       {Enabled: true, Kind: KindWrite, Approval: ApprovalAuto},
+		"a_b":       {Enabled: true, Kind: KindWrite},
+		"off":       {Enabled: false, Kind: KindWrite, Approval: ApprovalAuto},
+		"readThing": {Enabled: true, Kind: KindRead},
+	}
+	if got := r.AutoRunToolNames(); !slices.Equal(got, []string{"save-it", "save_note"}) {
+		t.Errorf("AutoRunToolNames = %v", got)
+	}
+}
