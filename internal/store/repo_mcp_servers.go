@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Repository functions for user-added MCP servers, their publishing and
@@ -115,7 +117,10 @@ func ListAllMCPServers(ctx context.Context, q Querier) ([]MCPServer, error) {
 // UpdateMCPServer rewrites a server's editable settings (name, URL,
 // transport, credential mode, auth kind, auth and header config). Owner,
 // audience and status have their own functions. ErrNotFound when the row
-// does not exist or the caller may not change it.
+// does not exist or the caller may not change it; ErrMCPServerLocked when
+// the server is published and the request path (gateway_app) changes its
+// address or sign-in settings (migration 00017). On the admin path such a
+// change supersedes the server's approved snapshot.
 func UpdateMCPServer(ctx context.Context, q Querier, s *MCPServer) error {
 	err := q.QueryRow(ctx, `
 		UPDATE mcp_servers SET name = $2, url = $3, transport = $4, credential_mode = $5, auth_kind = $6,
@@ -124,6 +129,10 @@ func UpdateMCPServer(ctx context.Context, q Querier, s *MCPServer) error {
 		WHERE id = $1 RETURNING updated_at`,
 		s.ID, s.Name, s.URL, s.Transport, s.CredentialMode, s.AuthKind, s.AuthConfig, s.HeaderConfig,
 	).Scan(&s.UpdatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == MCPServerLockedCode {
+		return ErrMCPServerLocked
+	}
 	if err != nil {
 		return notFound(err)
 	}
@@ -346,3 +355,13 @@ func DeleteMCPOAuthClient(ctx context.Context, q Querier, serverID string) (int6
 	}
 	return tag.RowsAffected(), nil
 }
+
+// MCPServerLockedCode is the SQLSTATE the mcp_servers_published_lock
+// trigger (migration 00017) raises when the request path changes the
+// address or sign-in settings of a published server.
+const MCPServerLockedCode = "GW001"
+
+// ErrMCPServerLocked: the server is published, so its URL, transport,
+// credential mode, auth kind and auth / header config can only be changed
+// by an admin (decision q7vbxlyk point 3).
+var ErrMCPServerLocked = errors.New("store: published server settings can only be changed by an admin")
