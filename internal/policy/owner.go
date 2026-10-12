@@ -18,7 +18,8 @@ import (
 // The layer applies whether the server is private or published (decision
 // q7vbxlyk, task fekckdrt): publishing shares the server with the chosen
 // roles, whose holders still need a role grant, and the owner keeps
-// access.
+// access. The layer also covers the server's resources/read and
+// prompts/get actions (ResourcesReadTool, PromptsGetTool): they are reads.
 type OwnerGrant struct {
 	UserID string
 	App    string

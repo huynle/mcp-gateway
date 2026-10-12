@@ -60,3 +60,41 @@ func TestRoleEditorGrantsServerAppTools(t *testing.T) {
 		t.Errorf("wiki.create_page after the grant: %v, %v; want confirm", d.Outcome, err)
 	}
 }
+
+// The role editor lists a server app's resources/read and prompts/get
+// actions next to its tools (task bdb5zcud) and saves grants of them.
+func TestRoleEditorGrantsServerResourcesAndPrompts(t *testing.T) {
+	p := newPages(t)
+	handler := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
+	if err := p.reg.AddServerTools("wiki", []connectors.Tool{
+		{App: "wiki", Name: "search", Description: "[wiki] search", InputSchema: json.RawMessage(`{"type":"object"}`),
+			Kind: connectors.KindRead, Handler: handler},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := p.do(t, http.MethodGet, "/admin/roles/member", nil, true).Body.String()
+	for _, want := range []string{`name="outcome.wiki.resources/read"`, `name="outcome.wiki.prompts/get"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("role editor lacks %s", want)
+		}
+	}
+	// Built-in apps get no such rows.
+	if strings.Contains(body, `name="outcome.fake.resources/read"`) {
+		t.Error("role editor offers resources/read for a built-in app")
+	}
+	res := policy.ServerAccessTool("wiki", policy.ResourcesReadTool)
+	ctx := context.Background()
+	if ok, _ := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: res}); ok {
+		t.Fatal("resources permitted before the grant")
+	}
+	form := url.Values{"description": {"Default"}, "outcome.fake.list_items": {"allow"}, "outcome.wiki.resources/read": {"allow"}}
+	if rec := p.do(t, http.MethodPost, "/admin/roles/member", form, true); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save role = %d:\n%s", rec.Code, rec.Body)
+	}
+	if ok, err := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: res}); err != nil || !ok {
+		t.Errorf("resources after the grant: %v, %v", ok, err)
+	}
+	if ok, _ := p.svc.Permits(ctx, policy.Input{UserID: memberUser, Tool: policy.ServerAccessTool("wiki", policy.PromptsGetTool)}); ok {
+		t.Error("prompts permitted by a resources grant")
+	}
+}
