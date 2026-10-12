@@ -47,6 +47,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/jobs"
@@ -192,6 +193,7 @@ type world struct {
 	fake     *fake.Connector
 	slack    *fakeSlack
 	fed      *connector.Federation
+	gw       *gatewaytools.Tools
 	perms    *permissions.Service
 	srv      *httptest.Server
 
@@ -322,6 +324,9 @@ func newWorld(t *testing.T, opts options) *world {
 			t.Fatal(err)
 		}
 	}
+	// Who may add MCP servers and the "Gateway management tools" setting,
+	// as cmd/gateway wires them.
+	w.perms = permissions.NewPostgres(st, permissions.Options{Audit: w.rec, Log: log})
 	// User-added MCP servers, as cmd/gateway's newFederation wires them.
 	var decider mcp.Decider = w.policy
 	var accounts connectors.AccountSource = w.conn
@@ -335,6 +340,16 @@ func newWorld(t *testing.T, opts options) *world {
 		}
 		w.fed.Start(ctx)
 		decider, accounts = w.fed.Manager.Decider(w.policy), w.fed.Manager.Accounts(w.conn)
+		// The gateway.* management tools, as cmd/gateway's
+		// newGatewayTools wires them: the gate in front of the policy,
+		// the anchor account, the My account switch.
+		w.gw, err = gatewaytools.Wire(gatewaytools.WireOptions{
+			Federation: w.fed, Store: st, Registry: reg, Activity: w.perms, BaseURL: baseURL, Log: log,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		decider, accounts = w.gw.Decider(decider), w.gw.Accounts(accounts)
 		// Adding MCP servers needs permission (decision bnneszc1): alice
 		// gets a role that may add servers; bob (member / restricted)
 		// does not.
@@ -396,9 +411,9 @@ func newWorld(t *testing.T, opts options) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// My account: "Gateway management tools", as cmd/gateway wires it.
-	w.perms = permissions.NewPostgres(st, permissions.Options{Audit: w.rec, Log: log})
-	p.SetGatewayTools(w.perms)
+	// My account: "Gateway management tools", as cmd/gateway wires it
+	// (through the gate, so switching off takes effect at once).
+	p.SetGatewayTools(w.gw.Setting(w.perms))
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {
