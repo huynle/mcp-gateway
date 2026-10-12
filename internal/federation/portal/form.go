@@ -424,6 +424,17 @@ type formPage struct {
 	Info     CredentialInfo
 	Error    string
 	Notice   string
+	// Locked is set on the edit form of a published server: its address
+	// and sign-in settings are shown read-only (locked.go).
+	Locked *lockedView
+}
+
+// lockedView is the read-only summary of a published server's settings.
+type lockedView struct {
+	Note       string
+	Address    string
+	AuthKind   string
+	SharedForm bool // the owner may rotate the shared secret
 }
 
 func (p *Portal) formPage(ctx context.Context, c caller, f serverForm, d *detectView) (formPage, error) {
@@ -640,6 +651,19 @@ func (p *Portal) renderEdit(w http.ResponseWriter, r *http.Request, c caller, s 
 		return
 	}
 	page.Title, page.Edit, page.ServerID, page.Info, page.Error = "Edit "+s.Name, true, s.ID, info, msg
+	if isLocked(s) {
+		// Read-only settings: show the stored ones, whatever was posted.
+		page.Form = formFromServer(s, info)
+		page.Form.Name = s.Name
+		names := make(map[string]string, len(page.Tunnels))
+		for _, t := range page.Tunnels {
+			names[t.ID] = t.Name
+		}
+		page.Locked = &lockedView{
+			Note: lockedMessage, Address: displayURL(s.URL, names), AuthKind: kindLabels[s.AuthKind],
+			SharedForm: s.CredentialMode == store.MCPCredentialShared && secretKind(s.AuthKind),
+		}
+	}
 	p.renderForm(w, r, status, page)
 }
 
@@ -648,6 +672,10 @@ func (p *Portal) save(w http.ResponseWriter, r *http.Request, c caller, s *store
 	info, err := p.d.Store.CredentialInfo(ctx, c.UserID, s.ID)
 	if err != nil {
 		p.fail(w, r, "credential info", err)
+		return
+	}
+	if isLocked(s) {
+		p.saveLocked(w, r, c, s, info)
 		return
 	}
 	f := parseServerForm(r)
@@ -665,21 +693,30 @@ func (p *Portal) save(w http.ResponseWriter, r *http.Request, c caller, s *store
 			err = p.storeCredentials(ctx, c, s.ID, &f, v)
 		}
 	}
-	var ue *userError
-	switch {
-	case errors.As(err, &ue):
-		p.renderEdit(w, r, c, s, info, f, http.StatusUnprocessableEntity, ue.msg)
-		return
-	case errors.Is(err, store.ErrNotFound):
-		p.notFound(w, r)
-		return
-	case err != nil:
-		p.fail(w, r, "save server", err)
+	if err != nil {
+		p.formSaveError(w, r, c, s, info, f, err)
 		return
 	}
 	p.log.Info("server edited", "event", "federation.server_edited", "user_id", c.UserID, "server_id", s.ID)
 	p.changed(ctx, s.ID)
 	http.Redirect(w, r, "/servers/"+s.ID+"?saved=1", http.StatusSeeOther)
+}
+
+// formSaveError answers a failed edit: a user error or the store's lock
+// (the server was published meanwhile: migration 00017) re-renders the
+// form (422), a missing server is the 404 page, anything else fails.
+func (p *Portal) formSaveError(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer, info CredentialInfo, f serverForm, err error) {
+	var ue *userError
+	switch {
+	case errors.As(err, &ue):
+		p.renderEdit(w, r, c, s, info, f, http.StatusUnprocessableEntity, ue.msg)
+	case errors.Is(err, store.ErrMCPServerLocked):
+		p.renderEdit(w, r, c, s, info, f, http.StatusUnprocessableEntity, lockedMessage)
+	case errors.Is(err, store.ErrNotFound):
+		p.notFound(w, r)
+	default:
+		p.fail(w, r, "save server", err)
+	}
 }
 
 func (p *Portal) delete(w http.ResponseWriter, r *http.Request, c caller, s *store.MCPServer) {

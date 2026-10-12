@@ -1,5 +1,34 @@
 {{template "head" .}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{with .Locked}}
+<p class="notice" role="status">{{if ne $.Error .Note}}{{.Note}} {{end}}Its address and sign-in settings were reviewed by an admin for everyone it is shared with, so they are shown read-only.</p>
+<dl class="stack">
+  <dt>Name</dt><dd><strong>{{$.Form.Name}}</strong></dd>
+  <dt>Address</dt><dd><code>{{.Address}}</code></dd>
+  <dt>Authentication</dt><dd>{{.AuthKind}}{{if eq $.Form.CredentialMode "shared"}}, one shared credential for everyone{{else}}, per user{{end}}</dd>
+  {{with $.Form.APIKeyName}}<dt>API key placement</dt><dd>{{if eq $.Form.APIKeyIn "query"}}query parameter{{else}}header{{end}} <code>{{.}}</code></dd>{{end}}
+  {{with $.Form.Scopes}}<dt>OAuth scopes</dt><dd><code>{{.}}</code></dd>{{end}}
+  {{with $.Form.ClientID}}<dt>Static OAuth client</dt><dd><code>{{.}}</code>{{with $.Form.ClientIssuer}} (issuer <code>{{.}}</code>){{end}}</dd>{{end}}
+  {{with $.Form.StaticHeaders}}<dt>Static headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
+  {{with $.Form.PerUserHeaders}}<dt>Per-user headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
+</dl>
+{{if .SharedForm}}
+<form method="post" action="/servers/{{$.ServerID}}/edit" class="stack" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
+  <fieldset>
+    <legend>Rotate the shared credential <span class="muted">(write-only: it is never shown again)</span></legend>
+    {{if $.Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with $.Info.SharedKeys}} ({{join . ", "}}){{end}}.</p>{{end}}
+    {{if eq $.Form.AuthKind "api_key"}}<label>Shared API key <input type="password" name="shared_api_key" value="" autocomplete="new-password"></label>{{end}}
+    {{if eq $.Form.AuthKind "bearer"}}<label>Shared bearer token <input type="password" name="shared_bearer" value="" autocomplete="new-password"></label>{{end}}
+    {{if eq $.Form.AuthKind "headers"}}<label>Shared headers <span class="muted">(one “Name: value” per line)</span> <textarea name="shared_headers" rows="3" autocomplete="off"></textarea></label>{{end}}
+  </fieldset>
+  <p><button class="btn primary" type="submit" name="action" value="save">Save</button>
+    <a class="btn" href="/servers/{{$.ServerID}}">Cancel</a></p>
+</form>
+{{else}}
+<p><a class="btn" href="/servers/{{$.ServerID}}">Back</a></p>
+{{end}}
+{{else}}
 {{if not .Edit}}<p class="muted">The server starts private: only you can see and use it. An admin can publish it to roles later. Its tools stay disabled until you review them.</p>{{end}}
 <form method="post" action="{{if .Edit}}/servers/{{.ServerID}}/edit{{else}}/servers/new{{end}}" class="stack" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
@@ -83,4 +112,5 @@
   <p><button class="btn primary" type="submit" name="action" value="{{if .Edit}}save{{else}}create{{end}}">{{if .Edit}}Save{{else}}Add server{{end}}</button>
     <a class="btn" href="{{if .Edit}}/servers/{{.ServerID}}{{else}}/servers{{end}}">Cancel</a></p>
 </form>
+{{end}}
 {{template "foot" .}}
