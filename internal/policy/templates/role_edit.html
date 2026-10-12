@@ -22,7 +22,7 @@
   <section class="grid-app">
     <header>
       <h3>{{.Name}}</h3>
-      <label style="display:inline-grid">
+      <label class="inline-label">
         <span class="muted">Personal accounts</span>
         <select name="personal.{{.Name}}">
           {{$cur := .Personal}}{{range allowances}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}

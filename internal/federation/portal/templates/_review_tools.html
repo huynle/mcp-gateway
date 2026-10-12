@@ -2,7 +2,7 @@
      Data: fedportal.ReviewPage. Upstream text has been through the snapshot Display helpers;
      html/template escapes it. Field names use the tool's index, never its upstream name. */}}
 {{define "review-tools"}}
-<link rel="stylesheet" href="/static/review.css">
+<link rel="stylesheet" href="{{asset "review.css"}}">
 <section class="review-summary">
   <div class="review-head"><strong>{{.ServerName}}</strong> <span class="muted">version {{.Version}}</span></div>
   <p class="review-status">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools stay disabled until you enable them.{{end}}</p>
@@ -68,6 +68,6 @@
     {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
   </div>
 </form>
-<script src="/static/review.js" defer></script>
+<script src="{{asset "review.js"}}" defer></script>
 {{end}}
 {{end}}

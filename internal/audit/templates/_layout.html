@@ -1,32 +1,12 @@
 {{define "head"}}<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}}</title>
-<style>
-  body { font: 14px/1.4 system-ui, sans-serif; margin: 1.5rem; color: #1a1a1a; }
-  h1 { font-size: 1.3rem; }
-  form.filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: 1rem; }
-  form.filters label { display: flex; flex-direction: column; font-size: .8rem; color: #555; }
-  form.filters input { font: inherit; padding: .2rem .4rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; vertical-align: top; padding: .35rem .5rem; border-bottom: 1px solid #ddd; }
-  th { background: #f4f4f4; font-weight: 600; white-space: nowrap; }
-  td.mono, th.mono { font-family: ui-monospace, monospace; font-size: .85rem; }
-  .decision-allow { color: #137333; } .decision-deny { color: #b3261e; } .decision-confirm { color: #8a5a00; }
-  .empty { color: #666; padding: 2rem 0; }
-  nav.pager { margin-top: 1rem; display: flex; gap: 1rem; }
-  dl.resource { margin: 0; } dl.resource dt { display: inline; color: #555; } dl.resource dd { display: inline; margin: 0 .5rem 0 .2rem; }
-  header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin: -1.5rem -1.5rem 1.5rem; padding: .6rem 1.5rem; border-bottom: 1px solid #ddd; }
-  header .brand { font-weight: 600; color: inherit; text-decoration: none; }
-  header nav.site-nav { display: flex; flex-wrap: wrap; gap: .9rem; }
-  header nav.site-nav a[aria-current="page"] { font-weight: 600; }
-  header .who { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
-</style>
+  {{template "page.head"}}
+  <title>{{.Title}} · MCP Gateway</title>
 </head>
 <body>
 {{template "nav" navData}}
+<main>
 <h1>{{.Title}}</h1>
 {{end}}
 
@@ -38,7 +18,7 @@
   <label>Outcome <input name="outcome" value="{{.Filter.Outcome}}" placeholder="succeeded / failed / unknown"></label>
   <label>Since <input name="since" value="{{if not .Filter.Since.IsZero}}{{.Filter.Since.Format "2006-01-02"}}{{end}}" placeholder="YYYY-MM-DD"></label>
   <label>Until <input name="until" value="{{if not .Filter.Until.IsZero}}{{.Filter.Until.Format "2006-01-02"}}{{end}}" placeholder="YYYY-MM-DD"></label>
-  <label>&nbsp;<button type="submit">Filter</button></label>
+  <button class="btn primary" type="submit">Filter</button>
 </form>
 {{end}}
 
@@ -91,6 +71,7 @@
 {{end}}
 
 {{define "foot"}}
+</main>
 </body>
 </html>
 {{end}}
