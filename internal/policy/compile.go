@@ -73,11 +73,23 @@ func Compile(roles []Role, assignments []Assignment, restrictions []UserRestrict
 	return CompileWithOwners(roles, assignments, restrictions, nil)
 }
 
-// CompileWithOwners is Compile plus the implicit owner layer of private
-// user-added MCP servers (OwnerGrant). Without grants it produces exactly
+// CompileWithOwners is Compile plus the implicit owner layer of
+// user-added MCP servers (OwnerGrant), with every server write asking for
+// a confirmation (no approval modes). Without grants it produces exactly
 // what Compile does.
 func CompileWithOwners(roles []Role, assignments []Assignment, restrictions []UserRestriction, owners []OwnerGrant) (*Compiled, error) {
-	owners, err := normalizeOwners(owners)
+	return CompileWithLayers(roles, assignments, restrictions, Layers{Owners: owners})
+}
+
+// CompileWithLayers is Compile plus the implicit layers of user-added MCP
+// servers: the owner grants (OwnerGrant) and the servers' approval modes
+// (ServerApproval). Without layers it produces exactly what Compile does.
+func CompileWithLayers(roles []Role, assignments []Assignment, restrictions []UserRestriction, layers Layers) (*Compiled, error) {
+	owners, err := normalizeOwners(layers.Owners)
+	if err != nil {
+		return nil, err
+	}
+	servers, err := normalizeServers(layers.Servers, owners)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +144,9 @@ func CompileWithOwners(roles []Role, assignments []Assignment, restrictions []Us
 	for _, g := range owners {
 		w.owner(g)
 		ownerSet[g.UserID] = true
+	}
+	for _, app := range sortedKeys(servers) {
+		w.serverApproval(app, servers[app])
 	}
 	var warnings []string
 	for _, u := range restrictions {
