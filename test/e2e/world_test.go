@@ -53,6 +53,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/slack"
@@ -191,6 +192,7 @@ type world struct {
 	fake     *fake.Connector
 	slack    *fakeSlack
 	fed      *connector.Federation
+	perms    *permissions.Service
 	srv      *httptest.Server
 
 	admin, alice, bob    user
@@ -333,6 +335,10 @@ func newWorld(t *testing.T, opts options) *world {
 		}
 		w.fed.Start(ctx)
 		decider, accounts = w.fed.Manager.Decider(w.policy), w.fed.Manager.Accounts(w.conn)
+		// Adding MCP servers needs permission (decision bnneszc1): alice
+		// gets a role that may add servers; bob (member / restricted)
+		// does not.
+		w.grantAddServers(w.alice)
 	}
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL
@@ -390,6 +396,9 @@ func newWorld(t *testing.T, opts options) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// My account: "Gateway management tools", as cmd/gateway wires it.
+	w.perms = permissions.NewPostgres(st, permissions.Options{Audit: w.rec, Log: log})
+	p.SetGatewayTools(w.perms)
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {

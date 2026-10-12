@@ -79,7 +79,7 @@ func TestOAuthWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := connectors.NewRegistry()
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, nil, registry, log, withHarnessPages(authSvc))
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, nil, registry, nil, log, withHarnessPages(authSvc))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}

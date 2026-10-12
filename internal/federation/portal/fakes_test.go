@@ -462,12 +462,6 @@ func (f *fakePerms) CanAddServers(_ context.Context, userID string) bool {
 	return userID != "" && !f.denied[userID]
 }
 
-func (f *fakePerms) deny(userID string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.denied[userID] = true
-}
-
 type fakeHook struct {
 	mu      sync.Mutex
 	changed []string

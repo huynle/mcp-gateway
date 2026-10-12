@@ -150,8 +150,19 @@ func TestIntegrationFederationTunnelThroughMux(t *testing.T) {
 			return err
 		}
 		alice = u.ID
+		// Adding MCP servers needs a role that may (decision bnneszc1).
+		if err := store.UpsertRole(ctx, tx, "server_builders", "", nil, true); err != nil {
+			return err
+		}
+		role, err := store.FindRoleByName(ctx, tx, "server_builders")
+		if err != nil {
+			return err
+		}
+		if err := store.AssignRoleIfMissing(ctx, tx, u.ID, role.ID, nil); err != nil {
+			return err
+		}
 		// Tokens work only for users who signed in recently.
-		_, err := tx.Exec(ctx, `UPDATE users SET last_company_sign_in_at = now() WHERE id = $1`, u.ID)
+		_, err = tx.Exec(ctx, `UPDATE users SET last_company_sign_in_at = now() WHERE id = $1`, u.ID)
 		return err
 	}); err != nil {
 		t.Fatal(err)

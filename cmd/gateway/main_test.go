@@ -96,7 +96,7 @@ func TestMuxMountsPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, connSvc, registry, slog.New(slog.DiscardHandler))
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, connSvc, registry, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}

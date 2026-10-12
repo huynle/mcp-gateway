@@ -25,7 +25,7 @@ func TestPermittedUserSeesAddServer(t *testing.T) {
 
 func TestUnpermittedUserHasNoAddServerButton(t *testing.T) {
 	e := newEnv(t)
-	e.perm.deny(carol)
+	e.perm.denied[carol] = true // before any request: no lock needed
 	r := e.get("/servers", carol)
 	if r.code != http.StatusOK {
 		t.Fatalf("GET /servers = %d", r.code)
@@ -36,7 +36,7 @@ func TestUnpermittedUserHasNoAddServerButton(t *testing.T) {
 
 func TestUnpermittedUserCannotOpenAddForm(t *testing.T) {
 	e := newEnv(t)
-	e.perm.deny(carol)
+	e.perm.denied[carol] = true // before any request: no lock needed
 	r := e.get("/servers/new", carol)
 	if r.code != http.StatusForbidden {
 		t.Fatalf("GET /servers/new = %d, want 403", r.code)
@@ -48,7 +48,7 @@ func TestUnpermittedUserCannotOpenAddForm(t *testing.T) {
 
 func TestUnpermittedUserCannotCreateOrDetect(t *testing.T) {
 	e := newEnv(t)
-	e.perm.deny(carol)
+	e.perm.denied[carol] = true // before any request: no lock needed
 	r := e.post("/servers/new", carol, addForm("name", "sneaky", "url", "https://sneaky.example/mcp", "auth_kind", "none"))
 	if r.code != http.StatusForbidden {
 		t.Errorf("POST create = %d, want 403", r.code)
@@ -72,7 +72,7 @@ func TestUnpermittedUserCannotCreateOrDetect(t *testing.T) {
 // The CSRF check still comes first: a forged POST is refused as forged.
 func TestUnpermittedCreateWithoutCSRFIsStill403(t *testing.T) {
 	e := newEnv(t)
-	e.perm.deny(carol)
+	e.perm.denied[carol] = true // before any request: no lock needed
 	form := addForm("name", "x", "url", "https://x.example/mcp", "auth_kind", "none")
 	form.Set("_csrf", "wrong")
 	if r := e.post("/servers/new", carol, form); r.code != http.StatusForbidden {
@@ -82,7 +82,7 @@ func TestUnpermittedCreateWithoutCSRFIsStill403(t *testing.T) {
 
 func TestOwnerWithoutPermissionKeepsTheirServer(t *testing.T) {
 	e := newEnv(t)
-	e.perm.deny(carol)
+	e.perm.denied[carol] = true // before any request: no lock needed
 	s := e.st.add(store.MCPServer{Name: "notes", URL: "https://notes.example/mcp", OwnerUserID: carol, AuthKind: store.MCPAuthNone})
 	e.snap.next[s.ID] = snapOf(readTool("search", "Search notes"))
 
