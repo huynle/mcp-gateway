@@ -51,6 +51,8 @@
 {{with .Current}}
 <p>Approved snapshot version {{.Version}}: {{.Enabled}} of {{.Tools}} tools enabled, {{.Resources}} resources and templates, {{.Prompts}} prompts.</p>
 {{else}}<p class="muted">No reviewed snapshot yet: no tools of this server are available.</p>{{end}}
+{{with .Approval}}<h3>Approval before running</h3>
+{{template "approval-modes" .}}{{end}}
 <p>
   {{if .PendingReview}}<a class="badge" href="/servers/{{.Server.ID}}/review">pending review</a>{{end}}
   <a class="btn" href="/servers/{{.Server.ID}}/review">Review tools</a>

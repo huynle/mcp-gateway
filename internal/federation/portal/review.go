@@ -31,10 +31,18 @@ type ReviewTool struct {
 	Override    snapshot.Kind // current reviewer override, if any
 	Kind        snapshot.Kind // effective kind: Override, else HintKind
 	Destructive bool
-	Status      string // added | changed | unchanged
-	Fields      []string
-	Enabled     bool // enabled in the approved review
-	Checked     bool // pre-checked: an unchanged tool that is enabled
+	// DestructiveHint: the upstream explicitly annotates the tool
+	// destructiveHint=true (the review warns when such a tool is set to
+	// run without asking).
+	DestructiveHint bool
+	Status          string // added | changed | unchanged
+	Fields          []string
+	Enabled         bool // enabled in the approved review
+	Checked         bool // pre-checked: an unchanged tool that is enabled
+	// Approval is the tool's approval mode as the form pre-selects it:
+	// auto for reads; for writes the approved mode of an unchanged tool,
+	// ask for a new or changed one (snapshot.ToolReview.Mode).
+	Approval snapshot.Approval
 }
 
 // ReviewGroup is the tools sharing a name prefix (the text before the
@@ -181,14 +189,19 @@ type ReviewPage struct {
 	Approve    string // label of the primary submit button
 }
 
-// ReviewTemplateFS holds the shared review template ("review-tools"),
-// ReviewTemplate its path, for the admin pages to parse into their set.
+// ReviewTemplateFS holds the shared review template ("review-tools") and
+// the approval-modes template ("approval-modes"), ReviewTemplate and
+// ApprovalTemplate their paths, for the admin pages to parse into their set.
 //
-//go:embed templates/_review_tools.html
+//go:embed templates/_review_tools.html templates/_approval_modes.html
 var ReviewTemplateFS embed.FS
 
 // ReviewTemplate is the path of the shared review template in ReviewTemplateFS.
 const ReviewTemplate = "templates/_review_tools.html"
+
+// ApprovalTemplate is the path of the shared approval-modes template
+// ("approval-modes", data ApprovalView) in ReviewTemplateFS.
+const ApprovalTemplate = "templates/_approval_modes.html"
 
 // KeyDiffView is a KeyDiff with display-safe keys.
 type KeyDiffView struct{ Added, Removed, Changed []string }
@@ -249,6 +262,7 @@ func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 				tv.Title = snapshot.DisplayTitle(t.Annotations.Title)
 			}
 			tv.Destructive = t.Annotations.DestructiveHint == nil || *t.Annotations.DestructiveHint
+			tv.DestructiveHint = t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint
 		} else {
 			tv.Destructive = true
 		}
@@ -267,6 +281,10 @@ func BuildReviewView(latest, current *snapshot.Record) ReviewView {
 		tv.Kind = tv.HintKind
 		if tv.Override != "" {
 			tv.Kind = tv.Override
+		}
+		tv.Approval = snapshot.ApprovalAsk
+		if rv, ok := review[t.Name]; tv.Kind == snapshot.KindRead || ok && tv.Status == "unchanged" && rv.Mode() == snapshot.ApprovalAuto {
+			tv.Approval = snapshot.ApprovalAuto
 		}
 		// New and changed tools start unchecked (decision d6sitdqi);
 		// everything already enabled stays so (the user's bulk-approve
@@ -450,7 +468,7 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 }
 
 // ReviewDecisionsFromForm turns a posted review form (fields enable=<i>,
-// kind_<i>, enable_reads, enable_resource / enable_template /
+// kind_<i>, approval_<i>, enable_reads, enable_resource / enable_template /
 // enable_prompt=<i>, action) into decisions for latest; current is the
 // approved record (nil when none). action=approve_all enables every tool,
 // resource, template and prompt of latest, writes included (the "Approve with all tools enabled"
@@ -459,6 +477,12 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 // except read tools when "enable all read tools" is on (left to
 // EnableReads, which never re-enables a tool a reviewer disabled before
 // and never enables writes).
+//
+// Approval modes: approval_<i> (ask | auto) sets a write tool's mode; the
+// bulk actions approve_auto ("Run selected without asking") and
+// approve_ask ("Ask for selected") approve like approve and set every
+// checked write tool to auto or ask; approve_all keeps the posted modes.
+// Read tools get no approval decision (they always run without one).
 func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) snapshot.ReviewDecisions {
 	var review snapshot.Review
 	if current != nil {
@@ -492,6 +516,9 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 		default:
 			dec.Enabled = enabled(false)
 		}
+		if eff == snapshot.KindWrite {
+			dec.Approval = approvalFromForm(form, i, checked[i])
+		}
 		d.Tools[t.Name] = dec
 	}
 	// Resources, templates and prompts: checked (or approve_all) enables,
@@ -521,8 +548,31 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 	return d
 }
 
-// ActionApproveAll is the review form's action value that enables every
-// tool of the posted version.
-const ActionApproveAll = "approve_all"
+// Review form action values beyond the plain "approve".
+const (
+	// ActionApproveAll enables every tool of the posted version.
+	ActionApproveAll = "approve_all"
+	// ActionApproveAuto approves and sets the checked write tools to run
+	// without asking.
+	ActionApproveAuto = "approve_auto"
+	// ActionApproveAsk approves and sets the checked write tools to ask.
+	ActionApproveAsk = "approve_ask"
+)
+
+// approvalFromForm is the approval decision of write tool i: the bulk
+// action for a checked tool, else the posted approval_<i>, else none.
+func approvalFromForm(form url.Values, i int, checked bool) *snapshot.Approval {
+	mode := snapshot.Approval(form.Get("approval_" + strconv.Itoa(i)))
+	switch action := form.Get("action"); {
+	case checked && action == ActionApproveAuto:
+		mode = snapshot.ApprovalAuto
+	case checked && action == ActionApproveAsk:
+		mode = snapshot.ApprovalAsk
+	}
+	if !mode.Valid() {
+		return nil
+	}
+	return &mode
+}
 
 func enabled(b bool) *bool { return &b }

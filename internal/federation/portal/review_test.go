@@ -149,7 +149,7 @@ func TestReviewPrechecksUnchangedEnabledToolsIncludingWrites(t *testing.T) {
 	}
 	// list (0) and delete (2) are unchanged and enabled; search changed,
 	// off disabled, new added.
-	if n := strings.Count(r.body, " checked"); n != 2 || !strings.Contains(r.body, `value="0" checked`) || !strings.Contains(r.body, `value="2" checked`) {
+	if n := strings.Count(r.body, `" checked aria-label="Enable`); n != 2 || !strings.Contains(r.body, `value="0" checked`) || !strings.Contains(r.body, `value="2" checked`) {
 		t.Errorf("%d pre-checked boxes:\n%s", n, r.body)
 	}
 	mustContain(t, r.body, "2 of 5 selected", `<b>5</b> total`, `<b>3</b> enabled`, `<b>1</b> new`, `<b>1</b> changed`, `<b>1</b> removed`,

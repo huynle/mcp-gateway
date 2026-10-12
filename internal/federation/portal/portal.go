@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -66,6 +67,7 @@ type Snapshots interface {
 	Latest(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
 	Current(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
 	Approve(ctx context.Context, a snapshot.Actor, serverID string, version int, d snapshot.ReviewDecisions) (*snapshot.Record, error)
+	SetApprovalModes(ctx context.Context, a snapshot.Actor, serverID string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error)
 }
 
 // Auth is the part of *auth.Service the pages use.
@@ -139,8 +141,12 @@ type Deps struct {
 	// bdb5zcud). Nil: only the owner may browse.
 	Policy   ResourcePolicy
 	Identity Identity
-	Log      *slog.Logger
-	BaseURL  string
+	// Audit records changes made here that the audit log must show (the
+	// approval-mode edit, mcp_server.approval_modes_changed). Nil: not
+	// recorded (audit.NopRecorder).
+	Audit   audit.Recorder
+	Log     *slog.Logger
+	BaseURL string
 }
 
 // ResourcePolicy is the part of *policy.Service the browse pages use.
@@ -164,6 +170,7 @@ var templateFS embed.FS
 //	POST /servers/{id}/refresh             owner: rediscover with my credential -> review
 //	GET  /servers/{id}/review              pending snapshot vs approved
 //	POST /servers/{id}/review              approve with per-tool decisions
+//	POST /servers/{id}/approval            owner of a private server: approval modes (ask / auto) without a new review
 //	GET  /servers/{id}/resources           approved resources, templates, prompts
 //	POST /servers/{id}/resources/read      live read of one listed resource
 //	GET  /servers/{id}/prompts/{name}      prompt with its argument form
@@ -198,6 +205,9 @@ func NewPortal(d Deps) *Portal {
 	if d.Hook == nil {
 		d.Hook = noopHook{}
 	}
+	if d.Audit == nil {
+		d.Audit = audit.NopRecorder{}
+	}
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
@@ -227,6 +237,7 @@ func (p *Portal) Mount(mountUser func(pattern string, h http.Handler)) {
 	mountUser("POST /servers/{id}/refresh", p.owner(p.refresh))
 	mountUser("GET /servers/{id}/review", p.server(p.review))
 	mountUser("POST /servers/{id}/review", p.server(p.approve))
+	mountUser("POST /servers/{id}/approval", p.server(p.setApprovalModes))
 	mountUser("GET /servers/{id}/resources", p.server(p.resources))
 	mountUser("POST /servers/{id}/resources/read", p.server(p.readResource))
 	mountUser("GET /servers/{id}/prompts/{name}", p.server(p.prompt))

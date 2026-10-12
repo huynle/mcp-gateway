@@ -1,0 +1,34 @@
+{{/* Shared by the servers portal and the admin server pages (fedportal.ReviewTemplateFS).
+     Data: fedportal.ApprovalView. Field names use the tool's index in the approved snapshot. */}}
+{{define "approval-modes"}}
+<link rel="stylesheet" href="{{asset "review.css"}}">
+<section class="approval-modes" id="approval">
+  <p class="approval-stats">{{.Counts.Enabled}} tools · <span class="mode-auto">{{.Counts.Auto}} run without asking</span> · <span class="mode-ask">{{.Counts.Ask}} ask</span></p>
+  {{if .Writes}}
+  <p class="approval-warning" role="note">Tools set to <strong>Auto</strong> make changes on the server without a confirmation. Read tools always run without asking. Role denies, user restrictions and token limits still apply.</p>
+  {{if .Action}}<form method="post" action="{{.Action}}" class="approval-form">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <input type="hidden" name="version" value="{{.Version}}">
+    <p class="approval-bulk">
+      <button class="btn" type="submit" name="all" value="auto" onclick="return confirm('Run every enabled write tool of this server without asking? Changes happen without a confirmation.')">Run all without asking</button>
+      <button class="btn" type="submit" name="all" value="ask">Ask for all</button>
+    </p>
+  {{end}}
+  <details class="approval-details"{{if .Action}} open{{end}}><summary>Write tools ({{len .Writes}})</summary>
+  <ul class="approval-list">
+  {{range .Writes}}
+    <li class="approval-row"><code class="tool-name">{{.Name}}</code>
+      {{if $.Action}}<span class="seg" role="radiogroup" aria-label="Approval for {{.Name}}"><label><input type="radio" name="mode_{{.Index}}" value="ask"{{if eq .Mode "ask"}} checked{{end}}> Ask</label><label><input type="radio" name="mode_{{.Index}}" value="auto"{{if eq .Mode "auto"}} checked{{end}}> Auto</label></span>
+      {{else}}<span class="chip mode-{{.Mode}}">{{if eq .Mode "auto"}}runs without asking{{else}}asks{{end}}</span>{{end}}
+      {{if .DestructiveHint}}<span class="destructive-auto"{{if ne .Mode "auto"}} data-when-auto{{end}} title="The server marks this tool destructive. It is allowed, but runs without a confirmation when set to Auto.">destructive</span>{{end}}
+      {{if .Summary}}<span class="tool-summary">{{.Summary}}</span>{{end}}
+    </li>
+  {{end}}
+  </ul>
+  </details>
+  {{if .Action}}<p><button class="btn primary" type="submit">Save approval modes</button></p>
+  </form>{{end}}
+  {{end}}
+  {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+</section>
+{{end}}

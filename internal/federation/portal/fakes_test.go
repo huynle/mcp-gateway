@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
@@ -198,6 +199,7 @@ type fakeSnapshots struct {
 	refreshed  []string
 	approvals  []approval
 	approveErr error
+	modeEdits  []modeEdit
 }
 
 func newFakeSnapshots() *fakeSnapshots {
@@ -290,6 +292,35 @@ func (f *fakeSnapshots) Approve(_ context.Context, a snapshot.Actor, serverID st
 	f.current[serverID] = &rec
 	f.latest[serverID] = &rec
 	return &rec, nil
+}
+
+// SetApprovalModes applies the modes to the approved record like the
+// real service (snapshot.ApplyApprovals).
+func (f *fakeSnapshots) SetApprovalModes(_ context.Context, a snapshot.Actor, serverID string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.modeEdits = append(f.modeEdits, modeEdit{a, serverID, modes})
+	c := f.current[serverID]
+	if c == nil {
+		return nil, 0, snapshot.ErrNoSnapshot
+	}
+	review, n, err := snapshot.ApplyApprovals(c.Review, modes, a.UserID, time.Now())
+	if err != nil {
+		return nil, 0, err
+	}
+	rec := *c
+	rec.Review = review
+	f.current[serverID] = &rec
+	if l := f.latest[serverID]; l != nil && l.Version == rec.Version {
+		f.latest[serverID] = &rec
+	}
+	return &rec, n, nil
+}
+
+type modeEdit struct {
+	actor    snapshot.Actor
+	serverID string
+	modes    map[string]snapshot.Approval
 }
 
 // approved stores snap as both the latest and the approved version 1.
@@ -490,16 +521,29 @@ type env struct {
 	hook *fakeHook
 	perm *fakePerms
 	pol  *fakePolicy
+	aud  *fakeAudit
 	mux  *http.ServeMux
+}
+
+type fakeAudit struct {
+	mu     sync.Mutex
+	events []audit.Event
+}
+
+func (f *fakeAudit) Record(_ context.Context, ev audit.Event) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.events = append(f.events, ev)
+	return nil
 }
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	e := &env{t: t, st: newFakeStore(), snap: newFakeSnapshots(), auth: &fakeAuth{}, fac: &fakeFactory{sess: &fakeSession{}}, hook: &fakeHook{},
-		perm: &fakePerms{denied: map[string]bool{}}, pol: &fakePolicy{denied: map[string]bool{}}}
+		perm: &fakePerms{denied: map[string]bool{}}, pol: &fakePolicy{denied: map[string]bool{}}, aud: &fakeAudit{}}
 	e.tun = &fakeTunnels{st: e.st, online: map[string]bool{}}
 	p := NewPortal(Deps{
-		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm, Policy: e.pol,
+		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm, Policy: e.pol, Audit: e.aud,
 		Identity: func(r *http.Request) (string, string, bool) {
 			u := r.Header.Get("X-Test-User")
 			if u == "" {

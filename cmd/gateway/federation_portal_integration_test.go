@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
@@ -51,7 +52,7 @@ func TestIntegrationServersPortalMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, nil, nil, registry, nil, log,
-		withFederationPages(fed, st, cfg.BaseURL, policySvc))
+		withFederationPages(fed, st, cfg.BaseURL, policySvc, audit.NopRecorder{}))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}
