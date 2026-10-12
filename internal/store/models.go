@@ -64,6 +64,7 @@ type Role struct {
 	Description          string
 	Definition           json.RawMessage
 	IsDefault            bool
+	MayAddServers        bool
 	CreatedAt, UpdatedAt time.Time
 }
 

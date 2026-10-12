@@ -587,6 +587,17 @@ func TestIntegrationEntitiesInsertAndGet(t *testing.T) {
 	appID := newVendorApp(t, st)
 	connA := newConnection(t, st, userA, appID, "acct-a")
 	now := time.Now()
+	// Roles and role assignments are written by the admin path only
+	// (schema 16 revoked gateway_app's writes); the user scope reads them.
+	role := &store.Role{Name: "engineer", Definition: []byte(`{"apps":{}}`), IsDefault: true}
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		if err := tx.Roles().Create(ctx, role); err != nil {
+			return err
+		}
+		return tx.Roles().Assign(ctx, &store.RoleAssignment{UserID: userA, RoleID: role.ID})
+	}); err != nil {
+		t.Fatalf("role: %v", err)
+	}
 
 	err := st.WithUser(ctx, userA, func(tx store.Tx) error {
 		// identities
@@ -605,16 +616,9 @@ func TestIntegrationEntitiesInsertAndGet(t *testing.T) {
 		if _, err := tx.Sessions().Get(ctx, sess.ID); err != nil {
 			t.Errorf("session get: %v", err)
 		}
-		// roles (global) + assignment + restriction
-		role := &store.Role{Name: "engineer", Definition: []byte(`{"apps":{}}`), IsDefault: true}
-		if err := tx.Roles().Create(ctx, role); err != nil {
-			return err
-		}
+		// roles (global, read) + assignment (read) + restriction
 		if _, err := tx.Roles().Get(ctx, role.ID); err != nil {
 			t.Errorf("role get: %v", err)
-		}
-		if err := tx.Roles().Assign(ctx, &store.RoleAssignment{UserID: userA, RoleID: role.ID}); err != nil {
-			return err
 		}
 		if as, err := tx.Roles().AssignmentsForUser(ctx, userA); err != nil || len(as) != 1 {
 			t.Errorf("assignments = %v, %v", as, err)

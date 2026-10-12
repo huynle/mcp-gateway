@@ -73,7 +73,7 @@ func (p postgresStore) SaveRole(ctx context.Context, r Role) error {
 		return err
 	}
 	return p.st.WithJobs(ctx, func(tx store.Tx) error {
-		return store.UpsertRole(ctx, tx, r.Name, r.Description, def)
+		return store.UpsertRole(ctx, tx, r.Name, r.Description, def, false)
 	})
 }
 
