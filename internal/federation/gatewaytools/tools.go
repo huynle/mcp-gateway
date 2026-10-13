@@ -32,6 +32,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/policy"
+	isettings "github.com/huynle/mcp-gateway/internal/settings"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -41,13 +42,18 @@ const App = policy.GatewayApp
 
 // Tool names.
 const (
-	ToolListServers   = "list_servers"
-	ToolGetServer     = "get_server"
-	ToolDetectAuth    = "detect_auth"
-	ToolAddServer     = "add_server"
-	ToolRefreshServer = "refresh_server"
-	ToolConnectLink   = "connect_link"
-	ToolDeleteServer  = policy.GatewayConfirmTool
+	ToolListServers      = "list_servers"
+	ToolGetServer        = "get_server"
+	ToolDetectAuth       = "detect_auth"
+	ToolAddServer        = "add_server"
+	ToolRefreshServer    = "refresh_server"
+	ToolConnectLink      = "connect_link"
+	ToolDeleteServer     = policy.GatewayConfirmTool
+	ToolGetRateLimits    = "get_rate_limits"
+	ToolSetMyRateLimit   = "set_my_rate_limit"
+	ToolSetOrgRateLimits = "set_org_rate_limits"
+	ToolSetAppRateLimit  = "set_app_rate_limit"
+	ToolSetUserRateLimit = "set_user_rate_limit"
 )
 
 // Servers is the user-scoped server data (fedportal.NewStore: every call
@@ -106,6 +112,17 @@ type Deps struct {
 	Gate    *Gate
 	BaseURL string
 	Log     *slog.Logger
+	Rates   RateSettings
+}
+
+type RateSettings interface {
+	Snapshot(ctx context.Context) isettings.Snapshot
+	Limits(ctx context.Context, userID, app string) (int, int)
+	IsAdmin(ctx context.Context, userID string) bool
+	SetSelf(ctx context.Context, userID string, limit *int) error
+	SetOrg(ctx context.Context, actor string, user, app int) error
+	SetApp(ctx context.Context, actor, app string, limit *int) error
+	SetUserAdmin(ctx context.Context, actor, user string, limit *int) error
 }
 
 // Connector is the gateway app.
@@ -193,7 +210,7 @@ func serverIDResult(res connectors.Result) map[string]string {
 func (c *Connector) Tools() []connectors.Tool {
 	bounds := connectors.Bounds{MaxResultBytes: connectors.DefaultMaxResultBytes}
 	write := connectors.Reconciliation{Kind: connectors.ReconcileNone}
-	return []connectors.Tool{
+	out := []connectors.Tool{
 		{
 			App: App, Name: ToolListServers, Kind: connectors.KindRead, Bounds: bounds,
 			Description: "List the MCP servers you can use on this gateway (yours and those published to you): name, address host, " +
@@ -257,6 +274,10 @@ func (c *Connector) Tools() []connectors.Tool {
 			ResourceIdentity: serverIdentity("server"),
 		},
 	}
+	if c.d.Rates != nil {
+		out = append(out, c.rateTools(bounds, write)...)
+	}
+	return out
 }
 
 // Call implements connectors.Connector.
@@ -288,6 +309,16 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 		return c.connectLink(ctx, user, args)
 	case ToolDeleteServer:
 		return c.deleteServer(ctx, user, args)
+	case ToolGetRateLimits:
+		return c.getRateLimits(ctx, user, args)
+	case ToolSetMyRateLimit:
+		return c.setMyRateLimit(ctx, user, args)
+	case ToolSetOrgRateLimits:
+		return c.setOrgRateLimits(ctx, user, args)
+	case ToolSetAppRateLimit:
+		return c.setAppRateLimit(ctx, user, args)
+	case ToolSetUserRateLimit:
+		return c.setUserRateLimit(ctx, user, args)
 	}
 	return connectors.Result{}, connectors.ErrUnknownTool
 }

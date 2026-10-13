@@ -17,6 +17,9 @@ import (
 // allowAll is the policy below the gate: it allows and lists everything,
 // so whatever is hidden was hidden by the gate.
 type allowAll struct{ calls int }
+type admins map[string]bool
+
+func (a admins) IsAdmin(_ context.Context, u string) bool { return a[u] }
 
 func (a *allowAll) Decide(context.Context, policy.Input) (policy.Decision, error) {
 	a.calls++
@@ -116,6 +119,24 @@ func TestGateDefersToPolicyWhenOpen(t *testing.T) {
 	}
 	if base.calls != 1 {
 		t.Errorf("closed gate consulted the policy")
+	}
+}
+
+func TestAdminRateToolsAreHiddenFromMembers(t *testing.T) {
+	ps := newFakePermStore()
+	svc := permissions.New(ps, permissions.Options{})
+	ps.set(alice, true, true)
+	ps.set(bob, true, true)
+	gate := NewGate(svc, GateOptions{TTL: time.Nanosecond, Admin: admins{alice: true}})
+	d := gate.Decider(&allowAll{})
+	for _, tc := range []struct {
+		user string
+		want bool
+	}{{alice, true}, {bob, false}} {
+		ok, err := d.Visible(t.Context(), policy.Input{UserID: tc.user, Tool: gwTool(ToolSetOrgRateLimits)})
+		if err != nil || ok != tc.want {
+			t.Errorf("%s visible=%v,%v want %v", tc.user, ok, err, tc.want)
+		}
 	}
 }
 

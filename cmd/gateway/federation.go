@@ -22,6 +22,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/policy"
+	isettings "github.com/huynle/mcp-gateway/internal/settings"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -64,12 +65,12 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 // callable only for users permitted to add MCP servers who switched them
 // on in My account. Without a federation (no key provider) there are none
 // and the returned nil *Tools leaves every wrapper unchanged.
-func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
+func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, rateSettings *isettings.Service, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
 	if fed == nil {
 		return nil, nil
 	}
 	gw, err := gatewaytools.Wire(gatewaytools.WireOptions{
-		Federation: fed, Store: st, Registry: registry, Activity: activity, BaseURL: baseURL, Log: log,
+		Federation: fed, Store: st, Registry: registry, Activity: activity, RateSettings: rateSettings, BaseURL: baseURL, Log: log,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gateway tools: %w", err)

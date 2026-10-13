@@ -64,7 +64,7 @@ func TestNewApprovalsNeedsAKeyProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, svc, nil, registry, nil, log)
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, svc, nil, registry, nil, nil, log)
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}

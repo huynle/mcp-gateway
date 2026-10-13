@@ -56,6 +56,7 @@ var UserLinks = []Link{
 
 // AdminLinks are added for admins only.
 var AdminLinks = []Link{
+	{"/admin/settings", "Settings"},
 	{"/admin/users", "Users"},
 	{"/admin/roles", "Roles"},
 	{"/admin/servers", "All servers"},

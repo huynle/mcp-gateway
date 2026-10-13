@@ -32,6 +32,7 @@ func TestGatewayLayerDefaults(t *testing.T) {
 		{"alice", gatewayTool("list_servers", connectors.KindRead), OutcomeAllow},
 		{"alice", gatewayTool("add_server", connectors.KindWrite), OutcomeAllow},
 		{"alice", gatewayTool(GatewayConfirmTool, connectors.KindWrite), OutcomeConfirm},
+		{"alice", gatewayTool("set_org_rate_limits", connectors.KindWrite), OutcomeConfirm},
 		// A user with no role at all.
 		{"nobody", gatewayTool("get_server", connectors.KindRead), OutcomeAllow},
 		{"nobody", gatewayTool(GatewayConfirmTool, connectors.KindWrite), OutcomeConfirm},

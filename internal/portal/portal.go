@@ -20,6 +20,7 @@ type Portal struct {
 	tpl          *templates
 	mounts       []mount
 	gatewayTools GatewayTools // nil: no "Gateway management tools" section
+	rateSettings RateSettings // nil: no durable rate-limit settings UI
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -46,6 +47,7 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /signin                   provider buttons
 //	GET  /account                  my account
 //	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
+//	POST /account/rate-limit       my optional lower personal ceiling
 //	GET  /admin/users              admin: list users
 //	POST /admin/users/{id}/disable admin
 //	POST /admin/users/{id}/enable  admin
@@ -74,6 +76,14 @@ func (p *Portal) Handler() http.Handler {
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))
 	if p.gatewayTools != nil {
 		mux.Handle("POST /account/gateway-tools", p.requireUser(p.csrf(http.HandlerFunc(p.setGatewayTools))))
+	}
+	if p.rateSettings != nil {
+		mux.Handle("POST /account/rate-limit", p.requireUser(p.csrf(http.HandlerFunc(p.setMyRateLimit))))
+		mux.Handle("GET /admin/settings", p.requireAdmin(http.HandlerFunc(p.adminSettings)))
+		mux.Handle("GET /admin/settings/rate-limits", p.requireAdmin(http.HandlerFunc(p.adminRateLimits)))
+		mux.Handle("POST /admin/settings/rate-limits/org", p.requireAdmin(p.csrf(http.HandlerFunc(p.setOrgRateLimits))))
+		mux.Handle("POST /admin/settings/rate-limits/app", p.requireAdmin(p.csrf(http.HandlerFunc(p.setAppRateLimit))))
+		mux.Handle("POST /admin/settings/rate-limits/user", p.requireAdmin(p.csrf(http.HandlerFunc(p.setUserRateLimit))))
 	}
 	// Role gating runs before the CSRF check so a non-admin's POST is the
 	// same 404 as an unknown page rather than a 403 that reveals the route.

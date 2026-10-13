@@ -101,7 +101,7 @@ func TestLedgerWiring(t *testing.T) {
 		t.Errorf("jobs = %s", got)
 	}
 
-	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, approvalSvc, nil, registry, nil, log, withOperationsPage(ledgerSvc))
+	portalHandler, err := newPortal(cfg, identitytest.NewMemStore(), noReader{}, tokenSvc, policySvc, approvalSvc, nil, registry, nil, nil, log, withOperationsPage(ledgerSvc))
 	if err != nil {
 		t.Fatalf("newPortal: %v", err)
 	}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/permissions"
+	"github.com/huynle/mcp-gateway/internal/settings"
 )
 
 // GatewayTools is the "Gateway management tools" setting shown on My
@@ -29,6 +32,23 @@ func (p *Portal) SetGatewayTools(gt GatewayTools) { p.gatewayTools = gt }
 type accountData struct {
 	// GatewayTools is nil when the setting is not wired.
 	GatewayTools *gatewayToolsView
+	RateLimits   *rateLimitsView
+}
+
+type RateSettings interface {
+	Snapshot(ctx context.Context) settings.Snapshot
+	Limits(ctx context.Context, userID, app string) (int, int)
+	SetSelf(ctx context.Context, userID string, limit *int) error
+	SetOrg(ctx context.Context, actor string, userPerMin, appPerMin int) error
+	SetApp(ctx context.Context, actor, app string, limit *int) error
+	SetUserAdmin(ctx context.Context, actor, userID string, limit *int) error
+}
+
+func (p *Portal) SetRateSettings(s RateSettings) { p.rateSettings = s }
+
+type rateLimitsView struct {
+	OrgUser, OrgApp, EffectiveUser int
+	Admin, Self                    *int
 }
 
 // gatewayToolsView: Enabled is the effective state (stored setting and
@@ -56,7 +76,41 @@ func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
 		}
 		data.GatewayTools = v
 	}
+	if p.rateSettings != nil {
+		ctx := r.Context()
+		userID := identity.PrincipalFrom(ctx).UserID
+		snap := p.rateSettings.Snapshot(ctx)
+		u, _ := p.rateSettings.Limits(ctx, userID, "")
+		v := snap.Users[userID]
+		data.RateLimits = &rateLimitsView{OrgUser: snap.UserDefault, OrgApp: snap.AppDefault, EffectiveUser: u, Admin: v.Admin, Self: v.Self}
+	}
 	p.render(w, r, http.StatusOK, "account.html", data)
+}
+
+func (p *Portal) setMyRateLimit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := identity.PrincipalFrom(ctx).UserID
+	limit, err := optionalPositiveInt(r.PostFormValue("per_min"))
+	if err == nil {
+		err = p.rateSettings.SetSelf(ctx, userID, limit)
+	}
+	if err != nil {
+		p.errorPage(w, r, http.StatusUnprocessableEntity, "Invalid rate limit", err.Error())
+		return
+	}
+	http.Redirect(w, r, "/account#rate-limits", http.StatusSeeOther)
+}
+
+func optionalPositiveInt(raw string) (*int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < settings.MinPerMinute || n > settings.MaxPerMinute {
+		return nil, settings.ErrInvalidLimit
+	}
+	return &n, nil
 }
 
 // setGatewayTools stores the switch: a checked box posts enabled=on, an

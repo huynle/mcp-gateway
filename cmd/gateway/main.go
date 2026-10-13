@@ -43,6 +43,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/server"
+	"github.com/huynle/mcp-gateway/internal/settings"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
 )
@@ -129,6 +130,13 @@ func run() error {
 		// Who may add MCP servers, and each user's "Gateway management
 		// tools" setting (internal/permissions; decision bnneszc1).
 		perms := permissions.NewPostgres(st, permissions.Options{Audit: rec, Log: log})
+		rateSvc := settings.New(settings.NewPostgresStore(st), settings.Options{
+			DefaultUserPerMinute: cfg.RateUserPerMin, DefaultAppPerMinute: cfg.RateAppPerMin, Audit: rec, Log: log,
+		})
+		if err := rateSvc.Refresh(ctx); err != nil {
+			return fmt.Errorf("rate settings: %w", err)
+		}
+		limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin, Provider: rateSvc})
 		// User-added MCP servers: their tools join the registry after the
 		// built-in connectors (federation.go).
 		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log)
@@ -137,7 +145,7 @@ func run() error {
 		}
 		// The gateway.* management tools (behind the permission and the
 		// per-user setting; gatewaytools).
-		gw, err := newGatewayTools(fed, st, registry, perms, cfg.BaseURL, log)
+		gw, err := newGatewayTools(fed, st, registry, perms, rateSvc, cfg.BaseURL, log)
 		if err != nil {
 			return err
 		}
@@ -168,12 +176,12 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), rateSvc, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
 		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), gw.Decider(federationDecider(fed, policySvc)), approvalSvc, rec, metrics, log,
-			federationResources(fed, policySvc), withFederationPrecheck(fed, log), withLedgerStage(ledgerSvc))
+			federationResources(fed, policySvc), limiter, withFederationPrecheck(fed, log), withLedgerStage(ledgerSvc))
 		if err != nil {
 			return err
 		}
@@ -271,7 +279,7 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
-func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
+func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -288,6 +296,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	}
 	if gatewayTools != nil {
 		p.SetGatewayTools(gatewayTools) // My account: "Gateway management tools"
+	}
+	if rateSettings != nil {
+		p.SetRateSettings(rateSettings)
 	}
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
@@ -355,15 +366,17 @@ type mcpExtra func(p *mcp.Pipeline, confirm mcp.ConfirmHandler) error
 //
 //nolint:unparam // the no-resources form; production serves resources through newMCPWithResources
 func newMCP(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, extras ...mcpExtra) (http.Handler, error) {
-	return newMCPWithResources(cfg, registry, accounts, auth, policySvc, approvalSvc, rec, metrics, log, nil, extras...)
+	return newMCPWithResources(cfg, registry, accounts, auth, policySvc, approvalSvc, rec, metrics, log, nil, nil, extras...)
 }
 
 // newMCPWithResources is newMCP that also serves resources/* and
 // prompts/* from resources (the federation's user-added servers; nil
 // serves neither), audited by rec and rate limited by the same limiter as
 // tool calls.
-func newMCPWithResources(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, resources mcp.ResourceProvider, extras ...mcpExtra) (http.Handler, error) {
-	limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
+func newMCPWithResources(cfg config.Config, registry *connectors.Registry, accounts connectors.AccountSource, auth tokens.Authenticator, policySvc mcp.Decider, approvalSvc *approvals.Service, rec audit.Recorder, metrics *observability.Metrics, log *slog.Logger, resources mcp.ResourceProvider, limiter *mcp.TokenBucketLimiter, extras ...mcpExtra) (http.Handler, error) {
+	if limiter == nil {
+		limiter = mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin})
+	}
 	visibility := mcp.PolicyVisibility{Decider: policySvc, Log: log}
 	confirm := mcp.DefaultConfirmHandler()
 	if approvalSvc != nil {

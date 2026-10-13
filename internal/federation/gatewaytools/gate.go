@@ -19,6 +19,10 @@ type Activity interface {
 	GatewayToolsActive(ctx context.Context, userID string) bool
 }
 
+type AdminChecker interface {
+	IsAdmin(ctx context.Context, userID string) bool
+}
+
 // Setting is the My account setting the portal switches
 // (*permissions.Service; the shape of portal.GatewayTools).
 type Setting interface {
@@ -35,8 +39,9 @@ const DefaultGateTTL = 2 * time.Second
 // GateOptions configure NewGate. TTL defaults to DefaultGateTTL, Now to
 // time.Now.
 type GateOptions struct {
-	TTL time.Duration
-	Now func() time.Time
+	TTL   time.Duration
+	Now   func() time.Time
+	Admin AdminChecker
 }
 
 // Gate decides, per request, whether a user's gateway.* tools exist. A
@@ -44,9 +49,10 @@ type GateOptions struct {
 // answered exactly like an unknown tool. The answer is cached per user for
 // a short TTL (tools/list asks once per tool).
 type Gate struct {
-	act Activity
-	ttl time.Duration
-	now func() time.Time
+	act   Activity
+	ttl   time.Duration
+	now   func() time.Time
+	admin AdminChecker
 
 	mu    sync.Mutex
 	cache map[string]gateEntry
@@ -65,7 +71,7 @@ func NewGate(act Activity, o GateOptions) *Gate {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Gate{act: act, ttl: o.TTL, now: o.Now, cache: map[string]gateEntry{}}
+	return &Gate{act: act, ttl: o.TTL, now: o.Now, admin: o.Admin, cache: map[string]gateEntry{}}
 }
 
 // Active reports whether userID's gateway.* tools are on. No user is a
@@ -128,6 +134,9 @@ func (d decider) Decide(ctx context.Context, in policy.Input) (policy.Decision, 
 	if in.Tool.App == App && !d.g.Active(ctx, in.UserID) {
 		return policy.Decision{Outcome: policy.OutcomeHidden, Reason: "gateway management tools are off for the user"}, nil
 	}
+	if in.Tool.App == App && adminRateTool(in.Tool.Name) && (d.g.admin == nil || !d.g.admin.IsAdmin(ctx, in.UserID)) {
+		return policy.Decision{Outcome: policy.OutcomeHidden, Reason: "administrator required"}, nil
+	}
 	return d.base.Decide(ctx, in)
 }
 
@@ -135,7 +144,18 @@ func (d decider) Visible(ctx context.Context, in policy.Input) (bool, error) {
 	if in.Tool.App == App && !d.g.Active(ctx, in.UserID) {
 		return false, nil
 	}
+	if in.Tool.App == App && adminRateTool(in.Tool.Name) && (d.g.admin == nil || !d.g.admin.IsAdmin(ctx, in.UserID)) {
+		return false, nil
+	}
 	return d.base.Visible(ctx, in)
+}
+
+func adminRateTool(name string) bool {
+	switch name {
+	case ToolSetOrgRateLimits, ToolSetAppRateLimit, ToolSetUserRateLimit:
+		return true
+	}
+	return false
 }
 
 // Accounts wraps fallback with the account of the gateway app: a user

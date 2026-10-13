@@ -138,6 +138,35 @@ func TestRateLimiterForgetsIdleUsers(t *testing.T) {
 	}
 }
 
+type changingLimits struct{ user, app int }
+
+func (p *changingLimits) Limits(context.Context, string, string) (int, int) { return p.user, p.app }
+
+func TestRateLimiterUsesDynamicLimits(t *testing.T) {
+	clock := newClock()
+	p := &changingLimits{user: 2, app: 100}
+	l := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: 60, AppPerMinute: 600, Provider: p, Now: clock.Now})
+	for range 2 {
+		if ok, _ := allow(l, "alice", "brain.recall"); !ok {
+			t.Fatal("call within dynamic limit refused")
+		}
+	}
+	if ok, _ := allow(l, "alice", "brain.recall"); ok {
+		t.Fatal("call above dynamic user limit admitted")
+	}
+	p.user = 600
+	clock.Advance(time.Second)
+	if ok, _ := allow(l, "alice", "brain.recall"); !ok {
+		t.Fatal("raised user limit did not take effect")
+	}
+	// A lower app limit applies to the already-existing bucket; changing
+	// settings cannot leave more than the new burst available.
+	p.app = 1
+	if ok, _ := allow(l, "bob", "brain.recall"); ok {
+		t.Fatal("lowered app limit left excess burst")
+	}
+}
+
 func TestRateLimitStageSurfacesVendorRetryAfter(t *testing.T) {
 	limited := echoTool("github", "list_issues", connectors.KindRead)
 	limited.Handler = func(context.Context, connectors.Call) (connectors.Result, error) {
