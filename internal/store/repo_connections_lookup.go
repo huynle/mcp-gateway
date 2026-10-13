@@ -227,7 +227,9 @@ func RevokeUserConnections(ctx context.Context, q Querier, userID string) ([]Con
 func ListStaleConnections(ctx context.Context, q Querier, before time.Time, limit int) ([]Connection, error) {
 	rows, err := q.Query(ctx, `
 		SELECT `+connectionColumns+` FROM connections c
-		WHERE c.status = 'active' AND coalesce(c.last_refreshed_at, c.created_at) < $1
+		JOIN vendor_apps a ON a.id = c.vendor_app_id
+		WHERE c.status = 'active' AND a.vendor <> 'mcp'
+		  AND coalesce(c.last_refreshed_at, c.created_at) < $1
 		ORDER BY coalesce(c.last_refreshed_at, c.created_at), c.id
 		LIMIT $2`, before, limit)
 	if err != nil {

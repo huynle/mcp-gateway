@@ -305,6 +305,9 @@ func normalizeKey(vendor, variant string) (string, string) {
 // audited as a user event of the admin naming the vendor and variant,
 // never a secret.
 func (s *Service) SaveVendorApp(ctx context.Context, actorID string, in VendorApp) (VendorApp, error) {
+	if IsSystemVendorApp(in.Vendor, in.Variant) {
+		return VendorApp{}, ErrSystemVendorApp
+	}
 	if err := in.normalize(); err != nil {
 		return VendorApp{}, err
 	}
@@ -379,7 +382,7 @@ func (s *Service) EnabledApps(ctx context.Context) (map[string][]VendorApp, []st
 	}
 	byVendor := map[string][]VendorApp{}
 	for _, a := range apps {
-		if a.Enabled {
+		if a.Enabled && !IsSystemVendorApp(a.Vendor, a.Variant) {
 			byVendor[a.Vendor] = append(byVendor[a.Vendor], a)
 		}
 	}

@@ -25,6 +25,24 @@ const (
 	VendorFake      = "fake"
 )
 
+// The federation anchor is an internal bookkeeping row in vendor_apps. It is
+// not an OAuth vendor, must never be enabled or edited, and exists only so
+// approvals, ledger operations and audit rows can reference a connection.
+const (
+	SystemVendorMCP         = "mcp"
+	SystemVariantFederation = "federation"
+)
+
+// ErrSystemVendorApp is returned when code tries to configure the protected
+// federation anchor as if it were a vendor OAuth app.
+var ErrSystemVendorApp = errors.New("connections: system vendor app is read-only")
+
+// IsSystemVendorApp identifies rows reserved for gateway bookkeeping.
+func IsSystemVendorApp(vendor, variant string) bool {
+	return strings.EqualFold(strings.TrimSpace(vendor), SystemVendorMCP) &&
+		strings.EqualFold(strings.TrimSpace(variant), SystemVariantFederation)
+}
+
 // Vendors lists the real vendors in the order the admin page shows them.
 var Vendors = []string{VendorGitHub, VendorSlack, VendorAtlassian, VendorGoogle, VendorMicrosoft}
 

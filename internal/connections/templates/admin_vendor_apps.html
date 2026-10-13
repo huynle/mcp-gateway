@@ -15,4 +15,14 @@
   {{end}}
   </tbody>
 </table>
+{{if .SystemRows}}
+<details class="system-apps">
+  <summary><strong>System apps</strong> <span class="muted">({{len .SystemRows}} read-only)</span></summary>
+  <p class="muted">Internal bookkeeping used by the gateway. These apps are protected: they cannot be enabled, edited or connected by users.</p>
+  <table>
+    <thead><tr><th>System app</th><th>Purpose</th><th>Status</th></tr></thead>
+    <tbody>{{range .SystemRows}}<tr><td>{{.Name}}</td><td>{{.Purpose}}</td><td><span class="pill">{{.Status}}</span></td></tr>{{end}}</tbody>
+  </table>
+</details>
+{{end}}
 {{template "foot" .}}

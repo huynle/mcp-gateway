@@ -146,6 +146,26 @@ func TestConnectionPagesThroughThePortal(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "/admin/vendor-apps/google/external") || !strings.Contains(rec.Body.String(), "not configured") {
 		t.Fatalf("admin list = %d:\n%s", rec.Code, rec.Body)
 	}
+	// The federation anchor is a protected system app: visible only as a
+	// read-only diagnostic, never mixed with editable vendor apps.
+	vendor := newFakeVendor(t)
+	system := registerFakeApp(t, &testEnv{svc: h.conn, store: h.mem}, vendor)
+	if !h.mem.SetVendorAppIdentity(system.ID, connections.SystemVendorMCP, connections.SystemVariantFederation, false) {
+		t.Fatal("rewrite system app")
+	}
+	rec = h.do(t, request{method: http.MethodGet, path: "/admin/vendor-apps", cookie: admin})
+	systemBody := rec.Body.String()
+	for _, want := range []string{"System apps", "MCP federation", "Approval and ledger anchors", "protected"} {
+		if !strings.Contains(systemBody, want) {
+			t.Errorf("system apps page lacks %q:\n%s", want, systemBody)
+		}
+	}
+	if strings.Contains(systemBody, `href="/admin/vendor-apps/mcp`) {
+		t.Errorf("system app has edit link:\n%s", systemBody)
+	}
+	if rec := h.do(t, request{method: http.MethodGet, path: "/admin/vendor-apps/mcp", cookie: admin}); rec.Code != http.StatusNotFound {
+		t.Errorf("system app editor = %d, want 404", rec.Code)
+	}
 	// The editor is prefilled with the vendor's documented endpoints.
 	rec = h.do(t, request{method: http.MethodGet, path: "/admin/vendor-apps/github", cookie: admin})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "https://github.com/login/oauth/authorize") || !strings.Contains(rec.Body.String(), "/connect/github/callback") {

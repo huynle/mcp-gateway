@@ -275,9 +275,14 @@ type adminRow struct {
 }
 
 type adminListData struct {
-	Title  string
-	Caller caller
-	Rows   []adminRow
+	Title      string
+	Caller     caller
+	Rows       []adminRow
+	SystemRows []systemAppRow
+}
+
+type systemAppRow struct {
+	Name, Purpose, Status string
 }
 
 func (p *Portal) adminList(w http.ResponseWriter, r *http.Request, c caller) {
@@ -288,9 +293,19 @@ func (p *Portal) adminList(w http.ResponseWriter, r *http.Request, c caller) {
 	}
 	byKey := map[string]VendorApp{}
 	for _, a := range apps {
+		if IsSystemVendorApp(a.Vendor, a.Variant) {
+			continue
+		}
 		byKey[a.Vendor+"/"+a.Variant] = a
 	}
 	data := adminListData{Title: "Vendor apps", Caller: c}
+	for _, a := range apps {
+		if IsSystemVendorApp(a.Vendor, a.Variant) {
+			data.SystemRows = append(data.SystemRows, systemAppRow{
+				Name: "MCP federation", Purpose: "Approval and ledger anchors for user-added MCP servers", Status: "protected",
+			})
+		}
+	}
 	seen := map[string]bool{}
 	add := func(vendor, variant string) {
 		key := vendor + "/" + variant
