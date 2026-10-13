@@ -22,7 +22,14 @@ const (
 type RateLimitConfig struct {
 	UserPerMinute int
 	AppPerMinute  int
+	Provider      LimitProvider
 	Now           func() time.Time
+}
+
+// LimitProvider returns effective per-minute budgets for one user and app.
+// Non-positive values fall back to RateLimitConfig's defaults.
+type LimitProvider interface {
+	Limits(ctx context.Context, userID, app string) (userPerMinute, appPerMinute int)
 }
 
 // AppPauser is the optional side of a RateLimiter the ratelimit stage
@@ -44,6 +51,7 @@ type TokenBucketLimiter struct {
 	userCap  float64
 	appRate  float64
 	appCap   float64
+	provider LimitProvider
 	now      func() time.Time
 
 	mu        sync.Mutex
@@ -56,6 +64,7 @@ type TokenBucketLimiter struct {
 type bucket struct {
 	tokens float64
 	last   time.Time
+	cap    float64
 }
 
 // NewRateLimiter builds a TokenBucketLimiter.
@@ -74,6 +83,7 @@ func NewRateLimiter(cfg RateLimitConfig) *TokenBucketLimiter {
 		userCap:   float64(cfg.UserPerMinute),
 		appRate:   float64(cfg.AppPerMinute) / 60,
 		appCap:    float64(cfg.AppPerMinute),
+		provider:  cfg.Provider,
 		now:       cfg.Now,
 		users:     map[string]*bucket{},
 		apps:      map[string]*bucket{},
@@ -98,8 +108,19 @@ func (l *TokenBucketLimiter) TrackedUsers() int {
 
 // Allow implements RateLimiter. The app is the part of tool before the
 // first dot.
-func (l *TokenBucketLimiter) Allow(_ context.Context, userID, tool string) (bool, time.Duration) {
+func (l *TokenBucketLimiter) Allow(ctx context.Context, userID, tool string) (bool, time.Duration) {
 	app := appOf(tool)
+	userCap, appCap := l.userCap, l.appCap
+	if l.provider != nil {
+		u, a := l.provider.Limits(ctx, userID, app)
+		if u > 0 {
+			userCap = float64(u)
+		}
+		if a > 0 {
+			appCap = float64(a)
+		}
+	}
+	userRate, appRate := userCap/60, appCap/60
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -112,13 +133,13 @@ func (l *TokenBucketLimiter) Allow(_ context.Context, userID, tool string) (bool
 	}
 	l.maybePrune(now)
 
-	ub := l.bucket(l.users, userID, l.userCap, l.userRate, now)
-	ab := l.bucket(l.apps, app, l.appCap, l.appRate, now)
+	ub := l.bucket(l.users, userID, userCap, userRate, now)
+	ab := l.bucket(l.apps, app, appCap, appRate, now)
 	if ub.tokens < 1-epsilon {
-		return false, waitFor(ub, l.userRate)
+		return false, waitFor(ub, userRate)
 	}
 	if ab.tokens < 1-epsilon {
-		return false, waitFor(ab, l.appRate)
+		return false, waitFor(ab, appRate)
 	}
 	ub.tokens--
 	ab.tokens--
@@ -144,9 +165,17 @@ func (l *TokenBucketLimiter) Pause(app string, retryAfter time.Duration) {
 func (l *TokenBucketLimiter) bucket(m map[string]*bucket, key string, capacity, rate float64, now time.Time) *bucket {
 	b, ok := m[key]
 	if !ok {
-		b = &bucket{tokens: capacity, last: now}
+		b = &bucket{tokens: capacity, last: now, cap: capacity}
 		m[key] = b
 		return b
+	}
+	if b.cap != capacity {
+		if b.cap > 0 {
+			b.tokens = min(capacity, b.tokens*capacity/b.cap)
+		} else {
+			b.tokens = capacity
+		}
+		b.cap = capacity
 	}
 	if elapsed := now.Sub(b.last).Seconds(); elapsed > 0 {
 		b.tokens = min(capacity, b.tokens+elapsed*rate)

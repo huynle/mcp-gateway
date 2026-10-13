@@ -14,6 +14,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/portal"
 	"github.com/huynle/mcp-gateway/internal/portal/nav/navtest"
+	isettings "github.com/huynle/mcp-gateway/internal/settings"
 )
 
 // The "Gateway management tools" setting on My account (Brain task
@@ -25,6 +26,49 @@ type fakeGatewayTools struct {
 	permitted map[string]bool
 	enabled   map[string]bool
 	sets      []string
+}
+
+type fakeRateSettings struct{ snap isettings.Snapshot }
+
+func (f *fakeRateSettings) Snapshot(context.Context) isettings.Snapshot { return f.snap }
+func (f *fakeRateSettings) Limits(_ context.Context, u, a string) (int, int) {
+	x := f.snap.UserDefault
+	if z := f.snap.Users[u]; z.Admin != nil {
+		x = *z.Admin
+	}
+	if z := f.snap.Users[u]; z.Self != nil && *z.Self < x {
+		x = *z.Self
+	}
+	y := f.snap.AppDefault
+	if n, ok := f.snap.Apps[a]; ok {
+		y = n
+	}
+	return x, y
+}
+func (f *fakeRateSettings) SetSelf(_ context.Context, u string, n *int) error {
+	x := f.snap.Users[u]
+	x.Self = n
+	f.snap.Users[u] = x
+	return nil
+}
+func (f *fakeRateSettings) SetOrg(_ context.Context, _ string, u, a int) error {
+	f.snap.UserDefault = u
+	f.snap.AppDefault = a
+	return nil
+}
+func (f *fakeRateSettings) SetApp(_ context.Context, _, a string, n *int) error {
+	if n == nil {
+		delete(f.snap.Apps, a)
+	} else {
+		f.snap.Apps[a] = *n
+	}
+	return nil
+}
+func (f *fakeRateSettings) SetUserAdmin(_ context.Context, _, u string, n *int) error {
+	x := f.snap.Users[u]
+	x.Admin = n
+	f.snap.Users[u] = x
+	return nil
 }
 
 func (f *fakeGatewayTools) CanAddServers(_ context.Context, userID string) bool {
@@ -61,6 +105,41 @@ func newHarnessWithGatewayTools(t *testing.T) (*harness, *fakeGatewayTools) {
 	p.SetGatewayTools(gt)
 	h.portal, h.h = p, p.Handler()
 	return h, gt
+}
+
+func TestRateSettingsOnMyAccountAndAdminPages(t *testing.T) {
+	h := newHarness(t)
+	member, mp := h.session(t, memberSub, "Member")
+	admin, ap := h.session(t, adminSub, "Admin")
+	r := &fakeRateSettings{snap: isettings.Snapshot{UserDefault: 600, AppDefault: 3000, Apps: map[string]int{"brain": 1000}, Users: map[string]isettings.UserLimit{}, Admins: map[string]bool{ap.UserID: true}}}
+	h.portal.SetRateSettings(r)
+	h.h = h.portal.Handler()
+	body := h.do(t, request{method: http.MethodGet, path: "/account", cookie: member}).Body.String()
+	for _, want := range []string{"Rate limits", "600 calls/minute", "3000 per app", `action="/account/rate-limit"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("account lacks %q", want)
+		}
+	}
+	rec := h.do(t, request{method: http.MethodPost, path: "/account/rate-limit", cookie: member, form: url.Values{"_csrf": {mp.CSRFToken}, "per_min": {"500"}}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("self set=%d", rec.Code)
+	}
+	if u, _ := r.Limits(t.Context(), mp.UserID, ""); u != 500 {
+		t.Fatalf("self effective=%d", u)
+	}
+	if rec := h.do(t, request{method: http.MethodGet, path: "/admin/settings/rate-limits", cookie: member}); rec.Code != http.StatusNotFound {
+		t.Errorf("member admin settings=%d", rec.Code)
+	}
+	body = h.do(t, request{method: http.MethodGet, path: "/admin/settings/rate-limits", cookie: admin}).Body.String()
+	for _, want := range []string{"Organization defaults", "App overrides", "User overrides", "brain", "1000"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("admin page lacks %q", want)
+		}
+	}
+	rec = h.do(t, request{method: http.MethodPost, path: "/admin/settings/rate-limits/org", cookie: admin, form: url.Values{"_csrf": {ap.CSRFToken}, "user_per_min": {"700"}, "app_per_min": {"3500"}}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("org set=%d", rec.Code)
+	}
 }
 
 var switchRE = regexp.MustCompile(`<input[^>]*name="enabled"[^>]*>`)

@@ -25,11 +25,43 @@ permit (
     resource in App::"gateway"
 );
 
-@id("gateway/management/confirm_delete")
+@id("gateway/management/confirm_delete_server")
 permit (
     principal,
     action == Action::"confirm",
     resource in App::"gateway"
 )
 when { resource.name == "gateway.delete_server" };
+
+@id("gateway/management/confirm_set_my_rate_limit")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.set_my_rate_limit" };
+
+@id("gateway/management/confirm_set_org_rate_limits")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.set_org_rate_limits" };
+
+@id("gateway/management/confirm_set_app_rate_limit")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.set_app_rate_limit" };
+
+@id("gateway/management/confirm_set_user_rate_limit")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.set_user_rate_limit" };
 

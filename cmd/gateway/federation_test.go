@@ -44,7 +44,7 @@ func TestFederationNotMountedWithoutKeys(t *testing.T) {
 	}
 	// No federation, no gateway.* tools: every wrapper passes through.
 	reg := connectors.NewRegistry()
-	gw, err := newGatewayTools(fed, nil, reg, nil, "https://gw.example.com", log)
+	gw, err := newGatewayTools(fed, nil, reg, nil, nil, "https://gw.example.com", log)
 	if err != nil || gw != nil {
 		t.Fatalf("newGatewayTools without federation = %v, %v", gw, err)
 	}

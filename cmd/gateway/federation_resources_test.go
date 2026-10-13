@@ -91,7 +91,7 @@ func TestNewMCPServesFederationResources(t *testing.T) {
 	}
 	rec := &lockedRecorder{}
 	h, err := newMCPWithResources(cfg, connectors.NewRegistry(), connectors.NewStaticAccountSource(), oneToken{}, policySvc, nil, rec,
-		observability.NewMetrics(), log, oneResource{})
+		observability.NewMetrics(), log, oneResource{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

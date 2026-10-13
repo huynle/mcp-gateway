@@ -10,9 +10,10 @@ import (
 // and delete the caller's MCP servers over /mcp.
 const GatewayApp = "gateway"
 
-// GatewayConfirmTool is the one gateway tool whose calls need an
-// approval: gateway.delete_server.
 const GatewayConfirmTool = "delete_server"
+
+// GatewayConfirmTools are management writes that always require approval.
+var GatewayConfirmTools = []string{"delete_server", "set_my_rate_limit", "set_org_rate_limits", "set_app_rate_limit", "set_user_rate_limit"}
 
 // gateway emits the implicit gateway layer, part of every policy set:
 // every user may list and call the gateway.* tools without a role grant,
@@ -27,6 +28,8 @@ const GatewayConfirmTool = "delete_server"
 func (w *writer) gateway() {
 	resource := fmt.Sprintf(`resource in %s::%s`, EntityApp, strconv.Quote(GatewayApp))
 	w.policy("gateway/management", "permit", "principal", actions(ActionCall, ActionList), resource, nil, nil)
-	w.policy("gateway/management/confirm_delete", "permit", "principal", actions(ActionConfirm), resource,
-		[]string{`resource.name == ` + strconv.Quote(GatewayApp+"."+GatewayConfirmTool)}, nil)
+	for _, tool := range GatewayConfirmTools {
+		w.policy("gateway/management/confirm_"+tool, "permit", "principal", actions(ActionConfirm), resource,
+			[]string{`resource.name == ` + strconv.Quote(GatewayApp+"."+tool)}, nil)
+	}
 }

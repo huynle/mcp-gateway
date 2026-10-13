@@ -45,6 +45,12 @@ Approvals and ledger operations need a `connections` row (decision `mrvsu07m`). 
 
 ## Tools
 
+The settings tools are documented in [settings.md](settings.md):
+`get_rate_limits`, `set_my_rate_limit`, and the admin-only
+`set_org_rate_limits`, `set_app_rate_limit`, `set_user_rate_limit`. Persisted
+UI/MCP values override ENV defaults. The setters are writes and always require
+approval; admin-only tools are absent from a non-admin's tool list.
+
 All tools take only the arguments listed (`additionalProperties: false`; anything else is refused). `server` is a server's **name or ID**. Links are absolute (`GATEWAY_BASE_URL` + path).
 
 | Tool | Kind / policy | Arguments | Returns |

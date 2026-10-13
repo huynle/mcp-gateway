@@ -13,7 +13,7 @@ import (
 // nav) so a test fails if the bar changes by accident.
 var (
 	Member = []string{"/account", "/tokens", "/connections", "/servers", "/approvals", "/operations", "/harnesses", "/activity"}
-	Admin  = append(slices.Clone(Member), "/admin/users", "/admin/roles", "/admin/servers", "/admin/audit", "/admin/vendor-apps")
+	Admin  = append(slices.Clone(Member), "/admin/settings", "/admin/users", "/admin/roles", "/admin/servers", "/admin/audit", "/admin/vendor-apps")
 )
 
 var (

@@ -23,4 +23,17 @@
   </form>
 </section>
 {{end}}{{end}}
+{{with .Data}}{{with .RateLimits}}
+<section class="card setting" id="rate-limits">
+  <h2>Rate limits</h2>
+  <p>Your effective tool-call budget is <strong>{{.EffectiveUser}} calls/minute</strong> across all apps. The organization defaults are {{.OrgUser}} per user and {{.OrgApp}} per app.</p>
+  {{with .Admin}}<p class="muted">An administrator set your base limit to {{.}} calls/minute.</p>{{end}}
+  <form method="post" action="/account/rate-limit" class="stack">
+    <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+    <label>My lower ceiling <input type="number" name="per_min" min="1" max="100000" value="{{with .Self}}{{.}}{{end}}" placeholder="Use administrator/default limit"></label>
+    <span class="muted">You may lower your own limit or leave this blank to use the administrator/default limit. You cannot raise it.</span>
+    <p><button class="btn small" type="submit">Save rate limit</button></p>
+  </form>
+</section>
+{{end}}{{end}}
 {{end}}

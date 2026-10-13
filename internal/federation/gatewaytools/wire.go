@@ -19,7 +19,8 @@ type WireOptions struct {
 	Store      *store.Store
 	Registry   *connectors.Registry
 	// Activity is *permissions.Service (GatewayToolsActive).
-	Activity Activity
+	Activity     Activity
+	RateSettings RateSettings
 	// BaseURL is GATEWAY_BASE_URL (absolute portal links).
 	BaseURL string
 	// GateTTL: DefaultGateTTL when 0.
@@ -59,10 +60,10 @@ func Wire(o WireOptions) (*Tools, error) {
 	if err != nil {
 		return nil, err
 	}
-	gate := NewGate(o.Activity, GateOptions{TTL: o.GateTTL})
+	gate := NewGate(o.Activity, GateOptions{TTL: o.GateTTL, Admin: o.RateSettings})
 	c, err := New(Deps{
 		Servers: fedportal.NewStore(o.Store), Snapshots: f.Snapshots, Detector: f.Auth, Manager: f.Manager, Clients: factory,
-		URLCheck: f.Guard, Gate: gate, BaseURL: o.BaseURL, Log: o.Log,
+		URLCheck: f.Guard, Gate: gate, BaseURL: o.BaseURL, Log: o.Log, Rates: o.RateSettings,
 	})
 	if err != nil {
 		return nil, err
