@@ -75,6 +75,10 @@ func (a *Admin) approve(w http.ResponseWriter, r *http.Request, c caller, s *Ser
 		a.renderReview(w, r, c, s, http.StatusConflict, staleMessage)
 		return
 	}
+	if !fedportal.ReviewFormHasSelection(r.PostForm) {
+		a.renderReview(w, r, c, s, http.StatusUnprocessableEntity, "Nothing is selected. Select at least one tool, resource or prompt, use Approve with all tools enabled, or explicitly choose Approve with none enabled.")
+		return
+	}
 	var current *snapshot.Record
 	if cur, err := a.d.Snapshots.Current(ctx, c.snapActor(), s.ID); err == nil {
 		current = cur

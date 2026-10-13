@@ -445,6 +445,10 @@ func (p *Portal) approve(w http.ResponseWriter, r *http.Request, c caller, s *st
 		p.renderReview(w, r, c, s, http.StatusConflict, "The server's tools changed since this page was loaded. Review them again.")
 		return
 	}
+	if !ReviewFormHasSelection(r.PostForm) {
+		p.renderReview(w, r, c, s, http.StatusUnprocessableEntity, "Nothing is selected. Select at least one tool, resource or prompt, use Approve with all tools enabled, or explicitly choose Approve with none enabled.")
+		return
+	}
 	var current *snapshot.Record
 	if cur, err := p.d.Snapshots.Current(ctx, c.snapActor(), s.ID); err == nil {
 		current = cur
@@ -548,10 +552,33 @@ func ReviewDecisionsFromForm(form url.Values, latest, current *snapshot.Record) 
 	return d
 }
 
+// ReviewFormHasSelection reports whether a review POST can proceed without
+// accidentally approving an empty snapshot. approve_all and approve_none are
+// explicit choices; the ordinary and approval-mode actions require at least
+// one checked capability (or the legacy enable_reads choice).
+func ReviewFormHasSelection(form url.Values) bool {
+	switch form.Get("action") {
+	case ActionApproveAll, ActionApproveNone:
+		return true
+	}
+	if form.Get("enable_reads") != "" {
+		return true
+	}
+	for _, field := range []string{"enable", FieldEnableResource, FieldEnableTemplate, FieldEnablePrompt} {
+		if len(form[field]) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Review form action values beyond the plain "approve".
 const (
 	// ActionApproveAll enables every tool of the posted version.
 	ActionApproveAll = "approve_all"
+	// ActionApproveNone explicitly approves the posted version while keeping
+	// every capability disabled. Plain approve may not do this accidentally.
+	ActionApproveNone = "approve_none"
 	// ActionApproveAuto approves and sets the checked write tools to run
 	// without asking.
 	ActionApproveAuto = "approve_auto"
