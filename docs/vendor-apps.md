@@ -5,6 +5,13 @@ Status: ready to execute. Written 2026-10-08 against the Team MCP Gateway v1 des
 Every scope, permission and console step below was checked against the vendor's current
 documentation on 2026-10-08; the sources are listed at the end.
 
+The database also contains a disabled `mcp/federation` **system app**. It is
+not an OAuth integration: user-added MCP servers use it only for tokenless
+connection anchors referenced by approvals, the write ledger and audit. The
+Vendor apps page shows it in a read-only System apps disclosure. It cannot be
+configured or enabled, never appears on the user Connections page, and its
+anchors are excluded from token keep-alive.
+
 Why now: vendor registrations and company admin approvals are the longest lead-time
 item in the build order. They can and should start before the gateway can accept them.
 

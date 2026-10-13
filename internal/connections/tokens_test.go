@@ -377,3 +377,28 @@ func TestKeepAliveRefreshesStaleTokensAndPurgesFlows(t *testing.T) {
 		t.Fatalf("alice status = %s", list[0].Status)
 	}
 }
+
+func TestKeepAliveSkipsFederationAnchorConnections(t *testing.T) {
+	env := newTestEnv(t)
+	v := newFakeVendor(t)
+	app := registerFakeApp(t, env, v)
+	anchor, err := connect(t, env, userAlice, "acct-company")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.store.SetVendorAppIdentity(app.ID, connections.SystemVendorMCP, connections.SystemVariantFederation, false) {
+		t.Fatal("rewrite system app")
+	}
+	env.store.Backdate(anchor.ID, time.Now().Add(-40*24*time.Hour))
+
+	if err := env.svc.KeepAliveJob().Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := v.refreshCalls.Load(); got != 0 {
+		t.Fatalf("system anchor refreshed %d times", got)
+	}
+	rows := env.store.ConnectionRows()
+	if len(rows) != 1 || rows[0].Status != store.ConnectionActive || rows[0].LastRefreshedAt == nil || rows[0].LastRefreshedAt.After(time.Now().Add(-39*24*time.Hour)) {
+		t.Fatalf("system anchor changed: %+v", rows)
+	}
+}

@@ -68,6 +68,20 @@ func (m *MemStore) VendorAppRows() []store.VendorApp {
 	return out
 }
 
+// SetVendorAppIdentity rewrites one stored app's identity for tests that
+// exercise internal/system rows, which cannot be created through the public
+// vendor-app service. It returns false when id is unknown.
+func (m *MemStore) SetVendorAppIdentity(id, vendor, name string, enabled bool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.apps[id]
+	if !ok {
+		return false
+	}
+	a.Vendor, a.Name, a.Enabled = vendor, name, enabled
+	return true
+}
+
 // ConnectionRows returns copies of every connection row.
 func (m *MemStore) ConnectionRows() []store.Connection {
 	m.mu.Lock()
@@ -361,6 +375,9 @@ func (t *memTx) ListStaleConnections(_ context.Context, before time.Time, limit 
 	var out []store.Connection
 	for _, c := range t.m.conns {
 		if !t.visible(c.UserID) || c.Status != store.ConnectionActive {
+			continue
+		}
+		if app, ok := t.m.apps[c.VendorAppID]; ok && app.Vendor == connections.SystemVendorMCP {
 			continue
 		}
 		last := c.CreatedAt
