@@ -54,6 +54,31 @@ func TestPlainApproveStillHonoursTheCheckboxes(t *testing.T) {
 	}
 }
 
+func TestPlainApproveRefusesAnAccidentalEmptySelection(t *testing.T) {
+	e := newEnv(t)
+	s := e.st.add(store.MCPServer{Name: "omniroute", URL: "https://omniroute.example/mcp", OwnerUserID: alice, AuthKind: store.MCPAuthNone})
+	e.snap.pending(s.ID, snapOf(writeTool("plugin_list", "l"), writeTool("plugin_scan", "s")))
+
+	r := e.post("/servers/"+s.ID+"/review", alice, url.Values{"version": {"1"}, "action": {"approve"}})
+	if r.code != 422 {
+		t.Fatalf("empty approve: %d, want 422; %s", r.code, r.body)
+	}
+	mustContain(t, r.body, "Nothing is selected", "Approve with none enabled")
+	if len(e.snap.approvals) != 0 {
+		t.Fatalf("empty approve reached snapshot service: %+v", e.snap.approvals)
+	}
+
+	r = e.post("/servers/"+s.ID+"/review", alice, url.Values{"version": {"1"}, "action": {"approve_none"}})
+	if r.code != 303 {
+		t.Fatalf("explicit approve none: %d; %s", r.code, r.body)
+	}
+	for name, dec := range e.snap.approvals[0].d.Tools {
+		if dec.Enabled == nil || *dec.Enabled {
+			t.Errorf("%s enabled by approve_none: %+v", name, dec)
+		}
+	}
+}
+
 func TestApproveAllNeedsCSRFFreshVersionAndOwnership(t *testing.T) {
 	e := newEnv(t)
 	s := e.st.add(store.MCPServer{Name: "brain", URL: "https://brain.example/mcp", OwnerUserID: alice, AuthKind: store.MCPAuthNone})
@@ -94,7 +119,7 @@ func TestReviewPageHasGroupsSelectControlsAndSummary(t *testing.T) {
 	mustContain(t, r.body,
 		`data-review`, `src="/static/review.js?v=`, `href="/static/review.css?v=`,
 		`class="review-bar"`, `data-select="all"`, `data-select="none"`, `data-review-filter`,
-		`0 of 4 selected`, `name="action" value="approve"`, `name="action" value="approve_all"`, "Approve with all tools enabled",
+		`0 of 4 selected`, `name="action" value="approve"`, `data-requires-selection`, `name="action" value="approve_all"`, "Approve with all tools enabled", `name="action" value="approve_none"`, "Approve with none enabled",
 		`data-group="attachment"`, `data-group="attention"`, `data-group="search"`, `data-group-check`, `0/2`,
 		`<b>4</b> total`, `<b>0</b> enabled`, `<b>4</b> new`, `<b>0</b> changed`, `<b>0</b> removed`,
 		`class="chip status-added">new<`, `class="chip kind-write">write<`)

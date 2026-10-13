@@ -403,6 +403,24 @@ func TestAdminReviewUsesTheSharedViewAndApproveAll(t *testing.T) {
 	}
 }
 
+func TestAdminReviewRefusesAccidentalEmptySelection(t *testing.T) {
+	h := newHarness(t)
+	s := h.st.add(admin.Server{MCPServer: store.MCPServer{Name: "omniroute", Audience: store.MCPAudiencePublished}, PublishedRoleIDs: []string{roleEng}})
+	h.snaps.pending(s.ID, &snapshot.Snapshot{Tools: []snapshot.Tool{{Name: "plugin_list"}, {Name: "plugin_scan"}}})
+
+	rec := h.do(t, req{method: http.MethodPost, path: "/admin/servers/" + s.ID + "/review", form: url.Values{"version": {"1"}, "action": {"approve"}}})
+	mustStatus(t, rec.Code, http.StatusUnprocessableEntity, "empty approve")
+	if !strings.Contains(rec.Body.String(), "Nothing is selected") || len(h.snaps.approvals) != 0 {
+		t.Fatalf("empty approve body=%s approvals=%d", rec.Body.String(), len(h.snaps.approvals))
+	}
+
+	rec = h.do(t, req{method: http.MethodPost, path: "/admin/servers/" + s.ID + "/review", form: url.Values{"version": {"1"}, "action": {"approve_none"}}})
+	mustStatus(t, rec.Code, http.StatusSeeOther, "explicit approve none")
+	if len(h.snaps.approvals) != 1 {
+		t.Fatalf("approve_none approvals=%d", len(h.snaps.approvals))
+	}
+}
+
 func TestTunnelsListAndRevoke(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()

@@ -14,6 +14,7 @@
     var groups = form.querySelectorAll("[data-group]");
     var count = form.querySelector("[data-review-count]");
     var filter = form.querySelector("[data-review-filter]");
+    var needsSelection = form.querySelectorAll("[data-requires-selection]");
 
     each(form.querySelectorAll("[data-js]"), function (el) { el.hidden = false; });
 
@@ -26,6 +27,11 @@
       var on = 0;
       each(rows, function (row) { if (box(row).checked) { on++; } });
       if (count) { count.textContent = on + " of " + rows.length + " selected"; }
+      each(needsSelection, function (button) {
+        button.disabled = on === 0;
+        button.setAttribute("aria-disabled", on === 0 ? "true" : "false");
+        button.title = on === 0 ? "Select at least one capability first" : "";
+      });
       each(groups, function (g) {
         var n = 0, total = 0;
         each(g.querySelectorAll("[data-tool]"), function (row) {

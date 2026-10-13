@@ -24,9 +24,9 @@
     <input type="search" class="review-filter" data-review-filter data-js hidden placeholder="Filter tools" aria-label="Filter tools">
     <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Selectable}} selected</span>
     <span class="review-submit">
-      <button class="btn primary" type="submit" name="action" value="approve">{{.Approve}}</button>
-      <button class="btn" type="submit" name="action" value="approve_auto" title="Approve; the selected write tools run without asking">Run selected without asking</button>
-      <button class="btn" type="submit" name="action" value="approve_ask" title="Approve; the selected write tools ask before running">Ask for selected</button>
+      <button class="btn primary" type="submit" name="action" value="approve" data-requires-selection>{{.Approve}}</button>
+      <button class="btn" type="submit" name="action" value="approve_auto" data-requires-selection title="Approve; the selected write tools run without asking">Run selected without asking</button>
+      <button class="btn" type="submit" name="action" value="approve_ask" data-requires-selection title="Approve; the selected write tools ask before running">Ask for selected</button>
       <button class="btn" type="submit" name="action" value="approve_all" title="Enable every tool; approval modes as chosen below">Approve with all tools enabled</button>
     </span>
   </div>
@@ -93,6 +93,7 @@
   <div class="review-foot">
     <p class="muted">Tools without a read-only annotation count as writes. A write set to <strong>Ask</strong> needs an approval on each call; a write set to <strong>Auto</strong> runs without a confirmation (role denies and token limits still apply). New and changed tools start as Ask. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
     {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
+    <details class="danger-zone"><summary>Approve an empty tool set</summary><p class="muted">Use this only when you intentionally want this snapshot reviewed while every tool, resource and prompt remains disabled.</p><button class="btn danger" type="submit" name="action" value="approve_none">Approve with none enabled</button></details>
   </div>
 </form>
 <script src="{{asset "review.js"}}" defer></script>
