@@ -22,6 +22,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make fmt-check
+      - run: tests/test-release-workflow.sh
 
   lint:
     name: golangci-lint
@@ -115,7 +116,7 @@ jobs:
       - name: smoke test /healthz
         run: |
           docker run -d --rm --name gw -p 18080:18080 mcp-gateway:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:18080/healthz; then ok=1; break; fi
             sleep 1
           done
@@ -199,7 +200,7 @@ jobs:
           load: true
           tags: mcp-gateway:ci
           build-args: VERSION=${{ github.sha }}
-      - uses: aquasecurity/trivy-action@0.28.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: mcp-gateway:ci
           format: table
@@ -233,3 +234,30 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test-security
+
+  release:
+    name: Publish immutable container
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - fmt
+      - lint
+      - test
+      - test-integration
+      - test-e2e
+      - image
+      - oauth-attack
+      - helm
+      - vulncheck
+      - image-scan
+      - test-security
+    permissions:
+      contents: read
+      packages: write
+    uses: huynle/.github/.github/workflows/container-release.yml@v1
+    with:
+      image: ghcr.io/huynle/mcp-gateway
+      runner: ubuntu-latest
+      build-args-json: >-
+        {"VERSION":"sha-${{ github.sha }}"}
+      provenance: true
+      sbom: true

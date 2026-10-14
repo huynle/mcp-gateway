@@ -59,9 +59,6 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
               - 169.254.0.0/16
-
-
-
 ---
 # Source: mcp-gateway/templates/pdb.yaml
 apiVersion: policy/v1
@@ -81,7 +78,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mcp-gateway
       app.kubernetes.io/instance: mcp-gateway
-
 ---
 # Source: mcp-gateway/templates/serviceaccount.yaml
 apiVersion: v1
@@ -96,7 +92,6 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
 automountServiceAccountToken: false
-
 ---
 # Source: mcp-gateway/templates/service-metrics.yaml
 # Private: scraped inside the cluster, never referenced by the Ingress.
@@ -126,7 +121,6 @@ spec:
       port: 19090
       targetPort: metrics
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/service.yaml
 apiVersion: v1
@@ -150,7 +144,6 @@ spec:
       port: 80
       targetPort: http
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/deployment.yaml
 apiVersion: apps/v1
@@ -332,7 +325,6 @@ spec:
                   app.kubernetes.io/name: mcp-gateway
               topologyKey: kubernetes.io/hostname
             weight: 100
-
 ---
 # Source: mcp-gateway/templates/ingress.yaml
 apiVersion: networking.k8s.io/v1
@@ -544,4 +536,3 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
-

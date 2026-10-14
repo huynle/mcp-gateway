@@ -174,6 +174,8 @@ The production shape is `deploy/helm/values-production.example.yaml`; copy it in
 
 `make kind-smoke` runs the local environment end to end: builds the image, creates a kind cluster, applies `deploy/smoke/k8s/postgres.yaml`, creates the three Secrets, installs the chart, checks two ready replicas, `/healthz`, `/readyz`, the OAuth discovery document, an unauthenticated MCP `initialize` (401 + `WWW-Authenticate ... resource_metadata`), the in-cluster metrics Service, then rolls the schema back one version (`/migrate down`), sees the pods go not-ready, upgrades, and verifies the hook Job finished before the first new pod started and `/readyz` is ok again. CI runs it as a non-blocking step of the `helm` job.
 
+The production GitOps deployment is promoted manually. Use the immutable tag and digest from a successful `main` CI release and the infra repository's `scripts/promote-manual-image.py mcp-gateway <tag> <digest>`. The helper updates the application and migration image pins together or changes neither. Before opening that infra PR, review every new migration for backward compatibility, verify the candidate image contains both `/gateway` and `/migrate`, and run the read-only `/migrate version` preflight described in the infra manual-promotion runbook. The release workflow runs only after every CI job above succeeds and publishes provenance plus an SBOM; it never edits production manifests.
+
 ## Verification tooling
 
 - `make helm-lint`: `helm lint --strict` and `helm template` with the default values and every `deploy/helm/values-*.example.yaml`.
