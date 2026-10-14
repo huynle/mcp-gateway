@@ -71,9 +71,6 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
               - 169.254.0.0/16
-
-
-
 ---
 # Source: mcp-gateway/templates/pdb.yaml
 apiVersion: policy/v1
@@ -93,7 +90,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mcp-gateway
       app.kubernetes.io/instance: mcp-gateway
-
 ---
 # Source: mcp-gateway/templates/serviceaccount.yaml
 apiVersion: v1
@@ -108,7 +104,6 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
 automountServiceAccountToken: false
-
 ---
 # Source: mcp-gateway/templates/service-metrics.yaml
 # Private: scraped inside the cluster, never referenced by the Ingress.
@@ -138,7 +133,6 @@ spec:
       port: 19090
       targetPort: metrics
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/service.yaml
 apiVersion: v1
@@ -162,7 +156,6 @@ spec:
       port: 80
       targetPort: http
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/deployment.yaml
 apiVersion: apps/v1
@@ -362,7 +355,6 @@ spec:
                 app.kubernetes.io/instance: mcp-gateway
                 app.kubernetes.io/name: mcp-gateway
             topologyKey: kubernetes.io/hostname
-
 ---
 # Source: mcp-gateway/templates/ingress.yaml
 apiVersion: networking.k8s.io/v1
@@ -508,7 +500,6 @@ spec:
                 name: mcp-gateway
                 port:
                   name: http
-
 ---
 # Source: mcp-gateway/templates/prometheusrule.yaml
 # Alert rules for the Prometheus Operator, over the gateway's own metric
@@ -603,7 +594,6 @@ spec:
             summary: "Fewer than two ready gateway replicas"
             description: "The gateway runs as >= 2 identical replicas (background jobs move between them on a PostgreSQL lease, decision ysorv868); fewer than two have been available for 15 minutes."
             runbook_url: "https://github.com/huynle/mcp-gateway/blob/main/docs/runbooks/deploy-and-rollback.md"
-
 ---
 # Source: mcp-gateway/templates/servicemonitor.yaml
 apiVersion: monitoring.coreos.com/v1
@@ -701,4 +691,3 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
-
