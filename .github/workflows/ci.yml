@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -23,6 +22,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make fmt-check
+      - run: tests/test-release-workflow.sh
 
   lint:
     name: golangci-lint
@@ -200,7 +200,7 @@ jobs:
           load: true
           tags: mcp-gateway:ci
           build-args: VERSION=${{ github.sha }}
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: mcp-gateway:ci
           format: table
@@ -250,6 +250,9 @@ jobs:
       - vulncheck
       - image-scan
       - test-security
+    permissions:
+      contents: read
+      packages: write
     uses: huynle/.github/.github/workflows/container-release.yml@v1
     with:
       image: ghcr.io/huynle/mcp-gateway
