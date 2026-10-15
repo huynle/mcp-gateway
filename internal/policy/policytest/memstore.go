@@ -22,6 +22,7 @@ type MemStore struct {
 	roles        map[string]policy.StoredRole
 	assignments  []policy.Assignment
 	restrictions map[string]policy.UserRestriction
+	appAsk       map[string][]string
 	versions     []policy.Version
 	loads        int
 	loadErr      error
@@ -104,7 +105,26 @@ func (m *MemStore) Load(context.Context) (policy.Snapshot, error) {
 	for _, u := range m.restrictions {
 		s.Restrictions = append(s.Restrictions, u)
 	}
+	for app, ask := range m.appAsk {
+		s.Apps = append(s.Apps, policy.AppApproval{App: app, Ask: slices.Clone(ask)})
+	}
+	slices.SortFunc(s.Apps, func(a, b policy.AppApproval) int { return strings.Compare(a.App, b.App) })
 	return s, nil
+}
+
+// SetAppAsk implements policy.Store.
+func (m *MemStore) SetAppAsk(_ context.Context, _ string, app string, ask []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.appAsk == nil {
+		m.appAsk = map[string][]string{}
+	}
+	if len(ask) == 0 {
+		delete(m.appAsk, app)
+		return nil
+	}
+	m.appAsk[app] = slices.Clone(ask)
+	return nil
 }
 
 // SaveRole implements policy.Store.

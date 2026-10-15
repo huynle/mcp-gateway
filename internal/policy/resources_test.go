@@ -113,6 +113,9 @@ func (s *snapStore) Load(context.Context) (Snapshot, error)       { return s.sna
 func (s *snapStore) SaveRole(context.Context, Role) error         { return nil }
 func (s *snapStore) DeleteRole(context.Context, string) error     { return nil }
 func (s *snapStore) SetDefaultRole(context.Context, string) error { return nil }
+func (s *snapStore) SetAppAsk(context.Context, string, string, []string) error {
+	return nil
+}
 func (s *snapStore) SaveVersion(_ context.Context, v Version) (Version, error) {
 	v.ID = "v1"
 	return v, nil

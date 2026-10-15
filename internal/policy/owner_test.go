@@ -152,6 +152,9 @@ func (s *ownerStore) Load(context.Context) (Snapshot, error) {
 func (s *ownerStore) SaveRole(context.Context, Role) error         { return nil }
 func (s *ownerStore) DeleteRole(context.Context, string) error     { return nil }
 func (s *ownerStore) SetDefaultRole(context.Context, string) error { return nil }
+func (s *ownerStore) SetAppAsk(context.Context, string, string, []string) error {
+	return nil
+}
 func (s *ownerStore) SaveVersion(_ context.Context, v Version) (Version, error) {
 	v.ID = "v1"
 	return v, nil

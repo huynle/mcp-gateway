@@ -81,15 +81,20 @@ func CompileWithOwners(roles []Role, assignments []Assignment, restrictions []Us
 	return CompileWithLayers(roles, assignments, restrictions, Layers{Owners: owners})
 }
 
-// CompileWithLayers is Compile plus the implicit layers of user-added MCP
-// servers: the owner grants (OwnerGrant) and the servers' approval modes
-// (ServerApproval). Without layers it produces exactly what Compile does.
+// CompileWithLayers is Compile plus the implicit layers: the owner grants
+// of user-added MCP servers (OwnerGrant), the servers' approval modes
+// (ServerApproval) and the vendor apps' approval modes (AppApproval).
+// Without layers it produces exactly what Compile does.
 func CompileWithLayers(roles []Role, assignments []Assignment, restrictions []UserRestriction, layers Layers) (*Compiled, error) {
 	owners, err := normalizeOwners(layers.Owners)
 	if err != nil {
 		return nil, err
 	}
 	servers, err := normalizeServers(layers.Servers, owners)
+	if err != nil {
+		return nil, err
+	}
+	apps, err := normalizeApps(layers.Apps, servers)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +152,9 @@ func CompileWithLayers(roles []Role, assignments []Assignment, restrictions []Us
 	}
 	for _, app := range sortedKeys(servers) {
 		w.serverApproval(app, servers[app])
+	}
+	for _, app := range sortedKeys(apps) {
+		w.appApproval(app, apps[app])
 	}
 	var warnings []string
 	for _, u := range restrictions {
