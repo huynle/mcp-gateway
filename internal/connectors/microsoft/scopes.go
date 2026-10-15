@@ -3,6 +3,8 @@ package microsoft
 import (
 	"sort"
 	"strings"
+
+	"github.com/huynle/mcp-gateway/internal/connectors"
 )
 
 // Graph delegated permissions the tools need (RequiredScopes), as the
@@ -128,4 +130,11 @@ func stripTeamsScopes(scopes []string) []string {
 		}
 	}
 	return out
+}
+
+// ScopeGrantable is the connectors.ScopeGrantable of the Microsoft app:
+// personal accounts cannot grant the Teams and SharePoint permissions
+// (TeamsScope); work accounts can grant everything.
+func ScopeGrantable(label connectors.AccountLabel, scope string) bool {
+	return label != connectors.LabelPersonal || !TeamsScope(scope)
 }

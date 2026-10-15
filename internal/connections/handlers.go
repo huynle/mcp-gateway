@@ -39,7 +39,7 @@ var templateFS embed.FS
 //
 // Connect flow (MountConnect, behind the signed-in check; GET only):
 //
-//	GET  /connect/{vendor}/start?variant=&scopes=&return_to=
+//	GET  /connect/{vendor}/start?variant=&connection=&scopes=&return_to=
 //	GET  /connect/{vendor}/callback       the vendor's redirect target
 //
 // Admin pages (MountAdmin; admins only, the portal's 404 for everyone
@@ -60,6 +60,7 @@ type Portal struct {
 	log       *slog.Logger
 	tpl       *template.Template
 	approvals ToolApprovals
+	advisor   AccessAdvisor
 }
 
 // NewPortal builds the pages over svc.
@@ -140,7 +141,7 @@ func (p *Portal) admin(h handler) http.Handler {
 type vendorSection struct {
 	Vendor      string
 	Apps        []VendorApp // enabled variants
-	Connections []Info
+	Connections []connRow
 }
 
 type listData struct {
@@ -165,11 +166,13 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request, c caller) {
 	data := listData{Title: "Connections", Caller: c}
 	for _, v := range order {
 		sec := vendorSection{Vendor: v, Apps: byVendor[v]}
+		var shown []Info
 		for _, cn := range conns {
 			if cn.Vendor == v && cn.Status != store.ConnectionRevoked {
-				sec.Connections = append(sec.Connections, cn)
+				shown = append(shown, cn)
 			}
 		}
+		sec.Connections = p.connRows(r.Context(), c.UserID, shown)
 		data.Vendors = append(data.Vendors, sec)
 	}
 	q := r.URL.Query()
@@ -202,7 +205,7 @@ func (p *Portal) start(w http.ResponseWriter, r *http.Request, c caller) {
 	q := r.URL.Query()
 	redirect, err := p.svc.Start(r.Context(), StartRequest{
 		UserID: c.UserID, Vendor: r.PathValue("vendor"), Variant: q.Get("variant"),
-		Scopes: SplitScopes(q.Get("scopes")), ReturnTo: safeReturnTo(q.Get("return_to")),
+		Scopes: SplitScopes(q.Get("scopes")), ConnectionID: q.Get("connection"), ReturnTo: safeReturnTo(q.Get("return_to")),
 	})
 	switch {
 	case errors.Is(err, ErrNotConfigured):

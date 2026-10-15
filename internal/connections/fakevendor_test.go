@@ -314,3 +314,13 @@ func oauthError(w http.ResponseWriter, status int, code, desc string) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "error_description": desc})
 }
+
+// lastAuthorize returns the query of the most recent authorize request.
+func (v *fakeVendor) lastAuthorize() url.Values {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if len(v.authorize) == 0 {
+		return url.Values{}
+	}
+	return v.authorize[len(v.authorize)-1]
+}

@@ -137,6 +137,9 @@ type Service struct {
 	mu      sync.RWMutex
 	binders map[string]Binder   // by vendor
 	apps    map[string][]string // vendor -> connector app names
+	// tools and visibility are the tool catalog (SetToolCatalog).
+	tools      *connectors.Registry
+	visibility ToolVisibility
 }
 
 // New builds the service. keys encrypts vendor app secrets and token

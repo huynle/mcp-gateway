@@ -104,6 +104,13 @@ type Tool struct {
 	// RequiredScopes are the vendor OAuth scopes a connected account must
 	// have for this tool (connections task).
 	RequiredScopes []string
+	// OptionalScopes are vendor scopes the tool uses when the account
+	// granted them and works without (Slack's list_conversations lists
+	// DMs only with im:read; the channel tools manage private channels
+	// only with groups:write). The scope stage ignores them; "grant more
+	// access" on /connections requests them together with the missing
+	// RequiredScopes.
+	OptionalScopes []string
 	// ResourceIdentity extracts the audit resource identity (repo, channel,
 	// site, ...) from the arguments; it must never return argument content.
 	// nil means the tool has no resource identity.
@@ -138,6 +145,7 @@ type Registry struct {
 	mu        sync.RWMutex
 	tools     map[string]Tool
 	coverage  map[string]ScopeCoverage
+	grantable map[string]ScopeGrantable
 	resolvers map[string]IdentityResolver
 	// static are the apps built-in connectors registered; servers the
 	// server (dynamic) apps of registry_dynamic.go. Disjoint.
@@ -148,7 +156,7 @@ type Registry struct {
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}, resolvers: map[string]IdentityResolver{},
+		tools: map[string]Tool{}, coverage: map[string]ScopeCoverage{}, grantable: map[string]ScopeGrantable{}, resolvers: map[string]IdentityResolver{},
 		static: map[string]bool{}, servers: map[string]bool{},
 	}
 }
@@ -314,4 +322,32 @@ func (t Tool) validate() error {
 		return fmt.Errorf("%w: %s: input schema type must be \"object\", got %q", ErrInvalidTool, t.FullName(), schema.Type)
 	}
 	return nil
+}
+
+// ScopeGrantable reports whether an account with label can grant scope
+// at all (personal Microsoft accounts cannot grant the Teams and
+// SharePoint permissions). Grant more access never asks an account for
+// a scope it cannot grant, and Connect, which does not know yet which
+// account will sign in, asks only for scopes every label can grant.
+type ScopeGrantable func(label AccountLabel, scope string) bool
+
+// SetScopeGrantable installs app's ScopeGrantable; nil restores the
+// default (every account can grant every scope).
+func (r *Registry) SetScopeGrantable(app string, fn ScopeGrantable) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if fn == nil {
+		delete(r.grantable, app)
+		return
+	}
+	r.grantable[app] = fn
+}
+
+// Grantable reports whether an account of app with label can grant
+// scope (SetScopeGrantable; true by default).
+func (r *Registry) Grantable(app string, label AccountLabel, scope string) bool {
+	r.mu.RLock()
+	fn := r.grantable[app]
+	r.mu.RUnlock()
+	return fn == nil || fn(label, scope)
 }

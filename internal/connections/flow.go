@@ -35,14 +35,24 @@ var (
 	ErrPersonalRefused = errors.New("connections: personal accounts are not allowed for this app")
 )
 
+// googleIncludeGranted is Google's incremental-authorization parameter.
+const googleIncludeGranted = "include_granted_scopes"
+
 // StartRequest begins a connect flow for the signed-in user.
 type StartRequest struct {
 	UserID  string
 	Vendor  string
 	Variant string
-	// Scopes are requested on top of the app's base scopes ("grant more
-	// access" passes the tool's required scopes).
+	// Scopes are requested on top of the app's base scopes and the
+	// scopes of ConnectionID ("grant more access" passes the missing
+	// ones). Only scopes some tool of the
+	// vendor requires or uses are accepted; none means Connect, which
+	// asks for the scopes of the read tools the user may see.
 	Scopes []string
+	// ConnectionID names the user's connection this flow re-grants (grant
+	// more access, reconnect): its scopes are requested again so an
+	// incremental grant never loses them. Empty for a new connection.
+	ConnectionID string
 	// ReturnTo is the portal path to go back to afterwards.
 	ReturnTo string
 }
@@ -92,7 +102,10 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (string, error) {
 		return "", err
 	}
 	verifier := oauth2.GenerateVerifier()
-	scopes := unionScopes(app.Scopes, req.Scopes)
+	scopes, err := s.flowScopes(ctx, app, req)
+	if err != nil {
+		return "", err
+	}
 	flow := &store.ConnectFlow{
 		State: state, UserID: req.UserID, VendorAppID: app.ID, Verifier: verifier, Scopes: scopes,
 		ReturnTo: req.ReturnTo, ExpiresAt: s.clock().Add(s.cfg.FlowTTL),
@@ -104,6 +117,11 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (string, error) {
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
 	for _, kv := range app.AuthParams() {
 		opts = append(opts, oauth2.SetAuthURLParam(kv[0], kv[1]))
+	}
+	if _, set := app.Extra[googleIncludeGranted]; app.Vendor == VendorGoogle && !set {
+		// Without it Google's new token carries only the scopes of this
+		// request, dropping what the user granted before.
+		opts = append(opts, oauth2.SetAuthURLParam(googleIncludeGranted, "true"))
 	}
 	if param := app.Extra[ExtraScopeParam]; param != "" && param != "scope" {
 		conf.Scopes = nil

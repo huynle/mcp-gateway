@@ -97,7 +97,7 @@ The binder follows the vendor app's **User info URL** for the Graph root (`https
    ```
    company_tenants=<company tenant id>[,<another tenant id>]
    ```
-   Do **not** put the Teams permissions in the base scopes if personal accounts must be able to connect: Microsoft refuses the whole consent for a personal account when a Teams scope is requested. Work users add them afterwards with `/connect/microsoft/start?scopes=Team.ReadBasic.All+Channel.ReadBasic.All+ChannelMessage.Read.All+ChannelMessage.Send` (the "grant more access" link; the connection's scopes are the union).
+   Do **not** put the Teams permissions in the base scopes if personal accounts must be able to connect: Microsoft refuses the whole consent for a personal account when a Teams scope is requested. *Connect* never adds them (the reads-first scopes leave out what personal accounts cannot grant, `microsoft.ScopeGrantable`); work users get **Grant more access** on `/connections` for the Teams tools their role shows, which asks for the missing permissions together with everything the connection already holds (Microsoft issues a token for exactly the scopes requested). Personal accounts are never offered them.
 3. Users connect on `/connections` -> Microsoft -> *Connect*. The connection's label and display name appear on the page; `microsoft.list_accounts` shows them to a harness.
 4. Grant the tools to a role on `/admin/roles` (`microsoft.*` allow, or per tool; use `team` / `calendar` / `drive` / `folder` conditions to confirm or deny by resource).
 

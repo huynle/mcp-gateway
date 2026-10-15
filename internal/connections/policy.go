@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/policy"
 )
 
@@ -38,4 +39,15 @@ func (p PolicyAllowance) PersonalAccountsAllowed(ctx context.Context, userID, ap
 		}
 	}
 	return true, nil
+}
+
+// VisibleToUser implements ToolVisibility: the tool is listed for the
+// user by their roles and restrictions, as for a token without an
+// allow-list (Service.Visible with an unrestricted, read-write scope).
+func (p PolicyAllowance) VisibleToUser(ctx context.Context, userID string, tool connectors.Tool) (bool, error) {
+	ok, err := p.Service.Visible(ctx, policy.Input{UserID: userID, Tool: tool})
+	if err != nil {
+		return false, fmt.Errorf("connections: policy: %w", err)
+	}
+	return ok, nil
 }
