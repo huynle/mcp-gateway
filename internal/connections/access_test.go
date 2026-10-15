@@ -243,3 +243,32 @@ func TestMissingAccessEdgeCases(t *testing.T) {
 		t.Errorf("nil visibility: gap = %+v, %v; want every slack tool's scopes", gap, err)
 	}
 }
+
+// TestAccessHintForListAccounts: the service tells list_accounts how
+// many of the account's app's visible tools stay locked and where to
+// grant more access; an account of another app of the vendor only
+// counts its own app's tools; nothing missing means no hint. Through
+// RegisterConnector the hint reaches slack.list_accounts' output.
+func TestAccessHintForListAccounts(t *testing.T) {
+	env := newTestEnv(t)
+	reg := catalogRegistry(t, env.svc)
+	env.svc.SetToolCatalog(reg, policyVisibility(t))
+	ctx := context.Background()
+
+	hint, err := env.svc.AccessHint(ctx, userAlice, connectors.Account{ID: "c-1", App: slack.App, Scopes: oldSlackScopes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gap, _ := env.svc.MissingAccess(ctx, userAlice, slackInfo(oldSlackScopes...))
+	if hint.LockedTools != len(gap.Tools) || hint.LockedTools == 0 || hint.GrantURL != "http://gw.test/connections" {
+		t.Errorf("slack hint = %+v, want %d locked tools and the connections page", hint, len(gap.Tools))
+	}
+	gmail := connectors.Account{ID: "g-1", App: google.AppGmail, Scopes: []string{google.ScopeGmailModify}}
+	if hint, err := env.svc.AccessHint(ctx, userAlice, gmail); err != nil || hint != (connectors.AccessHint{}) {
+		t.Errorf("gmail hint = %+v, %v; want none (calendar's gap is not gmail's)", hint, err)
+	}
+	if hint, err := env.svc.AccessHint(ctx, userAlice, connectors.Account{ID: "c-2", App: slack.App}); err != nil || hint != (connectors.AccessHint{}) {
+		t.Errorf("no recorded scopes: hint = %+v, %v", hint, err)
+	}
+	var _ connectors.AccessHinter = env.svc
+}

@@ -98,15 +98,38 @@ func (s *Service) visibleTools(ctx context.Context, vis ToolVisibility, userID s
 // gap, exactly as the scope stage does not refuse it (GitHub App user
 // tokens carry no scope list).
 func (s *Service) MissingAccess(ctx context.Context, userID string, conn Info) (AccessGap, error) {
+	return s.gap(ctx, userID, conn.Vendor, "", conn.Scopes), nil
+}
+
+// AccessHint implements connectors.AccessHinter for list_accounts: the
+// account's gap over its own app's tools (not the whole vendor's) and
+// the connections page to close it.
+func (s *Service) AccessHint(ctx context.Context, userID string, acct connectors.Account) (connectors.AccessHint, error) {
+	gap := s.gap(ctx, userID, s.vendorFor(acct.App), acct.App, acct.Scopes)
+	if gap.Empty() {
+		return connectors.AccessHint{}, nil
+	}
+	return connectors.AccessHint{LockedTools: len(gap.Tools), GrantURL: s.cfg.BaseURL + "/connections"}, nil
+}
+
+var _ connectors.AccessHinter = (*Service)(nil)
+
+// gap is MissingAccess over the vendor's tools, or only app's when app
+// is set.
+func (s *Service) gap(ctx context.Context, userID, vendor, app string, granted []string) AccessGap {
 	reg, vis := s.toolCatalog()
-	if reg == nil || len(conn.Scopes) == 0 {
-		return AccessGap{}, nil
+	if reg == nil || len(granted) == 0 {
+		return AccessGap{}
+	}
+	tools := s.vendorTools(reg, vendor)
+	if app != "" {
+		tools = slices.DeleteFunc(tools, func(t connectors.Tool) bool { return t.App != app })
 	}
 	var gap AccessGap
 	var scopes [][]string
-	for _, t := range s.visibleTools(ctx, vis, userID, s.vendorTools(reg, conn.Vendor)) {
-		required := reg.MissingScopes(t, conn.Scopes)
-		optional := reg.MissingScopes(connectors.Tool{App: t.App, RequiredScopes: t.OptionalScopes}, conn.Scopes)
+	for _, t := range s.visibleTools(ctx, vis, userID, tools) {
+		required := reg.MissingScopes(t, granted)
+		optional := reg.MissingScopes(connectors.Tool{App: t.App, RequiredScopes: t.OptionalScopes}, granted)
 		switch {
 		case len(required) > 0:
 			gap.Tools = append(gap.Tools, t.FullName())
@@ -119,7 +142,7 @@ func (s *Service) MissingAccess(ctx context.Context, userID string, conn Info) (
 	}
 	gap.Scopes = unionScopes(scopes...)
 	gap.Tools, gap.Extended = unionScopes(gap.Tools), unionScopes(gap.Extended)
-	return gap, nil
+	return gap
 }
 
 // flowScopes is what Start asks the vendor for: the app's base scopes,

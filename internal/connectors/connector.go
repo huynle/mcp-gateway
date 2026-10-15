@@ -50,7 +50,8 @@ type IdentityResolver interface {
 
 // ListAccountsName is the name of the read tool RegisterConnector adds to
 // every app ("<app>.list_accounts"): it lists the caller's connected
-// accounts (ID, label, display name; never tokens or scopes) so a harness
+// accounts (ID, label, display name, and an AccessHint when the source
+// has one; never tokens or scopes) so a harness
 // can fill the gateway-injected "account" argument when the user has
 // several (decision dovthftx). Connectors must not define a tool of this
 // name themselves.
@@ -341,7 +342,8 @@ func ListAccountsTool(app string, accounts AccountSource) Tool {
 		App:  app,
 		Name: ListAccountsName,
 		Description: "List your connected " + app + " accounts: id, label (company or personal) and display name. " +
-			"Pass an id as the \"account\" argument of other " + app + " tools when you have more than one.",
+			"Pass an id as the \"account\" argument of other " + app + " tools when you have more than one. " +
+			"An account with locked_tools cannot run that many " + app + " tools until you grant more access at grant_more_access.",
 		InputSchema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Kind:             KindRead,
 		NoAccount:        true,
@@ -353,9 +355,16 @@ func ListAccountsTool(app string, accounts AccountSource) Tool {
 				return Result{}, fmt.Errorf("list accounts: %w", err)
 			}
 			sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
+			hinter, _ := accounts.(AccessHinter)
 			out := make([]accountView, 0, len(list))
 			for _, a := range list {
-				out = append(out, accountView{ID: a.ID, Label: string(a.Label), DisplayName: a.DisplayName})
+				view := accountView{ID: a.ID, Label: string(a.Label), DisplayName: a.DisplayName}
+				if hinter != nil {
+					if hint, err := hinter.AccessHint(ctx, call.Principal.UserID, a); err == nil && hint.GrantURL != "" {
+						view.LockedTools, view.GrantMoreAccess = hint.LockedTools, hint.GrantURL
+					}
+				}
+				out = append(out, view)
 			}
 			return Result{Content: map[string]any{"accounts": out}, Empty: len(out) == 0}, nil
 		},
@@ -363,9 +372,12 @@ func ListAccountsTool(app string, accounts AccountSource) Tool {
 }
 
 // accountView is the wire shape of one account in list_accounts: nothing
-// a token or scope could hide in.
+// a token or scope could hide in. LockedTools and GrantMoreAccess are the
+// AccessHint, present only when the account lacks access.
 type accountView struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	DisplayName string `json:"display_name"`
+	ID              string `json:"id"`
+	Label           string `json:"label"`
+	DisplayName     string `json:"display_name"`
+	LockedTools     int    `json:"locked_tools,omitempty"`
+	GrantMoreAccess string `json:"grant_more_access,omitempty"`
 }
