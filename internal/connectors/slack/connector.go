@@ -49,6 +49,13 @@ type Options struct {
 	// to unresolved. cmd/gateway sets it from the vendor app's
 	// marker_reconcile extra at start-up.
 	MarkerReconcile bool
+	// Accounts, when set, is asked for the account's granted scopes so
+	// list_conversations lists by default only the conversation types the
+	// account may read (asking Slack for a type without its scope fails
+	// the whole listing with missing_scope). cmd/gateway passes the
+	// connections service; without it the default is public and private
+	// channels.
+	Accounts connectors.AccountSource
 }
 
 // Connector is the Slack connector. Safe for concurrent use: it holds no
@@ -62,6 +69,7 @@ type Connector struct {
 	bounds    connectors.Bounds
 	timeout   time.Duration
 	marker    bool
+	accounts  connectors.AccountSource
 	names     *nameCache
 }
 
@@ -99,7 +107,7 @@ func New(opts Options) (*Connector, error) {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	return &Connector{tokens: opts.Tokens, transport: transport, baseURL: u.String(), bounds: bounds, timeout: timeout, marker: opts.MarkerReconcile,
+	return &Connector{tokens: opts.Tokens, transport: transport, baseURL: u.String(), bounds: bounds, timeout: timeout, marker: opts.MarkerReconcile, accounts: opts.Accounts,
 		names: newNameCache(IdentityCacheTTL, IdentityCacheMax)}, nil
 }
 
@@ -109,7 +117,7 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools())
+	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools())
 }
 
 // handler runs one tool against an authenticated client.

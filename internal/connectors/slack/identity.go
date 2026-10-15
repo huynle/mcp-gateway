@@ -18,16 +18,19 @@ import (
 // "deny when channel equals eng-secrets" must hold for the id of
 // #eng-secrets too, so the policy stage asks the connector to name the
 // channel before it decides. The lookup is the same users.conversations
-// walk resolveChannel makes for a name (public and private channels and
-// group DMs the account is a member of, pages of resolveLimit, at most
-// MaxResolvePages) and its result is cached per (account, id) for
+// walk resolveChannel makes for a name (public and private channels the
+// account is a member of, pages of resolveLimit, at most
+// MaxResolvePages); an id that walk does not find is asked about
+// directly with conversations.info (a public channel the account is not
+// a member of, e.g. for join_channel; a group DM, which becomes
+// mpim:<id>). The result is cached per (account, id) for
 // IdentityCacheTTL in a map bounded to IdentityCacheMax entries; only
-// hits are cached, a miss is asked again. A direct-message id (D...)
-// has no name a rule could be written against and passes through
-// unchanged. Any failure (the id is not among the account's
-// conversations, Slack errs, the token cannot be fetched) is an error:
-// the policy stage then denies the call (identity_unresolved) rather
-// than evaluate the raw id against name conditions.
+// hits are cached, a miss is asked again. A direct-message id (D...) has
+// no name a rule could be written against and passes through unchanged.
+// Any failure (Slack does not show the id to this account, Slack errs,
+// the token cannot be fetched) is an error: the policy stage then denies
+// the call (identity_unresolved) rather than evaluate the raw id against
+// name conditions.
 
 // Identity cache parameters.
 const (
@@ -40,11 +43,12 @@ const (
 )
 
 // resolveTypes are the conversation types a channel id is looked up
-// among: the ones the app's user scopes cover (channels:read,
-// groups:read). Group DMs (mpim) need mpim:read, which the app does not
-// request; asking for them made users.conversations fail with
-// missing_scope and every call naming a channel by id was denied. A
-// group-DM id is now not found and denied (fail closed), as before.
+// among: the ones every account's scopes cover (channels:read,
+// groups:read). Group DMs (mpim) need mpim:read, which older connections
+// lack; asking for them made users.conversations fail with missing_scope
+// and every call naming a channel by id was denied. A group-DM id is
+// resolved through the conversations.info fallback instead (it needs
+// mpim:read; without it the id stays unresolved and the call is denied).
 var resolveTypes = []string{"public_channel", "private_channel"}
 
 // ResolveIdentity implements connectors.IdentityResolver: when identity
@@ -90,17 +94,38 @@ func (c *Connector) channelName(ctx context.Context, call connectors.Call, id st
 		return "", err
 	}
 	if ch == nil {
-		return "", &Error{Class: ClassNotFound, Message: fmt.Sprintf("channel %s not found among the conversations this account is a member of (first %d pages)", id, MaxResolvePages)}
+		// Not among the account's channels: a public channel it is not a
+		// member of (join_channel), a group DM, or beyond the page bound.
+		// conversations.info names it; an id Slack does not show this
+		// account stays not found.
+		if ch, err = api.GetConversationInfoContext(ctx, &goslack.GetConversationInfoInput{ChannelID: id}); err != nil {
+			return "", classify("resolve channel", err)
+		}
 	}
-	name := strings.ToLower(ch.Name)
-	if name == "" {
-		name = strings.ToLower(ch.NameNormalized)
-	}
+	name := policyName(ch)
 	if name == "" {
 		return "", &Error{Class: ClassNotFound, Message: fmt.Sprintf("channel %s has no name", id)}
 	}
 	c.names.put(key, name)
 	return name, nil
+}
+
+// policyName is the name policy sees for a conversation: a channel's
+// lower-cased name; mpim:<id> for a group DM (its generated mpdm-... name
+// is not one a rule is written against) and dm:<user> for a DM, matching
+// post_message's dm:<user> identity.
+func policyName(ch *goslack.Channel) string {
+	switch {
+	case ch == nil:
+		return ""
+	case ch.IsMpIM:
+		return "mpim:" + strings.ToUpper(ch.ID)
+	case ch.IsIM && ch.User != "":
+		return "dm:" + strings.ToUpper(ch.User)
+	case ch.Name != "":
+		return strings.ToLower(ch.Name)
+	}
+	return strings.ToLower(ch.NameNormalized)
 }
 
 // findConversation walks the account's conversations of the given

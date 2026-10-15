@@ -123,7 +123,7 @@ func TestToolsDeclared(t *testing.T) {
 			t.Errorf("%s: MaxResultBytes = %d", tool.Name, tool.Bounds.MaxResultBytes)
 		}
 	}
-	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd"; strings.Join(reads, ",") != want {
+	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd,list_conversations"; strings.Join(reads, ",") != want {
 		t.Errorf("reads = %v, want %s", reads, want)
 	}
 	if want := "post_message,reply_in_thread,add_reaction," +
