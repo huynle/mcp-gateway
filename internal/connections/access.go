@@ -98,14 +98,14 @@ func (s *Service) visibleTools(ctx context.Context, vis ToolVisibility, userID s
 // gap, exactly as the scope stage does not refuse it (GitHub App user
 // tokens carry no scope list).
 func (s *Service) MissingAccess(ctx context.Context, userID string, conn Info) (AccessGap, error) {
-	return s.gap(ctx, userID, conn.Vendor, "", conn.Scopes), nil
+	return s.gap(ctx, userID, conn.Vendor, "", connectors.AccountLabel(conn.Label), conn.Scopes), nil
 }
 
 // AccessHint implements connectors.AccessHinter for list_accounts: the
 // account's gap over its own app's tools (not the whole vendor's) and
 // the connections page to close it.
 func (s *Service) AccessHint(ctx context.Context, userID string, acct connectors.Account) (connectors.AccessHint, error) {
-	gap := s.gap(ctx, userID, s.vendorFor(acct.App), acct.App, acct.Scopes)
+	gap := s.gap(ctx, userID, s.vendorFor(acct.App), acct.App, acct.Label, acct.Scopes)
 	if gap.Empty() {
 		return connectors.AccessHint{}, nil
 	}
@@ -115,8 +115,10 @@ func (s *Service) AccessHint(ctx context.Context, userID string, acct connectors
 var _ connectors.AccessHinter = (*Service)(nil)
 
 // gap is MissingAccess over the vendor's tools, or only app's when app
-// is set.
-func (s *Service) gap(ctx context.Context, userID, vendor, app string, granted []string) AccessGap {
+// is set, for an account with label: a tool needing a scope the label
+// cannot grant (connectors.ScopeGrantable) is not promised, and optional
+// scopes it cannot grant are not asked for.
+func (s *Service) gap(ctx context.Context, userID, vendor, app string, label connectors.AccountLabel, granted []string) AccessGap {
 	reg, vis := s.toolCatalog()
 	if reg == nil || len(granted) == 0 {
 		return AccessGap{}
@@ -129,7 +131,11 @@ func (s *Service) gap(ctx context.Context, userID, vendor, app string, granted [
 	var scopes [][]string
 	for _, t := range s.visibleTools(ctx, vis, userID, tools) {
 		required := reg.MissingScopes(t, granted)
-		optional := reg.MissingScopes(connectors.Tool{App: t.App, RequiredScopes: t.OptionalScopes}, granted)
+		if slices.ContainsFunc(required, func(sc string) bool { return !reg.Grantable(t.App, label, sc) }) {
+			continue
+		}
+		optional := slices.DeleteFunc(reg.MissingScopes(connectors.Tool{App: t.App, RequiredScopes: t.OptionalScopes}, granted),
+			func(sc string) bool { return !reg.Grantable(t.App, label, sc) })
 		switch {
 		case len(required) > 0:
 			gap.Tools = append(gap.Tools, t.FullName())
@@ -182,7 +188,7 @@ func (s *Service) flowScopes(ctx context.Context, app VendorApp, req StartReques
 	}
 	var reads []string
 	if len(req.Scopes) == 0 {
-		reads = readScopes(s.visibleTools(ctx, vis, req.UserID, tools), tools)
+		reads = readScopes(reg, s.visibleTools(ctx, vis, req.UserID, tools), tools)
 	}
 	previous, err := s.grantedScopes(ctx, req.UserID, req.ConnectionID, app)
 	if err != nil {
@@ -192,10 +198,13 @@ func (s *Service) flowScopes(ctx context.Context, app VendorApp, req StartReques
 }
 
 // readScopes are the required and optional scopes of the visible read
-// tools that no write tool of the vendor needs: a scope a write needs
-// (Slack's chat:write, which list_scheduled_messages also requires)
-// lets the account write, so it waits for grant more access.
-func readScopes(visible, all []connectors.Tool) []string {
+// tools that no write tool of the vendor needs and every account label
+// can grant: a scope a write needs (Slack's chat:write, which
+// list_scheduled_messages also requires) lets the account write, and a
+// scope some account cannot grant (Microsoft's Teams permissions for
+// personal accounts) would fail the whole consent of such an account;
+// both wait for grant more access.
+func readScopes(reg *connectors.Registry, visible, all []connectors.Tool) []string {
 	writes := map[string]bool{}
 	for _, t := range all {
 		if t.Kind == connectors.KindWrite {
@@ -210,7 +219,7 @@ func readScopes(visible, all []connectors.Tool) []string {
 			continue
 		}
 		for _, sc := range slices.Concat(t.RequiredScopes, t.OptionalScopes) {
-			if !writes[sc] {
+			if !writes[sc] && reg.Grantable(t.App, connectors.LabelCompany, sc) && reg.Grantable(t.App, connectors.LabelPersonal, sc) {
 				out = append(out, sc)
 			}
 		}

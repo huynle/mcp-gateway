@@ -70,3 +70,23 @@ func TestListAccountsCarriesAccessHints(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryScopeGrantable: every scope is grantable by default; an
+// app's ScopeGrantable decides per label; nil restores the default.
+func TestRegistryScopeGrantable(t *testing.T) {
+	reg := connectors.NewRegistry()
+	if !reg.Grantable("ms", connectors.LabelPersonal, "Team.ReadBasic.All") {
+		t.Error("default refuses a scope")
+	}
+	reg.SetScopeGrantable("ms", func(label connectors.AccountLabel, scope string) bool {
+		return label != connectors.LabelPersonal || !strings.HasPrefix(scope, "Team.")
+	})
+	if reg.Grantable("ms", connectors.LabelPersonal, "Team.ReadBasic.All") || !reg.Grantable("ms", connectors.LabelCompany, "Team.ReadBasic.All") ||
+		!reg.Grantable("ms", connectors.LabelPersonal, "Mail.Read") || !reg.Grantable("other", connectors.LabelPersonal, "Team.ReadBasic.All") {
+		t.Error("ScopeGrantable not applied per app and label")
+	}
+	reg.SetScopeGrantable("ms", nil)
+	if !reg.Grantable("ms", connectors.LabelPersonal, "Team.ReadBasic.All") {
+		t.Error("nil did not restore the default")
+	}
+}

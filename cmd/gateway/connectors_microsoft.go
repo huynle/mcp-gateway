@@ -37,6 +37,9 @@ func registerMicrosoft(_ config.Config, registry *connectors.Registry, connSvc *
 	// (microsoft.ScopeCovered); the pipeline's scope stage uses the same
 	// semantics.
 	registry.SetScopeCoverage(microsoft.App, microsoft.ScopeCovered)
+	// Personal accounts cannot grant the Teams permissions: Connect and
+	// grant more access never ask them to.
+	registry.SetScopeGrantable(microsoft.App, microsoft.ScopeGrantable)
 	log.Info("microsoft connector registered", "app", microsoft.App, "tools", len(c.Tools()))
 	return nil
 }
