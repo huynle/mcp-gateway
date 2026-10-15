@@ -39,7 +39,7 @@ type toolDef struct {
 // extraDefs are the tools declared with their handler, in listing order.
 func (c *Connector) extraDefs() []toolDef {
 	var out []toolDef
-	for _, area := range [][]toolDef{c.mailDefs(), c.calendarDefs(), c.driveDefs(), c.teamsDefs()} {
+	for _, area := range [][]toolDef{c.mailDefs(), c.calendarDefs(), c.driveDefs(), c.teamsDefs(), c.todoDefs(), c.peopleDefs()} {
 		out = append(out, area...)
 	}
 	return out
