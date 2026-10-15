@@ -41,6 +41,15 @@
 // (an approximated marker); teams_post_channel_message cannot be checked
 // (none).
 //
+// Tools added to match the reference connectors (mail drafts, reply,
+// forward, move, attachments; calendar get / update / delete / respond
+// and meeting times; OneDrive listing, content, uploads and links; Teams
+// chats; To Do; contacts, people and directory search) are declared
+// with their handler as toolDef (tools_common.go and tools_<area>.go);
+// content moves are capped at MaxContentBytes, and every new write
+// defaults to Ask (migration 00023). WorkOnlyScope names the permissions
+// personal accounts cannot grant.
+//
 // The tool set is designed after Softeria/ms-365-mcp-server (TypeScript,
 // MIT) at the design level only; no code was copied (decision
 // 0sod196t).

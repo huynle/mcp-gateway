@@ -108,7 +108,7 @@ How the gateway asks (`internal/connections/access.go`):
 | Slack | If the workspace restricts app installs ("Admin-approved apps"), a Slack admin must approve the app. The bot token is created when an admin installs the app into the company workspace. |
 | Atlassian | No admin consent step in the 3LO flow; users consent per site. Confirm with the Atlassian org admin that third-party OAuth apps are not blocked for the company sites. |
 | Google | Internal app: Workspace admin may need to allow the app / scopes under Admin console -> Security -> API controls. If the company is **not** a Workspace org there is no Internal app and company users share the External app's 100-user cap. |
-| Microsoft | `ChannelMessage.Read.All` (delegated) **requires admin consent**. Tenants that disable user consent need an admin to consent to the whole permission set. |
+| Microsoft | `ChannelMessage.Read.All` (delegated; `teams_read_channel_messages`, `teams_read_channel_replies`) **requires admin consent**. Every other delegated permission in 5.2, including the ones added for the mail / calendar / OneDrive / Teams chat / To Do / contacts / people / directory tools, is user-consentable. Tenants that disable user consent need an admin to consent to the whole permission set. |
 
 ---
 
@@ -534,11 +534,38 @@ the checklist. Rotation is an admin-portal change plus a new secret here.
 | `Mail.Send` | write | `mail.send` | No |
 | `Calendars.ReadWrite` | write | `calendar.create_event` (superset of `Calendars.Read`; requested only when writes are enabled) | No |
 | `Files.ReadWrite` | write | `drive.create_folder` in the user's own OneDrive (use `Files.ReadWrite.All` instead if folders must be created in SharePoint libraries) | No |
-| `ChannelMessage.Send` | write | `teams.post_channel_message` | No |
+| `ChannelMessage.Send` | write | `teams.post_channel_message`, `teams_reply_channel_message` | No |
+| `Mail.ReadWrite` | write | `mail_create_draft`, `mail_move`, `mail_mark_read`, `mail_delete` (`Mail.Send` also covers `mail_send_draft`, `mail_reply`, `mail_forward`; `Mail.Read` covers `mail_list_folders`, `mail_list_attachments`, `mail_get_attachment`) | No |
+| `Calendars.Read.Shared` | read | `calendar_find_meeting_times` (work accounts only) | No |
+| `Chat.ReadBasic` | read | `teams_list_chats` (work accounts only; `Chat.Read` covers it) | No |
+| `Chat.Read` | read | `teams_read_chat_messages` (work accounts only) | No |
+| `ChatMessage.Send` | write | `teams_send_chat_message` (work accounts only) | No |
+| `Tasks.Read` | read | `todo_list_lists`, `todo_list_tasks` | No |
+| `Tasks.ReadWrite` | write | `todo_create_task`, `todo_update_task`, `todo_complete_task` | No |
+| `Contacts.Read` | read | `contacts_search` | No |
+| `People.Read` | read | `people_search` | No |
+| `User.ReadBasic.All` | read | `users_search` (directory search; work accounts only) | No |
 
-No application permissions. Teams permissions are **not supported for personal
-Microsoft accounts**; the gateway hides the Teams tools for those connections (design
-section 5).
+`Calendars.ReadWrite` also covers `calendar_list_calendars`, `calendar_get_event`,
+`calendar_update_event`, `calendar_delete_event` and `calendar_respond_event`;
+`Files.Read.All` covers `drive_list_children` and `drive_get_file_content`;
+`Files.ReadWrite` covers `drive_upload_file` and `drive_create_share_link`;
+`ChannelMessage.Read.All` covers `teams_read_channel_replies`.
+
+**Operator step (tool-gap release, migration 23).** Add the ten delegated permissions
+above that are new -- `Mail.ReadWrite`, `Calendars.Read.Shared`, `Chat.ReadBasic`,
+`Chat.Read`, `ChatMessage.Send`, `Tasks.Read`, `Tasks.ReadWrite`, `Contacts.Read`,
+`People.Read`, `User.ReadBasic.All` -- under **API permissions -> Add a permission ->
+Microsoft Graph -> Delegated permissions** of the existing registration. None needs admin
+consent; tenants with user consent disabled need an admin to re-consent to the full list.
+Do **not** add them to the vendor app's base **Scopes**: users get them through **Grant
+more access** on `/connections` for the tools their role shows.
+
+No application permissions. Teams chat, SharePoint, directory (`User.ReadBasic.All`)
+and shared-calendar (`Calendars.Read.Shared`) permissions are **not supported for
+personal Microsoft accounts** (`microsoft.WorkOnlyScope`): Connect and Grant more access
+never ask personal accounts for them, the binder strips them, and the tools that need
+them answer `scope_required` for those connections.
 
 ### 5.3 Admin consent
 
@@ -684,6 +711,17 @@ servers keep their own per-server modes (servers portal / `/admin/servers/{id}`)
 | confirm | confirm | confirm |
 | deny / hidden | deny / hidden | deny / hidden |
 | no rule | hidden | hidden |
+
+**Seeded Ask defaults (Microsoft).** Migration 23 (`00023_microsoft_default_ask.sql`)
+stores Ask for every Microsoft write added to close the gap with the reference
+Microsoft 365 connectors: `mail_create_draft`, `mail_send_draft`, `mail_reply`,
+`mail_forward`, `mail_move`, `mail_mark_read`, `mail_delete`, `calendar_update_event`,
+`calendar_delete_event`, `calendar_respond_event`, `drive_upload_file`,
+`drive_create_share_link`, `teams_send_chat_message`, `teams_reply_channel_message`,
+`todo_create_task`, `todo_update_task`, `todo_complete_task`. `mail_send`,
+`calendar_create_event`, `drive_create_folder` and `teams_post_channel_message` stay Auto.
+`TestMicrosoftNewWritesAreSeededAsAsk` (`cmd/gateway`) fails when a new Microsoft write
+ships without a seed.
 
 **Seeded Ask defaults.** Migration 20 (`00020_slack_default_ask.sql`) stores Ask for
 every Slack write added with Brain decision `aud38ptd`: `create_channel`,
