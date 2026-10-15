@@ -139,13 +139,27 @@ func (c *Connector) checkEvent(ctx context.Context, in connectors.ReconcileInput
 // would be taken as this write's; the connector's "fail on conflict"
 // request makes that the only way two such folders can exist.
 func (c *Connector) checkFolder(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	return c.checkChildNamed(ctx, in, "folder", true)
+}
+
+// checkFile is drive_upload_file's approximated marker reconciliation,
+// the same as checkFolder for a file named by the identity's "file"
+// (the upload asks Graph to fail on a name conflict).
+func (c *Connector) checkFile(ctx context.Context, in connectors.ReconcileInput) (connectors.ReconcileResult, error) {
+	return c.checkChildNamed(ctx, in, "file", false)
+}
+
+// checkChildNamed lists the identity's parent (bounded by
+// MaxReconcilePages) for a folder (isFolder) or file whose name equals
+// the identity's nameKey case-insensitively.
+func (c *Connector) checkChildNamed(ctx context.Context, in connectors.ReconcileInput, nameKey string, isFolder bool) (connectors.ReconcileResult, error) {
 	tg, err := c.target(ctx, in)
 	if err != nil {
 		return connectors.ReconcileResult{}, err
 	}
-	name := in.ResourceIdentity["folder"]
+	name := in.ResourceIdentity[nameKey]
 	if name == "" {
-		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no folder name", ErrNotReconcilable)
+		return connectors.ReconcileResult{}, fmt.Errorf("%w: resource identity has no %s name", ErrNotReconcilable, nameKey)
 	}
 	drive, parent := in.ResourceIdentity["drive"], in.ResourceIdentity["parent"]
 	if (drive != "" && !idRE.MatchString(drive)) || (parent != "" && !idRE.MatchString(parent)) {
@@ -153,7 +167,7 @@ func (c *Connector) checkFolder(ctx context.Context, in connectors.ReconcileInpu
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	query := url.Values{"$select": {"id,name,folder"}, "$top": {fmt.Sprint(reconcilePerPage)}}
+	query := url.Values{"$select": {"id,name,folder,file"}, "$top": {fmt.Sprint(reconcilePerPage)}}
 	next, q := childrenPath(drive, parent), query
 	for page := 1; page <= MaxReconcilePages; page++ {
 		var pg struct {
@@ -166,7 +180,7 @@ func (c *Connector) checkFolder(ctx context.Context, in connectors.ReconcileInpu
 			}
 		}
 		for _, item := range pg.Value {
-			if item.Folder != nil && item.ID != "" && strings.EqualFold(item.Name, name) {
+			if (item.Folder != nil) == isFolder && item.ID != "" && strings.EqualFold(item.Name, name) {
 				return found(item.ID), nil
 			}
 		}
