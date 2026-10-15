@@ -21,6 +21,17 @@
 // (reconnect_required, not_found, forbidden, invalid_argument,
 // vendor_error).
 //
+// The account-management tools (Brain decision aud38ptd) act as the
+// user through the same user token, never Slack's admin.* APIs:
+// channels and members (tools_channels.go), message edits, deletes,
+// scheduling and pins (tools_messages.go), file uploads
+// (tools_files.go), the user's own status and Do Not Disturb
+// (tools_profile.go) and DM listing (tools_conversations.go). Their
+// writes reconcile by stable id where Slack's state can be read back
+// (conversations.info, conversations.members, pins.list, users.info,
+// dnd.info) and declare none otherwise; migration 00020 seeds them as
+// Ask (vendor_tool_approvals).
+//
 // Writes require the ledger's Call.OperationID (ErrMissingOperation
 // otherwise). post_message and reply_in_thread declare reconciliation
 // none by default (an unknown outcome goes straight to unresolved: a
@@ -42,7 +53,7 @@
 // Channel and message handling is adapted from korotovsky/slack-mcp-server
 // (MIT; see THIRD_PARTY_NOTICES.md).
 //
-// Design: Brain plan 36bakiw8 section 5; decisions bt8ukyrd, mh7c6z3v,
+// Design: Brain plan 36bakiw8 section 5; decisions aud38ptd, bt8ukyrd, mh7c6z3v,
 // dovthftx, wcp2fmbz, rrmfnkqu, q282qtlz, 0sod196t.
 package slack
 
