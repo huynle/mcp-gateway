@@ -120,12 +120,15 @@ func New(opts Options) (*Connector, error) {
 	c.calendar = c.newApp(AppCalendar,
 		append(c.calendarReadTools(), c.calendarManageReadTools()...), append(c.calendarWriteTools(), c.calendarManageWriteTools()...),
 		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()), merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers()))
-	c.tasks = c.newApp(AppTasks, c.tasksReadTools(), c.tasksWriteTools(), c.tasksReadHandlers(), c.tasksWriteHandlers())
+	c.tasks = c.newApp(AppTasks,
+		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
+		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
 	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
 	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())
-	c.contacts = c.newApp(AppContacts, c.contactsReadTools(), c.contactsWriteTools(), c.contactsReadHandlers(), c.contactsWriteHandlers())
+	c.contacts = c.newApp(AppContacts, append(c.contactsReadTools(), c.contactsManageReadTools()...), c.contactsWriteTools(),
+		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers()), c.contactsWriteHandlers())
 	return c, nil
 }
 

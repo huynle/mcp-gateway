@@ -31,12 +31,12 @@ func TestAppsAndToolNames(t *testing.T) {
 	}
 	want := map[string][]string{
 		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event"},
-		google.AppTasks:    {"list", "create"},
+		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "send", "create_draft"},
 		google.AppDrive:    {"search", "get_file_metadata", "create_folder"},
 		google.AppDocs:     {"get_text", "create", "append_text"},
 		google.AppSheets:   {"read_range", "append_rows"},
-		google.AppContacts: {"search"},
+		google.AppContacts: {"search", "get", "list"},
 	}
 	for app, names := range want {
 		var got []string

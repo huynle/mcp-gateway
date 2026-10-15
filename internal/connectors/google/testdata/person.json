@@ -1,0 +1,5 @@
+{"resourceName": "people/c1234567890", "etag": "%EgUBAi43PRoEAQIFByIM",
+ "names": [{"displayName": "Bob Example", "givenName": "Bob", "familyName": "Example"}],
+ "emailAddresses": [{"value": "bob@example.test"}, {"value": "bob.home@example.test"}],
+ "organizations": [{"name": "Example Corp", "title": "Engineer"}],
+ "phoneNumbers": [{"value": "+1 555 0100"}]}
