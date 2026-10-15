@@ -26,10 +26,14 @@ func identityOf(t *testing.T, c *slack.Connector, channel string) map[string]str
 // resolveRoutes is the two-page conversations listing the fixture
 // server answers (eng-general and eng-leads on page 1, random on page 2).
 func resolveRoutes() map[string]route {
-	return map[string]route{"users.conversations": {byCursor: map[string]route{
-		"":                     {body: "users_conversations_page1.json"},
-		"dXNlcjpVMEc5V0ZYTlo=": {body: "users_conversations_page2.json"},
-	}}}
+	return map[string]route{
+		"users.conversations": {byCursor: map[string]route{
+			"":                     {body: "users_conversations_page1.json"},
+			"dXNlcjpVMEc5V0ZYTlo=": {body: "users_conversations_page2.json"},
+		}},
+		// An id missing from the listing is asked about directly.
+		"conversations.info": {body: "error_channel_not_found.json"},
+	}
 }
 
 // TestResolveIdentityChannelID: a channel given by id is resolved to
@@ -186,7 +190,10 @@ func TestResolveIdentityFailures(t *testing.T) {
 	}
 
 	// Bounded: a listing that never ends stops after MaxResolvePages.
-	endless := map[string]route{"users.conversations": {body: `{"ok":true,"channels":[{"id":"C0ENGGEN01","name":"eng-general","is_channel":true}],"response_metadata":{"next_cursor":"more"}}`}}
+	endless := map[string]route{
+		"users.conversations": {body: `{"ok":true,"channels":[{"id":"C0ENGGEN01","name":"eng-general","is_channel":true}],"response_metadata":{"next_cursor":"more"}}`},
+		"conversations.info":  {body: "error_channel_not_found.json"},
+	}
 	srv4 := newAPIServer(t, endless)
 	c4, _ := newConnector(t, srv4, slack.Options{})
 	if _, err := c4.ResolveIdentity(context.Background(), call("post_message", nil), in); !errors.As(err, &se) || se.Class != slack.ClassNotFound {

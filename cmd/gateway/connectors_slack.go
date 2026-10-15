@@ -30,7 +30,7 @@ import (
 // changing it takes effect at the next start.
 func registerSlack(_ config.Config, registry *connectors.Registry, connSvc *connections.Service, log *slog.Logger) error {
 	marker := slackMarkerReconcile(connSvc, log)
-	c, err := slack.New(slack.Options{Tokens: connSvc.TokenSource, MarkerReconcile: marker})
+	c, err := slack.New(slack.Options{Tokens: connSvc.TokenSource, Accounts: connSvc, MarkerReconcile: marker})
 	if err != nil {
 		return fmt.Errorf("slack: %w", err)
 	}

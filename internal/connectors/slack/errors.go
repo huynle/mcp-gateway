@@ -71,18 +71,32 @@ func (e *Error) Unwrap() error { return e.Err }
 
 // Slack ok:false error codes by class. Codes not listed are vendor_error.
 var (
+	conflictCodes  = set("name_taken")
 	reconnectCodes = set("invalid_auth", "not_authed", "token_revoked", "token_expired", "account_inactive", "invalid_refresh_token")
 	forbiddenCodes = set("missing_scope", "not_allowed", "not_allowed_token_type", "restricted_action", "user_is_restricted",
 		"user_is_ultra_restricted", "not_in_channel", "is_archived", "ekm_access_denied", "org_login_required",
 		"team_access_not_granted", "channel_is_archived", "posting_to_general_channel_denied", "restricted_action_read_only_channel",
-		"restricted_action_thread_only_channel", "restricted_action_non_threadable_channel", "restricted_action_thread_locked")
+		"restricted_action_thread_only_channel", "restricted_action_non_threadable_channel", "restricted_action_thread_locked",
+		"cant_archive_general", "cant_archive_required", "cant_leave_general", "cant_kick_from_general", "cant_invite", "last_member",
+		"no_permission", "not_authorized", "access_denied", "channel_is_limited_access", "app_cannot_join_channel",
+		"invitee_cant_see_channel", "no_external_invite_permission", "ura_max_channels", "cannot_create_channel",
+		"cant_update_message", "cant_delete_message", "edit_window_closed", "compliance_exports_prevent_deletion",
+		"posting_to_channel_denied", "not_pinnable", "file_uploads_disabled", "file_uploads_except_images_disabled",
+		"file_type_not_allowed", "user_is_external_guest", "cannot_update_admin_user", "two_factor_setup_required")
 	notFoundCodes = set("channel_not_found", "user_not_found", "users_not_found", "thread_not_found", "message_not_found",
-		"not_found", "no_item_specified", "team_not_found")
+		"not_found", "no_item_specified", "team_not_found", "no_user", "invalid_scheduled_message_id", "file_not_found",
+		"user_not_visible")
 	invalidCodes = set("invalid_arguments", "invalid_arg_name", "invalid_cursor", "invalid_ts_latest", "invalid_ts_oldest",
 		"invalid_name", "invalid_limit", "invalid_page", "invalid_count", "msg_too_long", "no_text", "bad_timestamp",
 		"invalid_blocks", "invalid_blocks_format", "invalid_metadata_format", "invalid_metadata_schema", "too_many_attachments",
 		"invalid_json", "json_not_object", "invalid_form_data", "query_too_long", "invalid_charset", "invalid_post_type",
-		"too_many_emoji", "too_many_reactions", "invalid_thread_ts")
+		"too_many_emoji", "too_many_reactions", "invalid_thread_ts",
+		"invalid_name_required", "invalid_name_punctuation", "invalid_name_maxlength", "invalid_name_specials", "no_channel",
+		"cant_kick_self", "cant_invite_self", "method_not_supported_for_channel_type", "too_long", "too_many_users",
+		"too_many_members", "missing_argument", "invalid_array_arg", "invalid_channel", "invalid_channel_id",
+		"time_in_past", "time_too_far", "invalid_time", "too_many_pins", "missing_duration", "invalid_profile",
+		"must_clear_both_status_text_and_status_emoji", "invalid_emoji_not_allowed", "file_upload_size_restricted",
+		"snippet_too_large", "alt_txt_too_large", "invalid_starts_with_at")
 	unavailableCodes = set("fatal_error", "internal_error", "service_unavailable", "request_timeout")
 )
 
@@ -143,6 +157,9 @@ func fromCode(action, code string, err error) error {
 	switch {
 	case code == "ratelimited":
 		return &connectors.RateLimited{App: App, RetryAfter: DefaultRetryAfter}
+	case conflictCodes[code]:
+		e.Class = ClassConflict
+		e.Message = action + ": it already exists (pick another name)"
 	case reconnectCodes[code]:
 		e.Class = ClassReconnectRequired
 		e.Message = action + ": Slack rejected this account's token; reconnect your Slack account on the portal (Connections)"

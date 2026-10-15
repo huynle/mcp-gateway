@@ -158,13 +158,19 @@ func (c *Connector) readTools() []connectors.Tool {
 
 // handlers maps short tool names to their implementation.
 func (c *Connector) handlers() map[string]handler {
-	return map[string]handler{
+	m := map[string]handler{
 		ToolListChannels:       c.listChannels,
 		ToolReadChannelHistory: c.readChannelHistory,
 		ToolGetThread:          c.getThread,
 		ToolSearchMessages:     c.searchMessages,
 		ToolGetUser:            c.getUser,
 	}
+	for _, more := range []map[string]handler{c.messageReadHandlers(), c.profileReadHandlers(), c.conversationHandlers()} {
+		for name, h := range more {
+			m[name] = h
+		}
+	}
+	return m
 }
 
 // --- schema helpers ----------------------------------------------------------
@@ -193,10 +199,17 @@ func objectSchema(props []property, required []string) json.RawMessage {
 		Enum        []string `json:"enum,omitempty"`
 		Minimum     *int     `json:"minimum,omitempty"`
 		Maximum     *int     `json:"maximum,omitempty"`
+		Items       any      `json:"items,omitempty"`
+		MaxItems    *int     `json:"maxItems,omitempty"`
+		MinItems    *int     `json:"minItems,omitempty"`
 	}
 	properties := map[string]schemaProp{}
 	for _, p := range props {
 		sp := schemaProp{Type: p.Type, Description: p.Description, Enum: p.Enum}
+		if p.Type == "array" {
+			one, max := 1, MaxInviteUsers
+			sp.Items, sp.MinItems, sp.MaxItems = map[string]string{"type": "string"}, &one, &max
+		}
 		switch p.Name {
 		case "page":
 			one := 1

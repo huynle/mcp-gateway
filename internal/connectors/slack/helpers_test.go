@@ -44,6 +44,7 @@ type recorded struct {
 	Path   string
 	Form   url.Values
 	Header http.Header
+	Body   []byte
 }
 
 // apiServer is an httptest server answering Slack Web API methods
@@ -74,7 +75,7 @@ func newAPIServer(t *testing.T, routes map[string]route) *apiServer {
 		}
 		method := strings.TrimPrefix(r.URL.Path, "/api/")
 		s.mu.Lock()
-		s.requests = append(s.requests, recorded{Method: method, Path: r.URL.Path, Form: form, Header: r.Header.Clone()})
+		s.requests = append(s.requests, recorded{Method: method, Path: r.URL.Path, Form: form, Header: r.Header.Clone(), Body: body})
 		s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		tok := form.Get("token")

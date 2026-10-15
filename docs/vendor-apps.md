@@ -176,9 +176,33 @@ Slack requires **HTTPS** for every redirect URL, so `localhost` cannot be regist
 | `chat:write` | write | `slack.post_message`, `slack.reply_in_thread` |
 | `im:write` | write | `slack.post_message`, `slack.reply_in_thread` to a user id: opens the direct message (`conversations.open`), e.g. a note to yourself. Optional: without it only channels work |
 | `reactions:write` | write | `slack.add_reaction` |
+| `channels:write` | write | `slack.create_channel` (public), `slack.rename_channel`, `slack.archive_channel`, `slack.unarchive_channel`, `slack.set_channel_topic`, `slack.set_channel_purpose`, `slack.join_channel`, `slack.leave_channel`, `slack.invite_to_channel`, `slack.remove_from_channel` (public channels; `channels:manage` is the bot-token equivalent and does not apply to user tokens) |
+| `groups:write` | write | the same channel tools on **private** channels, and `slack.create_channel` with `is_private` |
+| `pins:read` | read | `slack.list_pins` |
+| `pins:write` | write | `slack.pin_message`, `slack.unpin_message` |
+| `files:write` | write | `slack.upload_file` |
+| `users.profile:write` | write | `slack.set_status`, `slack.clear_status` (the user's own status) |
+| `dnd:read` | read | `slack.get_dnd` |
+| `dnd:write` | write | `slack.set_dnd`, `slack.end_dnd` (the user's own Do Not Disturb snooze) |
+| `im:read`, `mpim:read` | read | `slack.list_conversations` lists DMs / group DMs only when granted; group-DM ids resolve for policy (`mpim:<id>`) with `mpim:read` |
+| `im:history`, `mpim:history` | read | `slack.read_channel_history`, `slack.get_thread` with a DM (`D…`) or group-DM id |
 
-Optional, only if DMs/group DMs should be readable through the gateway: `im:read`,
-`mpim:read`, `im:history`, `mpim:history`. Not in v1 by default.
+`chat:write` also covers `slack.update_message`, `slack.delete_message`,
+`slack.schedule_message`, `slack.list_scheduled_messages` and
+`slack.delete_scheduled_message`.
+
+Everything above acts **as the connected user** through the user token (Brain decision
+`aud38ptd`): a user can only do what Slack already lets that user do (create a channel
+when the workspace allows members to, archive one they may archive, remove members only
+where they may). The gateway never requests Slack's `admin.*` scopes and offers no
+workspace administration.
+
+**Adding scopes to an existing app.** Users who connected before a scope was added keep
+their old grant until they **reconnect** Slack on `/connections` (Slack issues a new
+user token with the new scopes); until then the scope stage answers `scope_required`
+for the tools that need the missing scopes and every other tool keeps working.
+Workspaces with **Admin-approved apps** must re-approve the app after its scope list
+changes (Slack treats new scopes as a new request), before anyone can grant them.
 
 **Token shape.** The code exchange (`oauth.v2.access`) of an app with bot *and* user
 scopes answers with the bot token as the top-level `access_token` and the user's own
@@ -233,6 +257,18 @@ oauth_config:
       - chat:write
       - im:write
       - reactions:write
+      - channels:write
+      - groups:write
+      - pins:read
+      - pins:write
+      - files:write
+      - users.profile:write
+      - dnd:read
+      - dnd:write
+      - im:read
+      - mpim:read
+      - im:history
+      - mpim:history
     bot:
       - chat:write
       - im:write
@@ -527,7 +563,15 @@ Every v1 tool in plan section 5 maps to at least one registered scope above:
 - Slack: `list_channels` (`channels:read`, `groups:read`), `read_channel_history`,
   `get_thread` (`channels:history`, `groups:history`), `search_messages` (`search:read`),
   `get_user` (`users:read`), `post_message`, `reply_in_thread` (`chat:write`),
-  `add_reaction` (`reactions:write`). Approval DMs: bot `chat:write`, `im:write`.
+  `add_reaction` (`reactions:write`); channel and member management
+  (`channels:write`, `groups:write`), `update_message`, `delete_message`,
+  `schedule_message`, `list_scheduled_messages`, `delete_scheduled_message`
+  (`chat:write`), `list_pins` (`pins:read`), `pin_message`, `unpin_message`
+  (`pins:write`), `upload_file` (`files:write`), `set_status`, `clear_status`
+  (`users.profile:write`), `get_dnd` (`dnd:read`), `set_dnd`, `end_dnd` (`dnd:write`),
+  `list_conversations` (`channels:read`, `groups:read`, plus `im:read` / `mpim:read`
+  for DMs; DM history `im:history` / `mpim:history`). Approval DMs: bot `chat:write`,
+  `im:write`.
 - Atlassian: `jira.search_issues`, `jira.get_issue`, `jira.list_transitions`
   (`read:jira-work`, `read:jira-user`), `confluence.search` (`search:confluence`),
   `confluence.get_page` (`read:confluence-content.all` / `read:page:confluence`),
@@ -566,7 +610,13 @@ No registered scope is unused by a v1 tool except `openid`/`userinfo.email`,
   (`docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app`).
 - Slack: method references `conversations.list`, `conversations.history`,
   `conversations.replies`, `search.messages`, `users.info`, `chat.postMessage`,
-  `reactions.add`, `conversations.open` (`docs.slack.dev/reference/methods/...`);
+  `reactions.add`, `conversations.open`, and (2026-10-15) `conversations.create`,
+  `.rename`, `.archive`, `.unarchive`, `.setTopic`, `.setPurpose`, `.join`, `.leave`,
+  `.invite`, `.kick`, `.info`, `.members`, `users.conversations`, `chat.update`,
+  `chat.delete`, `chat.scheduleMessage`, `chat.scheduledMessages.list`,
+  `chat.deleteScheduledMessage`, `pins.add` / `.remove` / `.list`,
+  `files.getUploadURLExternal`, `files.completeUploadExternal`, `users.profile.set`,
+  `dnd.info`, `dnd.setSnooze`, `dnd.endSnooze` (`docs.slack.dev/reference/methods/...`);
   "Installing with OAuth" (HTTPS redirect requirement); "Handling user interaction"
   (Interactivity & Shortcuts -> Request URL); "Verifying requests from Slack".
 - Atlassian: Jira scopes for OAuth 2.0 (3LO)
@@ -587,7 +637,7 @@ Once a vendor is configured, its page (**Settings → Vendor apps → <vendor>**
 "Ask for all" and "Run all without asking" set every write of one app; a counts line shows
 `N write tools · A auto · K ask`.
 
-- **Auto** (the default for every tool, and the behaviour before this setting existed):
+- **Auto** (the default for most tools, and the behaviour before this setting existed):
   the tool runs as the user's roles say.
 - **Ask**: every call of the tool needs the user's approval first (`/approvals` or Slack),
   for every user, org-wide.
@@ -604,6 +654,18 @@ servers keep their own per-server modes (servers portal / `/admin/servers/{id}`)
 | confirm | confirm | confirm |
 | deny / hidden | deny / hidden | deny / hidden |
 | no rule | hidden | hidden |
+
+**Seeded Ask defaults.** Migration 20 (`00020_slack_default_ask.sql`) stores Ask for
+every Slack write added with Brain decision `aud38ptd`: `create_channel`,
+`rename_channel`, `archive_channel`, `unarchive_channel`, `set_channel_topic`,
+`set_channel_purpose`, `join_channel`, `leave_channel`, `invite_to_channel`,
+`remove_from_channel`, `update_message`, `delete_message`, `schedule_message`,
+`delete_scheduled_message`, `pin_message`, `unpin_message`, `upload_file`, `set_status`,
+`clear_status`, `set_dnd`, `end_dnd`. They need a confirmation on every call until an
+admin switches them to Auto; `post_message`, `reply_in_thread` and `add_reaction` stay
+Auto. A row an admin already wrote is kept (`ON CONFLICT DO NOTHING`); the migration's
+Down removes exactly those rows. `TestSlackNewWritesAreSeededAsAsk` (`cmd/gateway`)
+fails when a new Slack write ships without a seed.
 
 Storage and policy: only the tools set to Ask are stored (`vendor_tool_approvals`,
 migration 19: `app`, `tool`, `updated_by`, `updated_at`; the `gateway` app is refused).

@@ -123,11 +123,17 @@ func (c *Connector) writeTools() []connectors.Tool {
 
 // writeHandlers maps the write tools' short names to their implementation.
 func (c *Connector) writeHandlers() map[string]handler {
-	return map[string]handler{
+	m := map[string]handler{
 		ToolPostMessage:   c.postMessage,
 		ToolReplyInThread: c.replyInThread,
 		ToolAddReaction:   c.addReaction,
 	}
+	for _, more := range []map[string]handler{c.channelHandlers(), c.messageWriteHandlers(), c.fileHandlers(), c.profileWriteHandlers()} {
+		for name, h := range more {
+			m[name] = h
+		}
+	}
+	return m
 }
 
 // --- result ids -------------------------------------------------------------------
