@@ -36,6 +36,7 @@ type harness struct {
 	conn *connections.Service
 	mem  *connectionstest.MemStore
 	logs *bytes.Buffer
+	cp   *connections.Portal
 }
 
 func newHarness(t *testing.T) *harness {
@@ -76,7 +77,7 @@ func newHarness(t *testing.T) *harness {
 	cp.MountConnect(p.MountUser)
 	cp.MountAdmin(p.MountAdmin)
 	svc.OnDisable(csvc.DisableHook())
-	return &harness{h: p.Handler(), svc: svc, conn: csvc, mem: mem, logs: logs}
+	return &harness{h: p.Handler(), svc: svc, conn: csvc, mem: mem, logs: logs, cp: cp}
 }
 
 func (h *harness) session(t *testing.T, subject, name string) (*http.Cookie, *identity.Principal) {
