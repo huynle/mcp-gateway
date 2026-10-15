@@ -94,3 +94,79 @@ func TestIntegrationServerApprovalsLoaded(t *testing.T) {
 		t.Errorf("owner ask write = %v, %v; want confirm", d.Outcome, err)
 	}
 }
+
+type integrationCatalog []connectors.Tool
+
+func (c integrationCatalog) List() []connectors.Tool { return c }
+func (integrationCatalog) IsServerApp(string) bool   { return false }
+
+// Vendor app approval modes round-trip through vendor_tool_approvals: the
+// Ask set is stored, loaded into the compiled policy (a role allow now
+// confirms) and versioned under the admin; Auto deletes the row; the
+// table refuses the gateway app.
+func TestIntegrationVendorToolApprovals(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	var admin, member string
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		for _, id := range []*string{&admin, &member} {
+			u := &store.User{DisplayName: "U", Status: store.UserActive}
+			if err := tx.Users().Create(ctx, u); err != nil {
+				return err
+			}
+			*id = u.ID
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	create := connectors.Tool{App: "github", Name: "create_issue", Kind: connectors.KindWrite}
+	svc, err := policy.New(policy.NewPostgresStore(st), policy.Options{Tools: integrationCatalog{create}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveRole(ctx, admin, policy.Role{Name: "dev", Rules: []policy.ToolRule{{App: "github", Tool: policy.Wildcard, Outcome: policy.OutcomeAllow}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO role_assignments (user_id, role_id) SELECT $1, id FROM roles WHERE name = 'dev'`, member)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.Invalidate()
+	if d, err := svc.Decide(ctx, policy.Input{UserID: member, Tool: create}); err != nil || d.Outcome != policy.OutcomeAllow {
+		t.Fatalf("before = %v, %v; want allow", d.Outcome, err)
+	}
+	if _, err := svc.SetAppApprovalModes(ctx, admin, "github", map[string]snapshot.Approval{"create_issue": snapshot.ApprovalAsk}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := policy.NewPostgresStore(st).Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Apps) != 1 || snap.Apps[0].App != "github" || !slices.Equal(snap.Apps[0].Ask, []string{"create_issue"}) {
+		t.Fatalf("Apps = %+v", snap.Apps)
+	}
+	d, err := svc.Decide(ctx, policy.Input{UserID: member, Tool: create})
+	if err != nil || d.Outcome != policy.OutcomeConfirm {
+		t.Fatalf("after ask = %v, %v; want confirm", d.Outcome, err)
+	}
+	var createdBy *string
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		return tx.QueryRow(ctx, `SELECT created_by FROM policy_versions WHERE id = $1`, d.VersionID).Scan(&createdBy)
+	}); err != nil || createdBy == nil || *createdBy != admin {
+		t.Errorf("version created_by = %v, %v; want the admin", createdBy, err)
+	}
+	if _, err := svc.SetAppApprovalModes(ctx, admin, "github", map[string]snapshot.Approval{"create_issue": snapshot.ApprovalAuto}); err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ := policy.NewPostgresStore(st).Load(ctx); len(snap.Apps) != 0 {
+		t.Errorf("Apps after auto = %+v, want none", snap.Apps)
+	}
+	if err := st.WithJobs(ctx, func(tx store.Tx) error {
+		return store.ReplaceVendorToolApprovals(ctx, tx, policy.GatewayApp, []string{"delete_server"}, admin)
+	}); err == nil {
+		t.Error("the table accepted the gateway app")
+	}
+}
