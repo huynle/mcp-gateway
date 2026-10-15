@@ -53,17 +53,23 @@ func (c *Connector) writeTools() []connectors.Tool {
 			},
 		}
 	}
-	return []connectors.Tool{
+	return append([]connectors.Tool{
 		{
 			App: JiraApp, Name: ToolCreateIssue, Kind: connectors.KindWrite,
 			Description: "Create a Jira issue in a project (by project key) with an issue type (Task, Bug, Story, ...), a summary and an " +
-				"optional plain-text description and labels. Returns the new issue's key, id and url.",
+				"optional plain-text description, labels, parent, priority, assignee and further fields (ids from get_create_fields). " +
+				"Returns the new issue's key, id and url.",
 			InputSchema: objectSchema([]property{
 				{"project_key", "string", "Key of the project to create the issue in, like ABC.", nil},
 				{"issue_type", "string", "Issue type name, like Task or Bug.", nil},
 				{"summary", "string", "Issue summary (title).", nil},
 				{"description", "string", "Issue description as plain text (one paragraph per line).", nil},
 				{"labels", "array", "Labels to apply.", nil},
+				{"parent_key", "string", "Optional parent issue key (for a sub-task, or an epic's child).", nil},
+				{"priority", "string", "Optional priority name, like High.", nil},
+				{"assignee_account_id", "string", "Optional account id of the assignee (from search_users or list_assignable_users).", nil},
+				{"fields", "object", "Optional further fields by field id, as Jira's REST v3 values (see get_create_fields), " +
+					`for example {"customfield_10010": [{"value": "Platform"}]}. The named arguments above win over the same keys here.`, nil},
 			}, []string{"project_key", "issue_type", "summary"}),
 			RequiredScopes:   []string{ScopeJiraWrite},
 			ResourceIdentity: jiraIdentity,
@@ -98,7 +104,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 			ResultIDs:        transitionResultIDs,
 			Bounds:           single,
 		},
-	}
+	}, c.jiraMoreWriteTools()...)
 }
 
 // writeHandlers maps the write tools' short names to their implementation.
@@ -106,7 +112,11 @@ func (c *Connector) writeHandlers() map[string]handler {
 	if c.app == ConfluenceApp {
 		return map[string]handler{ToolCreatePage: c.createPage}
 	}
-	return map[string]handler{ToolCreateIssue: c.createIssue, ToolAddComment: c.addComment, ToolTransitionIssue: c.transitionIssue}
+	h := map[string]handler{ToolCreateIssue: c.createIssue, ToolAddComment: c.addComment, ToolTransitionIssue: c.transitionIssue}
+	for name, run := range c.jiraMoreWriteHandlers() {
+		h[name] = run
+	}
+	return h
 }
 
 // --- result ids -------------------------------------------------------------------
@@ -210,12 +220,17 @@ func (c *Connector) createIssue(ctx context.Context, s *session, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	fields := map[string]any{
-		"project":     map[string]string{"key": project},
-		"issuetype":   map[string]string{"name": issueType},
-		"summary":     summary,
-		"description": adfDocument(description, Marker(call.OperationID)),
+	fields, err := extraFields(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
 	}
+	if err := setNamedFields(fields, call.Args); err != nil {
+		return connectors.Result{}, err
+	}
+	fields["project"] = map[string]string{"key": project}
+	fields["issuetype"] = map[string]string{"name": issueType}
+	fields["summary"] = summary
+	fields["description"] = adfDocument(description, Marker(call.OperationID))
 	if labels != nil {
 		fields["labels"] = labels
 	}
