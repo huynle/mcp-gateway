@@ -122,6 +122,10 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("connections: %w", err)
 			}
+			// Grant more access, the connect flow's scope checks and
+			// list_accounts' hints read the tools' scopes from the
+			// registry and the user's visible tools from the policy.
+			connSvc.SetToolCatalog(registry, connections.PolicyAllowance{Service: policySvc})
 		} else {
 			log.Warn("no key provider: app connections are not mounted (tokens cannot be encrypted)")
 		}
