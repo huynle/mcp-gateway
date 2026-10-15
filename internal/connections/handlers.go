@@ -50,13 +50,16 @@ var templateFS embed.FS
 //	POST /admin/vendor-apps/{vendor}
 //	GET  /admin/vendor-apps/{vendor}/{variant}     editor (google internal|external)
 //	POST /admin/vendor-apps/{vendor}/{variant}
+//	POST /admin/vendor-apps/{vendor}/approvals     Ask / Auto per write tool of one of the
+//	                                               vendor's apps (SetToolApprovals)
 //
 // The client secret is write-only: the editor never renders it.
 type Portal struct {
-	svc *Service
-	who Identity
-	log *slog.Logger
-	tpl *template.Template
+	svc       *Service
+	who       Identity
+	log       *slog.Logger
+	tpl       *template.Template
+	approvals ToolApprovals
 }
 
 // NewPortal builds the pages over svc.
@@ -93,6 +96,7 @@ func (p *Portal) MountAdmin(mount func(pattern string, handler http.Handler)) {
 	mount("POST /admin/vendor-apps/{vendor}", p.admin(p.adminSave))
 	mount("GET /admin/vendor-apps/{vendor}/{variant}", p.admin(p.adminEdit))
 	mount("POST /admin/vendor-apps/{vendor}/{variant}", p.admin(p.adminSave))
+	mount("POST /admin/vendor-apps/{vendor}/approvals", p.admin(p.adminApprovals))
 }
 
 // caller is the signed-in user as the templates see them.
@@ -357,6 +361,13 @@ type adminFormData struct {
 	ExtraSecrets []secretField
 	Error        string
 	Saved        bool
+	// The Tool approvals section (approvals.go): the vendor's apps with
+	// write tools, where their forms post, and the outcome of the last
+	// POST.
+	Approvals       []approvalSection
+	ApprovalsAction string
+	ApprovalsSaved  bool
+	ApprovalsError  string
 }
 
 // secretField is one write-only extra secret input of the editor.
@@ -389,15 +400,7 @@ func (p *Portal) adminEdit(w http.ResponseWriter, r *http.Request, c caller) {
 		http.NotFound(w, r)
 		return
 	}
-	app, err := p.svc.VendorApp(r.Context(), vendor, variant)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		app = Defaults(vendor, variant)
-	case err != nil:
-		p.fail(w, r, "load vendor app", err)
-		return
-	}
-	p.render(w, r, http.StatusOK, "admin_vendor_app.html", p.formData(c, app, r.URL.Query().Get("saved") == "1", ""))
+	p.renderEdit(w, r, c, vendor, variant, http.StatusOK, "")
 }
 
 func (p *Portal) formData(c caller, app VendorApp, saved bool, errMsg string) adminFormData {
@@ -442,7 +445,12 @@ func (p *Portal) adminSave(w http.ResponseWriter, r *http.Request, c caller) {
 		if existing, lookErr := p.svc.VendorApp(r.Context(), vendor, variant); lookErr == nil {
 			app.HasSecret, app.SecretKeys = existing.HasSecret, existing.SecretKeys
 		}
-		p.render(w, r, http.StatusBadRequest, "admin_vendor_app.html", p.formData(c, app, false, userMessage(err)))
+		data := p.formData(c, app, false, userMessage(err))
+		if err := p.withApprovals(r, &data, ""); err != nil {
+			p.fail(w, r, "load approval modes", err)
+			return
+		}
+		p.render(w, r, http.StatusBadRequest, "admin_vendor_app.html", data)
 		return
 	case err != nil:
 		p.fail(w, r, "save vendor app", err)

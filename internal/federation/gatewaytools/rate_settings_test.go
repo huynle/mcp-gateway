@@ -60,8 +60,8 @@ func TestRateSettingsTools(t *testing.T) {
 	if err := w.conn.Register(w.reg); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(w.reg.List()); got != 12 {
-		t.Fatalf("tools=%d, want 12", got)
+	if got := len(w.reg.List()); got != 14 {
+		t.Fatalf("tools=%d, want 14", got)
 	}
 	out := w.ok(alice, ToolGetRateLimits, map[string]any{"app": "brain"})
 	if out["effective_user_per_min"] != float64(60) || out["effective_app_per_min"] != float64(1000) {

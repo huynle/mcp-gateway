@@ -44,6 +44,10 @@ type Snapshot struct {
 	// Servers are the approval modes of active user-added MCP servers
 	// (ServerApproval); an owner app without one asks for every write.
 	Servers []ServerApproval
+	// Apps are the org-wide approval modes of built-in (vendor) apps
+	// (AppApproval): the write tools set to ask. Absent tools run as
+	// their roles say (auto).
+	Apps []AppApproval
 }
 
 // Version is one policy_versions row.
@@ -71,6 +75,10 @@ type Store interface {
 	// SaveVersion persists a compiled version, returning the existing
 	// row when the hash is already stored.
 	SaveVersion(ctx context.Context, v Version) (Version, error)
+	// SetAppAsk replaces the write tools of vendor app set to ask (tool
+	// names without the app prefix; empty: every write is auto) on
+	// behalf of admin actorID.
+	SetAppAsk(ctx context.Context, actorID, app string, ask []string) error
 }
 
 // Options configures New. Everything is optional.
@@ -82,6 +90,10 @@ type Options struct {
 	Log     *slog.Logger
 	// MaxAge is the reload interval; 0 means DefaultMaxAge.
 	MaxAge time.Duration
+	// Tools is the tool registry (*connectors.Registry) the vendor app
+	// approval modes are validated against; without it they cannot be
+	// read or changed.
+	Tools ToolCatalog
 }
 
 // Service owns the compiled policy: it loads roles, assignments and
@@ -94,6 +106,7 @@ type Service struct {
 	metrics *observability.Metrics
 	log     *slog.Logger
 	maxAge  time.Duration
+	tools   ToolCatalog
 	now     func() time.Time
 
 	mu          sync.RWMutex
@@ -117,7 +130,7 @@ func New(st Store, opts Options) (*Service, error) {
 	if opts.MaxAge <= 0 {
 		opts.MaxAge = DefaultMaxAge
 	}
-	return &Service{store: st, audit: opts.Audit, metrics: opts.Metrics, log: opts.Log, maxAge: opts.MaxAge, now: time.Now}, nil
+	return &Service{store: st, audit: opts.Audit, metrics: opts.Metrics, log: opts.Log, maxAge: opts.MaxAge, tools: opts.Tools, now: time.Now}, nil
 }
 
 // SetClock replaces the time source (tests).
@@ -180,7 +193,7 @@ func (s *Service) compile(ctx context.Context, createdBy string) (*Compiled, err
 	for _, r := range snap.Roles {
 		roles = append(roles, r.Role)
 	}
-	compiled, err := CompileWithLayers(roles, snap.Assignments, snap.Restrictions, Layers{Owners: snap.Owners, Servers: snap.Servers})
+	compiled, err := CompileWithLayers(roles, snap.Assignments, snap.Restrictions, Layers{Owners: snap.Owners, Servers: snap.Servers, Apps: snap.Apps})
 	if err != nil {
 		return nil, fmt.Errorf("policy: compile: %w", err)
 	}
@@ -200,7 +213,7 @@ func (s *Service) compile(ctx context.Context, createdBy string) (*Compiled, err
 	}
 	compiled.ID = v.ID
 	s.log.Info("policy compiled", "event", "policy.compiled", "version", compiled.Version, "version_id", v.ID,
-		"roles", len(roles), "assignments", len(snap.Assignments), "restrictions", len(snap.Restrictions), "owner_grants", len(snap.Owners), "server_approvals", len(snap.Servers), "created_by", createdBy)
+		"roles", len(roles), "assignments", len(snap.Assignments), "restrictions", len(snap.Restrictions), "owner_grants", len(snap.Owners), "server_approvals", len(snap.Servers), "app_approvals", len(snap.Apps), "created_by", createdBy)
 	return compiled, nil
 }
 
@@ -334,6 +347,14 @@ func (s *Service) afterChange(ctx context.Context, actorID, action, role string,
 	for k, v := range extra {
 		resource[k] = v
 	}
+	s.record(ctx, actorID, c, resource)
+	s.log.Info("policy changed", "event", "policy."+action, "role", role, "actor_user_id", actorID, "version", c.Version)
+	return nil
+}
+
+// record writes the audit event of an admin change under the version now
+// in force. A failure is logged: the change is already committed.
+func (s *Service) record(ctx context.Context, actorID string, c *Compiled, resource map[string]string) {
 	ev := audit.Event{
 		Time:             s.now(),
 		UserID:           actorID,
@@ -344,9 +365,7 @@ func (s *Service) afterChange(ctx context.Context, actorID, action, role string,
 		RequestID:        observability.RequestIDFromContext(ctx),
 	}
 	if err := s.audit.Record(ctx, ev); err != nil {
-		s.log.Error("audit event not recorded", "event", "policy.audit_failed", "action", action, "role", role,
+		s.log.Error("audit event not recorded", "event", "policy.audit_failed", "action", resource["action"],
 			"error", observability.RedactError(err))
 	}
-	s.log.Info("policy changed", "event", "policy."+action, "role", role, "actor_user_id", actorID, "version", c.Version)
-	return nil
 }

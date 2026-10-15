@@ -20,7 +20,7 @@ import (
 )
 
 var gatewayToolNames = []string{"gateway.add_server", "gateway.connect_link", "gateway.delete_server", "gateway.detect_auth",
-	"gateway.get_server", "gateway.list_servers", "gateway.refresh_server"}
+	"gateway.get_server", "gateway.get_tool_approvals", "gateway.list_servers", "gateway.refresh_server", "gateway.set_tool_approval"}
 
 // gatewayTools returns the gateway.* names in a tools/list.
 func gatewayTools(t *testing.T, cs *sdk.ClientSession) []string {

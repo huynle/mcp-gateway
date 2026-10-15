@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -170,6 +171,7 @@ type fakeSnapshots struct {
 	refreshes []string
 	refreshBy []snapshot.Actor
 	approves  int
+	modesBy   []snapshot.Actor
 }
 
 func newFakeSnapshots() *fakeSnapshots {
@@ -210,6 +212,27 @@ func (f *fakeSnapshots) Refresh(_ context.Context, a snapshot.Actor, id string, 
 	out := *rec
 	out.Skipped = f.skipped
 	return &out, d, nil
+}
+
+// SetApprovalModes applies modes to the approved record like
+// snapshot.Service (a user actor needs its own private server: the fake
+// does not know servers, so it trusts the caller's check).
+func (f *fakeSnapshots) SetApprovalModes(_ context.Context, a snapshot.Actor, id string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.current[id]
+	if !ok {
+		return nil, 0, snapshot.ErrNoSnapshot
+	}
+	review, n, err := snapshot.ApplyApprovals(cur.Review, modes, a.UserID, time.Now())
+	if err != nil {
+		return nil, 0, err
+	}
+	f.modesBy = append(f.modesBy, a)
+	next := *cur
+	next.Review = review
+	f.current[id] = &next
+	return &next, n, nil
 }
 
 // Approve exists only to prove nothing calls it.

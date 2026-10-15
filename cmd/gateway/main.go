@@ -105,8 +105,11 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("tokens: %w", err)
 		}
+		// The tool registry: built-in connectors, then user-added servers.
+		// The policy validates vendor app approval modes against it.
+		registry := connectors.NewRegistry()
 		policySvc, err := policy.New(policy.NewPostgresStore(st), policy.Options{
-			Audit: rec, Metrics: metrics, Log: log, MaxAge: cfg.PolicyReloadInterval,
+			Audit: rec, Metrics: metrics, Log: log, MaxAge: cfg.PolicyReloadInterval, Tools: registry,
 		})
 		if err != nil {
 			return fmt.Errorf("policy: %w", err)
@@ -122,7 +125,6 @@ func run() error {
 		} else {
 			log.Warn("no key provider: app connections are not mounted (tokens cannot be encrypted)")
 		}
-		registry := connectors.NewRegistry()
 		accounts, err := registerConnectors(cfg, registry, connSvc, log)
 		if err != nil {
 			return fmt.Errorf("connectors: %w", err)
@@ -145,7 +147,7 @@ func run() error {
 		}
 		// The gateway.* management tools (behind the permission and the
 		// per-user setting; gatewaytools).
-		gw, err := newGatewayTools(fed, st, registry, perms, rateSvc, cfg.BaseURL, log)
+		gw, err := newGatewayTools(fed, st, registry, perms, rateSvc, policySvc, connSvc, rec, cfg.BaseURL, log)
 		if err != nil {
 			return err
 		}
@@ -331,6 +333,8 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	svc.OnDisable(tokenSvc.DisableHook())
 	if connSvc != nil {
 		cp := connections.NewPortal(connSvc, adminSession, log)
+		// Settings → Vendor apps → <vendor>: Tool approvals (Ask / Auto).
+		cp.SetToolApprovals(policySvc)
 		cp.MountUser(p.MountUser)    // /connections, /connections/{id}/disconnect
 		cp.MountConnect(p.MountUser) // /connect/{vendor}/start, /connect/{vendor}/callback
 		cp.MountAdmin(p.MountAdmin)  // /admin/vendor-apps...

@@ -43,11 +43,13 @@ func (a ServerApproval) Validate() error {
 	return nil
 }
 
-// Layers are the implicit layers of user-added MCP servers compiled next
-// to the roles: the owners' grants and the servers' approval modes.
+// Layers are the implicit layers compiled next to the roles: the owners'
+// grants and the approval modes of user-added MCP servers, and the
+// org-wide approval modes of built-in (vendor) apps (AppApproval).
 type Layers struct {
 	Owners  []OwnerGrant
 	Servers []ServerApproval
+	Apps    []AppApproval
 }
 
 // normalizeServers validates the layers and returns, per app, the sorted

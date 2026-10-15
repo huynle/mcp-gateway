@@ -12,12 +12,17 @@ const GatewayApp = "gateway"
 
 const GatewayConfirmTool = "delete_server"
 
+// GatewaySetToolApproval changes approval modes (vendor apps and servers):
+// it always needs an approval, whoever calls it.
+const GatewaySetToolApproval = "set_tool_approval"
+
 // GatewayConfirmTools are management writes that always require approval.
-var GatewayConfirmTools = []string{"delete_server", "set_my_rate_limit", "set_org_rate_limits", "set_app_rate_limit", "set_user_rate_limit"}
+var GatewayConfirmTools = []string{"delete_server", "set_my_rate_limit", "set_org_rate_limits", "set_app_rate_limit", "set_user_rate_limit", GatewaySetToolApproval}
 
 // gateway emits the implicit gateway layer, part of every policy set:
 // every user may list and call the gateway.* tools without a role grant,
-// and gateway.delete_server needs a confirmation. Like the owner layer of
+// and the GatewayConfirmTools (gateway.delete_server, the rate-limit
+// setters, gateway.set_tool_approval) need a confirmation. Like the owner layer of
 // private servers (OwnerGrant) it is compiled into the same Cedar set, so
 // the token-narrowing forbids, user restrictions and role denials still
 // apply, a role allow cannot lift the delete confirmation, and the admin

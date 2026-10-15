@@ -77,7 +77,7 @@ Whether you may use a **personal** account at all, and whether its writes always
 
 ## 4. Approvals: when a tool call waits for you
 
-Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so) need your explicit OK per call. What happens:
+Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:
 
 1. The harness calls the tool. The gateway stores the call (arguments encrypted), notifies you, and **waits up to 30 s** for your decision.
 2. You get the request in two places: the portal page **`/approvals`** (tool, account, resource such as the repo or channel, a summary of the arguments, a countdown; the page refreshes itself) and, if you have a **company Slack** connection, a **Slack DM** from the gateway's app with *Approve* / *Deny* buttons (the DM updates to "Approved by you at …" once you press).

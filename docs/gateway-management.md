@@ -24,14 +24,14 @@ The gate wraps the policy decider (`Gate.Decider`, outermost, around the federat
 
 ## Policy
 
-The compiled Cedar set has an implicit **gateway layer** (`internal/policy/gateway.go`, like the owner layer of user-added servers): every principal may list and call `gateway.*` without a role grant, and `gateway.delete_server` needs a confirmation.
+The compiled Cedar set has an implicit **gateway layer** (`internal/policy/gateway.go`, like the owner layer of user-added servers): every principal may list and call `gateway.*` without a role grant, and `gateway.delete_server`, the rate-limit setters and `gateway.set_tool_approval` (`policy.GatewayConfirmTools`) need a confirmation.
 
 ```
 @id("gateway/management")           permit list, call   on App::"gateway"
 @id("gateway/management/confirm_delete") permit confirm on App::"gateway" when resource.name == "gateway.delete_server"
 ```
 
-- reads and `add_server`: **allow**; `delete_server`: **confirm** (approval required);
+- reads and `add_server`: **allow**; `delete_server`, the rate-limit setters and `set_tool_approval`: **confirm** (approval required; a role allow cannot lift it);
 - token narrowing still applies: a **read-only token** never sees `add_server` or `delete_server`; a token restricted to other apps sees no `gateway.*`;
 - user restrictions and role **deny** rules apply; a role **allow** cannot lift the delete confirmation;
 - the admin role gets nothing extra (still confirm on delete);
@@ -62,6 +62,8 @@ All tools take only the arguments listed (`additionalProperties: false`; anythin
 | `gateway.refresh_server` | read / allow | `server` (owner) | `from_version`, `to_version`, `added` / `changed` / `removed` (`count`, `names` capped at 20, `truncated`), changed resource / template / prompt counts, `review_link`, a note that nothing was approved. |
 | `gateway.connect_link` | read / allow | `server` | `link` (OAuth: `/servers/{id}/connect`; api_key / bearer / headers: `/servers/{id}#connection`; shared or none: the server page), `connection`, a note. |
 | `gateway.delete_server` | write / **confirm** | `server` (owner) | `deleted`, `server_id` (after the approval). |
+| `gateway.get_tool_approvals` | read / allow | `app`: a built-in app (`github`, `slack`, `gmail`, `jira`, …) or a server name / ID visible to me | `app`, `type` (`vendor_app` or `server`), `tools` (each write tool: `name`, `kind`, `mode` = `ask`\|`auto`), `counts` (`write_tools`, `ask`, `auto`), `can_change`, `link` (vendor app: `/admin/vendor-apps/<vendor>`; server: `/servers/{id}`), a note; servers also `server_id`, `approved` (nothing approved yet: no tools). Any user the gate admits may read a vendor app's modes. |
+| `gateway.set_tool_approval` | write / **confirm** | `app`, and either `tools` (object: tool name, with or without the app prefix → `ask`\|`auto`) or `all` (`ask`\|`auto`) | `app`, `type`, `changed`, `ask`, `auto`, `link` (after the approval). Vendor apps: **admins only**, org-wide (`policy.Service.SetAppApprovalModes`: recompiled at once, audited `vendor_app.approval_modes_changed`). Servers: the owner of a private server, an admin for any visible server (published ones) — `snapshot.SetApprovalModes`, audited `mcp_server.approval_modes_changed` like the servers portal, then `ServerChanged`. Read tools, disabled or unknown tools, a bad mode, both or neither of `tools`/`all`, and the `gateway` app are `args_invalid`. |
 
 Every description tells the model that **secrets, signing in to a server and approving its tools happen in the browser at the returned links**, and never to ask the user to paste a secret into the chat.
 
@@ -97,7 +99,9 @@ Tool failures are tool results with `isError` and a fixed audit class (`mcp.Clas
 | `server_not_found` | the server does not exist, is not visible to the caller, or (refresh, delete) is not the caller's: one wording for all, by name or ID |
 | `secret_refused` | see add_server |
 | `args_invalid` | unknown argument, wrong type, missing value, bad combination |
-| `name_invalid`, `name_taken`, `not_permitted` | add_server |
+| `name_invalid`, `name_taken`, `not_permitted` | add_server; `not_permitted` also set_tool_approval (vendor app as a non-admin, published server as its owner, someone else's server) |
+| `app_not_found` | get/set_tool_approval: not a built-in app with write tools and no server of that name / ID visible to the caller (one wording) |
+| `not_reviewed` | set_tool_approval: the server has no approved snapshot yet |
 | `url_invalid` | not https / not one of my live tunnels |
 | `upstream_blocked` | netguard refuses the address (the portal's SSRF message) |
 | `upstream_unreachable`, `upstream_timeout`, `upstream_protocol`, `upstream_too_large`, `upstream_forbidden`, `upstream_auth_required`, `upstream_tool`, `detect_failed` | detect_auth, by federation client class (`fedportal.DetectMessage`) |
@@ -111,6 +115,8 @@ Every call is an audit row of the `/mcp` pipeline (tool, decision, outcome, erro
 
 By design there is **no** tool to approve a tool review, change a review, publish or unpublish a server, edit the network allow list, create or revoke a tunnel (or see its token), enter or read any credential, or sign in to a server. Those happen in the browser (servers portal and admin pages).
 
+Changing **approval modes** (Ask / Auto per write tool, of a built-in vendor app or of an already approved server) is possible over MCP with `gateway.set_tool_approval`, but every call **always needs the user's approval in the browser first** (gateway layer confirm; no role can lift it, a read-only token never sees it). It never enables a tool or approves a review: approving a server's tool *review* stays browser-only.
+
 ## Wiring
 
 `cmd/gateway` (`newGatewayTools`, `federation.go`), only when the federation is wired (database and key provider):
@@ -118,7 +124,7 @@ By design there is **no** tool to approve a tool review, change a review, publis
 ```go
 perms := permissions.NewPostgres(st, ...)                         // one instance for all
 fed, _ := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log)
-gw, _ := newGatewayTools(fed, st, registry, perms, cfg.BaseURL, log) // gatewaytools.Wire: registers gateway.*
+gw, _ := newGatewayTools(fed, st, registry, perms, rateSvc, policySvc, connSvc, rec, cfg.BaseURL, log) // gatewaytools.Wire: registers gateway.*
 accounts = gw.Accounts(federationAccounts(fed, accounts))         // the gateway anchor account
 newPortal(..., gw.Setting(perms), ...)                             // My account switch drops the gate cache
 newMCPWithResources(..., gw.Decider(federationDecider(fed, policySvc)), ...)
@@ -128,8 +134,9 @@ A nil `*gatewaytools.Tools` (no federation) leaves every wrapper unchanged and r
 
 ## Tests
 
-- `go test -race ./internal/federation/gatewaytools/`: the visibility matrix over the real `permissions.Service` (not permitted / off, not permitted / on in the DB, permitted / off, permitted / on) for `Visible`, `Decide` and `PolicyVisibility`; the policy is not consulted while the gate is closed; switching off takes effect at once, a removed role within the TTL; accounts; registration (seven tools, kinds, closed schemas, descriptions that point to the browser, no list_accounts); policy defaults of the registered tools (delete confirms); a closed gate answers like an unknown tool; list / get with next steps and links; another user's server not found by name or ID with the same wording; owner-only tools; detect (fields, class-level errors, refused URLs never reach the detector); add (OAuth, API key in header / query, per-user header names, shared bearer note, none); secret-looking arguments refused without echo; reserved and invalid names, http, blocked literals, other users' and revoked tunnels, bad combinations, name taken, not permitted; refresh (as the caller, never approves, capped diff, class-level failure with link); connect links; delete (ServerChanged, result ids, resource identity never echoes arbitrary text).
-- `go test ./internal/policy/ -run Gateway`: the gateway layer (no role needed, delete confirms, admin no bypass, role deny, restriction, read-only and restricted tokens).
+- `go test -race ./internal/federation/gatewaytools/`: the visibility matrix over the real `permissions.Service` (not permitted / off, not permitted / on in the DB, permitted / off, permitted / on) for `Visible`, `Decide` and `PolicyVisibility`; the policy is not consulted while the gate is closed; switching off takes effect at once, a removed role within the TTL; accounts; registration (nine tools, kinds, closed schemas, descriptions that point to the browser, no list_accounts); policy defaults of the registered tools (delete confirms); a closed gate answers like an unknown tool; list / get with next steps and links; another user's server not found by name or ID with the same wording; owner-only tools; detect (fields, class-level errors, refused URLs never reach the detector); add (OAuth, API key in header / query, per-user header names, shared bearer note, none); secret-looking arguments refused without echo; reserved and invalid names, http, blocked literals, other users' and revoked tunnels, bad combinations, name taken, not permitted; refresh (as the caller, never approves, capped diff, class-level failure with link); connect links; delete (ServerChanged, result ids, resource identity never echoes arbitrary text).
+- `go test ./internal/policy/ -run Gateway`: the gateway layer (no role needed, delete and set_tool_approval confirm, admin no bypass, role deny, restriction, read-only and restricted tokens).
+- `go test ./internal/federation/gatewaytools/ -run 'ToolApproval'` (`approvals_test.go`): registration and policy of the two tools (set confirms even under a role allow; hidden for a read-only token); vendor app read (modes, counts, links, `can_change`), admin-only change, `tools` and `all`, refused read / unknown tools, bad modes and argument combinations, the gateway app, unknown apps; servers: invisible server not found, owner change audited and hooked, read / disabled tools refused, published server only by an admin (admin actor).
 - `make test-integration`: `TestIntegrationPostgresStoreNameTakenAndGatewayAccount` (duplicate name → `ErrServerNameTaken`; the gateway anchor is per user, stable, RLS-private).
 - `make test-e2e`: `TestE2EGatewayToolsManageServers` (admin switches on via My account; lists, detects, adds a fake TLS upstream, refreshes, follows the review link to approve on the portal, the server's tool appears and runs; secret and reserved name refused; delete needs an approval, then deletes and ledgers; a member without permission never sees or reaches `gateway.*` and cannot switch on; switching off hides them at once), `TestE2EGatewayToolsRoleRemoved` (the stored setting stays on but the tools disappear within seconds after the role is taken away).
 - `make test-security`: `TestSecurityGatewayToolsSecretArguments` (sixteen ways to pass a secret, none stored, echoed, logged or audited), `TestSecurityGatewayToolsSSRF` (metadata, loopback literal / numeric / hex / IPv6 / mapped, private ranges, a name resolving to loopback: refused by the real netguard, the internal server never hit, nothing stored), `TestSecurityGatewayToolsCrossUser` (bob's private server by name and ID answers like a missing one on get / connect_link / refresh / delete, after approving the delete too; bob's tunnel refused; a server published to alice is readable but not refreshable or deletable by her).

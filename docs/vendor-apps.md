@@ -576,3 +576,47 @@ No registered scope is unused by a v1 tool except `openid`/`userinfo.email`,
   console, callback URL, `offline_access`, accessible-resources, distribution/sharing);
   Confluence v2 `GET /pages/{id}` and `POST /pages` scope lines; Jira v3 issue search
   scope line.
+
+## 9. Tool approvals (Ask / Auto)
+
+Once a vendor is configured, its page (**Settings → Vendor apps → <vendor>**,
+`/admin/vendor-apps/<vendor>`, admins only) has a **Tool approvals** section: every
+**write** tool of every connector app that uses this vendor's accounts, grouped by app
+(GitHub: `github`; Slack: `slack`; Atlassian: `jira`, `confluence`; Google: `gmail`,
+`calendar`, `drive`, …; Microsoft: `microsoft`). Each tool has an **Ask / Auto** switch;
+"Ask for all" and "Run all without asking" set every write of one app; a counts line shows
+`N write tools · A auto · K ask`.
+
+- **Auto** (the default for every tool, and the behaviour before this setting existed):
+  the tool runs as the user's roles say.
+- **Ask**: every call of the tool needs the user's approval first (`/approvals` or Slack),
+  for every user, org-wide.
+
+The setting only ever **adds** a confirmation: a role *allow* + Ask confirms, a role
+*confirm* stays confirm (Auto never lifts it), and role *deny*, user restrictions and
+token narrowing (read-only, allow-list) still win. It grants nothing: a user without a
+role grant still cannot call the tool. Read tools are never affected. User-added MCP
+servers keep their own per-server modes (servers portal / `/admin/servers/{id}`).
+
+| Role rule for the tool | Auto | Ask |
+|---|---|---|
+| allow | allow | **confirm** |
+| confirm | confirm | confirm |
+| deny / hidden | deny / hidden | deny / hidden |
+| no rule | hidden | hidden |
+
+Storage and policy: only the tools set to Ask are stored (`vendor_tool_approvals`,
+migration 19: `app`, `tool`, `updated_by`, `updated_at`; the `gateway` app is refused).
+The policy service compiles them into the Cedar set as one
+`@id("app/<app>/ask_writes")` confirm permit per app (`policy.AppApproval`); a change
+recompiles at once and records a new policy version under the admin. Each change is
+audited as `vendor_app.approval_modes_changed` (`app`, `changed`, `ask`, `auto` counts;
+no tool names). The form posts to `POST /admin/vendor-apps/<vendor>/approvals` (`app`,
+`mode_<tool>` = `ask|auto` or `all` = `ask|auto`; CSRF; a bad mode is 422 "Choose Ask or
+Auto for each tool."; members get the admin pages' 404).
+
+Over MCP, an admin can read and change the same setting with
+`gateway.get_tool_approvals` / `gateway.set_tool_approval` (see
+[gateway-management.md](gateway-management.md)); every change through
+`set_tool_approval` needs the admin's own approval first.
+

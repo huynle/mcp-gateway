@@ -60,6 +60,27 @@ func (p postgresStore) Load(ctx context.Context) (Snapshot, error) {
 		if err != nil {
 			return err
 		}
+		serverApps := map[string]bool{}
+		for _, s := range servers {
+			serverApps[s.Name] = true
+		}
+		// The vendor apps' approval modes (AppApproval): the tools set to
+		// ask. Rows naming the gateway app or a server's name (never
+		// written by the service) are ignored rather than failing the load.
+		asks, err := store.ListVendorToolApprovals(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, a := range asks {
+			if a.App == GatewayApp || serverApps[a.App] || !identRE.MatchString(a.App) || !identRE.MatchString(a.Tool) {
+				continue
+			}
+			if n := len(snap.Apps); n > 0 && snap.Apps[n-1].App == a.App {
+				snap.Apps[n-1].Ask = append(snap.Apps[n-1].Ask, a.Tool)
+				continue
+			}
+			snap.Apps = append(snap.Apps, AppApproval{App: a.App, Ask: []string{a.Tool}})
+		}
 		for _, s := range servers {
 			if s.Status != store.MCPServerActive {
 				continue
@@ -123,6 +144,12 @@ func (p postgresStore) DeleteRole(ctx context.Context, name string) error {
 			return fmt.Errorf("%w: %s (%d users)", ErrRoleAssigned, name, n)
 		}
 		return store.DeleteRole(ctx, tx, name)
+	})
+}
+
+func (p postgresStore) SetAppAsk(ctx context.Context, actorID, app string, ask []string) error {
+	return p.st.WithJobs(ctx, func(tx store.Tx) error {
+		return store.ReplaceVendorToolApprovals(ctx, tx, app, ask, actorID)
 	})
 }
 

@@ -67,6 +67,14 @@ permit (
 )
 when { resource.name == "gateway.set_user_rate_limit" };
 
+@id("gateway/management/confirm_set_tool_approval")
+permit (
+    principal,
+    action == Action::"confirm",
+    resource in App::"gateway"
+)
+when { resource.name == "gateway.set_tool_approval" };
+
 @id("role/engineer/github.*/allow")
 permit (
     principal in Role::"engineer",
