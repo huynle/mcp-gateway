@@ -104,6 +104,13 @@ type Tool struct {
 	// RequiredScopes are the vendor OAuth scopes a connected account must
 	// have for this tool (connections task).
 	RequiredScopes []string
+	// OptionalScopes are vendor scopes the tool uses when the account
+	// granted them and works without (Slack's list_conversations lists
+	// DMs only with im:read; the channel tools manage private channels
+	// only with groups:write). The scope stage ignores them; "grant more
+	// access" on /connections requests them together with the missing
+	// RequiredScopes.
+	OptionalScopes []string
 	// ResourceIdentity extracts the audit resource identity (repo, channel,
 	// site, ...) from the arguments; it must never return argument content.
 	// nil means the tool has no resource identity.

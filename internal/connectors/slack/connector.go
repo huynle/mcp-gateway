@@ -117,8 +117,34 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools())
+	tools := slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools())
+	for i := range tools {
+		tools[i].OptionalScopes = slices.Clone(optionalScopes[tools[i].Name])
+	}
+	return tools
 }
+
+// optionalScopes are the user scopes tools use when the account granted
+// them and work without (connectors.Tool.OptionalScopes): direct and
+// group messages for the conversation readers, opening a DM for the two
+// message writes, private channels for the channel tools. Grant more
+// access on /connections requests them; the scope stage ignores them.
+var optionalScopes = func() map[string][]string {
+	m := map[string][]string{
+		ToolListConversations:  {ScopeIMRead, ScopeMpIMRead},
+		ToolReadChannelHistory: {ScopeIMHistory, ScopeMpIMHistory},
+		ToolGetThread:          {ScopeIMHistory, ScopeMpIMHistory},
+		ToolPostMessage:        {ScopeIMWrite},
+		ToolReplyInThread:      {ScopeIMWrite},
+	}
+	for _, name := range []string{
+		ToolCreateChannel, ToolRenameChannel, ToolArchiveChannel, ToolUnarchiveChannel, ToolSetChannelTopic,
+		ToolSetChannelPurpose, ToolJoinChannel, ToolLeaveChannel, ToolInviteToChannel, ToolRemoveFromChannel,
+	} {
+		m[name] = []string{ScopeGroupsWrite}
+	}
+	return m
+}()
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, api *goslack.Client, call connectors.Call) (connectors.Result, error)
