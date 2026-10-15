@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
@@ -21,6 +22,13 @@ type WireOptions struct {
 	// Activity is *permissions.Service (GatewayToolsActive).
 	Activity     Activity
 	RateSettings RateSettings
+	// Approvals are the vendor apps' approval modes (*policy.Service);
+	// VendorOf names an app's vendor for the admin page link
+	// (connections.Service.VendorFor); Audit records server approval-mode
+	// changes. All optional.
+	Approvals ToolApprovals
+	VendorOf  func(app string) string
+	Audit     audit.Recorder
 	// BaseURL is GATEWAY_BASE_URL (absolute portal links).
 	BaseURL string
 	// GateTTL: DefaultGateTTL when 0.
@@ -61,10 +69,15 @@ func Wire(o WireOptions) (*Tools, error) {
 		return nil, err
 	}
 	gate := NewGate(o.Activity, GateOptions{TTL: o.GateTTL, Admin: o.RateSettings})
-	c, err := New(Deps{
+	d := Deps{
 		Servers: fedportal.NewStore(o.Store), Snapshots: f.Snapshots, Detector: f.Auth, Manager: f.Manager, Clients: factory,
 		URLCheck: f.Guard, Gate: gate, BaseURL: o.BaseURL, Log: o.Log, Rates: o.RateSettings,
-	})
+		Approvals: o.Approvals, VendorOf: o.VendorOf, Audit: o.Audit,
+	}
+	if o.RateSettings != nil {
+		d.Admin = o.RateSettings
+	}
+	c, err := New(d)
 	if err != nil {
 		return nil, err
 	}

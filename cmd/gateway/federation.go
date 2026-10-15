@@ -10,6 +10,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
+	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
@@ -65,13 +66,24 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 // callable only for users permitted to add MCP servers who switched them
 // on in My account. Without a federation (no key provider) there are none
 // and the returned nil *Tools leaves every wrapper unchanged.
-func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, rateSettings *isettings.Service, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
+// The approval-mode tools read and change vendor app modes through
+// policySvc (admin page links name the vendor connSvc maps the app to)
+// and audit server mode changes through rec.
+func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, rateSettings *isettings.Service, policySvc *policy.Service, connSvc *connections.Service, rec audit.Recorder, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
 	if fed == nil {
 		return nil, nil
 	}
-	gw, err := gatewaytools.Wire(gatewaytools.WireOptions{
+	opts := gatewaytools.WireOptions{
 		Federation: fed, Store: st, Registry: registry, Activity: activity, RateSettings: rateSettings, BaseURL: baseURL, Log: log,
-	})
+		Audit: rec,
+	}
+	if policySvc != nil {
+		opts.Approvals = policySvc
+	}
+	if connSvc != nil {
+		opts.VendorOf = connSvc.VendorFor
+	}
+	gw, err := gatewaytools.Wire(opts)
 	if err != nil {
 		return nil, fmt.Errorf("gateway tools: %w", err)
 	}
