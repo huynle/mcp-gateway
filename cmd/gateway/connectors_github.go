@@ -28,6 +28,7 @@ func registerGitHub(_ config.Config, registry *connectors.Registry, connSvc *con
 	if err := connectors.RegisterConnector(registry, c, connSvc); err != nil {
 		return fmt.Errorf("github: %w", err)
 	}
+	registry.SetScopeCoverage(github.App, github.ScopeCovered)
 	connSvc.RegisterBinder(connections.VendorGitHub, github.Binder{})
 	connSvc.MapApp(github.App, connections.VendorGitHub)
 	log.Info("github connector registered", "app", github.App, "tools", len(c.Tools()))
