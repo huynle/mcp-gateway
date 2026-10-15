@@ -217,7 +217,8 @@ func TestIntegrationSlackNewWritesDefaultToAsk(t *testing.T) {
 	}
 	ask := appAsk(snap.Apps, "slack")
 	for _, tool := range []string{"create_channel", "archive_channel", "invite_to_channel", "remove_from_channel", "delete_message",
-		"update_message", "schedule_message", "pin_message", "upload_file", "set_status", "set_dnd", "end_dnd"} {
+		"update_message", "schedule_message", "pin_message", "upload_file", "set_status", "set_dnd", "end_dnd",
+		"create_canvas", "update_canvas", "create_list", "update_list", "add_list_item", "update_list_item"} {
 		if !slices.Contains(ask, tool) {
 			t.Errorf("slack Ask %v lacks %s", ask, tool)
 		}
