@@ -33,7 +33,7 @@ func TestWriteToolNames(t *testing.T) {
 	}
 	wantEqual(t, "jira writes", names(jira), []string{"create_issue", "add_comment", "transition_issue",
 		"update_issue", "assign_issue", "edit_comment", "add_worklog", "link_issues", "add_watcher", "remove_watcher", "add_issues_to_sprint"})
-	wantEqual(t, "confluence writes", names(conf), []string{"create_page"})
+	wantEqual(t, "confluence writes", names(conf), []string{"create_page", "update_page", "add_page_comment", "add_page_labels"})
 }
 
 func TestWriteToolsMetadata(t *testing.T) {
@@ -696,7 +696,7 @@ func TestCreatePageToolMetadata(t *testing.T) {
 			names = append(names, tool.Name)
 		}
 	}
-	wantEqual(t, "confluence writes", names, []string{"create_page"})
+	wantEqual(t, "confluence writes", names, []string{"create_page", "update_page", "add_page_comment", "add_page_labels"})
 	checkMetadata(t, metadataCase{
 		app: atlassian.ConfluenceApp, tool: "create_page", required: []string{"space_key", "title", "body"},
 		props:    []string{"space_key", "title", "body", "parent_id"},

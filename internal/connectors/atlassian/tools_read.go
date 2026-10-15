@@ -60,7 +60,7 @@ func (c *Connector) readTools() []connectors.Tool {
 	paged := connectors.Bounds{MaxPageSize: c.bounds.MaxPageSize, MaxResultBytes: c.bounds.MaxResultBytes}
 	single := connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes}
 	if c.app == ConfluenceApp {
-		return []connectors.Tool{
+		return append([]connectors.Tool{
 			{
 				App: ConfluenceApp, Name: ToolSearch, Kind: connectors.KindRead,
 				Description: "Search Confluence content with CQL (Confluence Query Language), for example " +
@@ -84,7 +84,7 @@ func (c *Connector) readTools() []connectors.Tool {
 				ResourceIdentity: confluenceIdentity,
 				Bounds:           single,
 			},
-		}
+		}, c.confluenceMoreReadTools()...)
 	}
 	return append([]connectors.Tool{
 		{
@@ -129,7 +129,11 @@ func (c *Connector) readTools() []connectors.Tool {
 // readHandlers maps short tool names to their implementation.
 func (c *Connector) readHandlers() map[string]handler {
 	if c.app == ConfluenceApp {
-		return map[string]handler{ToolSearch: c.search, ToolGetPage: c.getPage}
+		h := map[string]handler{ToolSearch: c.search, ToolGetPage: c.getPage}
+		for name, run := range c.confluenceMoreHandlers(false) {
+			h[name] = run
+		}
+		return h
 	}
 	h := map[string]handler{ToolSearchIssues: c.searchIssues, ToolGetIssue: c.getIssue, ToolListTransitions: c.listTransitions}
 	for name, run := range c.jiraMoreReadHandlers() {

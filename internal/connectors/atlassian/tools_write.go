@@ -34,7 +34,7 @@ var transitionIDRE = regexp.MustCompile(`^[0-9]+$`)
 func (c *Connector) writeTools() []connectors.Tool {
 	single := connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes}
 	if c.app == ConfluenceApp {
-		return []connectors.Tool{
+		return append([]connectors.Tool{
 			{
 				App: ConfluenceApp, Name: ToolCreatePage, Kind: connectors.KindWrite,
 				Description: "Create a Confluence page in a space (by space key) with a title and a body in Confluence storage format " +
@@ -51,7 +51,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 				ResultIDs:        pageResultIDs,
 				Bounds:           single,
 			},
-		}
+		}, c.confluenceMoreWriteTools()...)
 	}
 	return append([]connectors.Tool{
 		{
@@ -110,7 +110,11 @@ func (c *Connector) writeTools() []connectors.Tool {
 // writeHandlers maps the write tools' short names to their implementation.
 func (c *Connector) writeHandlers() map[string]handler {
 	if c.app == ConfluenceApp {
-		return map[string]handler{ToolCreatePage: c.createPage}
+		h := map[string]handler{ToolCreatePage: c.createPage}
+		for name, run := range c.confluenceMoreHandlers(true) {
+			h[name] = run
+		}
+		return h
 	}
 	h := map[string]handler{ToolCreateIssue: c.createIssue, ToolAddComment: c.addComment, ToolTransitionIssue: c.transitionIssue}
 	for name, run := range c.jiraMoreWriteHandlers() {
