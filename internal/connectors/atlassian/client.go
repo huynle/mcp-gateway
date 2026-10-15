@@ -35,6 +35,12 @@ func (c *client) jiraURL(path string, q url.Values) string {
 	return c.url("/ex/jira/"+c.cloudID+"/rest/api/3/"+strings.TrimPrefix(path, "/"), q)
 }
 
+// agileURL builds <base>/ex/jira/<cloud id>/rest/agile/1.0/<path>?query
+// (Jira Software boards and sprints).
+func (c *client) agileURL(path string, q url.Values) string {
+	return c.url("/ex/jira/"+c.cloudID+"/rest/agile/1.0/"+strings.TrimPrefix(path, "/"), q)
+}
+
 // wikiURL builds <base>/ex/confluence/<cloud id>/wiki/<path>?query.
 func (c *client) wikiURL(path string, q url.Values) string {
 	return c.url("/ex/confluence/"+c.cloudID+"/wiki/"+strings.TrimPrefix(path, "/"), q)
@@ -60,6 +66,16 @@ func (c *client) getJSON(ctx context.Context, rawURL string, out any) error {
 // errors. A 204 leaves out untouched.
 func (c *client) postJSON(ctx context.Context, rawURL string, body, out any) error {
 	return c.do(ctx, http.MethodPost, rawURL, body, out)
+}
+
+// putJSON performs PUT rawURL with body as JSON; see getJSON.
+func (c *client) putJSON(ctx context.Context, rawURL string, body, out any) error {
+	return c.do(ctx, http.MethodPut, rawURL, body, out)
+}
+
+// deleteJSON performs DELETE rawURL without a body; see getJSON.
+func (c *client) deleteJSON(ctx context.Context, rawURL string, out any) error {
+	return c.do(ctx, http.MethodDelete, rawURL, nil, out)
 }
 
 func (c *client) do(ctx context.Context, method, rawURL string, body, out any) error {

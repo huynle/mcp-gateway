@@ -86,7 +86,7 @@ func (c *Connector) readTools() []connectors.Tool {
 			},
 		}
 	}
-	return []connectors.Tool{
+	return append([]connectors.Tool{
 		{
 			App: JiraApp, Name: ToolSearchIssues, Kind: connectors.KindRead,
 			Description: "Search Jira issues with JQL, for example project = ABC AND status = \"In Progress\" ORDER BY updated DESC. " +
@@ -123,7 +123,7 @@ func (c *Connector) readTools() []connectors.Tool {
 			ResourceIdentity: jiraIdentity,
 			Bounds:           single,
 		},
-	}
+	}, c.jiraMoreReadTools()...)
 }
 
 // readHandlers maps short tool names to their implementation.
@@ -131,7 +131,11 @@ func (c *Connector) readHandlers() map[string]handler {
 	if c.app == ConfluenceApp {
 		return map[string]handler{ToolSearch: c.search, ToolGetPage: c.getPage}
 	}
-	return map[string]handler{ToolSearchIssues: c.searchIssues, ToolGetIssue: c.getIssue, ToolListTransitions: c.listTransitions}
+	h := map[string]handler{ToolSearchIssues: c.searchIssues, ToolGetIssue: c.getIssue, ToolListTransitions: c.listTransitions}
+	for name, run := range c.jiraMoreReadHandlers() {
+		h[name] = run
+	}
+	return h
 }
 
 // --- schema helpers ----------------------------------------------------------
@@ -163,7 +167,7 @@ func objectSchema(props []property, required []string) json.RawMessage {
 		case "max_results", "limit":
 			one, max := 1, maxPageSize
 			sp.Minimum, sp.Maximum = &one, &max
-		case "start":
+		case "start", "start_at":
 			zero := 0
 			sp.Minimum = &zero
 		}
@@ -202,6 +206,11 @@ func jiraIdentity(args map[string]any) map[string]string {
 			out["project"] = p
 		}
 	}
+	for arg, key := range map[string]string{"board_id": "board", "sprint_id": "sprint"} {
+		if id, ok := positiveID(args[arg]); ok {
+			out[key] = id
+		}
+	}
 	if jql, _ := args["jql"].(string); jql != "" && out["project"] == "" {
 		if p := projectFromJQL(jql); p != "" {
 			out["project"] = p
@@ -231,6 +240,19 @@ func confluenceIdentity(args map[string]any) map[string]string {
 		}
 	}
 	return out
+}
+
+// positiveID normalises a numeric id argument (a JSON number or a
+// string of digits) to its decimal form.
+func positiveID(v any) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	n, err := toInt(v)
+	if err != nil || n <= 0 {
+		return "", false
+	}
+	return strconv.Itoa(n), true
 }
 
 // issueKeyArg normalises an issue key argument (upper-cased, trimmed).

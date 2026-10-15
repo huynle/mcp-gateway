@@ -80,7 +80,10 @@ func TestAppsAndToolNames(t *testing.T) {
 		}
 		return out
 	}
-	wantEqual(t, "jira reads", names(jira, connectors.KindRead), []string{"search_issues", "get_issue", "list_transitions"})
+	wantEqual(t, "jira reads", names(jira, connectors.KindRead), []string{"search_issues", "get_issue", "list_transitions",
+		"get_current_user", "list_projects", "list_issue_types", "get_create_fields", "get_issue_comments", "get_issue_changelog",
+		"list_issue_links", "list_link_types", "list_worklogs", "get_watchers", "search_users", "list_assignable_users",
+		"list_project_versions", "list_project_components", "list_boards", "list_sprints", "get_sprint_issues"})
 	wantEqual(t, "confluence reads", names(conf, connectors.KindRead), []string{"search", "get_page"})
 }
 
