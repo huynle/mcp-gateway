@@ -117,7 +117,9 @@ func New(opts Options) (*Connector, error) {
 		timeout = DefaultTimeout
 	}
 	c := &Connector{tokens: opts.Tokens, accounts: opts.Accounts, transport: transport, baseURL: base, bounds: bounds, timeout: timeout}
-	c.calendar = c.newApp(AppCalendar, c.calendarReadTools(), c.calendarWriteTools(), c.calendarReadHandlers(), c.calendarWriteHandlers())
+	c.calendar = c.newApp(AppCalendar,
+		append(c.calendarReadTools(), c.calendarManageReadTools()...), append(c.calendarWriteTools(), c.calendarManageWriteTools()...),
+		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()), merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers()))
 	c.tasks = c.newApp(AppTasks, c.tasksReadTools(), c.tasksWriteTools(), c.tasksReadHandlers(), c.tasksWriteHandlers())
 	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
@@ -158,6 +160,18 @@ func (c *Connector) Gmail() *App { return c.gmail }
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error)
+
+// merge joins handler maps (the base tools and an app's later
+// additions); names never repeat.
+func merge(maps ...map[string]handler) map[string]handler {
+	out := map[string]handler{}
+	for _, m := range maps {
+		for name, h := range m {
+			out[name] = h
+		}
+	}
+	return out
+}
 
 // App is one of the connector apps (connectors.Connector). Tools are
 // declared with nil handlers: Call dispatches by name.

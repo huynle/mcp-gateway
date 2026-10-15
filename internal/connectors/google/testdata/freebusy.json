@@ -1,0 +1,9 @@
+{
+  "kind": "calendar#freeBusy",
+  "timeMin": "2026-10-09T00:00:00.000Z",
+  "timeMax": "2026-10-10T00:00:00.000Z",
+  "calendars": {
+    "primary": {"busy": [{"start": "2026-10-09T16:30:00Z", "end": "2026-10-09T16:45:00Z"}, {"start": "2026-10-09T20:00:00Z", "end": "2026-10-09T21:00:00Z"}]},
+    "bob@example.test": {"errors": [{"domain": "calendar", "reason": "notFound"}], "busy": []}
+  }
+}

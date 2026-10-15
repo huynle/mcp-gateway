@@ -30,7 +30,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		t.Errorf("Apps() = %v, want %v", apps, google.Apps)
 	}
 	want := map[string][]string{
-		google.AppCalendar: {"list_events", "get_event", "create_event"},
+		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event"},
 		google.AppTasks:    {"list", "create"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "send", "create_draft"},
 		google.AppDrive:    {"search", "get_file_metadata", "create_folder"},
