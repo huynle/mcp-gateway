@@ -97,13 +97,13 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	return slices.Concat(c.readTools(), c.writeTools(), c.repoTools())
+	return slices.Concat(c.readTools(), c.writeTools(), c.repoTools(), c.issueTools(), c.pullTools())
 }
 
 // toolGroups lists the read and write handlers of every tool group.
 func (c *Connector) toolGroups() (reads, writes map[string]handler) {
 	reads, writes = c.handlers(), c.writeHandlers()
-	for _, group := range []func() (map[string]handler, map[string]handler){c.repoHandlers} {
+	for _, group := range []func() (map[string]handler, map[string]handler){c.repoHandlers, c.issueHandlers, c.pullHandlers} {
 		r, w := group()
 		maps.Copy(reads, r)
 		maps.Copy(writes, w)
