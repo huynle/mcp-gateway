@@ -65,6 +65,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	csvc.SetToolCatalog(testCatalog(t), nil)
 	who := func(r *http.Request) (string, string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {

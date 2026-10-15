@@ -9,24 +9,17 @@
   <table>
     <thead><tr><th>Account</th><th>Label</th><th>Scopes</th><th>Status</th><th>Last refreshed</th><th></th></tr></thead>
     <tbody>
-    {{$vendor := .Vendor}}
     {{range .Connections}}
     <tr>
       <td>{{.DisplayName}}</td>
       <td><span class="pill {{.Label}}">{{.Label}}</span></td>
-      <td><code>{{join .Scopes}}</code></td>
+      <td><code>{{join .Scopes}}</code>{{if .Unlocks}}<br><span class="muted">{{.Unlocks}}</span>{{end}}{{if .Extends}}<br><span class="muted">{{.Extends}}</span>{{end}}</td>
       <td>{{if .NeedsReconnect}}<span class="pill needs_reconnect">needs reconnect</span>{{else}}<span class="pill active">{{.Status}}</span>{{end}}</td>
       <td>{{if .LastRefreshedAt}}{{fmtTime .LastRefreshedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
       <td class="actions">
-        <form method="get" action="/connect/{{$vendor}}/start">
-          <input type="hidden" name="variant" value="{{.Variant}}">
-          {{if .NeedsReconnect}}
-          <button class="btn primary" type="submit">Reconnect</button>
-          {{else}}
-          <input type="text" name="scopes" placeholder="extra scopes" aria-label="extra scopes">
-          <button class="btn" type="submit">Grant more access</button>
-          {{end}}
-        </form>
+        {{if .NeedsReconnect}}<a class="btn primary" href="{{.GrantURL}}">Reconnect</a>
+        {{else if .GrantURL}}<a class="btn" href="{{.GrantURL}}">Grant more access</a>
+        {{end}}
         <form method="post" action="/connections/{{.ID}}/disconnect" onsubmit="return confirm('Disconnect {{.DisplayName}}? Its tokens are deleted.')">
           <input type="hidden" name="_csrf" value="{{$csrf}}">
           <button class="btn danger" type="submit">Disconnect</button>
