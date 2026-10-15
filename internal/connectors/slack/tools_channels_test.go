@@ -24,12 +24,12 @@ func channelBody(fields string) string {
 }
 
 // runWrite calls a write tool against a fixture server with routes.
-func runWrite(t *testing.T, routes map[string]route, tool string, args map[string]any) (connectors.Result, error, *apiServer, *slack.Connector) {
+func runWrite(t *testing.T, routes map[string]route, tool string, args map[string]any) (connectors.Result, *apiServer, *slack.Connector, error) {
 	t.Helper()
 	srv := newAPIServer(t, routes)
 	c, _ := newConnector(t, srv, slack.Options{})
 	res, err := c.Call(context.Background(), write(tool, args))
-	return res, err, srv, c
+	return res, srv, c, err
 }
 
 // --- metadata -----------------------------------------------------------------------
@@ -121,7 +121,7 @@ func TestChannelToolsMetadata(t *testing.T) {
 // --- create_channel ---------------------------------------------------------------------
 
 func TestCreateChannel(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{
+	res, srv, c, err := runWrite(t, map[string]route{
 		"conversations.create": {body: channelBody(`"id":"C0NEWCHAN1","name":"eng-new","is_private":true,"is_channel":true`)},
 	}, "create_channel", map[string]any{"name": "#Eng-New", "is_private": true})
 	if err != nil {
@@ -143,13 +143,13 @@ func TestCreateChannel(t *testing.T) {
 
 func TestCreateChannelRejectsBadNames(t *testing.T) {
 	for _, name := range []any{"", "Eng New", "eng/new", 42, "a-name-that-is-way-too-long-for-slack-because-slack-caps-channel-names-at-eighty-chars"} {
-		_, err, srv, _ := runWrite(t, nil, "create_channel", map[string]any{"name": name})
+		_, srv, _, err := runWrite(t, nil, "create_channel", map[string]any{"name": name})
 		wantClass(t, err, slack.ClassInvalidArgument)
 		if len(srv.Requests()) != 0 {
 			t.Errorf("%v: request sent for an invalid name", name)
 		}
 	}
-	_, err, _, _ := runWrite(t, nil, "create_channel", map[string]any{"name": "ok", "is_private": "yes"})
+	_, _, _, err := runWrite(t, nil, "create_channel", map[string]any{"name": "ok", "is_private": "yes"})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
@@ -161,13 +161,13 @@ func TestCreateChannelErrors(t *testing.T) {
 		"missing_scope":         slack.ClassForbidden,
 	}
 	for code, class := range cases {
-		_, err, _, _ := runWrite(t, map[string]route{"conversations.create": {body: `{"ok":false,"error":"` + code + `"}`}}, "create_channel", map[string]any{"name": "eng-new"})
+		_, _, _, err := runWrite(t, map[string]route{"conversations.create": {body: `{"ok":false,"error":"` + code + `"}`}}, "create_channel", map[string]any{"name": "eng-new"})
 		wantClass(t, err, class)
 		if errors.Is(err, connectors.ErrOutcomeUnknown) {
 			t.Errorf("%s: a Slack answer is a known outcome", code)
 		}
 	}
-	_, err, _, _ := runWrite(t, map[string]route{"conversations.create": {body: "error_fatal.json"}}, "create_channel", map[string]any{"name": "eng-new"})
+	_, _, _, err := runWrite(t, map[string]route{"conversations.create": {body: "error_fatal.json"}}, "create_channel", map[string]any{"name": "eng-new"})
 	if !errors.Is(err, connectors.ErrOutcomeUnknown) {
 		t.Errorf("fatal_error: err = %v, want ErrOutcomeUnknown", err)
 	}
@@ -199,7 +199,7 @@ func TestCreateChannelCheck(t *testing.T) {
 // --- rename / archive / unarchive / topic / purpose ---------------------------------------
 
 func TestRenameChannelByName(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{
+	res, srv, c, err := runWrite(t, map[string]route{
 		"users.conversations":  {body: "users_conversations_page1.json"},
 		"conversations.rename": {body: channelBody(`"id":"C0ENGGEN01","name":"eng-renamed"`)},
 	}, "rename_channel", map[string]any{"channel": "#eng-general", "name": "Eng-Renamed"})
@@ -217,7 +217,7 @@ func TestRenameChannelByName(t *testing.T) {
 	if ids := toolNamed(t, c, "rename_channel").ResultIDs(res); ids["channel"] != "C0ENGGEN01" || ids["name"] != "eng-renamed" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.rename": {body: `{"ok":false,"error":"name_taken"}`}}, "rename_channel", map[string]any{"channel": "C0ENGGEN01", "name": "random"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.rename": {body: `{"ok":false,"error":"name_taken"}`}}, "rename_channel", map[string]any{"channel": "C0ENGGEN01", "name": "random"})
 	wantClass(t, err, slack.ClassConflict)
 }
 
@@ -248,7 +248,7 @@ func TestRenameChannelCheck(t *testing.T) {
 }
 
 func TestArchiveAndUnarchive(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"conversations.archive": {body: "ok.json"}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
+	res, srv, c, err := runWrite(t, map[string]route{"conversations.archive": {body: "ok.json"}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,18 +261,18 @@ func TestArchiveAndUnarchive(t *testing.T) {
 	if ids := toolNamed(t, c, "archive_channel").ResultIDs(res); ids["channel"] != "C0ENGGEN01" || len(ids) != 1 {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.archive": {body: `{"ok":false,"error":"already_archived"}`}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.archive": {body: `{"ok":false,"error":"already_archived"}`}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
 	if err != nil || !res.Content.(slack.ChannelChange).Already {
 		t.Errorf("already_archived: res=%+v err=%v, want success already", res, err)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.archive": {body: `{"ok":false,"error":"cant_archive_general"}`}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.archive": {body: `{"ok":false,"error":"cant_archive_general"}`}}, "archive_channel", map[string]any{"channel": "C0ENGGEN01"})
 	wantClass(t, err, slack.ClassForbidden)
 
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.unarchive": {body: "ok.json"}}, "unarchive_channel", map[string]any{"channel": "C0RANDOM01"})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.unarchive": {body: "ok.json"}}, "unarchive_channel", map[string]any{"channel": "C0RANDOM01"})
 	if err != nil || res.Content.(slack.ChannelChange).Action != "unarchived" {
 		t.Errorf("unarchive: res=%+v err=%v", res, err)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.unarchive": {body: `{"ok":false,"error":"not_archived"}`}}, "unarchive_channel", map[string]any{"channel": "C0RANDOM01"})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.unarchive": {body: `{"ok":false,"error":"not_archived"}`}}, "unarchive_channel", map[string]any{"channel": "C0RANDOM01"})
 	if err != nil || !res.Content.(slack.ChannelChange).Already {
 		t.Errorf("not_archived: res=%+v err=%v, want success already", res, err)
 	}
@@ -304,7 +304,7 @@ func TestArchiveChecks(t *testing.T) {
 }
 
 func TestSetTopicAndPurpose(t *testing.T) {
-	res, err, srv, _ := runWrite(t, map[string]route{"conversations.setTopic": {body: channelBody(`"id":"C0ENGGEN01","topic":{"value":"Deploys at 5"}`)}},
+	res, srv, _, err := runWrite(t, map[string]route{"conversations.setTopic": {body: channelBody(`"id":"C0ENGGEN01","topic":{"value":"Deploys at 5"}`)}},
 		"set_channel_topic", map[string]any{"channel": "C0ENGGEN01", "topic": "Deploys at 5"})
 	if err != nil {
 		t.Fatal(err)
@@ -315,18 +315,18 @@ func TestSetTopicAndPurpose(t *testing.T) {
 	if srv.Last(t, "conversations.setTopic").Form.Get("topic") != "Deploys at 5" {
 		t.Error("topic not sent")
 	}
-	res, err, srv, _ = runWrite(t, map[string]route{"conversations.setPurpose": {body: channelBody(`"id":"C0ENGGEN01","purpose":{"value":"Ship it"}`)}},
+	res, srv, _, err = runWrite(t, map[string]route{"conversations.setPurpose": {body: channelBody(`"id":"C0ENGGEN01","purpose":{"value":"Ship it"}`)}},
 		"set_channel_purpose", map[string]any{"channel": "C0ENGGEN01", "purpose": "Ship it"})
 	if err != nil || res.Content.(slack.ChannelChange).Purpose != "Ship it" || srv.Last(t, "conversations.setPurpose").Form.Get("purpose") != "Ship it" {
 		t.Errorf("purpose: res=%+v err=%v", res, err)
 	}
 	// An empty topic clears it; a missing one is an argument error.
-	if _, err, _, _ := runWrite(t, map[string]route{"conversations.setTopic": {body: channelBody(`"id":"C0ENGGEN01"`)}}, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01", "topic": ""}); err != nil {
+	if _, _, _, err := runWrite(t, map[string]route{"conversations.setTopic": {body: channelBody(`"id":"C0ENGGEN01"`)}}, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01", "topic": ""}); err != nil {
 		t.Errorf("empty topic: %v", err)
 	}
-	_, err, _, _ = runWrite(t, nil, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01"})
+	_, _, _, err = runWrite(t, nil, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01"})
 	wantClass(t, err, slack.ClassInvalidArgument)
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.setTopic": {body: `{"ok":false,"error":"too_long"}`}}, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01", "topic": "x"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.setTopic": {body: `{"ok":false,"error":"too_long"}`}}, "set_channel_topic", map[string]any{"channel": "C0ENGGEN01", "topic": "x"})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
@@ -349,7 +349,7 @@ func TestTopicAndPurposeChecks(t *testing.T) {
 
 func TestJoinChannelByNameAmongPublicChannels(t *testing.T) {
 	list := `{"ok":true,"channels":[{"id":"C0PUBLIC01","name":"announcements","is_channel":true}],"response_metadata":{"next_cursor":""}}`
-	res, err, srv, c := runWrite(t, map[string]route{
+	res, srv, c, err := runWrite(t, map[string]route{
 		"conversations.list": {body: list},
 		"conversations.join": {body: channelBody(`"id":"C0PUBLIC01","name":"announcements"`)},
 	}, "join_channel", map[string]any{"channel": "#announcements"})
@@ -368,24 +368,24 @@ func TestJoinChannelByNameAmongPublicChannels(t *testing.T) {
 	if ids := toolNamed(t, c, "join_channel").ResultIDs(res); ids["channel"] != "C0PUBLIC01" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.join": {body: `{"ok":true,"channel":{"id":"C0PUBLIC01"},"warning":"already_in_channel"}`}}, "join_channel", map[string]any{"channel": "C0PUBLIC01"})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.join": {body: `{"ok":true,"channel":{"id":"C0PUBLIC01"},"warning":"already_in_channel"}`}}, "join_channel", map[string]any{"channel": "C0PUBLIC01"})
 	if err != nil || !res.Content.(slack.ChannelChange).Already {
 		t.Errorf("already_in_channel: res=%+v err=%v", res, err)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.list": {body: `{"ok":true,"channels":[],"response_metadata":{"next_cursor":""}}`}}, "join_channel", map[string]any{"channel": "#nowhere"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.list": {body: `{"ok":true,"channels":[],"response_metadata":{"next_cursor":""}}`}}, "join_channel", map[string]any{"channel": "#nowhere"})
 	wantClass(t, err, slack.ClassNotFound)
 }
 
 func TestLeaveChannel(t *testing.T) {
-	res, err, _, _ := runWrite(t, map[string]route{"conversations.leave": {body: "ok.json"}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
+	res, _, _, err := runWrite(t, map[string]route{"conversations.leave": {body: "ok.json"}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
 	if err != nil || res.Content.(slack.ChannelChange).Action != "left" || res.Content.(slack.ChannelChange).Already {
 		t.Errorf("leave: res=%+v err=%v", res, err)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.leave": {body: `{"ok":true,"not_in_channel":true}`}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.leave": {body: `{"ok":true,"not_in_channel":true}`}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
 	if err != nil || !res.Content.(slack.ChannelChange).Already {
 		t.Errorf("not_in_channel: res=%+v err=%v", res, err)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.leave": {body: `{"ok":false,"error":"cant_leave_general"}`}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.leave": {body: `{"ok":false,"error":"cant_leave_general"}`}}, "leave_channel", map[string]any{"channel": "C0ENGGEN01"})
 	wantClass(t, err, slack.ClassForbidden)
 }
 
@@ -417,7 +417,7 @@ func TestJoinLeaveChecks(t *testing.T) {
 // --- invite / remove -------------------------------------------------------------------------
 
 func TestInviteToChannel(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"conversations.invite": {body: channelBody(`"id":"C0ENGGEN01"`)}},
+	res, srv, c, err := runWrite(t, map[string]route{"conversations.invite": {body: channelBody(`"id":"C0ENGGEN01"`)}},
 		"invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0BOB00001", "<@U0CAROL001>", "u0bob00001"}})
 	if err != nil {
 		t.Fatal(err)
@@ -438,25 +438,25 @@ func TestInviteToChannel(t *testing.T) {
 		many[i] = fmt.Sprintf("U0USER%04d", i)
 	}
 	for _, users := range []any{nil, []any{}, "U0BOB00001", []any{"bob"}, many} {
-		_, err, srv, _ := runWrite(t, nil, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": users})
+		_, srv, _, err := runWrite(t, nil, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": users})
 		wantClass(t, err, slack.ClassInvalidArgument)
 		if len(srv.Requests()) != 0 {
 			t.Errorf("users %v: request sent", users)
 		}
 	}
 	// already_in_channel is a success for a single user, a known failure for several.
-	res, err, _, _ = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"already_in_channel"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0BOB00001"}})
+	res, _, _, err = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"already_in_channel"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0BOB00001"}})
 	if err != nil || !res.Content.(slack.ChannelChange).Already {
 		t.Errorf("already_in_channel (one user): res=%+v err=%v", res, err)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"already_in_channel"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0BOB00001", "U0CAROL001"}})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"already_in_channel"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0BOB00001", "U0CAROL001"}})
 	wantClass(t, err, slack.ClassInvalidArgument)
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"cant_invite_self"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0ALICE001"}})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.invite": {body: `{"ok":false,"error":"cant_invite_self"}`}}, "invite_to_channel", map[string]any{"channel": "C0ENGGEN01", "users": []any{"U0ALICE001"}})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
 func TestRemoveFromChannel(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"conversations.kick": {body: "ok.json"}}, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "<@U0BOB00001>"})
+	res, srv, c, err := runWrite(t, map[string]route{"conversations.kick": {body: "ok.json"}}, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "<@U0BOB00001>"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,9 +469,9 @@ func TestRemoveFromChannel(t *testing.T) {
 	if ids := toolNamed(t, c, "remove_from_channel").ResultIDs(res); ids["user"] != "U0BOB00001" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"conversations.kick": {body: `{"ok":false,"error":"cant_kick_self"}`}}, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "U0ALICE001"})
+	_, _, _, err = runWrite(t, map[string]route{"conversations.kick": {body: `{"ok":false,"error":"cant_kick_self"}`}}, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "U0ALICE001"})
 	wantClass(t, err, slack.ClassInvalidArgument)
-	_, err, _, _ = runWrite(t, nil, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "bob"})
+	_, _, _, err = runWrite(t, nil, "remove_from_channel", map[string]any{"channel": "C0ENGGEN01", "user": "bob"})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
@@ -521,11 +521,11 @@ func TestChannelWritesShared(t *testing.T) {
 	}
 	for tool, tc := range cases {
 		t.Run(tool, func(t *testing.T) {
-			_, err, _, _ := runWrite(t, map[string]route{tc.method: {status: 502}}, tool, tc.args)
+			_, _, _, err := runWrite(t, map[string]route{tc.method: {status: 502}}, tool, tc.args)
 			if !errors.Is(err, connectors.ErrOutcomeUnknown) {
 				t.Errorf("502: err = %v, want ErrOutcomeUnknown", err)
 			}
-			_, err, _, _ = runWrite(t, map[string]route{tc.method: {body: "error_channel_not_found.json"}}, tool, tc.args)
+			_, _, _, err = runWrite(t, map[string]route{tc.method: {body: "error_channel_not_found.json"}}, tool, tc.args)
 			wantClass(t, err, slack.ClassNotFound)
 			srv := newAPIServer(t, nil)
 			c, _ := newConnector(t, srv, slack.Options{})

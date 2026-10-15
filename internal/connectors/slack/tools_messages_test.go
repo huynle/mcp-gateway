@@ -49,7 +49,7 @@ func TestMessageToolsMetadata(t *testing.T) {
 // --- update / delete ----------------------------------------------------------------
 
 func TestUpdateMessage(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"chat.update": {body: `{"ok":true,"channel":"C0ENGGEN01","ts":"` + msgTS + `","text":"fixed"}`}},
+	res, srv, c, err := runWrite(t, map[string]route{"chat.update": {body: `{"ok":true,"channel":"C0ENGGEN01","ts":"` + msgTS + `","text":"fixed"}`}},
 		"update_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS, "text": "fixed"})
 	if err != nil {
 		t.Fatal(err)
@@ -64,19 +64,19 @@ func TestUpdateMessage(t *testing.T) {
 		t.Errorf("ResultIDs = %v", ids)
 	}
 	for code, class := range map[string]string{"cant_update_message": slack.ClassForbidden, "edit_window_closed": slack.ClassForbidden, "message_not_found": slack.ClassNotFound, "msg_too_long": slack.ClassInvalidArgument} {
-		_, err, _, _ := runWrite(t, map[string]route{"chat.update": {body: `{"ok":false,"error":"` + code + `"}`}}, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS, "text": "x"})
+		_, _, _, err := runWrite(t, map[string]route{"chat.update": {body: `{"ok":false,"error":"` + code + `"}`}}, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS, "text": "x"})
 		wantClass(t, err, class)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"chat.update": {status: 500}}, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS, "text": "x"})
+	_, _, _, err = runWrite(t, map[string]route{"chat.update": {status: 500}}, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS, "text": "x"})
 	if !errors.Is(err, connectors.ErrOutcomeUnknown) {
 		t.Errorf("500: %v", err)
 	}
-	_, err, _, _ = runWrite(t, nil, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": "yesterday", "text": "x"})
+	_, _, _, err = runWrite(t, nil, "update_message", map[string]any{"channel": "C0ENGGEN01", "ts": "yesterday", "text": "x"})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
 func TestDeleteMessage(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{
+	res, srv, c, err := runWrite(t, map[string]route{
 		"users.conversations": {body: "users_conversations_page1.json"},
 		"chat.delete":         {body: `{"ok":true,"channel":"C0ENGGEN01","ts":"` + msgTS + `"}`},
 	}, "delete_message", map[string]any{"channel": "#eng-general", "ts": msgTS})
@@ -92,7 +92,7 @@ func TestDeleteMessage(t *testing.T) {
 	if ids := toolNamed(t, c, "delete_message").ResultIDs(res); ids["ts"] != msgTS {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"chat.delete": {body: `{"ok":false,"error":"cant_delete_message"}`}}, "delete_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS})
+	_, _, _, err = runWrite(t, map[string]route{"chat.delete": {body: `{"ok":false,"error":"cant_delete_message"}`}}, "delete_message", map[string]any{"channel": "C0ENGGEN01", "ts": msgTS})
 	wantClass(t, err, slack.ClassForbidden)
 }
 
@@ -141,7 +141,7 @@ func TestDeleteMessageCheck(t *testing.T) {
 
 func TestScheduleMessage(t *testing.T) {
 	routes := map[string]route{"chat.scheduleMessage": {body: `{"ok":true,"channel":"C0ENGGEN01","scheduled_message_id":"Q1298393284","post_at":1893553445}`}}
-	res, err, srv, c := runWrite(t, routes, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "Standup!", "post_at": "2030-01-02T03:04:05Z", "thread_ts": msgTS})
+	res, srv, c, err := runWrite(t, routes, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "Standup!", "post_at": "2030-01-02T03:04:05Z", "thread_ts": msgTS})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,20 +159,20 @@ func TestScheduleMessage(t *testing.T) {
 	// Unix seconds as a number or a numeric string.
 	future := time.Now().Add(time.Hour).Unix()
 	for _, at := range []any{float64(future), strconv.FormatInt(future, 10)} {
-		_, err, srv, _ := runWrite(t, routes, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": at})
+		_, srv, _, err := runWrite(t, routes, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": at})
 		if err != nil || srv.Last(t, "chat.scheduleMessage").Form.Get("post_at") != strconv.FormatInt(future, 10) {
 			t.Errorf("post_at %v: err = %v", at, err)
 		}
 	}
 	for _, at := range []any{nil, "tomorrow", "2030-01-02", -5, true} {
-		_, err, srv, _ := runWrite(t, nil, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": at})
+		_, srv, _, err := runWrite(t, nil, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": at})
 		wantClass(t, err, slack.ClassInvalidArgument)
 		if len(srv.Requests()) != 0 {
 			t.Errorf("post_at %v: request sent", at)
 		}
 	}
 	for _, code := range []string{"time_in_past", "time_too_far", "invalid_time"} {
-		_, err, _, _ := runWrite(t, map[string]route{"chat.scheduleMessage": {body: `{"ok":false,"error":"` + code + `"}`}}, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": "2030-01-02T03:04:05Z"})
+		_, _, _, err := runWrite(t, map[string]route{"chat.scheduleMessage": {body: `{"ok":false,"error":"` + code + `"}`}}, "schedule_message", map[string]any{"channel": "C0ENGGEN01", "text": "x", "post_at": "2030-01-02T03:04:05Z"})
 		wantClass(t, err, slack.ClassInvalidArgument)
 	}
 }
@@ -213,7 +213,7 @@ func TestListScheduledMessages(t *testing.T) {
 }
 
 func TestDeleteScheduledMessage(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"chat.deleteScheduledMessage": {body: "ok.json"}},
+	res, srv, c, err := runWrite(t, map[string]route{"chat.deleteScheduledMessage": {body: "ok.json"}},
 		"delete_scheduled_message", map[string]any{"channel": "C0ENGGEN01", "scheduled_message_id": "Q1298393284"})
 	if err != nil {
 		t.Fatal(err)
@@ -227,17 +227,17 @@ func TestDeleteScheduledMessage(t *testing.T) {
 	if ids := toolNamed(t, c, "delete_scheduled_message").ResultIDs(res); ids["scheduled_message_id"] != "Q1298393284" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"chat.deleteScheduledMessage": {body: `{"ok":false,"error":"invalid_scheduled_message_id"}`}},
+	_, _, _, err = runWrite(t, map[string]route{"chat.deleteScheduledMessage": {body: `{"ok":false,"error":"invalid_scheduled_message_id"}`}},
 		"delete_scheduled_message", map[string]any{"channel": "C0ENGGEN01", "scheduled_message_id": "Q1298393284"})
 	wantClass(t, err, slack.ClassNotFound)
-	_, err, _, _ = runWrite(t, nil, "delete_scheduled_message", map[string]any{"channel": "C0ENGGEN01", "scheduled_message_id": "not an id"})
+	_, _, _, err = runWrite(t, nil, "delete_scheduled_message", map[string]any{"channel": "C0ENGGEN01", "scheduled_message_id": "not an id"})
 	wantClass(t, err, slack.ClassInvalidArgument)
 }
 
 // --- pins -------------------------------------------------------------------------------
 
 func TestPinAndUnpin(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"pins.add": {body: "ok.json"}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+	res, srv, c, err := runWrite(t, map[string]route{"pins.add": {body: "ok.json"}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,23 +250,23 @@ func TestPinAndUnpin(t *testing.T) {
 	if ids := toolNamed(t, c, "pin_message").ResultIDs(res); ids["timestamp"] != msgTS || ids["channel"] != "C0ENGGEN01" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"pins.add": {body: `{"ok":false,"error":"already_pinned"}`}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+	res, _, _, err = runWrite(t, map[string]route{"pins.add": {body: `{"ok":false,"error":"already_pinned"}`}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 	if err != nil || !res.Content.(slack.PinChange).Already {
 		t.Errorf("already_pinned: res=%+v err=%v", res, err)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"pins.remove": {body: "ok.json"}}, "unpin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+	res, _, _, err = runWrite(t, map[string]route{"pins.remove": {body: "ok.json"}}, "unpin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 	if err != nil || res.Content.(slack.PinChange).Action != "unpinned" {
 		t.Errorf("unpin: res=%+v err=%v", res, err)
 	}
 	for _, code := range []string{"not_pinned", "no_pin"} {
-		res, err, _, _ = runWrite(t, map[string]route{"pins.remove": {body: `{"ok":false,"error":"` + code + `"}`}}, "unpin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+		res, _, _, err = runWrite(t, map[string]route{"pins.remove": {body: `{"ok":false,"error":"` + code + `"}`}}, "unpin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 		if err != nil || !res.Content.(slack.PinChange).Already {
 			t.Errorf("%s: res=%+v err=%v", code, res, err)
 		}
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"pins.add": {body: `{"ok":false,"error":"too_many_pins"}`}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+	_, _, _, err = runWrite(t, map[string]route{"pins.add": {body: `{"ok":false,"error":"too_many_pins"}`}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 	wantClass(t, err, slack.ClassInvalidArgument)
-	_, err, _, _ = runWrite(t, map[string]route{"pins.add": {body: "error_fatal.json"}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
+	_, _, _, err = runWrite(t, map[string]route{"pins.add": {body: "error_fatal.json"}}, "pin_message", map[string]any{"channel": "C0ENGGEN01", "timestamp": msgTS})
 	if !errors.Is(err, connectors.ErrOutcomeUnknown) {
 		t.Errorf("fatal: %v", err)
 	}

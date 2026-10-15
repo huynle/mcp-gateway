@@ -27,7 +27,7 @@ func TestProfileToolsMetadata(t *testing.T) {
 }
 
 func TestSetStatus(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "set_status",
+	res, srv, c, err := runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "set_status",
 		map[string]any{"text": "In a meeting", "emoji": ":calendar:", "expiration": "2030-01-02T03:04:05Z"})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestSetStatus(t *testing.T) {
 	}
 	// Minutes from now.
 	before := time.Now().Add(30 * time.Minute).Unix()
-	res, err, _, _ = runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "set_status", map[string]any{"text": "Lunch", "expiration": 30})
+	res, _, _, err = runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "set_status", map[string]any{"text": "Lunch", "expiration": 30})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +60,12 @@ func TestSetStatus(t *testing.T) {
 		"neg minutes":    {"text": "x", "expiration": -1},
 		"too long":       {"text": string(make([]byte, 101))},
 	} {
-		_, err, srv, _ := runWrite(t, nil, "set_status", args)
+		_, srv, _, err := runWrite(t, nil, "set_status", args)
 		if wantClassOK(err, slack.ClassInvalidArgument) == false || len(srv.Requests()) != 0 {
 			t.Errorf("%s: err = %v, requests = %d", name, err, len(srv.Requests()))
 		}
 	}
-	_, err, _, _ = runWrite(t, map[string]route{"users.profile.set": {body: "error_fatal.json"}}, "set_status", map[string]any{"text": "x"})
+	_, _, _, err = runWrite(t, map[string]route{"users.profile.set": {body: "error_fatal.json"}}, "set_status", map[string]any{"text": "x"})
 	if !errors.Is(err, connectors.ErrOutcomeUnknown) {
 		t.Errorf("fatal: %v", err)
 	}
@@ -77,7 +77,7 @@ func wantClassOK(err error, class string) bool {
 }
 
 func TestClearStatus(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "clear_status", nil)
+	res, srv, c, err := runWrite(t, map[string]route{"users.profile.set": {body: "ok.json"}}, "clear_status", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestGetDND(t *testing.T) {
 }
 
 func TestSetAndEndDND(t *testing.T) {
-	res, err, srv, c := runWrite(t, map[string]route{"dnd.setSnooze": {body: `{"ok":true,"snooze_enabled":true,"snooze_endtime":1893553445,"snooze_remaining":3600}`}}, "set_dnd", map[string]any{"minutes": 60})
+	res, srv, c, err := runWrite(t, map[string]route{"dnd.setSnooze": {body: `{"ok":true,"snooze_enabled":true,"snooze_endtime":1893553445,"snooze_remaining":3600}`}}, "set_dnd", map[string]any{"minutes": 60})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,19 +164,19 @@ func TestSetAndEndDND(t *testing.T) {
 		t.Errorf("ResultIDs = %v", ids)
 	}
 	for _, m := range []any{0, -1, 1.5, "soon", slack.MaxSnoozeMinutes + 1} {
-		_, err, srv, _ := runWrite(t, nil, "set_dnd", map[string]any{"minutes": m})
+		_, srv, _, err := runWrite(t, nil, "set_dnd", map[string]any{"minutes": m})
 		if !wantClassOK(err, slack.ClassInvalidArgument) || len(srv.Requests()) != 0 {
 			t.Errorf("minutes %v: err = %v", m, err)
 		}
 	}
-	res, err, _, c = runWrite(t, map[string]route{"dnd.endSnooze": {body: `{"ok":true,"dnd_enabled":true,"snooze_enabled":false}`}}, "end_dnd", nil)
+	res, _, c, err = runWrite(t, map[string]route{"dnd.endSnooze": {body: `{"ok":true,"dnd_enabled":true,"snooze_enabled":false}`}}, "end_dnd", nil)
 	if err != nil || res.Content.(slack.DND).SnoozeEnabled || res.Content.(slack.DND).Action != "ended" {
 		t.Errorf("end_dnd: res=%+v err=%v", res, err)
 	}
 	if ids := toolNamed(t, c, "end_dnd").ResultIDs(res); ids["dnd"] != "ended" {
 		t.Errorf("ResultIDs = %v", ids)
 	}
-	res, err, _, _ = runWrite(t, map[string]route{"dnd.endSnooze": {body: `{"ok":false,"error":"snooze_not_active"}`}}, "end_dnd", nil)
+	res, _, _, err = runWrite(t, map[string]route{"dnd.endSnooze": {body: `{"ok":false,"error":"snooze_not_active"}`}}, "end_dnd", nil)
 	if err != nil || !res.Content.(slack.DND).Already {
 		t.Errorf("snooze_not_active: res=%+v err=%v", res, err)
 	}
