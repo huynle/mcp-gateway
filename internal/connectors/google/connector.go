@@ -123,7 +123,9 @@ func New(opts Options) (*Connector, error) {
 	c.tasks = c.newApp(AppTasks,
 		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
 		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
-	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
+	c.gmail = c.newApp(AppGmail,
+		append(c.gmailReadTools(), c.gmailManageReadTools()...), append(c.gmailWriteTools(), c.gmailManageWriteTools()...),
+		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers()), merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers()))
 	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
 	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())

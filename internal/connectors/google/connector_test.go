@@ -32,7 +32,7 @@ func TestAppsAndToolNames(t *testing.T) {
 	want := map[string][]string{
 		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event"},
 		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
-		google.AppGmail:    {"search", "get_message", "list_labels", "send", "create_draft"},
+		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "send", "create_draft", "modify_labels", "trash", "send_draft"},
 		google.AppDrive:    {"search", "get_file_metadata", "create_folder"},
 		google.AppDocs:     {"get_text", "create", "append_text"},
 		google.AppSheets:   {"read_range", "append_rows"},
@@ -45,7 +45,7 @@ func TestAppsAndToolNames(t *testing.T) {
 			if tool.App != app {
 				t.Errorf("%s.%s: App = %q", app, tool.Name, tool.App)
 			}
-			if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
+			if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes && tool.Bounds.MaxResultBytes != google.MaxDownloadResultBytes {
 				t.Errorf("%s.%s: MaxResultBytes = %d, want the package default", app, tool.Name, tool.Bounds.MaxResultBytes)
 			}
 			if len(tool.RequiredScopes) == 0 {
