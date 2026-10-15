@@ -241,12 +241,16 @@ func (c *Connector) lookupHandlers() map[string]handler {
 
 // webReadHandlers are the reads that need the token itself.
 func (c *Connector) webReadHandlers() map[string]webHandler {
-	return map[string]webHandler{ToolReadFile: c.readFile}
+	m := map[string]webHandler{ToolReadFile: c.readFile}
+	for name, h := range c.docReadHandlers() {
+		m[name] = h
+	}
+	return m
 }
 
 // webWriteHandlers are the writes that need the token itself.
 func (c *Connector) webWriteHandlers() map[string]webHandler {
-	return map[string]webHandler{}
+	return c.docWriteHandlers()
 }
 
 func fileIdentity(args map[string]any) map[string]string {

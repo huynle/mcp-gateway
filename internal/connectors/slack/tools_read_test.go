@@ -124,13 +124,14 @@ func TestToolsDeclared(t *testing.T) {
 		}
 	}
 	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd,list_conversations," +
-		"get_reactions,list_channel_members,search_files,search_users,search_channels,search_emojis,read_file"; strings.Join(reads, ",") != want {
+		"get_reactions,list_channel_members,search_files,search_users,search_channels,search_emojis,read_file,read_canvas,read_list"; strings.Join(reads, ",") != want {
 		t.Errorf("reads = %v, want %s", reads, want)
 	}
 	if want := "post_message,reply_in_thread,add_reaction," +
 		"create_channel,rename_channel,archive_channel,unarchive_channel,set_channel_topic,set_channel_purpose,join_channel,leave_channel,invite_to_channel,remove_from_channel," +
 		"update_message,delete_message,schedule_message,delete_scheduled_message,pin_message,unpin_message," +
-		"upload_file,set_status,clear_status,set_dnd,end_dnd"; strings.Join(writes, ",") != want {
+		"upload_file,set_status,clear_status,set_dnd,end_dnd," +
+		"create_canvas,update_canvas,create_list,update_list,add_list_item,update_list_item"; strings.Join(writes, ",") != want {
 		t.Errorf("writes = %v, want %s", writes, want)
 	}
 }

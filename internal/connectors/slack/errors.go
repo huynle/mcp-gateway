@@ -82,10 +82,13 @@ var (
 		"invitee_cant_see_channel", "no_external_invite_permission", "ura_max_channels", "cannot_create_channel",
 		"cant_update_message", "cant_delete_message", "edit_window_closed", "compliance_exports_prevent_deletion",
 		"posting_to_channel_denied", "not_pinnable", "file_uploads_disabled", "file_uploads_except_images_disabled",
-		"file_type_not_allowed", "user_is_external_guest", "cannot_update_admin_user", "two_factor_setup_required")
+		"file_type_not_allowed", "user_is_external_guest", "cannot_update_admin_user", "two_factor_setup_required",
+		"canvas_disabled_user_team", "free_teams_cannot_create_standalone_canvases", "free_teams_cannot_edit_standalone_canvases",
+		"free_team_canvas_tab_already_exists", "permission_denied", "over_list_file_maximum", "over_row_maximum")
 	notFoundCodes = set("channel_not_found", "user_not_found", "users_not_found", "thread_not_found", "message_not_found",
 		"not_found", "no_item_specified", "team_not_found", "no_user", "invalid_scheduled_message_id", "file_not_found",
-		"user_not_visible")
+		"user_not_visible", "canvas_not_found", "list_not_found", "row_not_found", "column_not_found",
+		"duplicated_item_not_found")
 	invalidCodes = set("invalid_arguments", "invalid_arg_name", "invalid_cursor", "invalid_ts_latest", "invalid_ts_oldest",
 		"invalid_name", "invalid_limit", "invalid_page", "invalid_count", "msg_too_long", "no_text", "bad_timestamp",
 		"invalid_blocks", "invalid_blocks_format", "invalid_metadata_format", "invalid_metadata_schema", "too_many_attachments",
@@ -96,7 +99,12 @@ var (
 		"too_many_members", "missing_argument", "invalid_array_arg", "invalid_channel", "invalid_channel_id",
 		"time_in_past", "time_too_far", "invalid_time", "too_many_pins", "missing_duration", "invalid_profile",
 		"must_clear_both_status_text_and_status_emoji", "invalid_emoji_not_allowed", "file_upload_size_restricted",
-		"snippet_too_large", "alt_txt_too_large", "invalid_starts_with_at")
+		"snippet_too_large", "alt_txt_too_large", "invalid_starts_with_at",
+		"canvas_creation_failed", "canvas_editing_failed", "canvas_too_large", "invalid_schema", "invalid_column_type",
+		"invalid_primary_column", "invalid_copy_and_schema_args", "invalid_column_id", "invalid_option_id", "invalid_date",
+		"invalid_email", "invalid_phone_number", "invalid_row_id", "invalid_input_type", "invalid_text_block", "invalid_vote_value",
+		"invalid_link", "invalid_message", "invalid_attachment", "uneditable_column", "over_cell_fields_limit", "over_column_maximum",
+		"over_title_length_maximum", "invalid_args", "column_id_not_provided", "row_id_not_provided")
 	unavailableCodes = set("fatal_error", "internal_error", "service_unavailable", "request_timeout")
 )
 

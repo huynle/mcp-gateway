@@ -117,7 +117,7 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	tools := slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools(), c.lookupTools())
+	tools := slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools(), c.lookupTools(), c.docTools())
 	for i := range tools {
 		tools[i].OptionalScopes = slices.Clone(optionalScopes[tools[i].Name])
 	}
@@ -137,6 +137,7 @@ var optionalScopes = func() map[string][]string {
 		ToolPostMessage:        {ScopeIMWrite},
 		ToolReplyInThread:      {ScopeIMWrite},
 		ToolListChannelMembers: {ScopeIMRead, ScopeMpIMRead},
+		ToolUpdateCanvas:       {ScopeCanvasesRead},
 	}
 	for _, name := range []string{
 		ToolCreateChannel, ToolRenameChannel, ToolArchiveChannel, ToolUnarchiveChannel, ToolSetChannelTopic,
