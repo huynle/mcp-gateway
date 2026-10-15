@@ -99,6 +99,10 @@ type Request struct {
 	Query  url.Values
 	Header http.Header
 	Body   any
+	// RawBody, when set, is sent as is (an upload) instead of Body, with
+	// ContentType (application/octet-stream when empty).
+	RawBody     []byte
+	ContentType string
 }
 
 // Response is what Do reports besides the decoded body.
@@ -152,48 +156,13 @@ func (c *Client) Do(ctx context.Context, req Request, out any) (*Response, error
 	if err != nil {
 		return nil, fmt.Errorf("graph: token: %w", err)
 	}
-	var body io.Reader
-	if req.Body != nil {
-		b, err := json.Marshal(req.Body)
-		if err != nil {
-			return nil, fmt.Errorf("graph: encode body: %w", err)
-		}
-		body = bytes.NewReader(b)
-	}
 	method := req.Method
 	if method == "" {
 		method = http.MethodGet
 	}
-	hreq, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	raw, resp, err := c.send(ctx, req, method, u, tok, "application/json", MaxResponseBytes)
 	if err != nil {
-		return nil, fmt.Errorf("graph: build request: %w", err)
-	}
-	for k, vs := range req.Header {
-		for _, v := range vs {
-			hreq.Header.Add(k, v)
-		}
-	}
-	hreq.Header.Set("Authorization", "Bearer "+tok.AccessToken)
-	hreq.Header.Set("Accept", "application/json")
-	hreq.Header.Set("User-Agent", c.userAgent)
-	if body != nil {
-		hreq.Header.Set("Content-Type", "application/json")
-	}
-	res, err := c.http.Do(hreq)
-	if err != nil {
-		return nil, fmt.Errorf("graph: %s %s: %w", method, req.Path, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, MaxResponseBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("graph: %s %s: read answer: %w", method, req.Path, err)
-	}
-	if len(raw) > MaxResponseBytes {
-		return nil, fmt.Errorf("graph: %s %s: answer larger than %d bytes", method, req.Path, MaxResponseBytes)
-	}
-	resp := &Response{Status: res.StatusCode, Header: res.Header}
-	if res.StatusCode >= 400 {
-		return resp, newError(res, raw)
+		return resp, err
 	}
 	if out != nil && len(bytes.TrimSpace(raw)) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -201,6 +170,83 @@ func (c *Client) Do(ctx context.Context, req Request, out any) (*Response, error
 		}
 	}
 	return resp, nil
+}
+
+// ErrTooLarge is returned (wrapped) when an answer exceeds the bound the
+// caller gave: MaxResponseBytes for Do, max for Download.
+var ErrTooLarge = errors.New("graph: answer too large")
+
+// send builds and sends one request and reads at most max bytes of the
+// answer. A status of 400 or more is *Error.
+func (c *Client) send(ctx context.Context, req Request, method string, u *url.URL, tok *oauth2.Token, accept string, max int64) ([]byte, *Response, error) {
+	var body io.Reader
+	contentType := ""
+	switch {
+	case req.RawBody != nil:
+		body, contentType = bytes.NewReader(req.RawBody), req.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+	case req.Body != nil:
+		b, err := json.Marshal(req.Body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("graph: encode body: %w", err)
+		}
+		body, contentType = bytes.NewReader(b), "application/json"
+	}
+	hreq, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("graph: build request: %w", err)
+	}
+	for k, vs := range req.Header {
+		for _, v := range vs {
+			hreq.Header.Add(k, v)
+		}
+	}
+	hreq.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	hreq.Header.Set("Accept", accept)
+	hreq.Header.Set("User-Agent", c.userAgent)
+	if contentType != "" {
+		hreq.Header.Set("Content-Type", contentType)
+	}
+	res, err := c.http.Do(hreq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("graph: %s %s: %w", method, req.Path, err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, max+1))
+	if err != nil {
+		return nil, nil, fmt.Errorf("graph: %s %s: read answer: %w", method, req.Path, err)
+	}
+	resp := &Response{Status: res.StatusCode, Header: res.Header}
+	if res.StatusCode >= 400 {
+		return nil, resp, newError(res, raw)
+	}
+	if int64(len(raw)) > max {
+		return nil, resp, fmt.Errorf("%w: graph: %s %s: answer larger than %d bytes", ErrTooLarge, method, req.Path, max)
+	}
+	return raw, resp, nil
+}
+
+// Download GETs path (a content or $value endpoint; a redirect to the
+// pre-authenticated download URL is followed by the HTTP client, which
+// drops the bearer on another host) and returns the raw bytes and the
+// answer's headers. An answer over max bytes is ErrTooLarge; an error
+// status is *Error.
+func (c *Client) Download(ctx context.Context, path string, query url.Values, max int64) ([]byte, http.Header, error) {
+	u, err := c.resolve(path, query)
+	if err != nil {
+		return nil, nil, err
+	}
+	tok, err := c.token.Token()
+	if err != nil {
+		return nil, nil, fmt.Errorf("graph: token: %w", err)
+	}
+	raw, resp, err := c.send(ctx, Request{Path: path}, http.MethodGet, u, tok, "*/*", max)
+	if err != nil {
+		return nil, nil, err
+	}
+	return raw, resp.Header, nil
 }
 
 // resolve turns a path into the request URL: an absolute URL must be on
@@ -241,6 +287,18 @@ func (c *Client) Post(ctx context.Context, path string, body, out any) (int, err
 		return 0, err
 	}
 	return res.Status, nil
+}
+
+// Patch is Do for a JSON PATCH.
+func (c *Client) Patch(ctx context.Context, path string, body, out any) error {
+	_, err := c.Do(ctx, Request{Method: http.MethodPatch, Path: path, Body: body}, out)
+	return err
+}
+
+// Delete is Do for a DELETE.
+func (c *Client) Delete(ctx context.Context, path string) error {
+	_, err := c.Do(ctx, Request{Method: http.MethodDelete, Path: path}, nil)
+	return err
 }
 
 // envelope is the Graph error body.
