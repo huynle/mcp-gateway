@@ -77,6 +77,8 @@ Publishing **shares** a server with the chosen roles (task `fekckdrt`, decision 
   | deny | deny (hidden when unconditional) | deny |
   | no rule (owner layer) | **allow** | confirm |
 
+  The same modes can be read and changed over MCP with `gateway.get_tool_approvals` / `gateway.set_tool_approval` (owner of a private server, admin for a published one; every change needs an approval first; see [gateway-management.md](gateway-management.md)). Built-in vendor apps have their own org-wide Ask / Auto setting on Settings → Vendor apps ([vendor-apps.md](vendor-apps.md) §9).
+
   User restrictions (deny / confirm) and token narrowing (read-only, allow-list) still win. Reviews stored before modes existed count as Ask for every write, so a role *allow* on a published server's write now asks for an approval until the admin sets the tool to Auto (before this change a role allow on a server write ran without one).
 
 The detail page says so in its Publish section and in the "Published" notice ("… The owner keeps access.").
