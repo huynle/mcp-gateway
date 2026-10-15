@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -393,25 +392,8 @@ func (c *Connector) listPullRequestFiles(ctx context.Context, client *gh.Client,
 	// Over the bounds: drop patches largest first, then whole files from
 	// the end (never below one), so the harness still sees which files
 	// changed.
-	if encodedSize(out) > c.bounds.MaxResultBytes {
+	if fitFiles(&out.Files, c.bounds.MaxResultBytes, func() int { return encodedSize(out) }, &out.Truncated) {
 		res.Partial = true
-		order := make([]int, len(out.Files))
-		for i := range order {
-			order[i] = i
-		}
-		sort.SliceStable(order, func(a, b int) bool { return len(out.Files[order[a]].Patch) > len(out.Files[order[b]].Patch) })
-		for _, i := range order {
-			if encodedSize(out) <= c.bounds.MaxResultBytes {
-				break
-			}
-			if out.Files[i].Patch != "" {
-				out.Files[i].Patch, out.Files[i].PatchTruncated = "", true
-			}
-		}
-		for encodedSize(out) > c.bounds.MaxResultBytes && len(out.Files) > 1 {
-			out.Files = out.Files[:len(out.Files)-1]
-			out.Truncated = true
-		}
 	}
 	res.Content = out
 	return res, nil

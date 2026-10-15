@@ -35,8 +35,12 @@ func TestRegisterConnectorsRegistersGitHubWithConnections(t *testing.T) {
 			n++
 		}
 	}
-	if n != 10 {
-		t.Errorf("registry has %d github tools, want 10 (fake flag off)", n)
+	gc, err := github.New(github.Options{Tokens: connSvc.TokenSource})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := len(gc.Tools()) + 1; n != want {
+		t.Errorf("registry has %d github tools, want %d: the connector's and list_accounts (fake flag off)", n, want)
 	}
 	accts, err := src.ListAccounts(ctx, userAlice, github.App)
 	if err != nil || len(accts) != 0 {
