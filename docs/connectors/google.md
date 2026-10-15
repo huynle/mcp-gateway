@@ -4,17 +4,17 @@ Package `internal/connectors/google`, vendor `google`. One Google connection (bo
 
 | App | Tools | Google API | Increment |
 |---|---|---|---|
-| `calendar` | `list_events`, `get_event`, `create_event` | Calendar API v3 | 1 |
-| `tasks` | `list`, `create` | Tasks API v1 | 1 |
-| `gmail` | `search`, `get_message`, `list_labels`, `send`, `create_draft` | Gmail API v1 | 1 |
-| `drive` | `search`, `get_file_metadata`, `create_folder` | Drive API v3 | 2 |
-| `docs` | `get_text`, `create`, `append_text` | Docs API v1 (+ Drive for `create`) | 2 |
-| `sheets` | `read_range`, `append_rows` | Sheets API v4 | 2 |
-| `contacts` | `search` | People API v1 | 2 |
+| `calendar` | `list_events`, `get_event`, `create_event`; `list_calendars`, `free_busy`, `update_event`, `delete_event`, `respond_to_event` | Calendar API v3 | 1, 3 |
+| `tasks` | `list`, `create`; `list_tasklists`, `get`, `update`, `complete`, `delete` | Tasks API v1 | 1, 3 |
+| `gmail` | `search`, `get_message`, `list_labels`, `send`, `create_draft`; `get_thread`, `list_drafts`, `get_attachment`, `modify_labels`, `trash`, `send_draft` | Gmail API v1 | 1, 3 |
+| `drive` | `search`, `get_file_metadata`, `create_folder`; `get_content`, `list_folder`, `list_permissions`, `list_comments`, `create_file`, `update_file`, `share`, `add_comment` | Drive API v3 | 2, 3 |
+| `docs` | `get_text`, `create`, `append_text`; `replace_text` | Docs API v1 (+ Drive for `create`) | 2, 3 |
+| `sheets` | `read_range`, `append_rows`; `get_metadata`, `update_range`, `create` | Sheets API v4 (+ Drive for `create`) | 2, 3 |
+| `contacts` | `search`; `get`, `list` | People API v1 | 2, 3 |
 
 The connector follows the GitHub reference (`docs/connectors/github.md`, Brain decisions `89k5cln0`, `8023b958`): tokens come from the connection's `oauth2.TokenSource` per call and are never stored; every write runs behind the safety core and declares how it is reconciled after an unknown outcome. The APIs are reached through [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) v0.298.0 (the newest release declaring Go 1.25; v0.299+ require Go 1.26). The tool set is designed after [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) (Python, MIT) without copying code.
 
-Increment 2 (Drive, Docs, Sheets, Contacts; Brain decision `85k9b1ig`) adds four apps over the same binding; its design choices are in [Increment 2 notes](#increment-2-notes-drive-docs-sheets-contacts).
+Increment 2 (Drive, Docs, Sheets, Contacts; Brain decision `85k9b1ig`) adds four apps over the same binding; its design choices are in [Increment 2 notes](#increment-2-notes-drive-docs-sheets-contacts). Increment 3 closes the gaps with Claude's Gmail / Calendar / Drive connectors and `google_workspace_mcp` (Brain plan `5soa9785`): 30 tools listed in [Increment 3: management tools](#increment-3-management-tools); its 16 new writes default to **Ask** (migration `00022`).
 
 ## Reads
 
@@ -145,6 +145,13 @@ A 401 on userinfo fails the connect with `reconnect_required`; a 5xx with `unava
    https://www.googleapis.com/auth/spreadsheets
    https://www.googleapis.com/auth/contacts.readonly
    ```
+   plus, for increment 3, the new scopes (see [Increment 3](#increment-3-management-tools); `gmail.modify` and `drive.readonly` are **restricted**):
+   ```
+   https://www.googleapis.com/auth/calendar.calendarlist.readonly
+   https://www.googleapis.com/auth/calendar.freebusy
+   https://www.googleapis.com/auth/gmail.modify
+   https://www.googleapis.com/auth/drive.readonly
+   ```
    (read-only deployments list `calendar.events.readonly`, `tasks.readonly`, `gmail.readonly`, `drive.metadata.readonly`, `documents.readonly`, `spreadsheets.readonly`, `contacts.readonly`; `gmail.labels` alone keeps `list_labels` working without any restricted scope; leaving `drive.metadata.readonly` out keeps the External app free of a restricted Drive scope at the price of the [`drive.file` limitation](#increment-2-notes-drive-docs-sheets-contacts)), the extras `access_type=offline`, `prompt=consent`, `include_granted_scopes=true` (defaults), and in **Extra parameters** the line
    ```
    company_domains=acme.com,acme.co.uk
@@ -171,6 +178,58 @@ Brain decision `85k9b1ig` (tagged `needs-review`: taken autonomously).
 - **Bounds.** `docs.get_text`: `MaxResultBytes` on the text (`characters` keeps the full count). `sheets.read_range`: `max_rows` (default 200, ceiling 1000), then `MaxResultBytes` dropping trailing rows, never below one. `sheets.append_rows`: 500 rows and 10 000 cells per call; `docs.append_text` and `body_text`: 100 000 characters. `contacts.search`: one page of at most 30 (the API's cap). `drive.search`: `MaxPageSize` like every list.
 - **Formulas.** `sheets.append_rows` sends `valueInputOption=RAW` unless asked for `USER_ENTERED`, so harness-provided cells cannot inject formulas into a sheet by accident.
 - **Resource identity `drive`.** `my` for My Drive, else the shared drive id given as `drive_id`; `folder_id` is the parent folder of a create. Policy can confine the creates to My Drive or confirm them in shared drives.
+
+## Increment 3: management tools
+
+Brain plan `5soa9785`. Same conventions as above (argument validation before the token, `classify` / `classifyWrite`, `Empty` / `Partial`, bounds); the tables list only what is new.
+
+### Reads
+
+| Tool | Arguments | Result | Scope |
+|---|---|---|---|
+| `calendar.list_calendars` | `show_hidden?`, `max_results`, `page_token` | `{max_results, next_page_token, has_more, truncated?, items: [{id, summary, description, time_zone, access_role, primary, selected, hidden}]}` | `calendar.calendarlist.readonly` (**new**; `calendar.readonly` / `calendar` cover it) |
+| `calendar.free_busy` | `time_min`, `time_max` (RFC 3339), `calendar_ids?` (at most 50; `primary` by default), `time_zone?` | `{time_min, time_max, truncated?, calendars: [{id, busy: [{start, end}], errors?}]}`; a calendar Google could not read carries `errors` and makes the result `partial` | `calendar.freebusy` (**new**; `calendar.readonly`, `calendar.events.freebusy` cover it) |
+| `tasks.list_tasklists` | `max_results`, `page_token` | `{max_results, next_page_token, has_more, items: [{id, title, updated}]}` | `tasks.readonly` |
+| `tasks.get` | `tasklist?`, `task_id` | one task as in `tasks.list` (notes cut to the bounds) | `tasks.readonly` |
+| `gmail.get_thread` | `thread_id` | `{id, truncated?, messages: [message as get_message]}`; bodies cut oldest first, then trailing messages dropped | `gmail.readonly` |
+| `gmail.list_drafts` | `q?`, `max_results` (default 10), `page_token` | `{max_results, next_page_token, has_more, items: [{draft_id, message_id, thread_id, to, subject, date, snippet, error?}]}` (one metadata request per draft, like `search`) | `gmail.readonly` |
+| `gmail.get_attachment` | `message_id`, `attachment_id` | `{message_id, attachment_id, size, encoding (text or base64), content}`; at most **5 MiB** (`google.MaxDownloadBytes`), larger is refused with `invalid_argument`, never cut | `gmail.readonly` |
+| `drive.get_content` | `file_id`, `export_mime_type?` | `{id, name, mime_type, exported_as?, size, encoding, content}`: Google Docs and Slides exported as `text/plain`, Sheets as `text/csv`, drawings as `image/png` (or `export_mime_type`); other files downloaded as they are (`alt=media`); at most 5 MiB (checked on the metadata size and while reading); folders, forms and other non-exportable types are `invalid_argument` | `drive.readonly` (**new, restricted**; or `drive.file`, per file) |
+| `drive.list_folder` | `folder_id?` (`root`), `max_results`, `page_token` | `{folder_id, max_results, next_page_token, has_more, items: [file as drive.search]}` (`'<id>' in parents and trashed = false`, all drives, folders first) | `drive.metadata.readonly` (or `drive.file`) |
+| `drive.list_permissions` | `file_id`, `page_token?` | `{file_id, next_page_token, has_more, items: [{id, type, role, email, domain, display_name, expires}]}` | `drive.metadata.readonly` (or `drive.file`) |
+| `drive.list_comments` | `file_id`, `max_results`, `page_token` | `{file_id, ..., items: [{id, content, author, email, created, modified, resolved, quoted, replies: [{id, content, author, created}]}]}` | `drive.readonly` (or `drive.file`) |
+| `sheets.get_metadata` | `spreadsheet_id` | `{spreadsheet_id, title, url, locale, time_zone, sheets: [{sheet_id, title, index, type, rows, columns, hidden}]}`; never cell values | `spreadsheets.readonly` (or `drive.file`) |
+| `contacts.get` | `resource_name` (`people/<id>`) | `{resource_name, name, given_name, family_name, emails, organization, title, phones}` (read mask adds `phoneNumbers`) | `contacts.readonly` |
+| `contacts.list` | `max_results`, `page_token` | `{max_results, total, next_page_token, has_more, items: [contact as search]}` (`people/me/connections`) | `contacts.readonly` |
+
+`gmail.get_attachment` and `drive.get_content` declare `Bounds.MaxResultBytes = google.MaxDownloadResultBytes` (8 MiB, enough for 5 MiB in base64); every other tool keeps the default.
+
+### Writes
+
+All 16 default to **Ask** (migration `00022_google_default_ask.sql`; `TestGoogleNewWritesAreSeededAsAsk` keeps the list equal to every Google write except the eight of increments 1 and 2).
+
+| Tool | Arguments | Result / `ResultIDs` | Reconciliation | Scope |
+|---|---|---|---|---|
+| `calendar.update_event` | `calendar_id?`, `event_id`, any of `summary`, `description`, `location`, `start`, `end`, `time_zone`, `attendees` (the new full list), `send_updates?` | `{id, calendar_id, url, status, start, end}` / `id`, `url` | **marker**: private extended property `mcp-gateway-op` = op set in the same `events.patch` (merged with the event's other private properties, read first) | `calendar.events` |
+| `calendar.delete_event` | `calendar_id?`, `event_id`, `send_updates?` | `{id, calendar_id, deleted}` / `id` | **stable id**: the event 404/410 or `cancelled` is found | `calendar.events` |
+| `calendar.respond_to_event` | `calendar_id?`, `event_id`, `response` (`accepted`, `declined`, `tentative`), `comment?`, `send_updates?` | `{id, calendar_id, response, url}` / `id`, `response` | **stable id**: the `self` attendee's response equals the identity's `response` | `calendar.events` |
+| `tasks.update` | `tasklist?`, `task_id`, any of `title`, `notes`, `due`, `status` | `{id, tasklist, status, url}` / `id`, `tasklist` | **none** | `tasks` |
+| `tasks.complete` | `tasklist?`, `task_id` | as above | **stable id**: status `completed` | `tasks` |
+| `tasks.delete` | `tasklist?`, `task_id` | `{id, tasklist, deleted}` | **stable id**: 404/410 or `deleted` | `tasks` |
+| `gmail.modify_labels` | `message_id` or `thread_id`, `add_label_ids?`, `remove_label_ids?` (archive = remove `INBOX`, read = remove `UNREAD`, star = add `STARRED`) | `{id, target, labels}` / `id`, `target` | **stable id**: every message carries the added and none of the removed labels | `gmail.modify` (**new, restricted**) |
+| `gmail.trash` | `message_id` or `thread_id` | as above | **stable id**: every message labelled `TRASH` | `gmail.modify` |
+| `gmail.send_draft` | `draft_id` | `{id, thread_id}` / `id`, `thread_id` | **stable id**: the draft still there is `not_found`; gone is "cannot tell" (sent or deleted), so the operation ends `unresolved` | `gmail.compose` |
+| `drive.create_file` | `name`, `content`, `content_encoding?` (`text` / `base64`), `mime_type?`, `parent_id?`, `drive_id?`; at most 5 MiB | `{id, name, mime_type, url, parents, drive_id}` / `id`, `url` | **marker** in `appProperties` (multipart upload, one request) | `drive.file` |
+| `drive.update_file` | `file_id`, any of `name`, `description`, `parent_id` (move: the current parents are read and removed) | as above | **marker**: `appProperties.mcp-gateway-op` = op on the file (another operation's marker is "cannot tell") | `drive.file` |
+| `drive.share` | `file_id`, `role` (`reader`, `commenter`, `writer`; never owner), `type?` (`user` default, `group`, `domain`, `anyone`), `email` / `domain`, `send_notification?` (default true), `message?` | `{file_id, permission_id, type, role, email, domain}` / `file_id`, `permission_id` | **none** | `drive.file` |
+| `drive.add_comment` | `file_id`, `content` | `{file_id, comment_id, created}` / `file_id`, `comment_id` | **none** | `drive.file` |
+| `docs.replace_text` | `document_id`, `find`, `replace` (empty deletes), `match_case?` (default true) | `{document_id, occurrences_changed}` / `document_id` | **none** | `documents` |
+| `sheets.update_range` | `spreadsheet_id`, `range`, `rows`, `value_input_option?` (`RAW` default) | as `append_rows` | **none** | `spreadsheets` |
+| `sheets.create` | `title`, `parent_id?`, `drive_id?` | `{id, name, mime_type, url, parents, drive_id}` / `id`, `url` | **marker** in `appProperties` (Drive `files.create`, like `docs.create`) | `drive.file` |
+
+**Resource identity** of the new tools: `calendar_id`, `domain`, `event_id` (+ `response` for `respond_to_event`); `calendar_ids` and `domains` for `free_busy`; `tasklist`, `task_id`; `message_id` / `thread_id` / `attachment_id` / `draft_id` and `add_labels` / `remove_labels` (sorted label ids) for Gmail; `file_id`, `folder_id` (the folder moved into or listed); `drive.share` adds `role`, `type` and `grantee_domain` (the domain of the email, or the domain shared with) so a rule such as *deny `drive.share` when `grantee_domain` not equals `acme.com`* or *when `type` equals `anyone`* keeps files inside the company; `document_id`, `spreadsheet_id`, `resource_name`. Never text, names, titles, cell values or full addresses.
+
+**Not built** (and why): Gmail filters, vacation / out-of-office and label management (settings, not mail); Calendar creation of secondary calendars, focus-time / working-location events; Docs structural edits (tables, images, headers, `batch_update` with arbitrary requests: too open for a reviewed write); Sheets formatting, conditional formatting, tab management; Contacts writes; Forms, Slides, Chat, Apps Script and Custom Search (no app here); Drive permission removal and file deletion (destructive; `update_file` cannot trash).
 
 ## Adding the next tool
 

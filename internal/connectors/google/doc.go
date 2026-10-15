@@ -6,7 +6,14 @@
 // get_message, list_labels, send, create_draft). Increment 2 (decision
 // 85k9b1ig): "drive" (search, get_file_metadata, create_folder), "docs"
 // (get_text, create, append_text), "sheets" (read_range, append_rows)
-// and "contacts" (search). Each app is its own connectors.Connector so
+// and "contacts" (search). Increment 3 (Brain plan 5soa9785) adds the
+// management tools: calendar list_calendars, free_busy, update_event,
+// delete_event, respond_to_event; tasks list_tasklists, get, update,
+// complete, delete; gmail get_thread, list_drafts, get_attachment,
+// modify_labels, trash, send_draft; drive get_content, list_folder,
+// list_permissions, list_comments, create_file, update_file, share,
+// add_comment; docs replace_text; sheets get_metadata, update_range,
+// create; contacts get, list (docs/connectors/google.md). Each app is its own connectors.Connector so
 // tool names read calendar.list_events, drive.search and docs.get_text,
 // roles can grant or deny a whole app, and the restricted Gmail and
 // Drive scopes stay separable from the rest.
