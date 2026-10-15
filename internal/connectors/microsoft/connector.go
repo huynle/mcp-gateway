@@ -183,7 +183,7 @@ func (c *Connector) checkScopes(ctx context.Context, name string, call connector
 		msg := fmt.Sprintf("this Microsoft account has not granted %s", strings.Join(missing, ", "))
 		teams := false
 		for _, m := range missing {
-			teams = teams || TeamsScope(m)
+			teams = teams || WorkOnlyScope(m)
 		}
 		if teams {
 			msg += ": " + personalAccountsLackMessage + "; a work account can grant them on the portal (/connections, grant more access)"
