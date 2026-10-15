@@ -129,8 +129,11 @@ func New(opts Options) (*Connector, error) {
 	c.drive = c.newApp(AppDrive,
 		append(c.driveReadTools(), c.driveManageReadTools()...), append(c.driveWriteTools(), c.driveManageWriteTools()...),
 		merge(c.driveReadHandlers(), c.driveManageReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
-	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
-	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())
+	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
+		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
+	c.sheets = c.newApp(AppSheets,
+		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
+		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
 	c.contacts = c.newApp(AppContacts, append(c.contactsReadTools(), c.contactsManageReadTools()...), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers()), c.contactsWriteHandlers())
 	return c, nil

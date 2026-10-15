@@ -34,8 +34,8 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "send", "create_draft", "modify_labels", "trash", "send_draft"},
 		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "create_folder", "create_file", "update_file", "share", "add_comment"},
-		google.AppDocs:     {"get_text", "create", "append_text"},
-		google.AppSheets:   {"read_range", "append_rows"},
+		google.AppDocs:     {"get_text", "create", "append_text", "replace_text"},
+		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create"},
 		google.AppContacts: {"search", "get", "list"},
 	}
 	for app, names := range want {
