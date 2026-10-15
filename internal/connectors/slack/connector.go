@@ -109,7 +109,7 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools())
+	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools())
 }
 
 // handler runs one tool against an authenticated client.

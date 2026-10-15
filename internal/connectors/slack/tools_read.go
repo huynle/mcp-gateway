@@ -158,13 +158,17 @@ func (c *Connector) readTools() []connectors.Tool {
 
 // handlers maps short tool names to their implementation.
 func (c *Connector) handlers() map[string]handler {
-	return map[string]handler{
+	m := map[string]handler{
 		ToolListChannels:       c.listChannels,
 		ToolReadChannelHistory: c.readChannelHistory,
 		ToolGetThread:          c.getThread,
 		ToolSearchMessages:     c.searchMessages,
 		ToolGetUser:            c.getUser,
 	}
+	for name, h := range c.messageReadHandlers() {
+		m[name] = h
+	}
+	return m
 }
 
 // --- schema helpers ----------------------------------------------------------
