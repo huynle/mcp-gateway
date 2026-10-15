@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,7 +108,9 @@ func (c *Connector) App() string { return App }
 
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
-func (c *Connector) Tools() []connectors.Tool { return append(c.readTools(), c.writeTools()...) }
+func (c *Connector) Tools() []connectors.Tool {
+	return slices.Concat(c.readTools(), c.writeTools(), c.channelTools())
+}
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, api *goslack.Client, call connectors.Call) (connectors.Result, error)

@@ -193,10 +193,17 @@ func objectSchema(props []property, required []string) json.RawMessage {
 		Enum        []string `json:"enum,omitempty"`
 		Minimum     *int     `json:"minimum,omitempty"`
 		Maximum     *int     `json:"maximum,omitempty"`
+		Items       any      `json:"items,omitempty"`
+		MaxItems    *int     `json:"maxItems,omitempty"`
+		MinItems    *int     `json:"minItems,omitempty"`
 	}
 	properties := map[string]schemaProp{}
 	for _, p := range props {
 		sp := schemaProp{Type: p.Type, Description: p.Description, Enum: p.Enum}
+		if p.Type == "array" {
+			one, max := 1, MaxInviteUsers
+			sp.Items, sp.MinItems, sp.MaxItems = map[string]string{"type": "string"}, &one, &max
+		}
 		switch p.Name {
 		case "page":
 			one := 1

@@ -104,7 +104,7 @@ func toolNamed(t *testing.T, c *slack.Connector, name string) connectors.Tool {
 
 // --- tool metadata ----------------------------------------------------------
 
-func TestToolsAreTheFiveReadsAndThreeWrites(t *testing.T) {
+func TestToolsDeclared(t *testing.T) {
 	c, _ := newConnector(t, newAPIServer(t, nil), slack.Options{})
 	if c.App() != "slack" {
 		t.Errorf("App() = %q", c.App())
@@ -126,7 +126,8 @@ func TestToolsAreTheFiveReadsAndThreeWrites(t *testing.T) {
 	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user"; strings.Join(reads, ",") != want {
 		t.Errorf("reads = %v, want %s", reads, want)
 	}
-	if want := "post_message,reply_in_thread,add_reaction"; strings.Join(writes, ",") != want {
+	if want := "post_message,reply_in_thread,add_reaction," +
+		"create_channel,rename_channel,archive_channel,unarchive_channel,set_channel_topic,set_channel_purpose,join_channel,leave_channel,invite_to_channel,remove_from_channel"; strings.Join(writes, ",") != want {
 		t.Errorf("writes = %v, want %s", writes, want)
 	}
 }

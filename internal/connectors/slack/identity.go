@@ -107,23 +107,31 @@ func (c *Connector) channelName(ctx context.Context, call connectors.Call, id st
 // types (pages of resolveLimit, at most MaxResolvePages) and returns
 // the first one match accepts; nil when none did within the bound.
 func (c *Connector) findConversation(ctx context.Context, api *goslack.Client, types []string, match func(goslack.Channel) bool) (*goslack.Channel, error) {
+	ch, _, err := c.walkConversations(ctx, api, types, match)
+	return ch, err
+}
+
+// walkConversations is findConversation that also reports whether the
+// listing ended (exhausted) rather than hit the page bound, so a
+// reconciliation can tell "not there" from "not seen yet".
+func (c *Connector) walkConversations(ctx context.Context, api *goslack.Client, types []string, match func(goslack.Channel) bool) (*goslack.Channel, bool, error) {
 	params := &goslack.GetConversationsForUserParameters{Types: types, Limit: resolveLimit}
 	for page := 1; page <= MaxResolvePages; page++ {
 		channels, next, err := api.GetConversationsForUserContext(ctx, params)
 		if err := classify("resolve channel", err); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for i := range channels {
 			if match(channels[i]) {
-				return &channels[i], nil
+				return &channels[i], false, nil
 			}
 		}
 		if next == "" {
-			break
+			return nil, true, nil
 		}
 		params.Cursor = next
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 // nameCache is the bounded, expiring (account, id) -> name map.
