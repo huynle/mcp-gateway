@@ -123,12 +123,13 @@ func TestToolsDeclared(t *testing.T) {
 			t.Errorf("%s: MaxResultBytes = %d", tool.Name, tool.Bounds.MaxResultBytes)
 		}
 	}
-	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins"; strings.Join(reads, ",") != want {
+	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd"; strings.Join(reads, ",") != want {
 		t.Errorf("reads = %v, want %s", reads, want)
 	}
 	if want := "post_message,reply_in_thread,add_reaction," +
 		"create_channel,rename_channel,archive_channel,unarchive_channel,set_channel_topic,set_channel_purpose,join_channel,leave_channel,invite_to_channel,remove_from_channel," +
-		"update_message,delete_message,schedule_message,delete_scheduled_message,pin_message,unpin_message"; strings.Join(writes, ",") != want {
+		"update_message,delete_message,schedule_message,delete_scheduled_message,pin_message,unpin_message," +
+		"upload_file,set_status,clear_status,set_dnd,end_dnd"; strings.Join(writes, ",") != want {
 		t.Errorf("writes = %v, want %s", writes, want)
 	}
 }

@@ -165,8 +165,10 @@ func (c *Connector) handlers() map[string]handler {
 		ToolSearchMessages:     c.searchMessages,
 		ToolGetUser:            c.getUser,
 	}
-	for name, h := range c.messageReadHandlers() {
-		m[name] = h
+	for _, more := range []map[string]handler{c.messageReadHandlers(), c.profileReadHandlers()} {
+		for name, h := range more {
+			m[name] = h
+		}
 	}
 	return m
 }

@@ -115,7 +115,7 @@ func (c *Connector) messageTools() []connectors.Tool {
 			App: App, Name: ToolDeleteMessage, Kind: connectors.KindWrite,
 			Description:    "Delete a message the connected user posted (or any message, for a workspace admin), identified by channel and ts.",
 			InputSchema:    objectSchema([]property{channelProperty, tsProp}, []string{"channel", "ts"}),
-			RequiredScopes: chat, ResourceIdentity: identity("ts"), Reconcile: connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkDeleted},
+			RequiredScopes: chat, ResourceIdentity: identity("ts"), Reconcile: stableID(c.checkDeleted),
 			ResultIDs: messageChangeIDs, Bounds: single,
 		},
 		{
@@ -148,14 +148,14 @@ func (c *Connector) messageTools() []connectors.Tool {
 			Description:    "Pin a message to its channel. Idempotent: an already pinned message is reported with already: true.",
 			InputSchema:    objectSchema([]property{channelProperty, timestampProp}, []string{"channel", "timestamp"}),
 			RequiredScopes: []string{ScopePinsWrite}, ResourceIdentity: identity("timestamp"),
-			Reconcile: connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkPinned(true)}, ResultIDs: pinChangeIDs, Bounds: single,
+			Reconcile: stableID(c.checkPinned(true)), ResultIDs: pinChangeIDs, Bounds: single,
 		},
 		{
 			App: App, Name: ToolUnpinMessage, Kind: connectors.KindWrite,
 			Description:    "Unpin a message from its channel. Idempotent: a message that is not pinned is reported with already: true.",
 			InputSchema:    objectSchema([]property{channelProperty, timestampProp}, []string{"channel", "timestamp"}),
 			RequiredScopes: []string{ScopePinsWrite}, ResourceIdentity: identity("timestamp"),
-			Reconcile: connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkPinned(false)}, ResultIDs: pinChangeIDs, Bounds: single,
+			Reconcile: stableID(c.checkPinned(false)), ResultIDs: pinChangeIDs, Bounds: single,
 		},
 		{
 			App: App, Name: ToolListPins, Kind: connectors.KindRead,

@@ -76,15 +76,12 @@ type ChannelChange struct {
 // before the call, so Check reads the channel's state back.
 func (c *Connector) channelTools() []connectors.Tool {
 	single := connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes}
-	stable := func(check func(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error)) connectors.Reconciliation {
-		return connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: check}
-	}
 	scopes := []string{ScopeChannelsWrite}
 	tool := func(name, desc string, props []property, required []string, ident func(map[string]any) map[string]string, check func(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error)) connectors.Tool {
 		return connectors.Tool{
 			App: App, Name: name, Kind: connectors.KindWrite, Description: desc,
 			InputSchema: objectSchema(props, required), RequiredScopes: scopes,
-			ResourceIdentity: ident, Reconcile: stable(check), ResultIDs: channelChangeIDs, Bounds: single,
+			ResourceIdentity: ident, Reconcile: stableID(check), ResultIDs: channelChangeIDs, Bounds: single,
 		}
 	}
 	nameProp := func(desc string) property { return property{"name", "string", desc, nil} }
@@ -625,6 +622,11 @@ func channelInfo(ctx context.Context, api *goslack.Client, id string) (*goslack.
 		return nil, errors.New("slack: reconcile: conversations.info returned no channel")
 	}
 	return ch, nil
+}
+
+// stableID declares stable-id reconciliation with check.
+func stableID(check func(context.Context, connectors.ReconcileInput) (connectors.ReconcileResult, error)) connectors.Reconciliation {
+	return connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: check}
 }
 
 // verdict turns a boolean state check into found (resource: id) or not_found.

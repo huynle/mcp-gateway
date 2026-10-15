@@ -128,7 +128,7 @@ func (c *Connector) writeHandlers() map[string]handler {
 		ToolReplyInThread: c.replyInThread,
 		ToolAddReaction:   c.addReaction,
 	}
-	for _, more := range []map[string]handler{c.channelHandlers(), c.messageWriteHandlers()} {
+	for _, more := range []map[string]handler{c.channelHandlers(), c.messageWriteHandlers(), c.fileHandlers(), c.profileWriteHandlers()} {
 		for name, h := range more {
 			m[name] = h
 		}
