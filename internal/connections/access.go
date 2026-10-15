@@ -3,9 +3,11 @@ package connections
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/observability"
+	"github.com/huynle/mcp-gateway/internal/store"
 )
 
 // ToolVisibility answers whether the user's roles and restrictions let
@@ -118,4 +120,98 @@ func (s *Service) MissingAccess(ctx context.Context, userID string, conn Info) (
 	gap.Scopes = unionScopes(scopes...)
 	gap.Tools, gap.Extended = unionScopes(gap.Tools), unionScopes(gap.Extended)
 	return gap, nil
+}
+
+// flowScopes is what Start asks the vendor for: the app's base scopes,
+// every scope the connection being re-granted (req.ConnectionID) already
+// holds (an incremental request must not lose them: Microsoft issues a token
+// for exactly the scopes asked, and Google keeps earlier grants only
+// with include_granted_scopes), and either the requested scopes or, when
+// none were requested (Connect), the scopes of the read tools the user's
+// policy shows: reads first, writes through grant more access.
+//
+// Requested scopes are accepted only when they are base scopes or some
+// tool of the vendor requires or uses them; anything else is dropped and
+// logged, so a crafted link cannot widen what the gateway asks for.
+func (s *Service) flowScopes(ctx context.Context, app VendorApp, req StartRequest) ([]string, error) {
+	reg, vis := s.toolCatalog()
+	tools := s.vendorTools(reg, app.Vendor)
+	allowed := map[string]bool{}
+	for _, sc := range app.Scopes {
+		allowed[sc] = true
+	}
+	for _, t := range tools {
+		for _, sc := range slices.Concat(t.RequiredScopes, t.OptionalScopes) {
+			allowed[sc] = true
+		}
+	}
+	var accepted, ignored []string
+	for _, sc := range unionScopes(req.Scopes) {
+		if allowed[sc] {
+			accepted = append(accepted, sc)
+		} else {
+			ignored = append(ignored, sc)
+		}
+	}
+	if len(ignored) > 0 {
+		s.log.Warn("connect flow ignored scopes no tool needs", "event", "connections.scopes_ignored", "user_id", req.UserID,
+			"vendor", app.Vendor, "variant", app.Variant, "scopes", strings.Join(ignored, " "))
+	}
+	var reads []string
+	if len(req.Scopes) == 0 {
+		reads = readScopes(s.visibleTools(ctx, vis, req.UserID, tools), tools)
+	}
+	previous, err := s.grantedScopes(ctx, req.UserID, req.ConnectionID, app)
+	if err != nil {
+		return nil, err
+	}
+	return unionScopes(app.Scopes, previous, accepted, reads), nil
+}
+
+// readScopes are the required and optional scopes of the visible read
+// tools that no write tool of the vendor needs: a scope a write needs
+// (Slack's chat:write, which list_scheduled_messages also requires)
+// lets the account write, so it waits for grant more access.
+func readScopes(visible, all []connectors.Tool) []string {
+	writes := map[string]bool{}
+	for _, t := range all {
+		if t.Kind == connectors.KindWrite {
+			for _, sc := range t.RequiredScopes {
+				writes[sc] = true
+			}
+		}
+	}
+	var out []string
+	for _, t := range visible {
+		if t.Kind != connectors.KindRead {
+			continue
+		}
+		for _, sc := range slices.Concat(t.RequiredScopes, t.OptionalScopes) {
+			if !writes[sc] {
+				out = append(out, sc)
+			}
+		}
+	}
+	return out
+}
+
+// grantedScopes returns the scopes of the user's connection
+// connectionID when it is a live (not revoked) connection of app; none
+// otherwise (no connection named, someone else's, another app's).
+func (s *Service) grantedScopes(ctx context.Context, userID, connectionID string, app VendorApp) ([]string, error) {
+	if connectionID == "" {
+		return nil, nil
+	}
+	conns, err := s.Connections(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range conns {
+		if c.ID == connectionID && c.Vendor == app.Vendor && c.Variant == app.Variant && c.Status != store.ConnectionRevoked {
+			return c.Scopes, nil
+		}
+	}
+	s.log.Warn("connect flow named a connection that is not the user's for this app", "event", "connections.flow_connection_ignored",
+		"user_id", userID, "vendor", app.Vendor, "variant", app.Variant)
+	return nil, nil
 }

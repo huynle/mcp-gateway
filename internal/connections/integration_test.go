@@ -124,6 +124,7 @@ func openPGEnv(t *testing.T) *pgEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	env.svc.SetToolCatalog(testCatalog(t), nil)
 	return env
 }
 

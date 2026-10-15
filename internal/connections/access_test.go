@@ -221,6 +221,7 @@ func (failingVisibility) VisibleToUser(context.Context, string, connectors.Tool)
 // more is safe, hiding the button is the bug) and logs it.
 func TestMissingAccessEdgeCases(t *testing.T) {
 	env := newTestEnv(t)
+	env.svc.SetToolCatalog(nil, nil)
 	ctx := context.Background()
 	if gap, err := env.svc.MissingAccess(ctx, userAlice, slackInfo(oldSlackScopes...)); err != nil || len(gap.Scopes) != 0 {
 		t.Errorf("no catalog: gap = %+v, %v", gap, err)

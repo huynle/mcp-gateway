@@ -14,6 +14,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connections/connectionstest"
+	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -61,7 +62,32 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	svc.SetToolCatalog(testCatalog(t), nil)
 	return &testEnv{svc: svc, store: mem, audit: rec, logs: logs}
+}
+
+// testCatalog is the small tool catalog the flow tests run against: the
+// connect flow requests only scopes some tool of the vendor needs (or
+// the app's base scopes). Fake: list_repos reads with "repo", edit_org
+// writes with "write:org". Slack: one read with channels:read and
+// users:read, one write with chat:write.
+func testCatalog(t *testing.T) *connectors.Registry {
+	t.Helper()
+	reg := connectors.NewRegistry()
+	noop := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
+	schema := []byte(`{"type":"object"}`)
+	for _, tool := range []connectors.Tool{
+		{App: connections.VendorFake, Name: "list_repos", Kind: connectors.KindRead, RequiredScopes: []string{"repo"}},
+		{App: connections.VendorFake, Name: "edit_org", Kind: connectors.KindWrite, RequiredScopes: []string{"write:org"}},
+		{App: connections.VendorSlack, Name: "read_stuff", Kind: connectors.KindRead, RequiredScopes: []string{"channels:read", "users:read"}},
+		{App: connections.VendorSlack, Name: "post", Kind: connectors.KindWrite, RequiredScopes: []string{"chat:write"}},
+	} {
+		tool.InputSchema, tool.Handler = schema, noop
+		if err := reg.Register(tool); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return reg
 }
 
 func TestSaveVendorAppEncryptsSecretAndNeverReturnsIt(t *testing.T) {
@@ -162,8 +188,15 @@ func connect(t *testing.T, env *testEnv, userID, account string, scopes ...strin
 // connectVendor is connect for any vendor whose app points at a fakeVendor.
 func connectVendor(t *testing.T, env *testEnv, vendor, userID, account string, scopes ...string) (connections.Info, error) {
 	t.Helper()
+	return connectFlow(t, env, connections.StartRequest{UserID: userID, Vendor: vendor, Scopes: scopes}, account)
+}
+
+// connectFlow is connectVendor for any StartRequest.
+func connectFlow(t *testing.T, env *testEnv, start connections.StartRequest, account string) (connections.Info, error) {
+	t.Helper()
 	ctx := context.Background()
-	redirect, err := env.svc.Start(ctx, connections.StartRequest{UserID: userID, Vendor: vendor, Scopes: scopes})
+	userID, vendor := start.UserID, start.Vendor
+	redirect, err := env.svc.Start(ctx, start)
 	if err != nil {
 		return connections.Info{}, err
 	}
