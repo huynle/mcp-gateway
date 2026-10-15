@@ -12,7 +12,6 @@ metadata:
     app.kubernetes.io/version: "local"
     app.kubernetes.io/managed-by: Helm
 automountServiceAccountToken: false
-
 ---
 # Source: mcp-gateway/templates/service-metrics.yaml
 # Private: scraped inside the cluster, never referenced by the Ingress.
@@ -42,7 +41,6 @@ spec:
       port: 19090
       targetPort: metrics
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/service.yaml
 apiVersion: v1
@@ -66,7 +64,6 @@ spec:
       port: 80
       targetPort: http
       protocol: TCP
-
 ---
 # Source: mcp-gateway/templates/deployment.yaml
 apiVersion: apps/v1
@@ -363,4 +360,3 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
-
