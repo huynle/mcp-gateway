@@ -169,7 +169,14 @@ func (c *Connector) findServer(ctx context.Context, user string, args map[string
 	if err != nil {
 		return nil, err
 	}
+	return c.lookupServer(ctx, user, arg, ownerOnly)
+}
+
+// lookupServer resolves a server name or ID among the servers user can
+// see; ownerOnly also requires ownership.
+func (c *Connector) lookupServer(ctx context.Context, user, arg string, ownerOnly bool) (*store.MCPServer, error) {
 	var s *store.MCPServer
+	var err error
 	switch {
 	case uuidRE.MatchString(arg):
 		s, err = c.d.Servers.GetServer(ctx, user, arg)

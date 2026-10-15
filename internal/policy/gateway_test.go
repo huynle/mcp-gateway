@@ -33,6 +33,8 @@ func TestGatewayLayerDefaults(t *testing.T) {
 		{"alice", gatewayTool("add_server", connectors.KindWrite), OutcomeAllow},
 		{"alice", gatewayTool(GatewayConfirmTool, connectors.KindWrite), OutcomeConfirm},
 		{"alice", gatewayTool("set_org_rate_limits", connectors.KindWrite), OutcomeConfirm},
+		{"alice", gatewayTool("get_tool_approvals", connectors.KindRead), OutcomeAllow},
+		{"alice", gatewayTool("set_tool_approval", connectors.KindWrite), OutcomeConfirm},
 		// A user with no role at all.
 		{"nobody", gatewayTool("get_server", connectors.KindRead), OutcomeAllow},
 		{"nobody", gatewayTool(GatewayConfirmTool, connectors.KindWrite), OutcomeConfirm},
@@ -73,6 +75,13 @@ func TestGatewayLayerNarrowing(t *testing.T) {
 	}
 	if got := decide("root", del, tokens.Scope{}); got != OutcomeConfirm {
 		t.Errorf("admin delete_server = %s, want confirm (admin never bypasses)", got)
+	}
+	setApproval := gatewayTool("set_tool_approval", connectors.KindWrite)
+	if got := decide("root", setApproval, tokens.Scope{}); got != OutcomeConfirm {
+		t.Errorf("admin set_tool_approval = %s, want confirm (a role allow cannot lift it)", got)
+	}
+	if got := decide("root", setApproval, tokens.Scope{ReadOnly: true}); got != OutcomeHidden {
+		t.Errorf("read-only token set_tool_approval = %s, want hidden", got)
 	}
 	if got := decide("bob", del, tokens.Scope{}); got != OutcomeHidden && got != OutcomeDeny {
 		t.Errorf("role-denied delete_server = %s, want deny or hidden", got)

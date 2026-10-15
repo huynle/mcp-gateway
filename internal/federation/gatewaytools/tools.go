@@ -8,7 +8,9 @@
 // per request with a short cache); otherwise they are hidden and a call is
 // answered exactly like an unknown tool. Policy: the gateway layer of the
 // compiled Cedar set (internal/policy) lets every user call them without a
-// role grant; reads and add_server allow, delete_server needs an approval.
+// role grant; reads and add_server allow, delete_server, the rate-limit
+// setters and set_tool_approval (Ask / Auto of vendor app and server write
+// tools, approvals.go) always need an approval.
 //
 // Nothing that needs a human happens over MCP: secrets (API keys, bearer
 // tokens, header values, shared credentials), signing in to a server
@@ -26,6 +28,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
@@ -74,6 +77,9 @@ type Snapshots interface {
 	Refresh(ctx context.Context, a snapshot.Actor, serverID string, sess snapshot.Session) (*snapshot.Record, snapshot.Diff, error)
 	Latest(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
 	Current(ctx context.Context, a snapshot.Actor, serverID string) (*snapshot.Record, error)
+	// SetApprovalModes changes the approval modes of the approved
+	// snapshot (gateway.set_tool_approval; never a new review).
+	SetApprovalModes(ctx context.Context, a snapshot.Actor, serverID string, modes map[string]snapshot.Approval) (*snapshot.Record, int, error)
 }
 
 // Detector is auth detection (*auth.Service.Detect, through netguard).
@@ -113,6 +119,18 @@ type Deps struct {
 	BaseURL string
 	Log     *slog.Logger
 	Rates   RateSettings
+	// Approvals are the vendor apps' approval modes (*policy.Service);
+	// without it get/set_tool_approval cover user-added servers only.
+	Approvals ToolApprovals
+	// VendorOf maps a vendor app to its vendor (connections.Service
+	// VendorFor) for the admin page link; nil: the app's own name.
+	VendorOf func(app string) string
+	// Admin says who is an admin (vendor app modes are admin-only); nil
+	// falls back to Rates, and without either nobody is.
+	Admin AdminChecker
+	// Audit records server approval-mode changes like the servers portal
+	// (vendor app changes are audited by the policy service).
+	Audit audit.Recorder
 }
 
 type RateSettings interface {
@@ -274,6 +292,7 @@ func (c *Connector) Tools() []connectors.Tool {
 			ResourceIdentity: serverIdentity("server"),
 		},
 	}
+	out = append(out, c.approvalTools(bounds, write)...)
 	if c.d.Rates != nil {
 		out = append(out, c.rateTools(bounds, write)...)
 	}
@@ -309,6 +328,10 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 		return c.connectLink(ctx, user, args)
 	case ToolDeleteServer:
 		return c.deleteServer(ctx, user, args)
+	case ToolGetToolApprovals:
+		return c.getToolApprovals(ctx, user, args)
+	case ToolSetToolApproval:
+		return c.setToolApproval(ctx, user, args)
 	case ToolGetRateLimits:
 		return c.getRateLimits(ctx, user, args)
 	case ToolSetMyRateLimit:

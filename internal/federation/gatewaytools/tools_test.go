@@ -114,6 +114,7 @@ func TestRegisterTools(t *testing.T) {
 		ToolListServers: connectors.KindRead, ToolGetServer: connectors.KindRead, ToolDetectAuth: connectors.KindRead,
 		ToolConnectLink: connectors.KindRead, ToolRefreshServer: connectors.KindRead,
 		ToolAddServer: connectors.KindWrite, ToolDeleteServer: connectors.KindWrite,
+		ToolGetToolApprovals: connectors.KindRead, ToolSetToolApproval: connectors.KindWrite,
 	}
 	var got []string
 	for _, tool := range w.reg.List() {
@@ -170,7 +171,7 @@ func TestPolicyDefaultsForRegisteredTools(t *testing.T) {
 	}
 	for _, tool := range w.reg.List() {
 		want := policy.OutcomeAllow
-		if tool.Name == ToolDeleteServer {
+		if tool.Name == ToolDeleteServer || tool.Name == ToolSetToolApproval {
 			want = policy.OutcomeConfirm
 		}
 		if got := c.Decide(policy.Input{UserID: alice, Tool: tool}).Outcome; got != want {
