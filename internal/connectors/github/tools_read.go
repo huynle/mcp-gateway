@@ -153,7 +153,7 @@ func objectSchema(props []property, required []string) json.RawMessage {
 	for _, p := range props {
 		sp := schemaProp{Type: p.Type, Description: p.Description, Enum: p.Enum}
 		switch p.Name {
-		case "page", "number":
+		case "page", "number", "run_id", "job_id", "tail_lines", "milestone":
 			one := 1
 			sp.Minimum = &one
 		case "per_page":
