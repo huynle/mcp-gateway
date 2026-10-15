@@ -36,6 +36,8 @@ type route struct {
 	byCursor map[string]route
 	byPage   map[string]route
 	byToken  map[string]route
+	// raw sends body as is (a file download), never as a fixture name.
+	raw bool
 }
 
 // recorded is one request the fixture server saw, with its decoded form.
@@ -131,6 +133,10 @@ func newAPIServer(t *testing.T, routes map[string]route) *apiServer {
 			status = http.StatusOK
 		}
 		w.WriteHeader(status)
+		if rt.raw {
+			_, _ = w.Write([]byte(rt.body))
+			return
+		}
 		_, _ = w.Write([]byte(fixture(t, rt.body)))
 	}))
 	t.Cleanup(s.Close)

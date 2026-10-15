@@ -123,7 +123,8 @@ func TestToolsDeclared(t *testing.T) {
 			t.Errorf("%s: MaxResultBytes = %d", tool.Name, tool.Bounds.MaxResultBytes)
 		}
 	}
-	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd,list_conversations"; strings.Join(reads, ",") != want {
+	if want := "list_channels,read_channel_history,get_thread,search_messages,get_user,list_scheduled_messages,list_pins,get_dnd,list_conversations," +
+		"get_reactions,list_channel_members,search_files,search_users,search_channels,search_emojis,read_file"; strings.Join(reads, ",") != want {
 		t.Errorf("reads = %v, want %s", reads, want)
 	}
 	if want := "post_message,reply_in_thread,add_reaction," +
@@ -282,6 +283,10 @@ func TestNewOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range c.Tools() {
+		if tool.Name == slack.ToolReadFile {
+			// read_file returns up to slack.MaxReadFileBytes in base64.
+			continue
+		}
 		if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
 			t.Errorf("%s: MaxResultBytes = %d, want the package default", tool.Name, tool.Bounds.MaxResultBytes)
 		}
