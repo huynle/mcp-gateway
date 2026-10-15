@@ -99,7 +99,13 @@ func (c *Connector) App() string { return App }
 
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
-func (c *Connector) Tools() []connectors.Tool { return append(c.readTools(), c.writeTools()...) }
+func (c *Connector) Tools() []connectors.Tool {
+	out := append(c.readTools(), c.writeTools()...)
+	for _, d := range c.extraDefs() {
+		out = append(out, d.Tool)
+	}
+	return out
+}
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, client *graph.Client, call connectors.Call) (connectors.Result, error)
@@ -116,6 +122,14 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 	if !ok {
 		run, ok = c.writeHandlers()[name]
 		write = true
+	}
+	if !ok {
+		for _, d := range c.extraDefs() {
+			if d.Name == name {
+				run, ok, write = d.run, true, d.Kind == connectors.KindWrite
+				break
+			}
+		}
 	}
 	if !ok {
 		return connectors.Result{}, fmt.Errorf("%w: %q", connectors.ErrUnknownTool, call.Tool)

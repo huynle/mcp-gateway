@@ -25,7 +25,11 @@ func TestMicrosoftDefaultBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range c.Tools() {
-		if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
+		if contentTools[tool.Name] {
+			if tool.Bounds.MaxResultBytes <= microsoft.MaxContentBytes {
+				t.Errorf("%s: MaxResultBytes = %d, want room for %d content bytes in base64", tool.Name, tool.Bounds.MaxResultBytes, microsoft.MaxContentBytes)
+			}
+		} else if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
 			t.Errorf("%s: MaxResultBytes = %d, want the package default %d", tool.Name, tool.Bounds.MaxResultBytes, connectors.DefaultMaxResultBytes)
 		}
 		if tool.Bounds.MaxPageSize != 0 && tool.Bounds.MaxPageSize != connectors.DefaultMaxPageSize {

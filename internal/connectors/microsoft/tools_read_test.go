@@ -15,7 +15,7 @@ import (
 
 // --- tool metadata ----------------------------------------------------------
 
-func TestToolsStartWithTheSixReads(t *testing.T) {
+func TestToolsStartWithTheFirstSixReads(t *testing.T) {
 	c, _ := newConnector(t, newAPIServer(t, nil), connectors.Bounds{})
 	if c.App() != "microsoft" {
 		t.Errorf("App() = %q", c.App())
@@ -34,11 +34,8 @@ func TestToolsStartWithTheSixReads(t *testing.T) {
 		}
 	}
 	want := []string{"mail_search", "mail_get_message", "calendar_list_events", "drive_search", "teams_list_channels", "teams_read_channel_messages"}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Errorf("read tools = %v, want %v", names, want)
-	}
-	if got := len(c.Tools()); got != len(want)+4 {
-		t.Errorf("Tools() = %d tools, want the %d reads and 4 writes", got, len(want))
+	if len(names) < len(want) || strings.Join(names[:len(want)], ",") != strings.Join(want, ",") {
+		t.Errorf("read tools = %v, want them to start with %v", names, want)
 	}
 }
 
@@ -172,7 +169,11 @@ func TestNewRequiresTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range c.Tools() {
-		if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
+		if contentTools[tool.Name] {
+			if tool.Bounds.MaxResultBytes <= microsoft.MaxContentBytes {
+				t.Errorf("%s: MaxResultBytes = %d, want room for %d content bytes in base64", tool.Name, tool.Bounds.MaxResultBytes, microsoft.MaxContentBytes)
+			}
+		} else if tool.Bounds.MaxResultBytes != connectors.DefaultMaxResultBytes {
 			t.Errorf("%s: MaxResultBytes = %d, want the package default", tool.Name, tool.Bounds.MaxResultBytes)
 		}
 		if tool.Bounds.MaxPageSize != 0 && tool.Bounds.MaxPageSize != connectors.DefaultMaxPageSize {

@@ -184,6 +184,8 @@ var workScopes = []string{
 	"User.Read", "offline_access", "openid",
 	"Mail.Read", "Mail.Send", "Calendars.ReadWrite", "Files.ReadWrite.All",
 	"Team.ReadBasic.All", "Channel.ReadBasic.All", "ChannelMessage.Read.All", "ChannelMessage.Send",
+	"Mail.ReadWrite", "Calendars.Read.Shared", "Chat.Read", "ChatMessage.Send", "Tasks.ReadWrite",
+	"Contacts.Read", "People.Read", "User.ReadBasic.All",
 }
 
 // newConnector builds a connector against the fixture server whose
