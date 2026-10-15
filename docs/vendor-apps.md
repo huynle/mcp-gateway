@@ -74,9 +74,31 @@ How they are entered:
 
 The gateway grants tool access per role and asks for scopes incrementally (reads first,
 writes on "grant more access"). Where the vendor supports distinct read and write scopes
-(Google, Microsoft, Atlassian, Slack user scopes) register **both** sets; the gateway
-requests only what the role needs. GitHub App permissions are declared once for the
+(Google, Microsoft, Atlassian, Slack user scopes) register **both** sets at the vendor; the
+gateway requests only what the role needs. GitHub App permissions are declared once for the
 whole app (no per-user split); the gateway's policy layer enforces read vs write there.
+
+How the gateway asks (`internal/connections/access.go`):
+
+- **Base scopes** in the vendor app editor only need the identity scopes (and
+  `offline_access` where the vendor wants it). Tool scopes come from the tools themselves
+  (`RequiredScopes`, plus `OptionalScopes` such as Slack's `im:read` that widen a tool).
+- **Connect** asks for the base scopes plus the scopes of the **read** tools the user's
+  role shows, leaving out any scope a write tool also needs (Slack's `chat:write`) and any
+  scope some account cannot grant (Microsoft's Teams permissions, which personal accounts
+  cannot grant).
+- **Grant more access** on `/connections` appears on a connection that lacks scopes for
+  tools the user's role shows ("Unlocks N functions: ..."). It asks for the base scopes,
+  everything the connection already holds and the missing scopes; the connection keeps the
+  union. A connection that **needs reconnect** gets the missing scopes on its *Reconnect*.
+- The `scopes` query of `/connect/{vendor}/start` is filtered: only base scopes and scopes
+  some tool of the vendor requires or uses are requested; anything else is dropped and
+  logged (`connections.scopes_ignored`). Google requests carry `include_granted_scopes=true`
+  even if the app's extras omit it.
+- `<app>.list_accounts` tells a harness `locked_tools` (how many of that app's tools the
+  account cannot run yet) and `grant_more_access` (the `/connections` URL).
+- Existing apps whose base scopes were hand-filled with tool scopes keep working: those
+  scopes are simply asked for on every connect.
 
 ### 0.5 Company admin consent summary
 
@@ -197,10 +219,18 @@ when the workspace allows members to, archive one they may archive, remove membe
 where they may). The gateway never requests Slack's `admin.*` scopes and offers no
 workspace administration.
 
-**Adding scopes to an existing app.** Users who connected before a scope was added keep
-their old grant until they **reconnect** Slack on `/connections` (Slack issues a new
-user token with the new scopes); until then the scope stage answers `scope_required`
-for the tools that need the missing scopes and every other tool keeps working.
+**Base scopes.** The vendor app's *Base scopes* field may stay **empty** for Slack: user
+scopes are requested per user from the tools (0.4): *Connect* asks for the read scopes
+above, *Grant more access* for the rest (Slack user scopes accumulate, so each new token
+carries everything granted before). Apps whose base scopes were hand-filled with the nine
+original user scopes keep working; those nine are then asked for on every connect.
+
+**Adding scopes to an existing app.** Every scope a tool needs must be in the app's user
+token scopes (2.5), or Slack refuses the request (`invalid_scope`). Users who connected
+before a scope was added keep their old grant until they press **Grant more access** on
+`/connections` (shown on every Slack connection that lacks scopes for tools their role
+shows); until then the scope stage answers `scope_required` for the tools that need the
+missing scopes and every other tool keeps working.
 Workspaces with **Admin-approved apps** must re-approve the app after its scope list
 changes (Slack treats new scopes as a new request), before anyone can grant them.
 

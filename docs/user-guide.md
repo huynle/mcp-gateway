@@ -71,7 +71,7 @@ The first call answers *unauthorized*; the harness discovers the gateway's sign-
 
 Whether you may use a **personal** account at all, and whether its writes always need approval, is a role setting: if your role denies personal accounts for an app, the connect flow refuses with *"That is a personal account and your role does not allow personal accounts for this app"* and nothing is stored.
 
-**Scopes.** Connecting asks for the base scopes; a tool that needs more (e.g. Gmail send, Jira write) answers `scope_required` naming the missing scope — press *Grant more access* on `/connections` for that account, approve the extra scope at the vendor, retry. The connection keeps the union of everything granted.
+**Scopes.** *Connect* asks for what the **read** tools your role shows need (reads first). When an account lacks scopes for tools your role shows (writes, or tools added since you connected), its row on `/connections` shows **Grant more access** with what it unlocks ("Unlocks 25 functions: slack.archive_channel, …"). Press it, approve the extra scopes at the vendor, and the tools work; the connection keeps the union of everything granted. A tool you call before that answers `scope_required` naming the missing scopes, and `<app>.list_accounts` shows `locked_tools` and a `grant_more_access` link for such an account. Personal Microsoft accounts are never asked for Teams permissions (they cannot grant them).
 
 **Reconnect** appears when the vendor stopped accepting the gateway's refresh token (password change, revoked app, long inactivity): tools on that account fail until you reconnect; nothing else changes. **Disconnect** revokes the gateway's access at the vendor (where supported) and deletes the stored tokens; your history stays.
 

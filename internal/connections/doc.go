@@ -11,7 +11,11 @@
 // a time per connection (SELECT ... FOR UPDATE) and rotating refresh
 // tokens, needs_reconnect handling with the Notifier, disconnect and the
 // identity disable hook, the connectors.AccountSource over the connections
-// table, the daily keep-alive job and the portal pages.
+// table, the daily keep-alive job and the portal pages. With the tool
+// catalog (SetToolCatalog: the registry and the policy view) it computes
+// what a connection lacks for the tools its user may see (MissingAccess:
+// Grant more access on /connections, AccessHint for list_accounts) and
+// filters the scopes a connect flow requests (access.go).
 //
 // Design: Brain plan 36bakiw8 section 5; decisions mh7c6z3v, dovthftx,
 // wcp2fmbz.
