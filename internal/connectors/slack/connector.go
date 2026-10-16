@@ -117,7 +117,7 @@ func (c *Connector) App() string { return App }
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
 func (c *Connector) Tools() []connectors.Tool {
-	tools := slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools())
+	tools := slices.Concat(c.readTools(), c.writeTools(), c.channelTools(), c.messageTools(), c.fileTools(), c.profileTools(), c.conversationTools(), c.lookupTools(), c.docTools())
 	for i := range tools {
 		tools[i].OptionalScopes = slices.Clone(optionalScopes[tools[i].Name])
 	}
@@ -136,6 +136,8 @@ var optionalScopes = func() map[string][]string {
 		ToolGetThread:          {ScopeIMHistory, ScopeMpIMHistory},
 		ToolPostMessage:        {ScopeIMWrite},
 		ToolReplyInThread:      {ScopeIMWrite},
+		ToolListChannelMembers: {ScopeIMRead, ScopeMpIMRead},
+		ToolUpdateCanvas:       {ScopeCanvasesRead},
 	}
 	for _, name := range []string{
 		ToolCreateChannel, ToolRenameChannel, ToolArchiveChannel, ToolUnarchiveChannel, ToolSetChannelTopic,
@@ -154,13 +156,7 @@ type handler func(ctx context.Context, api *goslack.Client, call connectors.Call
 // (5xx and network to Unavailable for reads, rate limits to RateLimited,
 // the rest to *Error).
 func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.Result, error) {
-	name := shortName(call.Tool)
-	run, ok := c.handlers()[name]
-	write := false
-	if !ok {
-		run, ok = c.writeHandlers()[name]
-		write = true
-	}
+	run, web, write, ok := c.dispatch(shortName(call.Tool))
 	if !ok {
 		return connectors.Result{}, fmt.Errorf("%w: %q", connectors.ErrUnknownTool, call.Tool)
 	}
@@ -175,11 +171,17 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	api, err := c.client(ctx, call)
+	tok, err := c.tokens(ctx, call.Principal.UserID, call.Account).Token()
 	if err != nil {
-		return connectors.Result{}, err
+		return connectors.Result{}, classify("authenticate", err)
 	}
-	res, err := run(ctx, api, call)
+	api := c.clientFor(tok.AccessToken)
+	var res connectors.Result
+	if web != nil {
+		res, err = web(ctx, c.webFor(api, tok.AccessToken), call)
+	} else {
+		res, err = run(ctx, api, call)
+	}
 	if err != nil {
 		// Reads report an unreachable Slack as Unavailable; a write never
 		// does (its error says whether the outcome is known).
@@ -189,6 +191,24 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 		return connectors.Result{}, err
 	}
 	return res, nil
+}
+
+// dispatch finds the implementation of a tool by short name: a slack-go
+// handler or a webHandler (exactly one is set), and whether it is a write.
+func (c *Connector) dispatch(name string) (handler, webHandler, bool, bool) {
+	if run, ok := c.handlers()[name]; ok {
+		return run, nil, false, true
+	}
+	if web, ok := c.webReadHandlers()[name]; ok {
+		return nil, web, false, true
+	}
+	if run, ok := c.writeHandlers()[name]; ok {
+		return run, nil, true, true
+	}
+	if web, ok := c.webWriteHandlers()[name]; ok {
+		return nil, web, true, true
+	}
+	return nil, nil, false, false
 }
 
 // client fetches the connection's token (one call to the token source:
