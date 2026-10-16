@@ -9,6 +9,13 @@ const (
 	ScopeCalendarEvents         = "https://www.googleapis.com/auth/calendar.events"
 	ScopeCalendarReadonly       = "https://www.googleapis.com/auth/calendar.readonly"
 	ScopeCalendar               = "https://www.googleapis.com/auth/calendar"
+	// Calendar management (list_calendars, free_busy): the granular
+	// calendar-list and free/busy scopes, both covered by
+	// calendar.readonly.
+	ScopeCalendarListReadonly   = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+	ScopeCalendarList           = "https://www.googleapis.com/auth/calendar.calendarlist"
+	ScopeCalendarFreeBusy       = "https://www.googleapis.com/auth/calendar.freebusy"
+	ScopeCalendarEventsFreeBusy = "https://www.googleapis.com/auth/calendar.events.freebusy"
 	ScopeTasksReadonly          = "https://www.googleapis.com/auth/tasks.readonly"
 	ScopeTasks                  = "https://www.googleapis.com/auth/tasks"
 	ScopeGmailReadonly          = "https://www.googleapis.com/auth/gmail.readonly"
@@ -44,20 +51,22 @@ const (
 // People API references: the full drive scope is accepted by every Drive,
 // Docs and Sheets method, drive.readonly by their read-only methods.
 var scopeImplies = map[string][]string{
-	ScopeCalendar:         {ScopeCalendarEvents, ScopeCalendarReadonly},
-	ScopeCalendarEvents:   {ScopeCalendarEventsReadonly},
-	ScopeCalendarReadonly: {ScopeCalendarEventsReadonly},
-	ScopeTasks:            {ScopeTasksReadonly},
-	ScopeMail:             {ScopeGmailModify},
-	ScopeGmailModify:      {ScopeGmailReadonly, ScopeGmailCompose, ScopeGmailLabels},
-	ScopeGmailCompose:     {ScopeGmailSend},
-	ScopeGmailReadonly:    {ScopeGmailLabels, ScopeGmailMetadata},
-	ScopeDrive:            {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets},
-	ScopeDriveReadonly:    {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly},
-	ScopeDriveMetadata:    {ScopeDriveMetadataReadonly},
-	ScopeDocuments:        {ScopeDocumentsReadonly},
-	ScopeSpreadsheets:     {ScopeSpreadsheetsReadonly},
-	ScopeContacts:         {ScopeContactsReadonly},
+	ScopeCalendar:               {ScopeCalendarEvents, ScopeCalendarReadonly, ScopeCalendarList},
+	ScopeCalendarEvents:         {ScopeCalendarEventsReadonly},
+	ScopeCalendarReadonly:       {ScopeCalendarEventsReadonly, ScopeCalendarListReadonly, ScopeCalendarFreeBusy},
+	ScopeCalendarList:           {ScopeCalendarListReadonly},
+	ScopeCalendarEventsFreeBusy: {ScopeCalendarFreeBusy},
+	ScopeTasks:                  {ScopeTasksReadonly},
+	ScopeMail:                   {ScopeGmailModify},
+	ScopeGmailModify:            {ScopeGmailReadonly, ScopeGmailCompose, ScopeGmailLabels},
+	ScopeGmailCompose:           {ScopeGmailSend},
+	ScopeGmailReadonly:          {ScopeGmailLabels, ScopeGmailMetadata},
+	ScopeDrive:                  {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets},
+	ScopeDriveReadonly:          {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly},
+	ScopeDriveMetadata:          {ScopeDriveMetadataReadonly},
+	ScopeDocuments:              {ScopeDocumentsReadonly},
+	ScopeSpreadsheets:           {ScopeSpreadsheetsReadonly},
+	ScopeContacts:               {ScopeContactsReadonly},
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the

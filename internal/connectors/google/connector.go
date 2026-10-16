@@ -117,13 +117,25 @@ func New(opts Options) (*Connector, error) {
 		timeout = DefaultTimeout
 	}
 	c := &Connector{tokens: opts.Tokens, accounts: opts.Accounts, transport: transport, baseURL: base, bounds: bounds, timeout: timeout}
-	c.calendar = c.newApp(AppCalendar, c.calendarReadTools(), c.calendarWriteTools(), c.calendarReadHandlers(), c.calendarWriteHandlers())
-	c.tasks = c.newApp(AppTasks, c.tasksReadTools(), c.tasksWriteTools(), c.tasksReadHandlers(), c.tasksWriteHandlers())
-	c.gmail = c.newApp(AppGmail, c.gmailReadTools(), c.gmailWriteTools(), c.gmailReadHandlers(), c.gmailWriteHandlers())
-	c.drive = c.newApp(AppDrive, c.driveReadTools(), c.driveWriteTools(), c.driveReadHandlers(), c.driveWriteHandlers())
-	c.docs = c.newApp(AppDocs, c.docsReadTools(), c.docsWriteTools(), c.docsReadHandlers(), c.docsWriteHandlers())
-	c.sheets = c.newApp(AppSheets, c.sheetsReadTools(), c.sheetsWriteTools(), c.sheetsReadHandlers(), c.sheetsWriteHandlers())
-	c.contacts = c.newApp(AppContacts, c.contactsReadTools(), c.contactsWriteTools(), c.contactsReadHandlers(), c.contactsWriteHandlers())
+	c.calendar = c.newApp(AppCalendar,
+		append(c.calendarReadTools(), c.calendarManageReadTools()...), append(c.calendarWriteTools(), c.calendarManageWriteTools()...),
+		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()), merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers()))
+	c.tasks = c.newApp(AppTasks,
+		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
+		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
+	c.gmail = c.newApp(AppGmail,
+		append(c.gmailReadTools(), c.gmailManageReadTools()...), append(c.gmailWriteTools(), c.gmailManageWriteTools()...),
+		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers()), merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers()))
+	c.drive = c.newApp(AppDrive,
+		append(c.driveReadTools(), c.driveManageReadTools()...), append(c.driveWriteTools(), c.driveManageWriteTools()...),
+		merge(c.driveReadHandlers(), c.driveManageReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
+	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
+		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
+	c.sheets = c.newApp(AppSheets,
+		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
+		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
+	c.contacts = c.newApp(AppContacts, append(c.contactsReadTools(), c.contactsManageReadTools()...), c.contactsWriteTools(),
+		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers()), c.contactsWriteHandlers())
 	return c, nil
 }
 
@@ -158,6 +170,18 @@ func (c *Connector) Gmail() *App { return c.gmail }
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error)
+
+// merge joins handler maps (the base tools and an app's later
+// additions); names never repeat.
+func merge(maps ...map[string]handler) map[string]handler {
+	out := map[string]handler{}
+	for _, m := range maps {
+		for name, h := range m {
+			out[name] = h
+		}
+	}
+	return out
+}
 
 // App is one of the connector apps (connectors.Connector). Tools are
 // declared with nil handlers: Call dispatches by name.

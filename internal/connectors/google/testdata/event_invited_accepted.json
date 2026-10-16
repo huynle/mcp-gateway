@@ -1,0 +1,48 @@
+{
+  "kind": "calendar#event",
+  "id": "evt_standup_001",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=evt_standup_001",
+  "created": "2026-09-01T08:00:00.000Z",
+  "updated": "2026-10-01T08:00:00.000Z",
+  "summary": "Team standup",
+  "description": "Daily sync. Agenda:\n- blockers\n- plans",
+  "location": "Room 4",
+  "creator": {
+    "email": "alice@example.test",
+    "self": true
+  },
+  "organizer": {
+    "email": "carol@example.test"
+  },
+  "start": {
+    "dateTime": "2026-10-09T09:30:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "end": {
+    "dateTime": "2026-10-09T09:45:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "recurringEventId": "evt_standup",
+  "attendees": [
+    {
+      "email": "carol@example.test",
+      "organizer": true,
+      "responseStatus": "accepted"
+    },
+    {
+      "email": "alice@example.test",
+      "self": true,
+      "responseStatus": "accepted"
+    }
+  ],
+  "hangoutLink": "https://meet.google.com/abc-defg-hij",
+  "conferenceData": {
+    "entryPoints": [
+      {
+        "entryPointType": "video",
+        "uri": "https://meet.google.com/abc-defg-hij"
+      }
+    ]
+  }
+}

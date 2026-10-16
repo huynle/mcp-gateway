@@ -1,0 +1,4 @@
+{"connections": [
+  {"resourceName": "people/c1234567890", "names": [{"displayName": "Bob Example"}], "emailAddresses": [{"value": "bob@example.test"}]},
+  {"resourceName": "people/c2", "names": [{"displayName": "Carol"}]}
+], "nextPageToken": "conn-2", "totalPeople": 7}

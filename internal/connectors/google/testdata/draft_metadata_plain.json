@@ -1,0 +1,1 @@
+{"id": "r-1", "message": {"id": "18f9d1", "threadId": "18f9d1", "labelIds": ["DRAFT"], "snippet": "Draft body", "payload": {"headers": [{"name": "To", "value": "bob@example.test"}, {"name": "Subject", "value": "Plan"}, {"name": "Date", "value": "Wed, 07 Oct 2026 10:15:00 -0700"}]}}}

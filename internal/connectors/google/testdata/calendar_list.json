@@ -1,0 +1,8 @@
+{
+  "kind": "calendar#calendarList",
+  "nextPageToken": "cal-page-2",
+  "items": [
+    {"id": "alice@example.test", "summary": "alice@example.test", "timeZone": "America/Los_Angeles", "accessRole": "owner", "primary": true, "selected": true},
+    {"id": "team@group.calendar.example.test", "summary": "Team", "description": "Shared team calendar", "timeZone": "UTC", "accessRole": "writer", "hidden": true}
+  ]
+}

@@ -483,6 +483,29 @@ Increment 2 (Drive, Docs, Sheets, Contacts):
 | `https://www.googleapis.com/auth/documents` | write | `docs.append_text` | sensitive |
 | `https://www.googleapis.com/auth/spreadsheets` | write | `sheets.append_rows` | sensitive |
 
+Increment 3 (management tools, `docs/connectors/google.md` "Increment 3"). **Operator step:
+add these four scopes on the Data Access page of both the Internal and the External project**
+(Google shows the unverified-app screen when requested scopes differ from the declared ones);
+the gateway asks for them only through *Grant more access* when a role shows the tools:
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | read | `calendar.list_calendars` (`calendar.readonly` also covers it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.freebusy` | read | `calendar.free_busy` (`calendar.readonly` also covers it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/gmail.modify` | write | `gmail.modify_labels`, `gmail.trash` (`messages.modify` / `trash` accept only `gmail.modify` or `mail.google.com`). It also covers `gmail.readonly`, `gmail.compose`, `gmail.send`, `gmail.labels` | **restricted** |
+| `https://www.googleapis.com/auth/drive.readonly` | read | `drive.get_content`, `drive.list_comments` (`files.export`, `alt=media` and `comments.list` do not accept `drive.metadata.readonly`). Also covers `drive.metadata.readonly`, `documents.readonly`, `spreadsheets.readonly` | **restricted** |
+
+The other increment-3 tools reuse registered scopes: `calendar.events` (update, delete,
+respond), `tasks.readonly` / `tasks` (task lists, get, update, complete, delete),
+`gmail.readonly` (`get_thread`, `list_drafts`, `get_attachment`), `gmail.compose`
+(`send_draft`), `drive.metadata.readonly` (`list_folder`, `list_permissions`), `drive.file`
+(`create_file`, `update_file`, `share`, `add_comment`, `sheets.create`), `documents`
+(`docs.replace_text`), `spreadsheets.readonly` / `spreadsheets` (`sheets.get_metadata`,
+`update_range`), `contacts.readonly` (`contacts.get`, `contacts.list`). A deployment that
+does not want the two new restricted scopes leaves them out: `drive.get_content` and
+`drive.list_comments` then work only per file through `drive.file`, and the Gmail label /
+trash tools stay locked.
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever
@@ -497,7 +520,7 @@ the requested scopes differ from the declared ones.
 - Do **not** leave it in Testing: Testing mode caps at 100 test users and expires refresh
   tokens after 7 days.
 - Restricted scopes in the list above (`gmail.readonly`, `gmail.compose`,
-  `drive.metadata.readonly`) are what trigger the heavier path if the app is ever
+  `drive.metadata.readonly`, and with increment 3 `gmail.modify` and `drive.readonly`) are what trigger the heavier path if the app is ever
   submitted for verification: restricted-scope verification plus an **annual CASA security
   assessment** by a Google-approved assessor, because the gateway stores restricted-scope
   data (tokens) on a server. The design explicitly defers this; revisit when personal
@@ -731,6 +754,14 @@ the same for the canvas and Slack List writes of Brain plan `5soa9785`: `create_
 `update_canvas`, `create_list`, `update_list`, `add_list_item`, `update_list_item`.
 `TestSlackNewWritesAreSeededAsAsk` (`cmd/gateway`) fails when a new Slack write ships
 without a seed in one of them.
+
+Migration 22 (`00022_google_default_ask.sql`) does the same for the Google writes added
+after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_event`;
+`tasks.update`, `complete`, `delete`; `gmail.modify_labels`, `trash`, `send_draft`;
+`drive.create_file`, `update_file`, `share`, `add_comment`; `docs.replace_text`;
+`sheets.update_range`, `create`. `calendar.create_event`, `tasks.create`, `gmail.send`,
+`gmail.create_draft`, `drive.create_folder`, `docs.create`, `docs.append_text` and
+`sheets.append_rows` stay Auto. `TestGoogleNewWritesAreSeededAsAsk` guards the list.
 
 Storage and policy: only the tools set to Ask are stored (`vendor_tool_approvals`,
 migration 19: `app`, `tool`, `updated_by`, `updated_at`; the `gateway` app is refused).

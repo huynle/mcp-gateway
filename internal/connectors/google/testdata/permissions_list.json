@@ -1,0 +1,1 @@
+{"permissions": [{"id": "perm1", "type": "user", "role": "owner", "emailAddress": "bob@example.test", "displayName": "Bob"}, {"id": "anyoneWithLink", "type": "anyone", "role": "reader", "allowFileDiscovery": false}], "nextPageToken": "perm-2"}

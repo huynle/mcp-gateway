@@ -43,6 +43,10 @@ type route struct {
 	delay   time.Duration
 	pages   map[string]route
 	byQuery map[string]route
+	// byAlt, when set, picks the answer by the "alt" query value
+	// (missing = ""): Drive serves metadata and content (alt=media) on
+	// the same path.
+	byAlt map[string]route
 }
 
 // recorded is one request the fixture server saw, with its body.
@@ -94,6 +98,17 @@ func newAPIServer(t *testing.T, routes map[string]route) *apiServer {
 			q := r.URL.Query().Get("q")
 			if rt, ok = rt.byQuery[q]; !ok {
 				t.Errorf("unexpected q %q of %s %s", q, r.Method, r.URL.Path)
+				http.Error(w, fixture(t, "error_not_found.json"), http.StatusNotFound)
+				return
+			}
+		}
+		if rt.byAlt != nil {
+			alt := r.URL.Query().Get("alt")
+			if alt == "json" {
+				alt = ""
+			}
+			if rt, ok = rt.byAlt[alt]; !ok {
+				t.Errorf("unexpected alt %q of %s %s", alt, r.Method, r.URL.Path)
 				http.Error(w, fixture(t, "error_not_found.json"), http.StatusNotFound)
 				return
 			}

@@ -1,0 +1,6 @@
+{"spreadsheetId": "1SheetAbCdEfGhIjKlMnOpQrStUvWxYz0123", "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1SheetAbCdEfGhIjKlMnOpQrStUvWxYz0123/edit",
+ "properties": {"title": "Budget 2026", "locale": "en_US", "timeZone": "America/Los_Angeles"},
+ "sheets": [
+  {"properties": {"sheetId": 0, "title": "Budget", "index": 0, "sheetType": "GRID", "gridProperties": {"rowCount": 1000, "columnCount": 26}}},
+  {"properties": {"sheetId": 77, "title": "Archive", "index": 1, "sheetType": "GRID", "hidden": true, "gridProperties": {"rowCount": 50, "columnCount": 5}}}
+ ]}
