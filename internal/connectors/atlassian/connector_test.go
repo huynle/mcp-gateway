@@ -83,9 +83,10 @@ func TestAppsAndToolNames(t *testing.T) {
 	wantEqual(t, "jira reads", names(jira, connectors.KindRead), []string{"search_issues", "get_issue", "list_transitions",
 		"get_current_user", "list_projects", "list_issue_types", "get_create_fields", "get_issue_comments", "get_issue_changelog",
 		"list_issue_links", "list_link_types", "list_worklogs", "get_watchers", "search_users", "list_assignable_users",
-		"list_project_versions", "list_project_components", "list_boards", "list_sprints", "get_sprint_issues"})
+		"list_project_versions", "list_project_components", "list_boards", "list_sprints", "get_sprint_issues",
+		"list_remote_links", "get_user", "list_project_statuses", "list_filters"})
 	wantEqual(t, "confluence reads", names(conf, connectors.KindRead), []string{"search", "get_page", "list_spaces", "get_page_children", "get_page_by_title",
-		"get_page_comments", "list_page_attachments", "get_page_labels", "get_page_history"})
+		"get_page_comments", "list_page_attachments", "get_page_labels", "get_page_history", "list_space_pages"})
 }
 
 func wantEqual(t *testing.T, what string, got, want []string) {

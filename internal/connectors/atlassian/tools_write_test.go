@@ -32,7 +32,7 @@ func TestWriteToolNames(t *testing.T) {
 		return out
 	}
 	wantEqual(t, "jira writes", names(jira), []string{"create_issue", "add_comment", "transition_issue",
-		"update_issue", "assign_issue", "edit_comment", "add_worklog", "link_issues", "add_watcher", "remove_watcher", "add_issues_to_sprint"})
+		"update_issue", "assign_issue", "edit_comment", "add_worklog", "link_issues", "add_watcher", "remove_watcher", "add_issues_to_sprint", "add_remote_link"})
 	wantEqual(t, "confluence writes", names(conf), []string{"create_page", "update_page", "add_page_comment", "add_page_labels"})
 }
 

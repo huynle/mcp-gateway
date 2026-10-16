@@ -94,7 +94,7 @@ func TestConfluenceToolNames(t *testing.T) {
 		}
 	}
 	wantEqual(t, "reads", reads, []string{"search", "get_page", "list_spaces", "get_page_children", "get_page_by_title", "get_page_comments",
-		"list_page_attachments", "get_page_labels", "get_page_history"})
+		"list_page_attachments", "get_page_labels", "get_page_history", "list_space_pages"})
 	wantEqual(t, "writes", writes, []string{"create_page", "update_page", "add_page_comment", "add_page_labels"})
 }
 

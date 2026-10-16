@@ -104,7 +104,7 @@ func (c *Connector) writeTools() []connectors.Tool {
 			ResultIDs:        transitionResultIDs,
 			Bounds:           single,
 		},
-	}, c.jiraMoreWriteTools()...)
+	}, append(c.jiraMoreWriteTools(), c.jiraGapWriteTools()...)...)
 }
 
 // writeHandlers maps the write tools' short names to their implementation.
@@ -118,6 +118,9 @@ func (c *Connector) writeHandlers() map[string]handler {
 	}
 	h := map[string]handler{ToolCreateIssue: c.createIssue, ToolAddComment: c.addComment, ToolTransitionIssue: c.transitionIssue}
 	for name, run := range c.jiraMoreWriteHandlers() {
+		h[name] = run
+	}
+	for name, run := range c.jiraGapHandlers(true) {
 		h[name] = run
 	}
 	return h

@@ -73,7 +73,7 @@ func TestJiraMoreWriteToolsMetadata(t *testing.T) {
 func TestJiraMoreWritesRequireAnOperationID(t *testing.T) {
 	srv := newAPIServer(t, nil)
 	c, _ := newJira(t, srv, connectors.Bounds{})
-	for _, tool := range []string{"update_issue", "assign_issue", "edit_comment", "add_worklog", "link_issues", "add_watcher", "remove_watcher", "add_issues_to_sprint"} {
+	for _, tool := range []string{"update_issue", "assign_issue", "edit_comment", "add_worklog", "link_issues", "add_watcher", "remove_watcher", "add_issues_to_sprint", "add_remote_link"} {
 		if _, err := c.Call(context.Background(), call(atlassian.JiraApp, tool, map[string]any{"key": "MOCK-1"})); !errors.Is(err, atlassian.ErrMissingOperation) {
 			t.Errorf("%s: err = %v, want ErrMissingOperation", tool, err)
 		}

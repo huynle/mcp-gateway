@@ -84,7 +84,7 @@ func (c *Connector) readTools() []connectors.Tool {
 				ResourceIdentity: confluenceIdentity,
 				Bounds:           single,
 			},
-		}, c.confluenceMoreReadTools()...)
+		}, append(c.confluenceMoreReadTools(), c.confluenceGapReadTools()...)...)
 	}
 	return append([]connectors.Tool{
 		{
@@ -123,7 +123,7 @@ func (c *Connector) readTools() []connectors.Tool {
 			ResourceIdentity: jiraIdentity,
 			Bounds:           single,
 		},
-	}, c.jiraMoreReadTools()...)
+	}, append(c.jiraMoreReadTools(), c.jiraGapReadTools()...)...)
 }
 
 // readHandlers maps short tool names to their implementation.
@@ -133,10 +133,14 @@ func (c *Connector) readHandlers() map[string]handler {
 		for name, run := range c.confluenceMoreHandlers(false) {
 			h[name] = run
 		}
+		h[ToolListSpacePages] = c.listSpacePages
 		return h
 	}
 	h := map[string]handler{ToolSearchIssues: c.searchIssues, ToolGetIssue: c.getIssue, ToolListTransitions: c.listTransitions}
 	for name, run := range c.jiraMoreReadHandlers() {
+		h[name] = run
+	}
+	for name, run := range c.jiraGapHandlers(false) {
 		h[name] = run
 	}
 	return h
