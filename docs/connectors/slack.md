@@ -4,7 +4,7 @@ App `slack` (`internal/connectors/slack`), built on the pattern of the [GitHub r
 
 ## Tools
 
-The table lists the original five reads (`Kind: read`: no approval and no ledger unless policy says `confirm`); the original three writes follow in [Writes](#writes), and the management tools added with Brain decision `aud38ptd` (channels, members, message edits, scheduling, pins, files, the user's own status and Do Not Disturb, DMs) in [Account management](#account-management). The gateway adds `account` and `approval_id` to every schema and generates `slack.list_accounts`.
+The table lists the original five reads (`Kind: read`: no approval and no ledger unless policy says `confirm`); the original three writes follow in [Writes](#writes), and the management tools added with Brain decision `aud38ptd` (channels, members, message edits, scheduling, pins, files, the user's own status and Do Not Disturb, DMs) in [Account management](#account-management), and the search, file, canvas and Slack List tools of Brain plan `5soa9785` in [Search, files, canvases and lists](#search-files-canvases-and-lists). The gateway adds `account` and `approval_id` to every schema and generates `slack.list_accounts`.
 
 | Tool | Arguments | Result | User token scope |
 |---|---|---|---|
@@ -119,6 +119,34 @@ Added with Brain decision `aud38ptd` ("manage my Slack account: channels, member
 
 **Channel names for writes.** The write tools resolve a `channel` name among the account's conversations like every other tool (archived included); `join_channel` looks a name up among public channels instead, since the account is not a member yet.
 
+## Search, files, canvases and lists
+
+Added to match the read and write tools of Slack's own MCP server (Brain plan `5soa9785`). They act **as the connected user** like every other tool. The six **writes** (canvases and lists) are seeded **Ask** by migration 21 (`00021_slack_docs_default_ask.sql`, see [`docs/vendor-apps.md`](../vendor-apps.md) section 9); the reads behave like the other reads. slack-go v0.29 wraps neither `files.info` downloads, `canvases.getContent`, nor any `slackLists.*` method, so `read_file` and the canvas and list tools call the Web API directly (JSON body, the user token as a bearer header; answers bounded to `maxWebResponseBytes`).
+
+| Tool | Kind | Arguments | Result / `ResultIDs` | Reconciliation | User token scope |
+|---|---|---|---|---|---|
+| `slack.get_reactions` | read | `channel`, `timestamp` | `{channel, timestamp, reactions: [{name, count, users}]}` | — | `reactions:read` |
+| `slack.list_channel_members` | read | `channel`, `limit?`, `cursor?` | `{channel, members: [user id], next_cursor, has_more, limit}` | — | `channels:read`, `groups:read` (DMs / group DMs: optional `im:read` / `mpim:read`) |
+| `slack.search_files` | read | `query` (Slack search syntax), `count?`, `page?`, `sort?`, `sort_dir?` | `{total, page, per_page, page_count, has_more, truncated?, files: [{id, name, title, filetype, mimetype, size, user, created, permalink, channels}]}` (never the private download URL) | — | `search:read` |
+| `slack.search_users` | read | `query` (part of a handle, real or display name), `limit?`, `include_bots?`, `include_deactivated?` | `{users: [user], scanned, complete}` | — | `users:read` |
+| `slack.search_channels` | read | `query`, `limit?`, `types?`, `include_archived?` (default true), `match_description?` | `{channels: [channel], scanned, complete}` | — | `channels:read`, `groups:read` |
+| `slack.search_emojis` | read | `query?`, `limit?` | `{emojis: [{name, url?, alias_for?}], total}` (custom emoji only) | — | `emoji:read` |
+| `slack.read_file` | read | `file` (`F…`), `max_bytes?` (≤ 5 MiB), `metadata_only?` | `{file: {…metadata}, content?, encoding? (text, base64), truncated?, omitted?}` | — | `files:read` |
+| `slack.read_canvas` | read | `canvas` (`F…`) | `{canvas, markdown, truncated?}` | — | `canvases:read` |
+| `slack.create_canvas` | write | `title?`, `markdown?` (≤ 1 MiB), `channel?` (adds it as the channel's tab) | `{canvas, channel?, action: "created"}` / `canvas` | **none** (no id before the call) | `canvases:write` |
+| `slack.update_canvas` | write | `canvas`, `operation` (`insert_at_start`, `insert_at_end`, `insert_after`, `insert_before`, `replace`, `delete`, `rename`), `markdown?`, `section_id?` or `section_text?` | `{canvas, action}` / `canvas` | **none** (Slack rewrites canvas markdown; no reliable comparison) | `canvases:write`; `canvases:read` (optional) to find a section by `section_text` (`canvases.sections.lookup`) |
+| `slack.read_list` | read | `list` (`F…`), `limit?`, `cursor?`, `archived?` | `{list: {id, title, columns: [{id, key, name, type, primary?, choices?}]}, items: [{id, parent_item?, created, created_by, updated_by?, archived?, fields: [{column, key, text, value}]}], next_cursor, has_more, limit, truncated?}` | — | `lists:read` |
+| `slack.create_list` | write | `name`, `description?`, `columns?` (≤ 30; `{name, type, key?, choices?}`, the first must be `text`), `todo_mode?` | `{list, action: "created"}` / `list` | **none** | `lists:write` |
+| `slack.update_list` | write | `list`, `name?`, `description?`, `todo_mode?` (at least one) | `{list, action: "updated"}` / `list` | **none** | `lists:write` |
+| `slack.add_list_item` | write | `list`, `fields` (≤ 50 cells by column id, key or name), `parent_item?` (`Rec…`, a subtask) | `{list, item, action: "added"}` / `list`, `item` | **none** (no id before the call) | `lists:read`, `lists:write` (the columns are read first to convert the values) |
+| `slack.update_list_item` | write | `list`, `item` (`Rec…`), `fields` | `{list, item, action: "updated"}` / `list`, `item` | **none** | `lists:read`, `lists:write` |
+
+**Bounds.** `read_file` never downloads more than `slack.MaxReadFileBytes` = 5 MiB (or `max_bytes`): a text file is cut there (`truncated: true`), a binary file larger than that is not downloaded at all (`omitted` says why), and the content is only fetched from a Slack host (the same check as uploads). A binary file is returned in base64; its result bound is 8 MiB. `read_canvas` cuts the markdown to the result bound. `search_users` and `search_channels` walk at most `slack.MaxSearchPages` = 5 pages of 200 (`complete: false` when the walk stopped early).
+
+**Resource identity.** `get_reactions`: `channel` (resolved like every channel argument) and `timestamp`; `list_channel_members`: `channel`; `read_file`: `file`; `read_canvas` / `update_canvas`: `canvas` (plus the operation); the list tools: `list` (and `item`). Searches and `create_list` have none; `create_canvas` has its `channel` when given.
+
+**Not offered.** Slack's MCP server also has `slack_send_message_draft` (a draft in the user's *Drafts & Sent*). Slack offers no public Web API for drafts: `drafts.*` are undocumented client methods that are absent from the [Web API method list](https://docs.slack.dev/reference/methods) and not grantable as an OAuth user-token scope, so the gateway cannot create drafts with the connected user's token. `slack.schedule_message` or an Ask-mode `post_message` covers the "review before it is sent" case.
+
 ## Account binding
 
 `slack.Binder` implements `connections.Binder` for vendor `slack` and is installed by `cmd/gateway` (`registerSlack`: `connSvc.RegisterBinder("slack", slack.Binder{})`, `connSvc.MapApp("slack", "slack")`). A Slack OAuth v2 code exchange of an app with bot and user scopes answers with the **bot token** at the top level and the user's own token, id and scopes under `authed_user`; an app that requests only user scopes answers with no top-level `access_token` at all. The connect flow exchanges the code for vendor `slack` itself (`connections.Service.exchange` -> `exchangeSlack`, not x/oauth2): it decodes the `oauth.v2.access` answer, lifts `authed_user.access_token` (with its `refresh_token` / `expires_in` under token rotation) when the top level has none, keeps the whole answer in the token's extras, and turns an `ok: false` answer into the flow error with Slack's error code in the log. After the exchange the binder:
@@ -136,7 +164,7 @@ The binder derives the Web API root from the vendor app's **Token URL** (`https:
 
 ## Setup
 
-1. Register the Slack app as described in [`docs/vendor-apps.md`](../vendor-apps.md) section 2 (manifest 2.5: user token scopes `channels:read`, `groups:read`, `channels:history`, `groups:history`, `search:read`, `users:read`, `chat:write`, `im:write`, `reactions:write`, and for [account management](#account-management) `channels:write`, `groups:write`, `pins:read`, `pins:write`, `files:write`, `users.profile:write`, `dnd:read`, `dnd:write`, `im:read`, `mpim:read`, `im:history`, `mpim:history`; bot scopes for approvals; HTTPS redirect URL; public distribution so every member can authorize). Users who connected before scopes were added press **Grant more access** on `/connections` (it lists what it unlocks); an Admin-approved-apps workspace re-approves the app first.
+1. Register the Slack app as described in [`docs/vendor-apps.md`](../vendor-apps.md) section 2 (manifest 2.5: user token scopes `channels:read`, `groups:read`, `channels:history`, `groups:history`, `search:read`, `users:read`, `chat:write`, `im:write`, `reactions:write`, and for [account management](#account-management) `channels:write`, `groups:write`, `pins:read`, `pins:write`, `files:write`, `users.profile:write`, `dnd:read`, `dnd:write`, `im:read`, `mpim:read`, `im:history`, `mpim:history`, and for [search, files, canvases and lists](#search-files-canvases-and-lists) `reactions:read`, `files:read`, `emoji:read`, `canvases:read`, `canvases:write`, `lists:read`, `lists:write`; bot scopes for approvals; HTTPS redirect URL; public distribution so every member can authorize). Users who connected before scopes were added press **Grant more access** on `/connections` (it lists what it unlocks); an Admin-approved-apps workspace re-approves the app first.
 2. In the portal, **Settings -> Vendor apps -> slack**: client ID, client secret, the bot token and signing secret for approvals, the default endpoints, and in **Extra parameters**:
    ```
    company_team_id=T0123ABCD

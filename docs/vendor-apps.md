@@ -208,10 +208,30 @@ Slack requires **HTTPS** for every redirect URL, so `localhost` cannot be regist
 | `dnd:write` | write | `slack.set_dnd`, `slack.end_dnd` (the user's own Do Not Disturb snooze) |
 | `im:read`, `mpim:read` | read | `slack.list_conversations` lists DMs / group DMs only when granted; group-DM ids resolve for policy (`mpim:<id>`) with `mpim:read` |
 | `im:history`, `mpim:history` | read | `slack.read_channel_history`, `slack.get_thread` with a DM (`D…`) or group-DM id |
+| `reactions:read` | read | `slack.get_reactions` |
+| `files:read` | read | `slack.read_file` (metadata and content, at most 5 MiB) |
+| `emoji:read` | read | `slack.search_emojis` (the workspace's custom emoji) |
+| `canvases:read` | read | `slack.read_canvas`; optional for `slack.update_canvas` (find a section by its text) |
+| `canvases:write` | write | `slack.create_canvas`, `slack.update_canvas` |
+| `lists:read` | read | `slack.read_list`; also needed by `slack.add_list_item`, `slack.update_list_item` (they read the columns first) |
+| `lists:write` | write | `slack.create_list`, `slack.update_list`, `slack.add_list_item`, `slack.update_list_item` |
 
 `chat:write` also covers `slack.update_message`, `slack.delete_message`,
 `slack.schedule_message`, `slack.list_scheduled_messages` and
 `slack.delete_scheduled_message`.
+`search:read` also covers `slack.search_files`; `users:read` covers
+`slack.search_users`; `channels:read` / `groups:read` cover `slack.search_channels` and
+`slack.list_channel_members` (plus `im:read` / `mpim:read` for a DM's members).
+
+**Operator step for the search, file, canvas and list tools (Brain plan `5soa9785`).**
+Add these seven **user token scopes** to the Slack app (**OAuth & Permissions -> User
+Token Scopes**, or the manifest in 2.5) before rolling out the build that ships them:
+`reactions:read`, `files:read`, `emoji:read`, `canvases:read`, `canvases:write`,
+`lists:read`, `lists:write`. Then re-approve the app if the workspace uses
+Admin-approved apps; users get them with **Grant more access** on `/connections`. Canvas
+and List writes also need a paid plan for standalone canvases and Slack Lists (Slack
+answers `free_teams_cannot_create_standalone_canvases` and similar, reported as
+`forbidden`). The six new writes start as **Ask** (section 9).
 
 Everything above acts **as the connected user** through the user token (Brain decision
 `aud38ptd`): a user can only do what Slack already lets that user do (create a channel
@@ -299,6 +319,13 @@ oauth_config:
       - mpim:read
       - im:history
       - mpim:history
+      - reactions:read
+      - files:read
+      - emoji:read
+      - canvases:read
+      - canvases:write
+      - lists:read
+      - lists:write
     bot:
       - chat:write
       - im:write
@@ -600,8 +627,13 @@ Every v1 tool in plan section 5 maps to at least one registered scope above:
   (`pins:write`), `upload_file` (`files:write`), `set_status`, `clear_status`
   (`users.profile:write`), `get_dnd` (`dnd:read`), `set_dnd`, `end_dnd` (`dnd:write`),
   `list_conversations` (`channels:read`, `groups:read`, plus `im:read` / `mpim:read`
-  for DMs; DM history `im:history` / `mpim:history`). Approval DMs: bot `chat:write`,
-  `im:write`.
+  for DMs; DM history `im:history` / `mpim:history`); `get_reactions` (`reactions:read`),
+  `list_channel_members`, `search_channels` (`channels:read`, `groups:read`),
+  `search_files` (`search:read`), `search_users` (`users:read`), `search_emojis`
+  (`emoji:read`), `read_file` (`files:read`), `read_canvas` (`canvases:read`),
+  `create_canvas`, `update_canvas` (`canvases:write`), `read_list` (`lists:read`),
+  `create_list`, `update_list`, `add_list_item`, `update_list_item` (`lists:write`,
+  item writes also `lists:read`). Approval DMs: bot `chat:write`, `im:write`.
 - Atlassian: `jira.search_issues`, `jira.get_issue`, `jira.list_transitions`
   (`read:jira-work`, `read:jira-user`), `confluence.search` (`search:confluence`),
   `confluence.get_page` (`read:confluence-content.all` / `read:page:confluence`),
@@ -694,8 +726,11 @@ every Slack write added with Brain decision `aud38ptd`: `create_channel`,
 `clear_status`, `set_dnd`, `end_dnd`. They need a confirmation on every call until an
 admin switches them to Auto; `post_message`, `reply_in_thread` and `add_reaction` stay
 Auto. A row an admin already wrote is kept (`ON CONFLICT DO NOTHING`); the migration's
-Down removes exactly those rows. `TestSlackNewWritesAreSeededAsAsk` (`cmd/gateway`)
-fails when a new Slack write ships without a seed.
+Down removes exactly those rows. Migration 21 (`00021_slack_docs_default_ask.sql`) does
+the same for the canvas and Slack List writes of Brain plan `5soa9785`: `create_canvas`,
+`update_canvas`, `create_list`, `update_list`, `add_list_item`, `update_list_item`.
+`TestSlackNewWritesAreSeededAsAsk` (`cmd/gateway`) fails when a new Slack write ships
+without a seed in one of them.
 
 Storage and policy: only the tools set to Ask are stored (`vendor_tool_approvals`,
 migration 19: `app`, `tool`, `updated_by`, `updated_at`; the `gateway` app is refused).
