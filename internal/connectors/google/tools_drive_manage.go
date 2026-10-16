@@ -411,6 +411,9 @@ func (c *Connector) getContent(ctx context.Context, cl *client, call connectors.
 		}
 		resp, err = svc.Files.Get(fileID).Context(ctx).SupportsAllDrives(true).Download()
 	}
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err := classify("read file content", err); err != nil {
 		return connectors.Result{}, err
 	}
