@@ -140,16 +140,37 @@ Repository permissions (verified per endpoint in the GitHub REST docs):
 
 | Permission | Access | Tools |
 | --- | --- | --- |
-| Metadata | Read (mandatory, set automatically) | all |
-| Issues | Read and write | read: `github.get_issue`; write: `github.create_issue`, `github.add_issue_comment` |
-| Pull requests | Read and write | read: `github.get_pull_request`, `github.list_pull_request_files`; write: `github.create_pull_request`, `github.add_issue_comment` (on PRs) |
-| Contents | Read and write | write: `github.create_branch` (`POST /repos/{owner}/{repo}/git/refs`); read also satisfies `github.get_pull_request` |
+| Metadata | Read (mandatory, set automatically) | all; alone: `github.list_tags` |
+| Issues | Read and write | read: `github.get_issue`, `github.list_issues`, `github.list_issue_comments`; write: `github.create_issue`, `github.add_issue_comment`, `github.update_issue` |
+| Pull requests | Read and write | read: `github.get_pull_request`, `github.list_pull_request_files`, `github.list_pull_requests`, `github.get_pull_request_diff`, `github.get_pull_request_status`, `github.list_pull_request_reviews`, `github.list_pull_request_review_comments`; write: `github.create_pull_request`, `github.update_pull_request`, `github.create_pull_request_review`, `github.request_reviewers`, `github.add_issue_comment` (on PRs) |
+| Contents | Read and write | read: `github.get_file_contents`, `github.list_branches`, `github.list_commits`, `github.get_commit`, `github.list_releases`, `github.get_release`; write: `github.create_branch` (`POST /repos/{owner}/{repo}/git/refs`), `github.create_or_update_file`, `github.merge_pull_request` |
+| **Actions** (new) | Read and write | read: `github.list_workflow_runs`, `github.get_workflow_run`, `github.list_workflow_jobs`, `github.get_job_logs`; write: `github.run_workflow`, `github.rerun_workflow_run`, `github.cancel_workflow_run` |
+| **Checks** (new) | Read | `github.get_pull_request_status` (check runs) |
+| **Commit statuses** (new) | Read | `github.get_pull_request_status` (combined status) |
+| Workflows (optional) | Read and write | only `github.create_or_update_file` on files under `.github/workflows`; leave off to keep the gateway from editing CI definitions |
 
-Organization permissions: none. Account permissions: none.
+Organization permissions: none required (Members: read optional, see
+[connectors/github.md](connectors/github.md#setup)). Account permissions: none.
 
-`github.get_me` (`GET /user`) and `github.search_issues` (`GET /search/issues`) require
-no permissions; search results are limited to repositories the installation and the user
+`github.get_me` (`GET /user`), `github.search_issues`, `github.search_code`,
+`github.search_repositories` and `github.search_users` (`GET /search/...`) require no
+permissions; search results are limited to repositories the installation and the user
 can see.
+
+**Upgrading an existing app (operator step).** The tool-gap release adds three repository
+permissions: **Actions: read and write**, **Checks: read** and **Commit statuses: read**
+(and optionally Workflows: read and write). Issues, Pull requests and Contents stay as
+before. After saving the new permissions on the app's **Permissions & events** page,
+GitHub e-mails every owner of an installation to **review and accept the updated
+permissions**: the org owner for the company organization (org **Settings → GitHub Apps →
+Configure** on the app → *Review request*), each user for their personal account. Until an installation accepts, the new tools answer `forbidden` on its
+repositories; the existing tools keep working. Users do not need to reconnect: GitHub App
+user tokens carry the app's permissions intersected with the installation's.
+
+The new GitHub writes default to **Ask** (migration 24, see section 9).
+
+GitHub's notifications API only accepts classic personal access tokens, so the gateway
+has no notification tools; no notifications permission exists to add.
 
 Subscribe to events: **none**.
 
@@ -663,10 +684,7 @@ distribution all ask for one), and the answer to "is the company a Google Worksp
 
 Every v1 tool in plan section 5 maps to at least one registered scope above:
 
-- GitHub: `get_me`, `search_issues` (no permission), `get_issue` (Issues R),
-  `get_pull_request`, `list_pull_request_files` (Pull requests R), `create_issue`,
-  `add_issue_comment` (Issues W), `create_pull_request` (Pull requests W),
-  `create_branch` (Contents W).
+- GitHub: see the table in 1.2 (every row names its tools).
 - Slack: `list_channels` (`channels:read`, `groups:read`), `read_channel_history`,
   `get_thread` (`channels:history`, `groups:history`), `search_messages` (`search:read`),
   `get_user` (`users:read`), `post_message`, `reply_in_thread` (`chat:write`),
@@ -800,6 +818,14 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 `sheets.update_range`, `create`. `calendar.create_event`, `tasks.create`, `gmail.send`,
 `gmail.create_draft`, `drive.create_folder`, `docs.create`, `docs.append_text` and
 `sheets.append_rows` stay Auto. `TestGoogleNewWritesAreSeededAsAsk` guards the list.
+
+Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
+close the gap with github-mcp-server: `create_or_update_file`, `update_issue`,
+`update_pull_request`, `create_pull_request_review`, `request_reviewers`,
+`merge_pull_request`, `run_workflow`, `rerun_workflow_run`, `cancel_workflow_run`.
+`create_issue`, `add_issue_comment`, `create_pull_request` and `create_branch` stay Auto.
+`TestGitHubNewWritesAreSeededAsAsk` (`cmd/gateway`) keeps the list equal to the
+connector's writes.
 
 Storage and policy: only the tools set to Ask are stored (`vendor_tool_approvals`,
 migration 19: `app`, `tool`, `updated_by`, `updated_at`; the `gateway` app is refused).

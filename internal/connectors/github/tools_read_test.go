@@ -116,11 +116,8 @@ func TestToolsStartWithTheFiveReads(t *testing.T) {
 		}
 	}
 	want := []string{"get_me", "search_issues", "get_issue", "get_pull_request", "list_pull_request_files"}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Errorf("read tools = %v, want %v", names, want)
-	}
-	if got := len(c.Tools()); got != len(want)+4 {
-		t.Errorf("Tools() = %d tools, want the %d reads and 4 writes", got, len(want))
+	if len(names) < len(want) || strings.Join(names[:len(want)], ",") != strings.Join(want, ",") {
+		t.Errorf("read tools = %v, want them to start with %v", names, want)
 	}
 }
 

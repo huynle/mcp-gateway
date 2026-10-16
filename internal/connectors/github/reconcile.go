@@ -169,28 +169,7 @@ func (c *Connector) checkComment(ctx context.Context, in connectors.ReconcileInp
 		}
 		return "", resp.LastPage, nil
 	}
-	id, last, err := scan(1)
-	switch {
-	case err != nil:
-		return connectors.ReconcileResult{}, err
-	case id != "":
-		return found(id), nil
-	case last <= 1:
-		return notFound, nil
-	}
-	for page, reads := last, 1; page >= 2; page-- {
-		if reads++; reads > MaxReconcilePages {
-			return connectors.ReconcileResult{}, fmt.Errorf("github: reconcile: more than %d pages of comments on %s/%s#%d; cannot tell yet", MaxReconcilePages, tg.owner, tg.repo, number)
-		}
-		id, _, err := scan(page)
-		if err != nil {
-			return connectors.ReconcileResult{}, err
-		}
-		if id != "" {
-			return found(id), nil
-		}
-	}
-	return notFound, nil
+	return scanNewestFirst(scan, fmt.Sprintf("comments on %s/%s#%d", tg.owner, tg.repo, number))
 }
 
 // --- create_pull_request ----------------------------------------------------------

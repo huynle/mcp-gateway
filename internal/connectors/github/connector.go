@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,7 +96,20 @@ func (c *Connector) App() string { return App }
 
 // Tools implements connectors.Connector. Handlers are nil: Call dispatches
 // by name (see connectors.Connector).
-func (c *Connector) Tools() []connectors.Tool { return append(c.readTools(), c.writeTools()...) }
+func (c *Connector) Tools() []connectors.Tool {
+	return slices.Concat(c.readTools(), c.writeTools(), c.repoTools(), c.issueTools(), c.pullTools(), c.actionsTools())
+}
+
+// toolGroups lists the read and write handlers of every tool group.
+func (c *Connector) toolGroups() (reads, writes map[string]handler) {
+	reads, writes = c.handlers(), c.writeHandlers()
+	for _, group := range []func() (map[string]handler, map[string]handler){c.repoHandlers, c.issueHandlers, c.pullHandlers, c.actionsHandlers} {
+		r, w := group()
+		maps.Copy(reads, r)
+		maps.Copy(writes, w)
+	}
+	return reads, writes
+}
 
 // handler runs one tool against an authenticated client.
 type handler func(ctx context.Context, client *gh.Client, call connectors.Call) (connectors.Result, error)
@@ -105,10 +120,11 @@ type handler func(ctx context.Context, client *gh.Client, call connectors.Call) 
 // to *Error).
 func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.Result, error) {
 	name := shortName(call.Tool)
-	run, ok := c.handlers()[name]
+	reads, writes := c.toolGroups()
+	run, ok := reads[name]
 	write := false
 	if !ok {
-		run, ok = c.writeHandlers()[name]
+		run, ok = writes[name]
 		write = true
 	}
 	if !ok {
