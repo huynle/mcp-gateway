@@ -134,13 +134,15 @@ func (c *Connector) pullTools() []connectors.Tool {
 
 // pullHandlers maps the pull request tools to their implementation.
 func (c *Connector) pullHandlers() (reads, writes map[string]handler) {
-	return map[string]handler{
-			ToolListPullRequests: c.listPullRequests, ToolGetPullRequestDiff: c.getPullRequestDiff, ToolGetPullRequestStatus: c.getPullRequestStatus,
-			ToolListPullRequestReviews: c.listPullRequestReviews, ToolListPullRequestReviewComments: c.listPullRequestReviewComments,
-		}, map[string]handler{
-			ToolUpdatePullRequest: c.updatePullRequest, ToolCreatePullRequestReview: c.createPullRequestReview,
-			ToolRequestReviewers: c.requestReviewers, ToolMergePullRequest: c.mergePullRequest,
-		}
+	reads = map[string]handler{
+		ToolListPullRequests: c.listPullRequests, ToolGetPullRequestDiff: c.getPullRequestDiff, ToolGetPullRequestStatus: c.getPullRequestStatus,
+		ToolListPullRequestReviews: c.listPullRequestReviews, ToolListPullRequestReviewComments: c.listPullRequestReviewComments,
+	}
+	writes = map[string]handler{
+		ToolUpdatePullRequest: c.updatePullRequest, ToolCreatePullRequestReview: c.createPullRequestReview,
+		ToolRequestReviewers: c.requestReviewers, ToolMergePullRequest: c.mergePullRequest,
+	}
+	return reads, writes
 }
 
 // reviewersIdentity is identity(true) plus the requested reviewers and

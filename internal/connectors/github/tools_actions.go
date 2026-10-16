@@ -132,11 +132,13 @@ func (c *Connector) actionsTools() []connectors.Tool {
 
 // actionsHandlers maps the Actions tools to their implementation.
 func (c *Connector) actionsHandlers() (reads, writes map[string]handler) {
-	return map[string]handler{
-			ToolListWorkflowRuns: c.listWorkflowRuns, ToolGetWorkflowRun: c.getWorkflowRun, ToolListWorkflowJobs: c.listWorkflowJobs, ToolGetJobLogs: c.getJobLogs,
-		}, map[string]handler{
-			ToolRunWorkflow: c.runWorkflow, ToolRerunWorkflowRun: c.rerunWorkflowRun, ToolCancelWorkflowRun: c.cancelWorkflowRun,
-		}
+	reads = map[string]handler{
+		ToolListWorkflowRuns: c.listWorkflowRuns, ToolGetWorkflowRun: c.getWorkflowRun, ToolListWorkflowJobs: c.listWorkflowJobs, ToolGetJobLogs: c.getJobLogs,
+	}
+	writes = map[string]handler{
+		ToolRunWorkflow: c.runWorkflow, ToolRerunWorkflowRun: c.rerunWorkflowRun, ToolCancelWorkflowRun: c.cancelWorkflowRun,
+	}
+	return reads, writes
 }
 
 // runIdentity is identity(false) plus run_id, job_id, workflow and ref

@@ -149,13 +149,15 @@ func (c *Connector) repoTools() []connectors.Tool {
 
 // repoHandlers maps the repository tools to their implementation.
 func (c *Connector) repoHandlers() (reads, writes map[string]handler) {
-	return map[string]handler{
-			ToolGetFileContents: c.getFileContents, ToolListBranches: c.listBranches, ToolListCommits: c.listCommits,
-			ToolGetCommit: c.getCommit, ToolListTags: c.listTags, ToolListReleases: c.listReleases, ToolGetRelease: c.getRelease,
-			ToolSearchCode: c.searchCode, ToolSearchRepositories: c.searchRepositories, ToolSearchUsers: c.searchUsers,
-		}, map[string]handler{
-			ToolCreateOrUpdateFile: c.createOrUpdateFile,
-		}
+	reads = map[string]handler{
+		ToolGetFileContents: c.getFileContents, ToolListBranches: c.listBranches, ToolListCommits: c.listCommits,
+		ToolGetCommit: c.getCommit, ToolListTags: c.listTags, ToolListReleases: c.listReleases, ToolGetRelease: c.getRelease,
+		ToolSearchCode: c.searchCode, ToolSearchRepositories: c.searchRepositories, ToolSearchUsers: c.searchUsers,
+	}
+	writes = map[string]handler{
+		ToolCreateOrUpdateFile: c.createOrUpdateFile,
+	}
+	return reads, writes
 }
 
 // pathIdentity extends identity(false) with the argument named by
