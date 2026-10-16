@@ -426,7 +426,7 @@ func (c *Connector) getJobLogs(ctx context.Context, client *gh.Client, call conn
 // the API's own scheme and host (GHES, tests).
 func (c *Connector) checkLogURL(u *url.URL) error {
 	base, _ := url.Parse(c.baseURL)
-	if u == nil || u.Host == "" || (u.Scheme != "https" && !(base != nil && u.Scheme == base.Scheme && u.Host == base.Host)) {
+	if u == nil || u.Host == "" || (u.Scheme != "https" && (base == nil || u.Scheme != base.Scheme || u.Host != base.Host)) {
 		return &Error{Class: ClassVendorError, Message: "get job logs: GitHub returned an unusable log location"}
 	}
 	return nil
@@ -447,7 +447,7 @@ func (c *Connector) downloadTail(ctx context.Context, u string, keep int) (tail 
 	if err != nil {
 		return nil, 0, 0, false, classify("download job logs", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, 0, 0, false, fromStatus("download job logs", resp.StatusCode, "", nil)
 	}

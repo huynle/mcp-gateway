@@ -291,7 +291,7 @@ func rawGet(ctx context.Context, client *gh.Client, path, accept string, limit i
 	if err != nil {
 		return nil, false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err = io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return nil, false, err
@@ -853,7 +853,7 @@ func (c *Connector) createOrUpdateFile(ctx context.Context, client *gh.Client, c
 	}
 	return connectors.Result{Content: CreatedFile{
 		Path: out.GetContent().GetPath(), SHA: out.GetContent().GetSHA(), URL: out.GetContent().GetHTMLURL(),
-		CommitSHA: out.Commit.GetSHA(), CommitURL: out.Commit.GetHTMLURL(), Repo: owner + "/" + repo, Branch: branch,
+		CommitSHA: out.GetSHA(), CommitURL: out.GetHTMLURL(), Repo: owner + "/" + repo, Branch: branch,
 	}}, nil
 }
 
