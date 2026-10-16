@@ -59,7 +59,7 @@ func (c *Connector) jiraGapWriteTools() []connectors.Tool {
 		RequiredScopes:   []string{ScopeJiraWrite},
 		ResourceIdentity: jiraIdentity,
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkRemoteLink},
-		ResultIDs:        func(res connectors.Result) map[string]string { return contentMap(res) },
+		ResultIDs:        contentMap,
 		Bounds:           connectors.Bounds{MaxResultBytes: c.bounds.MaxResultBytes},
 	}}
 }
