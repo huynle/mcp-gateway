@@ -26,8 +26,8 @@ func TestWriteToolsMetadata(t *testing.T) {
 		}
 	}
 	wantOrder := []string{"mail_send", "calendar_create_event", "drive_create_folder", "teams_post_channel_message"}
-	if strings.Join(order, ",") != strings.Join(wantOrder, ",") {
-		t.Fatalf("write tools = %v, want %v", order, wantOrder)
+	if len(order) < len(wantOrder) || strings.Join(order[:len(wantOrder)], ",") != strings.Join(wantOrder, ",") {
+		t.Fatalf("write tools = %v, want them to start with %v", order, wantOrder)
 	}
 	type schema struct {
 		Type       string                    `json:"type"`

@@ -6,7 +6,7 @@ Tool names are `microsoft.<area>_<verb>`: tool names cannot carry dots and one c
 
 ## Tools
 
-The first six are reads (`Kind: read`); the four writes follow in [Writes](#writes). The gateway adds `account` and `approval_id` to every schema and generates `microsoft.list_accounts`.
+The first six are reads (`Kind: read`); the four original writes follow in [Writes](#writes); the tools added to close the gap with the reference Microsoft 365 connectors are in [More tools](#more-tools). The gateway adds `account` and `approval_id` to every schema and generates `microsoft.list_accounts`.
 
 | Tool | Arguments | Result | Graph permission (`RequiredScopes`) |
 |---|---|---|---|
@@ -47,7 +47,7 @@ Throttling -- 429, or 503 **with** `Retry-After` -- is returned as `*connectors.
 
 Every tool declares the delegated Graph permissions it needs (`RequiredScopes`, the names of [`docs/vendor-apps.md`](../vendor-apps.md) section 5.2). The pipeline does not compare `Tool.RequiredScopes` with `Account.Scopes` yet (nothing does, for any connector: `tools/list` is per principal, not per account), so **this connector enforces it in `Call`** when an `AccountSource` is injected (`cmd/gateway` passes the connections service): the account's granted scopes must cover the tool's, where `<Resource>.ReadWrite` covers `<Resource>.Read`, `.All` covers the non-`.All` form, names are compared case-insensitively with or without the `https://graph.microsoft.com/` prefix (`microsoft.ScopeCovered`). A tool whose scopes are missing is refused with `scope_required` before any token is fetched or request sent; the message names the missing permissions and the portal page. An account the source does not know, or an account recorded without scopes, is not refused: Graph decides.
 
-Personal Microsoft accounts (tenant `9188040d-6c67-4c5b-b112-36a304b66dad`, `microsoft.PersonalTenant`) cannot grant Teams or SharePoint permissions (decision `mh7c6z3v`). The binder strips them from such accounts' granted scopes, so the three Teams tools (`teams_list_channels`, `teams_read_channel_messages`, `teams_post_channel_message`) answer `scope_required` ("personal Microsoft accounts cannot grant Teams or SharePoint permissions") for them and work for a work account that granted the scopes. The tools still appear in `tools/list` (the list is per principal); hiding them per account needs scope enforcement in the pipeline, which would then make the connector's check redundant.
+Personal Microsoft accounts (tenant `9188040d-6c67-4c5b-b112-36a304b66dad`, `microsoft.PersonalTenant`) cannot grant Teams or SharePoint permissions (decision `mh7c6z3v`), nor the directory (`User.ReadBasic.All`) or shared calendars (`Calendars.Read.Shared`, needed by `findMeetingTimes`): `microsoft.WorkOnlyScope` names them, `microsoft.ScopeGrantable` keeps Connect / Grant more access from asking personal accounts for them, and the binder strips them from such accounts' granted scopes, so the Teams tools, `calendar_find_meeting_times` and `users_search` (`teams_list_channels`, `teams_read_channel_messages`, `teams_post_channel_message`) answer `scope_required` ("personal Microsoft accounts cannot grant Teams or SharePoint permissions") for them and work for a work account that granted the scopes. The tools still appear in `tools/list` (the list is per principal); hiding them per account needs scope enforcement in the pipeline, which would then make the connector's check redundant.
 
 ## Writes
 
@@ -76,6 +76,52 @@ Four write tools (`Kind: write`: always policy, approval when the role says `con
 | `calendar_create_event` | `GET /me/events?$filter=transactionId eq '<id>'` (or `/me/calendars/<calendar>/events`) | the event id | no event carries the transaction id |
 | `drive_create_folder` | `GET /me/drive/root/children` or `/me/drive/items/<parent>/children` (or `/drives/<drive>/...`), `$select=id,name,folder`, 200 per page, bounded by `microsoft.MaxReconcilePages` (5): a **folder** whose name equals the recorded one case-insensitively (OneDrive compares names that way). **Approximation:** a drive item carries no client-chosen id or header, so the name is the whole key; a same-named folder created by other means in the meantime would be taken as this write's. Because the write asks Graph to *fail* on a name conflict, that is the only way two such folders can exist. A 404 is "cannot tell" (the account may have lost access); running out of pages is "cannot tell". | the folder's item id | the end of the children list without such a folder |
 | `teams_post_channel_message` | none: a channel message carries no client-chosen key, and a visible marker in the text is not acceptable. An unknown outcome goes straight to `unresolved` and the user is asked to check the channel. | -- | -- |
+
+## More tools
+
+Added to match the reference Microsoft 365 connectors (Claude's Microsoft 365 connector, Softeria/ms-365-mcp-server). Each is declared with its handler (`toolDef`, `tools_{mail,calendar,drive,teams,todo,people}.go`); single-page listings share `listRead` / `Page` (`{top, has_more, truncated?, items}`) and the bounds above. **Every new write defaults to Ask** (migration 23, see [`vendor-apps.md`](../vendor-apps.md) section 9). New permissions must be added to the Entra app (section 5.2 there); none needs admin consent.
+
+**Content cap.** `mail_get_attachment`, `drive_get_file_content` and `drive_upload_file` move at most `microsoft.MaxContentBytes` (5 MiB) of raw bytes. Downloads check the item's size first and the download itself is bounded (`graph.Client.Download`, `graph.ErrTooLarge`); a larger item is refused with `invalid_argument` (and its web url for drive files), never cut. Content comes back as `encoding: text` when it is valid UTF-8 of a textual type, else `base64`. Their result bound is `5 MiB * 4/3 + 64 KiB`.
+
+| Tool | Kind | Arguments | Graph | Permission | Reconcile |
+|---|---|---|---|---|---|
+| `mail_list_folders` | read | `top` | `GET /me/mailFolders` | `Mail.Read` | -- |
+| `mail_list_attachments` | read | `message_id`, `top` | `GET /me/messages/{id}/attachments` (metadata only) | `Mail.Read` | -- |
+| `mail_get_attachment` | read | `message_id`, `attachment_id` | metadata, then `.../$value` (5 MiB cap) | `Mail.Read` | -- |
+| `mail_create_draft` | write | `subject`, `body`, `to?`, `cc?`, `content_type?` | `POST /me/messages` | `Mail.ReadWrite` | marker: `internetMessageId` `<op-<id>@mcp-gateway>` + `x-mcp-gateway-op` header (same check as `mail_send`) |
+| `mail_send_draft` | write | `message_id` | `POST /me/messages/{id}/send` | `Mail.Send` | stable id: `isDraft` false = found, true = not_found, gone = cannot tell |
+| `mail_reply` | write | `message_id`, `comment`, `reply_all?` | `POST .../reply` / `.../replyAll` | `Mail.Send` | none |
+| `mail_forward` | write | `message_id`, `to`, `comment?` | `POST .../forward` | `Mail.Send` | none |
+| `mail_move` | write | `message_id`, `destination` (well-known name or folder id) | `POST .../move` (returns the new id) | `Mail.ReadWrite` | none |
+| `mail_mark_read` | write | `message_id`, `is_read?` (default true) | `PATCH /me/messages/{id}` | `Mail.ReadWrite` | stable id: `isRead` equals the recorded state |
+| `mail_delete` | write | `message_id` | `DELETE /me/messages/{id}` (to Deleted Items) | `Mail.ReadWrite` | stable id: gone = found |
+| `calendar_list_calendars` | read | `top` | `GET /me/calendars` | `Calendars.Read` | -- |
+| `calendar_get_event` | read | `event_id` | `GET /me/events/{id}` (text body, UTC) | `Calendars.Read` | -- |
+| `calendar_find_meeting_times` | read | `attendees`, `start`, `end`, `duration_minutes?`, `max_candidates?`, `activity_domain?` | `POST /me/findMeetingTimes` | `Calendars.Read.Shared` (work only) | -- |
+| `calendar_update_event` | write | `event_id` + any of `subject`, `start`+`end`, `time_zone`, `location`, `body`, `attendees` | `PATCH /me/events/{id}` | `Calendars.ReadWrite` | none (a repeated PATCH is harmless) |
+| `calendar_delete_event` | write | `event_id` | `DELETE /me/events/{id}` | `Calendars.ReadWrite` | stable id: gone = found |
+| `calendar_respond_event` | write | `event_id`, `response` (`accept`/`decline`/`tentative`), `comment?`, `send_response?` | `POST .../accept` / `decline` / `tentativelyAccept` | `Calendars.ReadWrite` | stable id: `responseStatus`; a declined event that vanished is found |
+| `drive_list_children` | read | `folder_id?`, `drive_id?`, `top` | `GET .../root/children` or `.../items/{id}/children` | `Files.Read.All` | -- |
+| `drive_get_file_content` | read | `item_id`, `drive_id?` | metadata, then `.../content` (5 MiB cap) | `Files.Read.All` | -- |
+| `drive_upload_file` | write | `name`, `content`, `content_encoding?` (`text`/`base64`), `parent_id?`, `drive_id?` | `PUT .../{parent}:/{name}:/content?@microsoft.graph.conflictBehavior=fail` | `Files.ReadWrite` | marker (approximated): a **file** of that name in the parent, as `drive_create_folder` |
+| `drive_create_share_link` | write | `item_id`, `drive_id?`, `type?` (`view`/`edit`), `scope?` (`organization`/`anonymous`) | `POST .../createLink` (returns the existing link of that type/scope) | `Files.ReadWrite` | none (idempotent at Graph) |
+| `teams_list_chats` | read | `top` (<= 50) | `GET /me/chats` | `Chat.ReadBasic` (work only) | -- |
+| `teams_read_chat_messages` | read | `chat_id`, `top` (<= 50) | `GET /chats/{id}/messages` | `Chat.Read` (work only) | -- |
+| `teams_read_channel_replies` | read | `team_id`, `channel_id`, `message_id`, `top` | `GET .../messages/{id}/replies` | `ChannelMessage.Read.All` (admin consent) | -- |
+| `teams_send_chat_message` | write | `chat_id`, `content`, `content_type?` | `POST /chats/{id}/messages` | `ChatMessage.Send` (work only) | none |
+| `teams_reply_channel_message` | write | `team_id`, `channel_id`, `message_id`, `content`, `content_type?` | `POST .../messages/{id}/replies` | `ChannelMessage.Send` | none |
+| `todo_list_lists` | read | `top` | `GET /me/todo/lists` | `Tasks.Read` | -- |
+| `todo_list_tasks` | read | `list_id`, `status?`, `top` | `GET /me/todo/lists/{id}/tasks` | `Tasks.Read` | -- |
+| `todo_create_task` | write | `list_id`, `title`, `body?`, `due?`, `importance?` | `POST .../tasks` | `Tasks.ReadWrite` | none (a task has no client-chosen key) |
+| `todo_update_task` | write | `list_id`, `task_id` + any of `title`, `body`, `due`, `importance`, `status` | `PATCH .../tasks/{id}` | `Tasks.ReadWrite` | none |
+| `todo_complete_task` | write | `list_id`, `task_id` | `PATCH .../tasks/{id}` `status: completed` | `Tasks.ReadWrite` | stable id: `status` is `completed` |
+| `contacts_search` | read | `q?` (name prefix, or an exact email), `top` | `GET /me/contacts` (`$filter`) | `Contacts.Read` | -- |
+| `people_search` | read | `q?`, `top` | `GET /me/people` (`$search`) | `People.Read` | -- |
+| `users_search` | read | `q`, `top` | `GET /users` (`$search` on `displayName` / `mail`, `ConsistencyLevel: eventual`) | `User.ReadBasic.All` (work only) | -- |
+
+Resource identities carry ids only: `message` (+ `attachment`, `folder` for moves, `is_read`), `event` (+ `response`), `drive` / `parent` / `item` / `file` / `link_type`, `chat`, `team` / `channel` / `message`, `list` / `task`; searches and listings without an id record nothing. Stable-id checks (`stateCheck`) GET the resource from the identity alone; any Graph error other than not-found is "cannot tell yet".
+
+Not built, and why: shared mailboxes, other users' calendars, mail rules, Planner, OneNote, SharePoint lists, Excel ranges, group and team membership management (the reference exposes them; they are admin-flavoured or beyond the brief's scope, and several need `.Shared` / `.All` permissions with admin consent); Teams message **search** (Claude's `chat_message_search`: the Microsoft Search API `POST /search/query` over `chatMessage`, which also wants `ChannelMessage.Read.All`; deferred, `teams_read_chat_messages` / `teams_read_channel_messages` cover reading); upload sessions over 5 MiB.
 
 ## Account binding
 

@@ -36,9 +36,10 @@ const ExtraCompanyTenants = "company_tenants"
 // accounts, which are then PersonalTenant). The external account id is
 // "<tenant id>:<object id>"; the label is company when the tenant is in
 // the app's company_tenants, else personal; the scopes are the token
-// response's scope field, else the requested scopes, minus the Teams
-// and SharePoint permissions for personal accounts, which cannot grant
-// them (decision mh7c6z3v).
+// response's scope field, else the requested scopes, minus the
+// work-only permissions (WorkOnlyScope: Teams, SharePoint, directory,
+// shared calendars) for personal accounts, which cannot use them
+// (decision mh7c6z3v).
 type Binder struct {
 	// BaseURL overrides the Graph root (with trailing slash). Empty
 	// derives it from the vendor app's UserInfoURL, then
@@ -102,7 +103,7 @@ func (b Binder) Bind(ctx context.Context, in connections.BindInput) (connections
 		bound.Label = connectors.LabelCompany
 	}
 	if tenant == PersonalTenant {
-		bound.Scopes = stripTeamsScopes(bound.Scopes)
+		bound.Scopes = stripWorkOnlyScopes(bound.Scopes)
 	}
 	return bound, nil
 }

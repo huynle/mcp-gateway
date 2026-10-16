@@ -24,8 +24,18 @@ const (
 	ScopeChannelMessageSend     = "ChannelMessage.Send"
 	ScopeSitesReadAll           = "Sites.Read.All"
 	ScopeSitesReadWriteAll      = "Sites.ReadWrite.All"
+	ScopeMailReadWrite          = "Mail.ReadWrite"
+	ScopeCalendarsReadShared    = "Calendars.Read.Shared"
+	ScopeChatReadBasic          = "Chat.ReadBasic"
+	ScopeChatRead               = "Chat.Read"
+	ScopeChatMessageSend        = "ChatMessage.Send"
+	ScopeTasksRead              = "Tasks.Read"
+	ScopeTasksReadWrite         = "Tasks.ReadWrite"
+	ScopeContactsRead           = "Contacts.Read"
+	ScopePeopleRead             = "People.Read"
+	ScopeUserReadBasicAll       = "User.ReadBasic.All"
 	graphScopePrefix            = "https://graph.microsoft.com/"
-	personalAccountsLackMessage = "personal Microsoft accounts cannot grant Teams or SharePoint permissions"
+	personalAccountsLackMessage = "personal Microsoft accounts cannot grant Teams, SharePoint, directory or shared-calendar permissions"
 )
 
 // TeamsScope reports whether scope is one of the Teams or SharePoint
@@ -34,7 +44,24 @@ const (
 func TeamsScope(scope string) bool {
 	s := strings.ToLower(normalizeScope(scope))
 	return strings.HasPrefix(s, "team.") || strings.HasPrefix(s, "channel.") || strings.HasPrefix(s, "channelmessage.") ||
-		strings.HasPrefix(s, "chat.") || strings.HasPrefix(s, "sites.") || strings.HasPrefix(s, "teamsactivity.")
+		strings.HasPrefix(s, "chat.") || strings.HasPrefix(s, "chatmessage.") || strings.HasPrefix(s, "sites.") || strings.HasPrefix(s, "teamsactivity.")
+}
+
+// WorkOnlyScope reports whether personal Microsoft accounts cannot use
+// scope: the Teams and SharePoint permissions (TeamsScope), the
+// directory (User.ReadBasic.All: GET /users is not supported for them)
+// and Calendars.Read.Shared (findMeetingTimes is not supported for
+// them). Connect and grant more access never ask personal accounts for
+// them (ScopeGrantable) and the binder strips them.
+func WorkOnlyScope(scope string) bool {
+	if TeamsScope(scope) {
+		return true
+	}
+	switch strings.ToLower(normalizeScope(scope)) {
+	case "user.readbasic.all", "calendars.read.shared":
+		return true
+	}
+	return false
 }
 
 // normalizeScope strips the Graph resource prefix and surrounding space.
@@ -120,12 +147,12 @@ func missingScopes(granted, required []string) []string {
 	return out
 }
 
-// stripTeamsScopes returns scopes without the Teams and SharePoint
-// permissions (for personal accounts).
-func stripTeamsScopes(scopes []string) []string {
+// stripWorkOnlyScopes returns scopes without the permissions personal
+// accounts cannot use (WorkOnlyScope).
+func stripWorkOnlyScopes(scopes []string) []string {
 	out := make([]string, 0, len(scopes))
 	for _, s := range scopes {
-		if !TeamsScope(s) {
+		if !WorkOnlyScope(s) {
 			out = append(out, s)
 		}
 	}
@@ -133,8 +160,8 @@ func stripTeamsScopes(scopes []string) []string {
 }
 
 // ScopeGrantable is the connectors.ScopeGrantable of the Microsoft app:
-// personal accounts cannot grant the Teams and SharePoint permissions
-// (TeamsScope); work accounts can grant everything.
+// personal accounts cannot grant the work-only permissions
+// (WorkOnlyScope); work accounts can grant everything.
 func ScopeGrantable(label connectors.AccountLabel, scope string) bool {
-	return label != connectors.LabelPersonal || !TeamsScope(scope)
+	return label != connectors.LabelPersonal || !WorkOnlyScope(scope)
 }
