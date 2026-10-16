@@ -19,6 +19,35 @@ The gateway adds `account` and `approval_id` to every schema and generates `jira
 | `jira.list_transitions` | `key` | `{issue, transitions: [{id, name, to}]}` | `read:jira-work` (`GET /rest/api/3/issue/{key}/transitions`) |
 | `confluence.search` | `cql` (required), `limit` (1-100, default 10, clamped), `start` (offset, default 0) | `{results: [{id, type, status, title, space, url, last_modified}], start, limit, size, has_more, truncated?}` | `search:confluence` (`GET /wiki/rest/api/content/search?expand=space,version`) |
 | `confluence.get_page` | `id` (digits) | `{id, title, status, space_id, parent_id, version, body_format: "storage", body (XHTML), url, created_at, truncated?}` | `read:page:confluence` (`GET /wiki/api/v2/pages/{id}?body-format=storage`) |
+| `jira.get_current_user` | none | `{account_id, display_name, email?, time_zone, active, account_type}` | `read:jira-user` (`GET /myself`) |
+| `jira.get_user` | `account_id` | same as `get_current_user` | `read:jira-user` (`GET /user?accountId=`) |
+| `jira.search_users` | `query` (name or email), `max_results`, `start_at` | `{users: [...], start_at, max_results, has_more}` | `read:jira-user` (`GET /user/search`) |
+| `jira.list_assignable_users` | `key` or `project_key`, `query?`, paging | like `search_users` | `read:jira-user` (`GET /user/assignable/search`) |
+| `jira.list_projects` | `query?`, `max_results`, `start_at` | `{projects: [{id, key, name, type, style}], start_at, max_results, total, has_more}` | `read:jira-work` (`GET /project/search`) |
+| `jira.list_issue_types` | `project_key`, paging | `{project, issue_types: [{id, name, description, subtask}], ...}` | `read:jira-work` (`GET /issue/createmeta/{key}/issuetypes`) |
+| `jira.get_create_fields` | `project_key`, `issue_type_id`, paging | `{fields: [{id, name, required, type, items?, custom?, allowed_values (<= 50), more_values?, has_default}], ...}` | `read:jira-work` (`GET /issue/createmeta/{key}/issuetypes/{id}`) |
+| `jira.list_project_statuses` | `project_key` | `{project, issue_types: [{issue_type, subtask, statuses: [{id, name, category}]}]}` | `read:jira-work` (`GET /project/{key}/statuses`) |
+| `jira.list_project_versions` | `project_key` | `{project, versions: [{id, name, description, released, archived, overdue, start_date, release_date}]}` | `read:jira-work` (`GET /project/{key}/versions`) |
+| `jira.list_project_components` | `project_key` | `{project, components: [{id, name, description, lead}]}` | `read:jira-work` (`GET /project/{key}/components`) |
+| `jira.get_issue_comments` | `key`, paging | `{issue, comments: [{id, author, body (plain text), created, updated, url}], ...}`, newest first | `read:jira-work` (`GET /issue/{key}/comment`) |
+| `jira.get_issue_changelog` | `key`, paging | `{issue, histories: [{id, author, created, items: [{field, from, to}]}], ...}`, oldest first | `read:jira-work` (`GET /issue/{key}/changelog`) |
+| `jira.list_issue_links` | `key` | `{issue, links: [{id, type, direction, relation, issue, summary, status, url}]}` | `read:jira-work` (`GET /issue/{key}?fields=issuelinks`) |
+| `jira.list_link_types` | none | `{link_types: [{id, name, inward, outward}]}` | `read:jira-work` (`GET /issueLinkType`) |
+| `jira.list_remote_links` | `key` | `{issue, links: [{id, global_id, title, url, summary, relationship, application}]}` | `read:jira-work` (`GET /issue/{key}/remotelink`) |
+| `jira.list_worklogs` | `key`, paging | `{issue, worklogs: [{id, author, time_spent, time_spent_seconds, started, comment}], ...}` | `read:jira-work` (`GET /issue/{key}/worklog`) |
+| `jira.get_watchers` | `key` | `{issue, is_watching, watch_count, watchers: [...]}` | `read:jira-work` (`GET /issue/{key}/watchers`) |
+| `jira.list_filters` | `name?`, paging | `{filters: [{id, name, description, owner, favourite, jql}], ...}` | `read:jira-work` (`GET /filter/search?expand=description,favourite,jql,owner`) |
+| `jira.list_boards` | `project_key?`, `name?`, `type?` (scrum, kanban, simple), paging | `{boards: [{id, name, type, project}], ...}` | granular `read:board-scope:jira-software` + `read:project:jira` (`GET /rest/agile/1.0/board`) |
+| `jira.list_sprints` | `board_id`, `state?` (active, future, closed), paging | `{board_id, sprints: [{id, name, state, start_date, end_date, complete_date, goal}], ...}` | granular `read:sprint:jira-software` (`GET /rest/agile/1.0/board/{id}/sprint`) |
+| `jira.get_sprint_issues` | `sprint_id`, `jql?`, paging | the `search_issues` hit shape | granular `read:sprint:jira-software` + `read:issue-details:jira` + `read:jql:jira` (`GET /rest/agile/1.0/sprint/{id}/issue`) |
+| `confluence.list_spaces` | `keys?`, `type?`, `limit`, `cursor` | `{spaces: [{id, key, name, type, status, homepage_id, url}], limit, has_more, next_cursor?}` | `read:space:confluence` (`GET /wiki/api/v2/spaces`) |
+| `confluence.list_space_pages` | `space_key`, `depth?` (all, root), `limit`, `cursor` | `{space, pages: [{id, title, status, space_id, position?, parent_id?}], ...}` | `read:page:confluence` + `read:space:confluence` (`GET /wiki/api/v2/spaces?keys=`, then `/spaces/{id}/pages`) |
+| `confluence.get_page_by_title` | `space_key`, `title` (exact) | like `get_page` | `read:page:confluence` + `read:space:confluence` (`GET /wiki/api/v2/pages?space-id=&title=`) |
+| `confluence.get_page_children` | `id`, `limit`, `cursor` | `{parent_id, children: [{id, title, status, space_id, position}], ...}` | `read:page:confluence` (`GET /wiki/api/v2/pages/{id}/children`) |
+| `confluence.get_page_comments` | `id`, `kind?` (footer, inline), `limit`, `cursor` | `{page_id, kind, comments: [{id, status, author_id, created_at, body (storage), resolution_status?, inline_selection?, url}], ...}` | `read:comment:confluence` (`GET /wiki/api/v2/pages/{id}/footer-comments` / `inline-comments`) |
+| `confluence.list_page_attachments` | `id`, `limit`, `cursor` | metadata only: `{page_id, attachments: [{id, title, media_type, file_size, comment, created_at, download_url, url}], ...}` | `read:attachment:confluence` (`GET /wiki/api/v2/pages/{id}/attachments`) |
+| `confluence.get_page_labels` | `id`, `limit`, `cursor` | `{page_id, labels: [{id, name, prefix}], ...}` | `read:page:confluence` (`GET /wiki/api/v2/pages/{id}/labels`) |
+| `confluence.get_page_history` | `id`, `limit`, `cursor` | `{page_id, versions: [{number, author_id, message, created_at, minor_edit}], ...}`, newest first | `read:page:confluence` (`GET /wiki/api/v2/pages/{id}/versions`) |
 
 `RequiredScopes` are the Atlassian OAuth 2.0 (3LO) scopes of `docs/vendor-apps.md` section 3 (`read:jira-user` is implied for the user fields); the connect flow records the granted scopes from the token response.
 
@@ -29,7 +58,15 @@ The gateway adds `account` and `approval_id` to every schema and generates `jira
 | `project` | `get_issue`, `list_transitions`, `add_comment`, `transition_issue` (prefix of `key`), `create_issue` (`project_key`), `search_issues` (the `project = KEY` clause of the JQL, when the query mentions the project field exactly once with `=` and a bare or quoted key; `project in (...)`, `!=`, two mentions, or a numeric id give none) | upper-cased project key |
 | `issue` | the tools taking `key` | upper-cased issue key |
 | `space` | `create_page` (`space_key`), `search` (the `space = KEY` clause of the CQL, same rule, personal `~user` keys included) | space key as given |
-| `page` | `get_page` | page id |
+| `page` | the Confluence tools taking `id` | page id |
+| `board`, `sprint` | `list_sprints` (`board_id`), `get_sprint_issues`, `add_issues_to_sprint` (`sprint_id`) | numeric id |
+| `assignee` | `assign_issue` | the account id, or `unassigned` |
+| `comment` | `edit_comment` | comment id |
+| `linked_issue`, `link_type` | `link_issues` (`outward_key`, `link_type`; `issue` is `inward_key`) | issue key, link type name |
+| `watcher` | `add_watcher`, `remove_watcher` | account id |
+| `issues` | `add_issues_to_sprint` | the issue keys, comma separated |
+| `parent_comment` | `add_page_comment` | footer comment id |
+| `labels` | `add_page_labels` | the lower-cased labels, comma separated |
 
 The site is **not** part of the identity: it is a property of the connection (each connection is bound to one site, see [Account binding](#account-binding)), so a policy rule distinguishes sites by account label (company vs personal), not by identity. A role rule such as *confirm `jira.create_issue` when `project` equals `OPS`* works as for GitHub's `repo`.
 
@@ -58,6 +95,19 @@ A 429 is returned as `*connectors.RateLimited{App: "jira" | "confluence", RetryA
 | `jira.add_comment` | `key`, `body` (plain text) | `{id, issue, url}` / `id`, `url` | **marker** paragraph in the comment | `write:jira-work` (`POST /rest/api/3/issue/{key}/comment`) |
 | `jira.transition_issue` | `key`, `transition_id` (from `list_transitions`) | `{issue, transition_id}` / `issue`, `transition_id` | **none** | `write:jira-work` (`POST /rest/api/3/issue/{key}/transitions`) |
 | `confluence.create_page` | `space_key`, `title`, `body` (storage format XHTML, or plain text which is escaped and wrapped in `<p>`), `parent_id?` | `{id, space_id, url, space}` / `id`, `url` | **marker** paragraph in the body | `write:page:confluence` + `read:space:confluence` (`GET /wiki/api/v2/spaces?keys=` then `POST /wiki/api/v2/pages`) |
+| `jira.update_issue` | `key`, `summary?`, `description?` (replaces), `labels?` (replace), `priority?`, `fields?` (by field id) | `{issue, updated, url}` / `issue`, `url` | **none** (an edit leaves no marker) | `write:jira-work` (`PUT /issue/{key}`) |
+| `jira.assign_issue` | `key`, `account_id?` (omit to unassign) | `{issue, assignee}` | **stable id**: the issue's assignee | `write:jira-work` (`PUT /issue/{key}/assignee`) |
+| `jira.edit_comment` | `key`, `comment_id`, `body` | `{id, issue, url}` | **marker** in the new body | `write:jira-work` (`PUT /issue/{key}/comment/{id}`) |
+| `jira.add_worklog` | `key`, `time_spent` (`1h 30m`), `started?` (RFC 3339), `comment?` | `{id, issue}` | **marker** in the worklog comment | `write:jira-work` (`POST /issue/{key}/worklog`) |
+| `jira.link_issues` | `link_type`, `inward_key`, `outward_key` | `{link_type, inward_key, outward_key}` | **stable id**: a link of that type between the two issues | `write:jira-work` (`POST /issueLink`) |
+| `jira.add_watcher` / `jira.remove_watcher` | `key`, `account_id` | `{issue, watcher}` | **stable id**: the account is (not) among the watchers | `write:jira-work` (`POST` / `DELETE /issue/{key}/watchers`) |
+| `jira.add_issues_to_sprint` | `sprint_id`, `keys` (1-50) | `{sprint_id, issues}` | **stable id**: every issue is in the sprint | granular `write:sprint:jira-software` (`POST /rest/agile/1.0/sprint/{id}/issue`) |
+| `jira.add_remote_link` | `key`, `url` (http/https, <= 2048), `title` (<= 255), `summary?` | `{id, issue, url}` | **marker** as the link's `globalId` (`mcp-gateway op:<id>`); a repeat of the operation updates the same link | `write:jira-work` (`POST /issue/{key}/remotelink`) |
+| `confluence.update_page` | `id`, `body`, `title?`, `version_message?` | `{id, version, url}` | **marker** in the new body | `write:page:confluence` + `read:page:confluence` (`GET` then `PUT /wiki/api/v2/pages/{id}`) |
+| `confluence.add_page_comment` | `id`, `body`, `parent_comment_id?` | `{id, page, url}` | **marker** in the comment | `write:comment:confluence` + `read:comment:confluence` (`POST /wiki/api/v2/footer-comments`) |
+| `confluence.add_page_labels` | `id`, `labels` (1-20) | `{page, labels}` | **stable id**: every label is on the page | `write:label:confluence` + `read:label:confluence` + `read:page:confluence` (`POST /wiki/rest/api/content/{id}/label`) |
+
+**Default Ask.** The writes in the second group (`update_issue` through `add_page_labels`) are seeded as **Ask** by migration 25 (`00025_atlassian_default_ask.sql`): every call needs the user's approval until an admin switches the tool to Auto on **Settings -> Vendor apps -> atlassian -> Tool approvals**. `create_issue`, `add_comment`, `transition_issue` and `create_page` stay Auto. `TestAtlassianNewWritesAreSeededAsAsk` (`cmd/gateway`) fails when a new Jira or Confluence write ships without a seed. Deletions (Rovo's admin-enabled `delete_jira` group) are left out on purpose.
 
 **Operation id.** Every write requires `Call.OperationID` (set by the ledger stage) and answers `atlassian.ErrMissingOperation` without one: a write that reached the connector without the ledger could never be verified afterwards.
 
@@ -81,6 +131,17 @@ mcp-gateway op:<operation id>
 | `jira.add_comment` | `GET /issue/{key}/comment?orderBy=-created&maxResults=100&startAt=N`, newest first, bounded. A 404 is "cannot tell" (the account may have lost access). | comment id | every comment read (`startAt >= total`) without the marker |
 | `jira.transition_issue` | none: a transition leaves no marker and the status can change again at any time. An unknown outcome goes straight to `unresolved` and the user is asked to check the issue's status in Jira. | | |
 | `confluence.create_page` | 1. CQL `space = "KEY" AND type = page AND text ~ "\"mcp-gateway op:<id>\""` (`expand=body.storage`); a hit whose body carries the marker. 2. Otherwise the space id is looked up again (`GET /wiki/api/v2/spaces?keys=`) and `GET /wiki/api/v2/spaces/{id}/pages?sort=-created-date&body-format=storage&limit=100` is walked by cursor, bounded. A space that no longer resolves is "cannot tell". | page id | the space's pages listed to the end without the marker |
+| `jira.assign_issue` | `GET /issue/{key}?fields=assignee` | issue key | someone else (or nobody) is assigned |
+| `jira.edit_comment` | `GET /issue/{key}/comment/{id}` | comment id | the comment's body lacks the marker |
+| `jira.add_worklog` | `GET /issue/{key}/worklog`, bounded pages | worklog id | every worklog read without the marker |
+| `jira.link_issues` | `GET /issue/{key}?fields=issuelinks` | link id | no link of the type to the other issue |
+| `jira.add_watcher` / `remove_watcher` | `GET /issue/{key}/watchers` | issue key | the account is not (is) watching |
+| `jira.add_issues_to_sprint` | `GET /rest/agile/1.0/sprint/{id}/issue?jql=key in (...)` | sprint id | an issue is missing from the sprint |
+| `jira.add_remote_link` | `GET /issue/{key}/remotelink`; the link whose `globalId` is the marker | link id | no link carries the marker |
+| `jira.update_issue` | none, like `transition_issue` | | |
+| `confluence.update_page` | `GET /wiki/api/v2/pages/{id}?body-format=storage` | page id | the current body lacks the marker |
+| `confluence.add_page_comment` | the page's footer comments (or the parent's replies), newest first, bounded | comment id | every comment read without the marker |
+| `confluence.add_page_labels` | `GET /wiki/api/v2/pages/{id}/labels`, bounded | page id | a label is missing |
 
 ## Account binding
 
@@ -101,7 +162,7 @@ The API root is derived from the vendor app's user info URL (`https://api.atlass
 
 ## Setup
 
-1. Register the OAuth 2.0 (3LO) app as in [`docs/vendor-apps.md`](../vendor-apps.md) section 3: callback `https://<gateway>/connect/atlassian/callback`, Jira classic scopes `read:jira-work`, `read:jira-user`, `write:jira-work`, Confluence `search:confluence`, `read:confluence-content.all`, `read:confluence-space.summary`, `write:confluence-content` and the granular `read:page:confluence`, `write:page:confluence`, `read:space:confluence` (the v2 spaces lookup `create_page` and its check use); enable **Sharing**.
+1. Register the OAuth 2.0 (3LO) app as in [`docs/vendor-apps.md`](../vendor-apps.md) section 3: callback `https://<gateway>/connect/atlassian/callback`, Jira classic scopes `read:jira-work`, `read:jira-user`, `write:jira-work` and the granular Jira / Jira Software scopes `read:board-scope:jira-software`, `read:project:jira`, `read:sprint:jira-software`, `read:issue-details:jira`, `read:jql:jira`, `write:sprint:jira-software`; Confluence `search:confluence`, `read:confluence-content.all`, `read:confluence-space.summary`, `write:confluence-content` and the granular `read:page:confluence`, `write:page:confluence`, `read:space:confluence`, `read:comment:confluence`, `write:comment:confluence`, `read:attachment:confluence`, `read:label:confluence`, `write:label:confluence` (section 3.5 lists which tool needs which); enable **Sharing**. Existing connections lack the scopes added later: users get them through **Grant more access** on `/connections`, which requests the missing tool scopes.
 2. In the portal, **Settings -> Vendor apps -> atlassian**: client ID and secret, the default endpoints (`https://auth.atlassian.com/authorize`, `https://auth.atlassian.com/oauth/token`, user info `https://api.atlassian.com/me`), scopes `offline_access` plus the ones above, and in **Extra parameters** the lines
    ```
    audience=api.atlassian.com

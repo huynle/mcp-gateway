@@ -357,9 +357,22 @@ environment. The gateway's `redirect_uri` must match exactly.
 
 | Scope | Read/write | Tools |
 | --- | --- | --- |
-| `read:jira-work` | read | `jira.search_issues`, `jira.get_issue`, `jira.list_transitions` |
-| `read:jira-user` | read | user fields (assignee, reporter) inside `jira.get_issue` / search results |
-| `write:jira-work` | write | `jira.create_issue`, `jira.add_comment`, `jira.transition_issue` |
+| `read:jira-work` | read | `jira.search_issues`, `jira.get_issue`, `jira.list_transitions`, `jira.list_projects`, `jira.list_issue_types`, `jira.get_create_fields`, `jira.list_project_statuses`, `jira.list_project_versions`, `jira.list_project_components`, `jira.get_issue_comments`, `jira.get_issue_changelog`, `jira.list_issue_links`, `jira.list_link_types`, `jira.list_remote_links`, `jira.list_worklogs`, `jira.get_watchers`, `jira.list_filters` |
+| `read:jira-user` | read | `jira.get_current_user`, `jira.get_user`, `jira.search_users`, `jira.list_assignable_users`; user fields (assignee, reporter) inside `jira.get_issue` / search results |
+| `write:jira-work` | write | `jira.create_issue`, `jira.add_comment`, `jira.transition_issue`, `jira.update_issue`, `jira.assign_issue`, `jira.edit_comment`, `jira.add_worklog`, `jira.link_issues`, `jira.add_watcher`, `jira.remove_watcher`, `jira.add_remote_link` |
+
+Granular scopes (same page, **Jira API -> Edit scopes -> Granular scopes**). The Jira
+Software (agile) REST API accepts only granular scopes for OAuth 2.0 (3LO); an app may
+register them next to its classic ones:
+
+| Scope | Read/write | Tools |
+| --- | --- | --- |
+| `read:board-scope:jira-software` | read | `jira.list_boards` |
+| `read:project:jira` | read | `jira.list_boards` (the board's project) |
+| `read:sprint:jira-software` | read | `jira.list_sprints`, `jira.get_sprint_issues` |
+| `read:issue-details:jira` | read | `jira.get_sprint_issues` |
+| `read:jql:jira` | read | `jira.get_sprint_issues` (the optional JQL filter) |
+| `write:sprint:jira-software` | write | `jira.add_issues_to_sprint` |
 
 ### 3.3 Permissions -> Confluence API
 
@@ -377,8 +390,14 @@ them too so the connector can use v2 `GET /pages/{id}` and `POST /pages`:
 
 | Scope | Read/write | Tools |
 | --- | --- | --- |
-| `read:page:confluence` | read | `confluence.get_page` |
-| `write:page:confluence` | write | `confluence.create_page` |
+| `read:page:confluence` | read | `confluence.get_page`, `confluence.get_page_by_title`, `confluence.get_page_children`, `confluence.get_page_labels`, `confluence.get_page_history`, `confluence.list_space_pages`; also `confluence.update_page` (current version) and `confluence.add_page_labels` (its check) |
+| `write:page:confluence` | write | `confluence.create_page`, `confluence.update_page` |
+| `read:space:confluence` | read | `confluence.list_spaces`; the space-key lookup of `create_page`, `get_page_by_title`, `list_space_pages` |
+| `read:comment:confluence` | read | `confluence.get_page_comments`; `confluence.add_page_comment` (its check) |
+| `write:comment:confluence` | write | `confluence.add_page_comment` |
+| `read:attachment:confluence` | read | `confluence.list_page_attachments` (metadata only) |
+| `read:label:confluence` | read | `confluence.add_page_labels` |
+| `write:label:confluence` | write | `confluence.add_page_labels` |
 
 ### 3.4 Refresh tokens and sharing
 
@@ -390,6 +409,33 @@ them too so the connector can use v2 `GET /pages/{id}` and `POST /pages`:
 - **Settings** -> copy **Client ID** and **Secret**; hand back.
 - Scopes do not override Jira/Confluence permissions: users only ever see what their own
   site permissions allow.
+
+### 3.5 Operator step: scopes added with the Rovo gap tools
+
+An app registered before the Rovo MCP gap closing has only the v1 scopes. In the
+developer console (**Permissions -> Jira API / Confluence API -> Edit scopes**) add, and
+add them to the gateway's vendor app scope list (**Settings -> Vendor apps -> atlassian**):
+
+- Jira classic: `read:jira-user` (if not already there).
+- Jira granular: `read:board-scope:jira-software`, `read:project:jira`,
+  `read:sprint:jira-software`, `read:issue-details:jira`, `read:jql:jira`,
+  `write:sprint:jira-software`.
+- Confluence granular: `read:space:confluence` (if not already there),
+  `read:comment:confluence`, `write:comment:confluence`, `read:attachment:confluence`,
+  `read:label:confluence`, `write:label:confluence`.
+
+No new admin-level scope is involved (no `manage:jira-project` / `manage:jira-configuration`):
+every tool acts as the connected user. Existing connections keep their old grant; users
+get the new scopes through **Grant more access** on `/connections`, which requests the
+scopes the tools declare. Until then the tools needing them are reported as missing
+scopes for that connection.
+
+The new writes (`jira.update_issue`, `assign_issue`, `edit_comment`, `add_worklog`,
+`link_issues`, `add_watcher`, `remove_watcher`, `add_issues_to_sprint`,
+`add_remote_link`; `confluence.update_page`, `add_page_comment`, `add_page_labels`)
+default to **Ask** (migration 25, `00025_atlassian_default_ask.sql`; see section 9):
+every call needs the user's approval until an admin switches the tool to Auto. The v1
+writes keep Auto.
 
 ---
 
