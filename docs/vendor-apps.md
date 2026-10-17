@@ -467,7 +467,14 @@ add them to the gateway's vendor app scope list (**Settings -> Vendor apps -> at
 - Jira classic: `read:jira-user` (if not already there).
 - Jira granular: `read:board-scope:jira-software`, `read:project:jira`,
   `read:sprint:jira-software`, `read:issue-details:jira`, `read:jql:jira`,
-  `write:sprint:jira-software`.
+  `write:sprint:jira-software`. Checked on 2026-10-17 against the Jira Software
+  OpenAPI spec (`swagger.v3.json`, `x-atlassian-oauth2-scopes`): `GET /rest/agile/1.0/board`
+  needs `read:board-scope:jira-software` + `read:project:jira` (`jira.list_boards`);
+  `GET /board/{boardId}/sprint` needs `read:sprint:jira-software` (`jira.list_sprints`);
+  `GET /sprint/{sprintId}/issue` needs `read:sprint:jira-software` +
+  `read:issue-details:jira` + `read:jql:jira` (`jira.get_sprint_issues`);
+  `POST /sprint/{sprintId}/issue` needs `write:sprint:jira-software`
+  (`jira.add_issues_to_sprint`). Jira Software has no classic scopes.
 - Confluence granular: `read:space:confluence` (if not already there),
   `read:comment:confluence`, `write:comment:confluence`, `read:attachment:confluence`,
   `read:label:confluence`, `write:label:confluence`.
@@ -550,10 +557,23 @@ Increment 2 (Drive, Docs, Sheets, Contacts):
 | `https://www.googleapis.com/auth/documents` | write | `docs.append_text` | sensitive |
 | `https://www.googleapis.com/auth/spreadsheets` | write | `sheets.append_rows` | sensitive |
 
-Increment 3 (management tools, `docs/connectors/google.md` "Increment 3"). **Operator step:
-add these four scopes on the Data Access page of both the Internal and the External project**
-(Google shows the unverified-app screen when requested scopes differ from the declared ones);
-the gateway asks for them only through *Grant more access* when a role shows the tools:
+Increment 3 (management tools, `docs/connectors/google.md` "Increment 3"). The gateway
+asks for these four scopes only through *Grant more access* when a role shows the tools.
+**Whether to declare them on the Data Access page depends on the app's verification state:**
+
+- **Verified app, or one going through verification:** add them on the Data Access page of
+  both the Internal and the External project, then submit them for verification. Requesting
+  scopes that are not declared and approved shows the unverified-app screen again.
+- **Unverified External app (personal use, under the 100-user cap):** leave the Data Access
+  page as it is. Declaring sensitive or restricted scopes on an app *In production* starts
+  Google's verification, and restricted scopes (`gmail.modify`, `drive.readonly`) add a paid
+  security assessment (CASA). The unverified app can request them without declaring them:
+  users see the "Google hasn't verified this app" screen, choose *Advanced -> Go to ...*,
+  and grant them. Each grant counts against the lifetime 100-user cap. This is how the
+  personal test instance runs (Brain quirk, 2026-10-17).
+- **Internal app (Workspace):** Internal apps need no verification; declaring the scopes is
+  optional, but keeps the consent screen accurate.
+
 
 | Scope | Read/write | Tools | Classification |
 | --- | --- | --- | --- |
