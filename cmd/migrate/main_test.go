@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -30,12 +31,12 @@ func TestResolveURLPrefersMigrateVariable(t *testing.T) {
 func TestRunUsageErrors(t *testing.T) {
 	env := envFrom(map[string]string{"GATEWAY_DATABASE_URL": "postgres://owner@db/gateway"})
 	for _, args := range [][]string{nil, {"sideways"}, {"down-to"}, {"down-to", "x"}, {"down-to", "-1"}} {
-		if err := run(args, env); !errors.Is(err, errUsage) {
+		if err := run(args, env, io.Discard); !errors.Is(err, errUsage) {
 			t.Errorf("run(%v) = %v, want errUsage", args, err)
 		}
 	}
 	// No URL: fails before any command runs.
-	if err := run([]string{"up"}, envFrom(nil)); err == nil || errors.Is(err, errUsage) {
+	if err := run([]string{"up"}, envFrom(nil), io.Discard); err == nil || errors.Is(err, errUsage) {
 		t.Errorf("run(up) without URL = %v, want a configuration error", err)
 	}
 }

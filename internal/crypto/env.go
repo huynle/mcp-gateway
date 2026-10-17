@@ -9,7 +9,8 @@ import (
 // Environment variables read by NewProviderFromEnv. They are documented for
 // operators in docs/crypto.md.
 const (
-	// EnvKeyProvider selects the provider: "file" (default) or "vault".
+	// EnvKeyProvider selects the provider: "file" (default), "vault", or
+	// "migrate" (file keys for reading, Vault for new data; cutover only).
 	EnvKeyProvider = "GATEWAY_KEY_PROVIDER"
 	// EnvKeyFile is the dev key file path (file provider).
 	EnvKeyFile = "GATEWAY_KEY_FILE"
@@ -38,21 +39,53 @@ func NewProviderFromEnv(getenv func(string) string) (KeyProvider, error) {
 		}
 		return LoadKeyFile(path)
 	case "vault":
-		cfg := VaultConfig{
-			Addr:    getenv(EnvVaultAddr),
-			Token:   getenv(EnvVaultToken),
-			KeyName: getenv(EnvVaultTransitKey),
-			Mount:   getenv(EnvVaultMount),
-		}
-		for name, value := range map[string]string{EnvVaultAddr: cfg.Addr, EnvVaultToken: cfg.Token, EnvVaultTransitKey: cfg.KeyName} {
-			if value == "" {
-				return nil, fmt.Errorf("crypto: %s is required when %s is vault", name, EnvKeyProvider)
-			}
+		cfg, err := vaultConfigFromEnv(getenv, kind)
+		if err != nil {
+			return nil, err
 		}
 		return NewVaultProvider(cfg)
+	case "migrate":
+		path := getenv(EnvKeyFile)
+		if path == "" {
+			return nil, fmt.Errorf("crypto: %s is required when %s is migrate", EnvKeyFile, EnvKeyProvider)
+		}
+		cfg, err := vaultConfigFromEnv(getenv, kind)
+		if err != nil {
+			return nil, err
+		}
+		legacy, err := LoadKeyFile(path)
+		if err != nil {
+			return nil, err
+		}
+		target, err := NewVaultProvider(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return NewMigratingProvider(legacy, target)
 	default:
-		return nil, fmt.Errorf("crypto: %s=%q: must be file or vault", EnvKeyProvider, kind)
+		return nil, fmt.Errorf("crypto: %s=%q: must be file, vault or migrate", EnvKeyProvider, kind)
 	}
+}
+
+// vaultConfigFromEnv reads the GATEWAY_VAULT_* variables for provider kind,
+// naming (never echoing) any required one that is missing.
+func vaultConfigFromEnv(getenv func(string) string, kind string) (VaultConfig, error) {
+	cfg := VaultConfig{
+		Addr:    getenv(EnvVaultAddr),
+		Token:   getenv(EnvVaultToken),
+		KeyName: getenv(EnvVaultTransitKey),
+		Mount:   getenv(EnvVaultMount),
+	}
+	for _, req := range []struct{ name, value string }{
+		{EnvVaultAddr, cfg.Addr},
+		{EnvVaultToken, cfg.Token},
+		{EnvVaultTransitKey, cfg.KeyName},
+	} {
+		if req.value == "" {
+			return VaultConfig{}, fmt.Errorf("crypto: %s is required when %s is %s", req.name, EnvKeyProvider, kind)
+		}
+	}
+	return cfg, nil
 }
 
 // readyProvider is implemented by providers that can probe their backend

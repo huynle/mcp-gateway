@@ -6,7 +6,9 @@
 // never reveals. Two implementations ship: a dev key file (LoadKeyFile, local
 // only) and HashiCorp Vault transit (NewVaultProvider, the first production
 // provider; cloud KMS providers follow behind the same interface and the
-// contract suite in cryptotest). Encrypt and Decrypt seal a record with a
+// contract suite in cryptotest). MigratingProvider bridges the two for a
+// cutover: it reads envelopes under file key IDs and wraps new data with
+// Vault, so existing secrets survive the move. Encrypt and Decrypt seal a record with a
 // random data key and AES-256-GCM, authenticating the canonical AAD (user,
 // record kind, record ID, app) so ciphertext cannot be moved between rows.
 // Rewrap and RewrapEach rotate root keys by re-wrapping data keys without
