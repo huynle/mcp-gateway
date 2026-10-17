@@ -62,6 +62,18 @@ func TestStaticProviderContract(t *testing.T) {
 	cryptotest.ProviderContract(t, cryptotest.Harness{Provider: newStatic(t, "only")})
 }
 
+// TestVaultProviderFakeContract runs the contract offline against the
+// in-process transit double, which authenticates and randomizes like the
+// real engine.
+func TestVaultProviderFakeContract(t *testing.T) {
+	fv, srv := cryptotest.NewFakeVault(t)
+	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.Token(), KeyName: fv.KeyName()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cryptotest.ProviderContract(t, cryptotest.Harness{Provider: p, Rotate: func(*testing.T) { fv.Rotate() }})
+}
+
 // TestVaultProviderContract runs the contract against a real Vault transit
 // engine. It is skipped unless GATEWAY_VAULT_ADDR is set. It creates (if
 // missing) and rotates the key named by GATEWAY_VAULT_TRANSIT_KEY, default
@@ -152,7 +164,7 @@ func TestNoKeyMaterialInLogsOrErrors(t *testing.T) {
 	ctx := context.Background()
 	fv, srv := newFakeVault(t)
 	cap := &captureHandler{}
-	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.token, KeyName: fv.keyName, Logger: slog.New(cap)})
+	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.Token(), KeyName: fv.KeyName(), Logger: slog.New(cap)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +180,7 @@ func TestNoKeyMaterialInLogsOrErrors(t *testing.T) {
 	if _, err := crypto.Decrypt(ctx, p, baseAAD, env); err != nil {
 		t.Fatal(err)
 	}
-	fv.rotate()
+	fv.Rotate()
 	if _, err := crypto.Rewrap(ctx, p, env); err != nil {
 		t.Fatal(err)
 	}
@@ -184,16 +196,14 @@ func TestNoKeyMaterialInLogsOrErrors(t *testing.T) {
 	wrongAAD := baseAAD
 	wrongAAD.App = "x"
 	_, e3 := crypto.Decrypt(ctx, p, wrongAAD, env)
-	fv.mu.Lock()
-	fv.token = "rotated-token"
-	fv.mu.Unlock()
+	fv.SetToken("rotated-token")
 	_, _, e4 := p.WrapDataKey(ctx, dk)
 	errs = append(errs, e1, e2, e3, e4)
 
 	if len(cap.lines) == 0 {
 		t.Fatal("expected the provider to log something at debug level")
 	}
-	secrets := map[string][]byte{"data key": dk, "plaintext": plaintext, "token": []byte(fv.token), "old token": []byte("s.test-token"), "wrapped": env.WrappedDataKey}
+	secrets := map[string][]byte{"data key": dk, "plaintext": plaintext, "token": []byte(fv.Token()), "old token": []byte("s.test-token"), "wrapped": env.WrappedDataKey}
 	forms := func(b []byte) []string {
 		return []string{string(b), base64.StdEncoding.EncodeToString(b), hex.EncodeToString(b)}
 	}

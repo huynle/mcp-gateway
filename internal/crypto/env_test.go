@@ -54,12 +54,12 @@ func TestNewProviderFromEnvFile(t *testing.T) {
 
 func TestNewProviderFromEnvVault(t *testing.T) {
 	fv, srv := newFakeVault(t)
-	fv.mount = "kms"
+	fv.SetMount("kms")
 	env := map[string]string{
 		"GATEWAY_KEY_PROVIDER":      "vault",
 		"GATEWAY_VAULT_ADDR":        srv.URL,
-		"GATEWAY_VAULT_TOKEN":       fv.token,
-		"GATEWAY_VAULT_TRANSIT_KEY": fv.keyName,
+		"GATEWAY_VAULT_TOKEN":       fv.Token(),
+		"GATEWAY_VAULT_TRANSIT_KEY": fv.KeyName(),
 		"GATEWAY_VAULT_MOUNT":       "kms",
 	}
 	p, err := crypto.NewProviderFromEnv(envFrom(env))
@@ -84,14 +84,14 @@ func TestNewProviderFromEnvVault(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), missing) {
 				t.Errorf("want error naming %s, got %v", missing, err)
 			}
-			if strings.Contains(err.Error(), fv.token) {
+			if strings.Contains(err.Error(), fv.Token()) {
 				t.Errorf("error leaks token: %v", err)
 			}
 		})
 	}
 
 	// Mount is optional: default transit.
-	fv.mount = "transit"
+	fv.SetMount("transit")
 	e := map[string]string{}
 	for k, v := range env {
 		e[k] = v
@@ -128,7 +128,7 @@ func TestReadinessCheck(t *testing.T) {
 	if err := crypto.ReadinessCheck(vp)(ctx); err != nil {
 		t.Errorf("vault: %v", err)
 	}
-	fv.keyName = "renamed"
+	fv.SetKeyName("renamed")
 	if err := crypto.ReadinessCheck(vp)(ctx); err == nil {
 		t.Error("vault with unreadable key must not be ready")
 	}

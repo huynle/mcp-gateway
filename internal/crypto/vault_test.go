@@ -4,137 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/crypto/cryptotest"
 )
 
-// fakeVault imitates the transit endpoints the provider uses. Ciphertexts are
-// "vault:v<N>:<base64>" where the payload is the plaintext XORed with a
-// per-version pad, so a ciphertext only opens under the version that made it.
-type fakeVault struct {
-	t       *testing.T
-	token   string
-	mount   string
-	keyName string
-
-	mu      sync.Mutex
-	latest  int
-	minDecr int
-	pads    map[int]byte
-	calls   []string
-}
+// fakeVault is the shared transit test double (cryptotest.FakeVault).
+type fakeVault = cryptotest.FakeVault
 
 func newFakeVault(t *testing.T) (*fakeVault, *httptest.Server) {
 	t.Helper()
-	fv := &fakeVault{t: t, token: "s.test-token", mount: "transit", keyName: "gateway", latest: 1, minDecr: 1, pads: map[int]byte{1: 0x5a}}
-	srv := httptest.NewServer(fv)
-	t.Cleanup(srv.Close)
-	return fv, srv
-}
-
-func (f *fakeVault) rotate() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.latest++
-	f.pads[f.latest] = byte(0x10 * f.latest)
-}
-
-func (f *fakeVault) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	f.mu.Lock()
-	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
-	f.mu.Unlock()
-	if r.Header.Get("X-Vault-Token") != f.token {
-		writeVaultError(w, http.StatusForbidden, "permission denied")
-		return
-	}
-	prefix := "/v1/" + f.mount + "/"
-	switch {
-	case r.Method == http.MethodGet && r.URL.Path == prefix+"keys/"+f.keyName:
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		writeVaultJSON(w, map[string]any{"data": map[string]any{"latest_version": f.latest, "min_decryption_version": f.minDecr, "type": "aes256-gcm96", "name": f.keyName}})
-	case r.Method == http.MethodPost && r.URL.Path == prefix+"encrypt/"+f.keyName:
-		var body struct {
-			Plaintext string `json:"plaintext"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeVaultError(w, http.StatusBadRequest, "bad json")
-			return
-		}
-		pt, err := base64.StdEncoding.DecodeString(body.Plaintext)
-		if err != nil {
-			writeVaultError(w, http.StatusBadRequest, "plaintext must be base64")
-			return
-		}
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		writeVaultJSON(w, map[string]any{"data": map[string]any{"ciphertext": f.seal(f.latest, pt), "key_version": f.latest}})
-	case r.Method == http.MethodPost && r.URL.Path == prefix+"decrypt/"+f.keyName:
-		var body struct {
-			Ciphertext string `json:"ciphertext"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeVaultError(w, http.StatusBadRequest, "bad json")
-			return
-		}
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		ver, payload, ok := strings.Cut(strings.TrimPrefix(body.Ciphertext, "vault:v"), ":")
-		v, convErr := strconv.Atoi(ver)
-		if !ok || convErr != nil || v < 1 || v > f.latest {
-			writeVaultError(w, http.StatusBadRequest, "invalid ciphertext: no prefix")
-			return
-		}
-		if v < f.minDecr {
-			writeVaultError(w, http.StatusBadRequest, "ciphertext or signature version is disallowed by policy (too old)")
-			return
-		}
-		raw, err := base64.StdEncoding.DecodeString(payload)
-		if err != nil {
-			writeVaultError(w, http.StatusBadRequest, "invalid ciphertext")
-			return
-		}
-		writeVaultJSON(w, map[string]any{"data": map[string]any{"plaintext": base64.StdEncoding.EncodeToString(f.xor(v, raw))}})
-	default:
-		writeVaultError(w, http.StatusNotFound, "unsupported path")
-	}
-}
-
-func (f *fakeVault) seal(v int, pt []byte) string {
-	return fmt.Sprintf("vault:v%d:%s", v, base64.StdEncoding.EncodeToString(f.xor(v, pt)))
-}
-
-func (f *fakeVault) xor(v int, b []byte) []byte {
-	out := make([]byte, len(b))
-	for i := range b {
-		out[i] = b[i] ^ f.pads[v]
-	}
-	return out
-}
-
-func writeVaultJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeVaultError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"errors": []string{msg}})
+	return cryptotest.NewFakeVault(t)
 }
 
 func newVaultProvider(t *testing.T, srv *httptest.Server, fv *fakeVault) *crypto.VaultProvider {
 	t.Helper()
-	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.token, Mount: fv.mount, KeyName: fv.keyName})
+	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.Token(), Mount: fv.Mount(), KeyName: fv.KeyName()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +85,7 @@ func TestVaultProviderWrapUnwrapAndVersions(t *testing.T) {
 	}
 
 	// Rotation on the Vault side: new wraps use v2, old blobs still open.
-	fv.rotate()
+	fv.Rotate()
 	if id, err := p.CurrentKeyID(ctx); err != nil || id != "v2" {
 		t.Fatalf("CurrentKeyID after rotate = %q, %v; want v2", id, err)
 	}
@@ -229,9 +118,7 @@ func TestVaultProviderWrapUnwrapAndVersions(t *testing.T) {
 	}
 
 	// Operator raised min_decryption_version: v1 is gone for good.
-	fv.mu.Lock()
-	fv.minDecr = 2
-	fv.mu.Unlock()
+	fv.SetMinDecryptionVersion(2)
 	if _, err := p.UnwrapDataKey(ctx, "v1", wrapped); !errors.Is(err, crypto.ErrUnknownKeyID) {
 		t.Errorf("version below min_decryption_version: want ErrUnknownKeyID, got %v", err)
 	}
@@ -245,7 +132,7 @@ func TestVaultProviderEnvelopeRoundTripAndRewrap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fv.rotate()
+	fv.Rotate()
 	re, err := crypto.Rewrap(ctx, p, env)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +149,7 @@ func TestVaultProviderEnvelopeRoundTripAndRewrap(t *testing.T) {
 func TestVaultProviderErrorsDoNotLeakTokenOrKeys(t *testing.T) {
 	ctx := context.Background()
 	fv, srv := newFakeVault(t)
-	bad, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: "s.wrong-token", KeyName: fv.keyName})
+	bad, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: "s.wrong-token", KeyName: fv.KeyName()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,8 +177,8 @@ func TestVaultProviderErrorsDoNotLeakTokenOrKeys(t *testing.T) {
 
 func TestVaultProviderHonorsContextAndMount(t *testing.T) {
 	fv, srv := newFakeVault(t)
-	fv.mount = "kms"
-	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.token, Mount: "kms", KeyName: fv.keyName})
+	fv.SetMount("kms")
+	p, err := crypto.NewVaultProvider(crypto.VaultConfig{Addr: srv.URL, Token: fv.Token(), Mount: "kms", KeyName: fv.KeyName()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +198,7 @@ func TestVaultProviderReady(t *testing.T) {
 	if err := p.Ready(context.Background()); err != nil {
 		t.Fatalf("ready: %v", err)
 	}
-	fv.keyName = "other" // key no longer exists under the configured name
+	fv.SetKeyName("other") // key no longer exists under the configured name
 	if err := p.Ready(context.Background()); err == nil {
 		t.Error("missing key must fail readiness")
 	}
