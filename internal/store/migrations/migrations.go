@@ -22,6 +22,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx" for goose
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 // FS holds every *.sql migration, named NNNNN_description.sql.
@@ -128,7 +129,15 @@ func run(ctx context.Context, databaseURL string, fn func(*goose.Provider) error
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("migrations: connect: %w", err)
 	}
-	p, err := goose.NewProvider(goose.DialectPostgres, db, FS)
+	// Every gateway pod runs /migrate up as an init container, so two pods
+	// starting together (both restarted while a migration is pending) would
+	// race. A Postgres advisory session lock serialises them: the second
+	// waits, then finds nothing left to apply.
+	locker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return fmt.Errorf("migrations: locker: %w", err)
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, db, FS, goose.WithSessionLocker(locker))
 	if err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
