@@ -207,14 +207,20 @@ func TestE2EGitHubUnknownOutcomeNotFound(t *testing.T) {
 	if errorCode(row) != ledger.ClassNotFound || len(resultIDs(t, row)) != 0 {
 		t.Errorf("failed row = %s", describe(row))
 	}
-	var notFound int
-	for _, ev := range gw.events(gw.alice) {
-		if ev.OperationID == op.ID && ev.Outcome == "failed" && ev.ErrorClass == ledger.ClassNotFound {
-			notFound++
+	// The ledger row turns failed before the reconciler records its audit
+	// event, so wait for the event rather than reading it once.
+	countNotFound := func() int {
+		n := 0
+		for _, ev := range gw.events(gw.alice) {
+			if ev.OperationID == op.ID && ev.Outcome == "failed" && ev.ErrorClass == ledger.ClassNotFound {
+				n++
+			}
 		}
+		return n
 	}
-	if notFound != 1 {
-		t.Errorf("audit not_found events = %d", notFound)
+	gw.eventually("audit not_found event", 10*time.Second, func() bool { return countNotFound() >= 1 })
+	if n := countNotFound(); n != 1 {
+		t.Errorf("audit not_found events = %d", n)
 	}
 	if n := len(gw.notifier.list()); n != 0 {
 		t.Errorf("a definite not_found notified the user %d times (only unresolved does)", n)
