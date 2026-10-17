@@ -118,8 +118,9 @@ Only do this when the `down` section of the migration is safe for the data writt
 
 ## Key rotation
 
-- **Vault** (`keyProvider.type=vault`): `vault write -f transit/keys/mcp-gateway/rotate`. New envelopes use the new version at once; old versions decrypt until `min_decryption_version` is raised. **The re-wrap step does not exist yet** (`crypto.RewrapEach` has no caller; Brain draft task `nsyw7xml`), so do not raise `min_decryption_version` until it does; the full procedure and how to count envelopes per key version is in [`docs/runbooks/key-rotation.md`](runbooks/key-rotation.md). No pod restart is needed for the transit key. Rotate the **Vault token** by updating Secret `mcp-gateway-vault` and restarting the pods (`kubectl rollout restart deploy/mcp-gateway`; env vars are read at start).
-- **File** (`keyProvider.type=file`): add a key to `keys.json`, move `current`, update Secret `mcp-gateway-keys`, `kubectl rollout restart deploy/mcp-gateway` (the init container copies the file at pod start), re-wrap, then remove the old key.
+- **Vault** (`keyProvider.type=vault`): `vault write -f transit/keys/mcp-gateway/rotate`. New envelopes use the new version at once; old versions decrypt until `min_decryption_version` is raised. Move the old envelopes with `kubectl -n mcp-gateway exec deploy/mcp-gateway -- /migrate rewrap` and check with `--verify` before raising it; the full procedure is in [`docs/runbooks/key-rotation.md`](runbooks/key-rotation.md). No pod restart is needed for the transit key. Rotate the **Vault token** by updating Secret `mcp-gateway-vault` and restarting the pods (`kubectl rollout restart deploy/mcp-gateway`; env vars are read at start).
+- **File** (`keyProvider.type=file`): add a key to `keys.json`, move `current`, update Secret `mcp-gateway-keys`, `kubectl rollout restart deploy/mcp-gateway` (the init container copies the file at pod start), `/migrate rewrap` and `--verify`, then remove the old key.
+- **File → Vault/OpenBao**: the `migrate` key provider and `/migrate rewrap`; procedure in [`docs/crypto.md`](crypto.md) "Moving from file to Vault/OpenBao". The chart renders `file` or `vault` only, so set the cutover environment outside it.
 - **OAuth signing keys** rotate themselves (`gateway.oauth.keyRotation` / `keyGrace`); **database passwords**: update the Secret and restart; **OIDC client secrets**: same.
 
 ## Metrics
@@ -154,7 +155,7 @@ The production shape is `deploy/helm/values-production.example.yaml`; copy it in
 
 **Before the first production deploy**: database backups configured and a restore rehearsed (migrations are forward-only; `docs/runbooks/deploy-and-rollback.md`); the production vendor apps registered with the production callback URLs (`docs/vendor-apps.md` section 6 checklist); each runbook drilled once on staging (`docs/runbooks/README.md`, drill log); the pilot checklist agreed (`docs/pilot-checklist.md`).
 
-**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no re-wrap command for root key rotation (`nsyw7xml`), no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`).
+**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`).
 
 ## Environments
 

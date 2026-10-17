@@ -6,7 +6,7 @@ A pilot with a few coworkers before the gateway is opened to the whole team (Bra
 
 - [ ] Staging is up from `deploy/helm/values-staging.example.yaml` with the staging vendor apps, and the real-harness conformance rows in [`docs/conformance.md`](conformance.md) are ticked for OpenCode and Claude Code (Brain task `6a5khoph`; draft `5yosafvz`).
 - [ ] Production is deployed per [`docs/deploy.md`](deploy.md) "Production": 3 replicas, Vault, production IdP client, production vendor apps entered on `/admin/vendor-apps`, alerts firing into a channel someone reads.
-- [ ] Each runbook in [`docs/runbooks/`](runbooks/README.md) drilled once on staging; **deploy-and-rollback** (an upgrade with a migration, then a rollback with `migrate down-to`) and **key-rotation** (transit rotate; note that re-wrap is a known gap, `nsyw7xml`) at minimum. Drill notes recorded in the Brain task.
+- [ ] Each runbook in [`docs/runbooks/`](runbooks/README.md) drilled once on staging; **deploy-and-rollback** (an upgrade with a migration, then a rollback with `migrate down-to`) and **key-rotation** (transit rotate, `/migrate rewrap`, `--verify`) at minimum. Drill notes recorded in the Brain task.
 - [ ] Backups: a production database restore rehearsed; the restore time is known.
 - [ ] Roles: `/admin/roles` has a pilot role with reads **allow**, writes **confirm**, personal accounts **confirm_writes** (or **deny**) per app; the default role grants nothing. Pilot users are assigned the pilot role on `/admin/users`.
 - [ ] 3–6 pilot users across at least two harnesses (OpenCode with a token, Claude Code or Claude Desktop with OAuth) and at least three vendors between them; one of them has a company Slack connection (approval DMs).
@@ -76,6 +76,6 @@ Open the gateway to the team only when all of these hold for the last pilot week
 - [ ] Runbooks: each drilled at least once; deltas fixed.
 - [ ] Defaults: the tuned values are in the production values file and recorded in Brain plan `36bakiw8` "Open items".
 - [ ] The team-wide default role and the per-app personal-account policy are agreed with whoever owns security.
-- [ ] Open follow-ups are Brain tasks with owners (at least: `nsyw7xml` re-wrap, `trpz0p16` audit export, `mjdzepbx` audit purge, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run; `6br0isjh` Slack id→name is landed), and none of them is a blocker for the team.
+- [ ] Open follow-ups are Brain tasks with owners (at least: `trpz0p16` audit export, `mjdzepbx` audit purge, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run; `6br0isjh` Slack id→name is landed), and none of them is a blocker for the team.
 
 Record the sign-off (date, pilot users count, tuned defaults, open items) as the outcome on Brain task `pn4voyen` and in the plan's open items.
