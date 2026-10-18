@@ -169,3 +169,35 @@ func TestIntegrationSignupStorage(t *testing.T) {
 		t.Fatalf("signup events: %v", err)
 	}
 }
+
+// A tunnel token only authenticates while its owner is active: a pending
+// or disabled owner's tunnel cannot connect (fail closed).
+func TestIntegrationTunnelOwnerMustBeActive(t *testing.T) {
+	env := setup(t)
+	env.reset(t)
+	ctx := t.Context()
+	st := env.open(t)
+	owner := newUser(t, st, "Owner")
+	tun := &store.MCPTunnel{OwnerUserID: owner, Name: "laptop", TokenHash: []byte("tun-hash")}
+	if err := st.WithUser(ctx, owner, func(tx store.Tx) error { return store.CreateMCPTunnel(ctx, tx, tun) }); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{store.UserPending, store.UserDisabled, store.UserActive} {
+		err := st.WithJobs(ctx, func(tx store.Tx) error {
+			if err := store.SetUserStatus(ctx, tx, owner, status, time.Now()); err != nil {
+				return err
+			}
+			_, err := store.GetMCPTunnelByTokenHash(ctx, tx, []byte("tun-hash"))
+			if status == store.UserActive && err != nil {
+				t.Errorf("active owner: %v", err)
+			}
+			if status != store.UserActive && !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("%s owner: %v, want ErrNotFound", status, err)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

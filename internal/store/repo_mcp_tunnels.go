@@ -38,10 +38,13 @@ func GetMCPTunnel(ctx context.Context, q Querier, id string) (*MCPTunnel, error)
 }
 
 // GetMCPTunnelByTokenHash returns the tunnel whose token hashes to hash,
-// revoked or not (the caller refuses revoked ones).
+// revoked or not (the caller refuses revoked ones). A tunnel whose owner
+// is not active (pending approval or disabled) is ErrNotFound: it must
+// not connect (fail closed; schema 27).
 func GetMCPTunnelByTokenHash(ctx context.Context, q Querier, hash []byte) (*MCPTunnel, error) {
 	var t MCPTunnel
-	if err := scanMCPTunnel(q.QueryRow(ctx, `SELECT `+mcpTunnelColumns+` FROM mcp_tunnels WHERE token_hash = $1`, hash), &t); err != nil {
+	if err := scanMCPTunnel(q.QueryRow(ctx, `SELECT `+mcpTunnelColumns+` FROM mcp_tunnels
+		WHERE token_hash = $1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = owner_user_id AND u.status = 'active')`, hash), &t); err != nil {
 		return nil, notFound(err)
 	}
 	return &t, nil
