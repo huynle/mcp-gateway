@@ -47,6 +47,7 @@ The chart **never renders a Secret** and never accepts a secret value (`make tes
 | `mcp-gateway-keys` (`keyProvider.file.existingSecret`) | `keys.json` (output of `crypto.GenerateKeyFile`) | the file provider (local clusters only; mounted through an init container that copies it to a 0600 file in a memory-backed emptyDir, because a Secret volume cannot produce a file owned by the gateway user with that mode) |
 | `mcp-gateway-oidc` (`oidc.providers[].clientSecret.secretName`) | `<provider>-client-secret` (or `clientSecret.secretKey`) | `GATEWAY_OIDC_<NAME>_CLIENT_SECRET` |
 | `mcp-gateway-app` (`logSalt.existingSecret`, optional) | `log-salt` | `GATEWAY_LOG_SALT` (keeps user pseudonyms stable across replicas and restarts) |
+| `mcp-gateway-relay` (`tunnelRelay.existingSecret`, when `tunnelRelay.enabled`) | `relay-secret` (or `tunnelRelay.secretKey`), ≥ 32 bytes | `GATEWAY_RELAY_SECRET`, the cross-replica tunnel relay's HMAC key ([tunnel.md](tunnel.md#multiple-replicas-cross-replica-relay)) |
 | `mcp-gateway-tls` (`ingress.tls.secretName`) | `tls.crt`, `tls.key` | the Ingress; cert-manager fills it when the issuer annotation is set |
 
 ```bash
@@ -137,6 +138,7 @@ The gateway serves Prometheus metrics on `0.0.0.0:19090/metrics` inside the pod,
 - Ingress: the `http` port from `networkPolicy.ingress.http.from` (set it to the ingress controller's namespace), the metrics port from `networkPolicy.ingress.metrics.from`.
 - Egress: DNS (53 UDP/TCP, optionally restricted to `egress.dns.to`), PostgreSQL (`egress.postgres`: CIDRs or namespace/pod selectors; empty = any peer on that port), Vault (`egress.keyProvider`, rendered only for `type=vault`), vendor APIs on 443.
 - **Core `NetworkPolicy` cannot match hostnames.** `egress.vendorAPIs.hosts` (GitHub, Slack, Atlassian, Google, Microsoft; from [`docs/vendor-apps.md`](vendor-apps.md)) is recorded on the policy as an annotation. Without `egress.vendorAPIs.cidrs`, HTTPS egress is allowed to `0.0.0.0/0` **except** the private and link-local ranges (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`: no cloud metadata service, no internal services), which is the tightest cloud-neutral rule for a set of public SaaS endpoints whose addresses change. Clusters with an FQDN-aware CNI (Cilium `toFQDNs`, Calico `GlobalNetworkSet`, an egress proxy) should turn the host list into their own rule and set `cidrs` to the proxy; `egress.extra` appends raw rules.
+- With `tunnelRelay.enabled`, ingress and egress on `tunnelRelay.port` (18081) are allowed between the release's gateway pods only (podSelector on the selector labels); the port is on no Service.
 - Your OIDC issuers must be reachable too: public ones are covered by the vendor rule; a private IdP needs an `egress.extra` entry.
 
 ## Production

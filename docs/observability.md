@@ -117,6 +117,7 @@ All on the private registry; no user, token, account or request identifiers as l
 | `ledger_operations_total` | counter | `state` (`in_progress`, `succeeded`, `failed`, `unknown`, `unresolved`) | ledger / reconciler |
 | `connection_refresh_failures_total` | counter | `app` | connections |
 | `vendor_rate_limited_total` | counter | `app` | connectors (429 / Retry-After) |
+| `tunnel_relay_requests_total` | counter | `side` (`forward`, `serve`), `result` (fixed words, see docs/tunnel.md) | tunnel relay (only when `GATEWAY_RELAY_*` is set) |
 
 Scrape `http://127.0.0.1:19090/metrics` inside the pod or via the Helm-defined private port; never expose it on the public listener.
 
