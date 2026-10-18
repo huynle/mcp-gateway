@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -44,12 +45,26 @@ import (
 // and account source the pipeline must use.
 func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts options) (mcp.Decider, connectors.AccountSource) {
 	w.t.Helper()
-	fed, err := connector.Wire(connector.WireOptions{
+	wopts := connector.WireOptions{
 		Store: w.st, Keys: keys, Registry: w.reg, BaseURL: baseURL, Version: "security",
 		OnChange: w.policy.Invalidate, Log: log, Timeout: opts.fedTimeout,
-	})
+	}
+	var relayHandler atomic.Value
+	if opts.tunnelRelay {
+		// The relay listener is its own server, never the public mux.
+		w.relay = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			relayHandler.Load().(http.Handler).ServeHTTP(rw, r)
+		}))
+		w.t.Cleanup(w.relay.Close)
+		w.forbid(relaySecret, "tunnel relay secret")
+		wopts.TunnelRelay = &tunnel.RelayOptions{Advertise: w.relay.URL, Secret: []byte(relaySecret), HTTPClient: &http.Client{}}
+	}
+	fed, err := connector.Wire(wopts)
 	if err != nil {
 		w.t.Fatal(err)
+	}
+	if opts.tunnelRelay {
+		relayHandler.Store(fed.Tunnels.RelayHandler())
 	}
 	fed.Start(w.t.Context())
 	w.fed = fed
