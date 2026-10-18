@@ -91,7 +91,32 @@ type Config struct {
 	// GATEWAY_OIDC_<NAME>_* (name upper-cased) configures each; a non-empty
 	// GATEWAY_OIDC_PROVIDERS replaces the file's list entirely.
 	OIDCProviders []OIDCProvider `yaml:"oidc_providers"`
+	// SignupMode decides what happens to an account signing in for the
+	// first time (GATEWAY_SIGNUP_MODE): open (active at once with the
+	// default role), approval (pending until an admin approves) or invite
+	// (needs a single-use invite code). Default: approval when a provider
+	// accepts any domain (ALLOWED_DOMAINS="*"), open otherwise. Existing
+	// users and bootstrap admins are never affected.
+	SignupMode string `yaml:"signup_mode"`
+	// SignupPerIPPerHour and SignupGlobalPerHour bound how many new
+	// accounts may be created per client IP and in total per rolling hour
+	// (GATEWAY_SIGNUP_RATE_IP_PER_HOUR, default 10;
+	// GATEWAY_SIGNUP_RATE_GLOBAL_PER_HOUR, default 100). Sign-ins of
+	// existing users are never limited by them.
+	SignupPerIPPerHour  int `yaml:"signup_rate_ip_per_hour"`
+	SignupGlobalPerHour int `yaml:"signup_rate_global_per_hour"`
 }
+
+// Sign-up modes (Config.SignupMode).
+const (
+	SignupOpen     = "open"
+	SignupApproval = "approval"
+	SignupInvite   = "invite"
+)
+
+// AnyDomainWildcard as the only AllowedDomains entry admits every account
+// of the provider that carries a verified email.
+const AnyDomainWildcard = "*"
 
 // OIDCProvider is one company identity provider (Google, Entra, Okta, dex).
 type OIDCProvider struct {
@@ -113,6 +138,12 @@ type OIDCProvider struct {
 	DomainClaim string `yaml:"domain_claim"`
 }
 
+// AnyDomain reports whether the provider admits any account with a
+// verified email (AllowedDomains is exactly ["*"]).
+func (p OIDCProvider) AnyDomain() bool {
+	return len(p.AllowedDomains) == 1 && p.AllowedDomains[0] == AnyDomainWildcard
+}
+
 // Default returns the built-in configuration used when nothing overrides it.
 func Default() Config {
 	return Config{
@@ -130,6 +161,8 @@ func Default() Config {
 		RateUserPerMin:         60,
 		RateAppPerMin:          600,
 		DefaultRole:            "member",
+		SignupPerIPPerHour:     10,
+		SignupGlobalPerHour:    100,
 	}
 }
 
@@ -242,7 +275,10 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 	for _, item := range []struct {
 		name string
 		dst  *int
-	}{{"RATE_USER_PER_MIN", &cfg.RateUserPerMin}, {"RATE_APP_PER_MIN", &cfg.RateAppPerMin}} {
+	}{
+		{"RATE_USER_PER_MIN", &cfg.RateUserPerMin}, {"RATE_APP_PER_MIN", &cfg.RateAppPerMin},
+		{"SIGNUP_RATE_IP_PER_HOUR", &cfg.SignupPerIPPerHour}, {"SIGNUP_RATE_GLOBAL_PER_HOUR", &cfg.SignupGlobalPerHour},
+	} {
 		if v := getenv(EnvPrefix + item.name); v != "" {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil {
@@ -260,6 +296,9 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 	}
 	if v := getenv(EnvPrefix + "DEFAULT_ROLE"); v != "" {
 		cfg.DefaultRole = v
+	}
+	if v := getenv(EnvPrefix + "SIGNUP_MODE"); v != "" {
+		cfg.SignupMode = v
 	}
 	if v := getenv(EnvPrefix + "BOOTSTRAP_ADMINS"); v != "" {
 		cfg.BootstrapAdmins = splitList(v)
@@ -317,6 +356,15 @@ func (c *Config) normalize() {
 		p.AllowedDomains = normalizeList(p.AllowedDomains, true)
 		p.AllowedTenants = normalizeList(p.AllowedTenants, false)
 		p.DomainClaim = strings.TrimSpace(p.DomainClaim)
+	}
+	c.SignupMode = strings.ToLower(strings.TrimSpace(c.SignupMode))
+	if c.SignupMode == "" {
+		c.SignupMode = SignupOpen
+		for _, p := range c.OIDCProviders {
+			if p.AnyDomain() {
+				c.SignupMode = SignupApproval
+			}
+		}
 	}
 }
 
@@ -395,6 +443,17 @@ func (c Config) validateIdentity() []error {
 	if c.DefaultRole == "" {
 		errs = append(errs, errors.New("default_role must not be empty"))
 	}
+	switch c.SignupMode {
+	case SignupOpen, SignupApproval, SignupInvite:
+	default:
+		errs = append(errs, fmt.Errorf("signup_mode must be open, approval or invite, got %q", c.SignupMode))
+	}
+	if c.SignupPerIPPerHour <= 0 {
+		errs = append(errs, fmt.Errorf("signup_rate_ip_per_hour must be positive, got %d", c.SignupPerIPPerHour))
+	}
+	if c.SignupGlobalPerHour <= 0 {
+		errs = append(errs, fmt.Errorf("signup_rate_global_per_hour must be positive, got %d", c.SignupGlobalPerHour))
+	}
 	for _, a := range c.BootstrapAdmins {
 		issuer, subject, ok := strings.Cut(a, "|")
 		if !ok || strings.TrimSpace(issuer) == "" || strings.TrimSpace(subject) == "" {
@@ -429,6 +488,14 @@ func (p OIDCProvider) validate() []error {
 	}
 	if len(p.AllowedDomains) == 0 && len(p.AllowedTenants) == 0 {
 		errs = append(errs, fmt.Errorf("%s: at least one allowed domain or tenant is required", label))
+	}
+	for _, d := range p.AllowedDomains {
+		if strings.Contains(d, AnyDomainWildcard) && (d != AnyDomainWildcard || len(p.AllowedDomains) != 1) {
+			errs = append(errs, fmt.Errorf("%s: allowed domain %q: \"*\" (any domain) must be the only entry", label, d))
+		}
+	}
+	if p.AnyDomain() && (len(p.AllowedTenants) > 0 || p.DomainClaim != "") {
+		errs = append(errs, fmt.Errorf("%s: allowed domain \"*\" (any domain) cannot be combined with allowed tenants or a domain claim", label))
 	}
 	return errs
 }

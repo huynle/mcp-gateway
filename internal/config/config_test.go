@@ -431,3 +431,111 @@ func TestRateLimitsAndFakeConnectorFromEnvAndFile(t *testing.T) {
 		t.Errorf("env over file: %d/%d fake=%v", cfg.RateUserPerMin, cfg.RateAppPerMin, cfg.EnableFakeConnector)
 	}
 }
+
+// --- public sign-up -----------------------------------------------------------
+
+func dexEnv(domains string, extra map[string]string) map[string]string {
+	env := map[string]string{
+		"GATEWAY_OIDC_PROVIDERS":           "dex",
+		"GATEWAY_OIDC_DEX_ISSUER":          "http://localhost:15556/dex",
+		"GATEWAY_OIDC_DEX_CLIENT_ID":       "gateway",
+		"GATEWAY_OIDC_DEX_CLIENT_SECRET":   "s",
+		"GATEWAY_OIDC_DEX_ALLOWED_DOMAINS": domains,
+	}
+	for k, v := range extra {
+		env[k] = v
+	}
+	return env
+}
+
+func TestAnyDomainOptIn(t *testing.T) {
+	cfg, err := config.Load(envFrom(dexEnv("*", nil)))
+	if err != nil {
+		t.Fatalf("ALLOWED_DOMAINS=* should load: %v", err)
+	}
+	if !cfg.OIDCProviders[0].AnyDomain() {
+		t.Error("AnyDomain() = false for ALLOWED_DOMAINS=*")
+	}
+	cfg, err = config.Load(envFrom(dexEnv("example.com", nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OIDCProviders[0].AnyDomain() {
+		t.Error("AnyDomain() = true for a listed domain")
+	}
+	for name, env := range map[string]map[string]string{
+		"star mixed with a domain": dexEnv("*,example.com", nil),
+		"star with tenants":        dexEnv("*", map[string]string{"GATEWAY_OIDC_DEX_ALLOWED_TENANTS": "t1"}),
+		"star with domain claim":   dexEnv("*", map[string]string{"GATEWAY_OIDC_DEX_DOMAIN_CLAIM": "hd"}),
+		"partial wildcard":         dexEnv("*.example.com", nil),
+	} {
+		if _, err := config.Load(envFrom(env)); err == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
+	}
+}
+
+func TestSignupModeDefaults(t *testing.T) {
+	cfg, err := config.Load(envFrom(dexEnv("example.com", nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignupMode != config.SignupOpen {
+		t.Errorf("SignupMode = %q with a domain allow-list, want open (today's behaviour)", cfg.SignupMode)
+	}
+	cfg, err = config.Load(envFrom(dexEnv("*", nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignupMode != config.SignupApproval {
+		t.Errorf("SignupMode = %q with any-domain, want approval", cfg.SignupMode)
+	}
+	for _, mode := range []string{"open", "approval", "invite", " Invite "} {
+		cfg, err := config.Load(envFrom(dexEnv("*", map[string]string{"GATEWAY_SIGNUP_MODE": mode})))
+		if err != nil {
+			t.Fatalf("mode %q: %v", mode, err)
+		}
+		if want := strings.ToLower(strings.TrimSpace(mode)); cfg.SignupMode != want {
+			t.Errorf("SignupMode = %q, want %q", cfg.SignupMode, want)
+		}
+	}
+	if _, err := config.Load(envFrom(dexEnv("*", map[string]string{"GATEWAY_SIGNUP_MODE": "closed"}))); err == nil {
+		t.Error("unknown sign-up mode should be rejected")
+	}
+	cfg, err = config.Load(envFrom(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignupMode != config.SignupOpen {
+		t.Errorf("SignupMode without providers = %q, want open", cfg.SignupMode)
+	}
+}
+
+func TestSignupRateLimits(t *testing.T) {
+	cfg, err := config.Load(envFrom(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignupPerIPPerHour != 10 || cfg.SignupGlobalPerHour != 100 {
+		t.Errorf("sign-up limits = %d/%d, want 10/100", cfg.SignupPerIPPerHour, cfg.SignupGlobalPerHour)
+	}
+	cfg, err = config.Load(envFrom(map[string]string{
+		"GATEWAY_SIGNUP_RATE_IP_PER_HOUR":     "3",
+		"GATEWAY_SIGNUP_RATE_GLOBAL_PER_HOUR": "50",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SignupPerIPPerHour != 3 || cfg.SignupGlobalPerHour != 50 {
+		t.Errorf("sign-up limits = %d/%d, want 3/50", cfg.SignupPerIPPerHour, cfg.SignupGlobalPerHour)
+	}
+	for _, env := range []map[string]string{
+		{"GATEWAY_SIGNUP_RATE_IP_PER_HOUR": "0"},
+		{"GATEWAY_SIGNUP_RATE_GLOBAL_PER_HOUR": "-1"},
+		{"GATEWAY_SIGNUP_RATE_IP_PER_HOUR": "lots"},
+	} {
+		if _, err := config.Load(envFrom(env)); err == nil {
+			t.Errorf("%v: expected a validation error", env)
+		}
+	}
+}
