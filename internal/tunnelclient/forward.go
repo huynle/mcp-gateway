@@ -1,4 +1,4 @@
-package main
+package tunnelclient
 
 import (
 	"io"

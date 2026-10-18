@@ -75,6 +75,17 @@ Whether you may use a **personal** account at all, and whether its writes always
 
 **Reconnect** appears when the vendor stopped accepting the gateway's refresh token (password change, revoked app, long inactivity): tools on that account fail until you reconnect; nothing else changes. **Disconnect** revokes the gateway's access at the vendor (where supported) and deletes the stored tokens; your history stays.
 
+## 3a. Connect a stdio or private MCP server (tunnel)
+
+The gateway never runs programs on your machine and never dials into your network. To use an MCP server that speaks stdio (most `npx …` / `uvx …` servers), or one on `localhost` or your home network, you run a small client next to it that connects **out** to the gateway.
+
+1. Install the client once: `brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh` (installs into `~/.local/bin`, verifies the download's checksum, no sudo). Archives for macOS, Linux and Windows are on [GitHub Releases](https://github.com/huynle/mcp-gateway/releases).
+2. In the portal, open **Servers → Tunnels**, name the tunnel (e.g. `laptop`) and press **Create tunnel**. Copy the token now: it is shown only once.
+3. Copy the run command from the page and replace `<your server command>`, e.g. `MCP_GATEWAY_TUNNEL_TOKEN=mgt_… mcp-gateway tunnel --gateway https://gateway.example.com --stdio "npx -y @modelcontextprotocol/server-everything"`. For an HTTP server on your network use `--http http://localhost:8080/mcp` instead.
+4. Add a server with the address `tunnel://<tunnel id>` (copy it from the same page).
+
+Keep the command running while you use the server; it reconnects on its own. If you lose the token, revoke the tunnel and create a new one. `mcp-gateway tunnel --help` lists every option; details are in [tunnel.md](tunnel.md).
+
 ## 4. Approvals: when a tool call waits for you
 
 Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:

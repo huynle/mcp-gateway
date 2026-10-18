@@ -15,7 +15,7 @@ import (
 // deploy that changes a file changes its URL and browsers skip the 1-day
 // cached copy.
 func TestURLCarriesAContentHash(t *testing.T) {
-	for _, name := range []string{"htmx.min.js", "review.js", "review.css", "portal.css", "theme.js"} {
+	for _, name := range []string{"htmx.min.js", "review.js", "review.css", "portal.css", "theme.js", "copy.js"} {
 		b, err := fs.ReadFile(static.FS, name)
 		if err != nil {
 			t.Fatalf("%s not embedded: %v", name, err)

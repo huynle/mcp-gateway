@@ -1,4 +1,4 @@
-package main
+package tunnelclient
 
 import (
 	"bufio"
@@ -369,7 +369,7 @@ func (p *stdioProcess) stop() {
 func childEnv(env []string) []string {
 	out := env[:0:0]
 	for _, kv := range env {
-		if strings.HasPrefix(kv, envToken+"=") {
+		if strings.HasPrefix(kv, EnvToken+"=") {
 			continue
 		}
 		out = append(out, kv)

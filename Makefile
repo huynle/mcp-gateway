@@ -5,15 +5,17 @@ GOLANGCI_LINT ?= golangci-lint
 BIN            = bin/gateway
 MIGRATE_BIN    = bin/migrate
 TUNNEL_BIN     = bin/mcp-gateway-tunnel
+CLI_BIN        = bin/mcp-gateway
 VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS        = -s -w -X main.version=$(VERSION)
 
 all: fmt-check lint test build
 
-## build: compile the gateway, migrate and tunnel client binaries into bin/
+## build: compile the gateway, migrate, client CLI and tunnel alias binaries into bin/
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/gateway
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(MIGRATE_BIN) ./cmd/migrate
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(CLI_BIN) ./cmd/mcp-gateway
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(TUNNEL_BIN) ./cmd/mcp-gateway-tunnel
 
 ## test: run unit tests with the race detector

@@ -270,7 +270,7 @@ func (p *Portal) refresh(w http.ResponseWriter, r *http.Request, c caller, s *st
 func sessionMessage(err error) string {
 	var te *tunnel.Error
 	if errors.As(err, &te) && te.Class == tunnel.ClassOffline {
-		return "The tunnel is offline: start mcp-gateway-tunnel next to the server."
+		return "The tunnel is offline: start `mcp-gateway tunnel` next to the server."
 	}
 	switch {
 	case errors.Is(err, auth.ErrNotConnected):

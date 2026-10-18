@@ -226,3 +226,9 @@ dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellip
   .site-header { padding: .5rem .75rem; }
   .site-header .who { margin-left: 0; }
 }
+
+/* Copy buttons (copy.js) next to a command or token. */
+.copyable { display: flex; gap: .5rem; align-items: flex-start; margin: .25rem 0 .75rem; }
+.copyable pre { flex: 1; margin: 0; min-width: 0; }
+.tunnel-install, .tunnel-run details { margin: .5rem 0 1rem; }
+tr.tunnel-run td { border-top: 0; padding-top: 0; }
