@@ -8,6 +8,10 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 **What is pending** needs a person and infrastructure: a staging cluster with the staging vendor apps and the real-harness conformance run ([`docs/conformance.md`](docs/conformance.md), Brain task `6a5khoph`), the production rollout and the pilot ([`docs/pilot-checklist.md`](docs/pilot-checklist.md), task `pn4voyen`). Operator runbooks are in [`docs/runbooks/`](docs/runbooks/README.md) (deploy and rollback, key rotation, unresolved operations, user offboarding, vendor app secret rotation, audit export, incident redaction check); the coworker-facing guide is [`docs/user-guide.md`](docs/user-guide.md). Known operational gaps, each a Brain draft task: no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`); plus the deferred review items `fire4u3k` (CSP `unsafe-inline`) and `jni63atp` (per-process test databases); review finding 7 (Slack deny-by-name rules vs channel ids, `6br0isjh`) is closed by the policy stage's identity resolver (decision `etrnt29k`).
 
+## Connect a local MCP server (tunnel)
+
+Install the client CLI (`brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh`), create a tunnel in the portal and run `mcp-gateway tunnel --gateway <url> --stdio "<your server command>"` next to the server. See [`docs/tunnel.md`](docs/tunnel.md).
+
 ## Run locally
 
 Requirements: Go 1.26 (the `toolchain` directive in `go.mod` pins the patch release; govulncheck is clean only on a supported Go), Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
