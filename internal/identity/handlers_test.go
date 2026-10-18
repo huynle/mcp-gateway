@@ -39,6 +39,12 @@ type whoami struct {
 
 func newGateway(t *testing.T) *gateway {
 	t.Helper()
+	return newGatewayWith(t)
+}
+
+// newGatewayWith is newGateway with the identity configuration adjusted.
+func newGatewayWith(t *testing.T, mutate ...func(*identity.Config)) *gateway {
+	t.Helper()
 	idp := newFakeIDP(t)
 	st := identitytest.NewMemStore()
 	srv := httptest.NewServer(http.NotFoundHandler())
@@ -53,6 +59,9 @@ func newGateway(t *testing.T) *gateway {
 		AllowedDomains: []string{"example.com"},
 	})
 	cfg.BaseURL = srv.URL
+	for _, m := range mutate {
+		m(&cfg)
+	}
 	svc, _ := newService(t, cfg, st)
 
 	mux := http.NewServeMux()
