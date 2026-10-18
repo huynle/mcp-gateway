@@ -80,3 +80,26 @@ func check(ctx context.Context, l Limiter, userID string, r Resource, n, limit i
 	l.Refused(ctx, userID, r, limit)
 	return &ExceededError{Resource: r, Limit: limit}
 }
+
+// Usage counts what userID holds of every resource (ConnectionsPerApp:
+// the fullest app). q runs as the user (row-level security).
+func Usage(ctx context.Context, q store.Querier, userID string) (Values, error) {
+	out := Values{}
+	var err error
+	if out[Servers], err = store.CountUserMCPServers(ctx, q, userID); err != nil {
+		return nil, err
+	}
+	if out[Tunnels], err = store.CountUserLiveMCPTunnels(ctx, q, userID); err != nil {
+		return nil, err
+	}
+	if out[PendingApprovals], err = store.CountUserPendingApprovals(ctx, q, userID, time.Now()); err != nil {
+		return nil, err
+	}
+	if _, out[ConnectionsTotal], err = store.CountUserConnections(ctx, q, userID, ""); err != nil {
+		return nil, err
+	}
+	if out[ConnectionsPerApp], err = store.MaxUserConnectionsPerApp(ctx, q, userID); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

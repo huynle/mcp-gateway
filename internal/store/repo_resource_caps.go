@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Per-user resource caps (migration 00028). The settings live in
@@ -53,6 +55,10 @@ func scanCaps(row interface{ Scan(dest ...any) error }, extra ...any) (map[strin
 func GetGatewayResourceCaps(ctx context.Context, q Querier) (map[string]int, int64, error) {
 	var version int64
 	out, err := scanCaps(q.QueryRow(ctx, `SELECT version, `+capSelect()+` FROM gateway_resource_caps WHERE singleton`), &version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// No row (never seeded or truncated): every value inherits.
+		return map[string]int{}, 0, nil
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: get resource caps: %w", err)
 	}
@@ -108,6 +114,9 @@ func PatchGatewayResourceCaps(ctx context.Context, q Querier, patch map[string]*
 	set, args, err := patchSet(patch, 2)
 	if err != nil {
 		return err
+	}
+	if _, err := q.Exec(ctx, `INSERT INTO gateway_resource_caps (singleton) VALUES (true) ON CONFLICT (singleton) DO NOTHING`); err != nil {
+		return fmt.Errorf("store: patch resource caps: %w", err)
 	}
 	_, err = q.Exec(ctx, `UPDATE gateway_resource_caps SET `+strings.Join(set, ", ")+`, version = version + 1, updated_by = $1, updated_at = now() WHERE singleton`,
 		append([]any{nullString(actor)}, args...)...)
@@ -177,7 +186,7 @@ const AnchorVendor = "mcp"
 // to vendorAppID and in total, excluding anchor connections.
 func CountUserConnections(ctx context.Context, q Querier, userID, vendorAppID string) (perApp, total int, err error) {
 	err = q.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE c.vendor_app_id = $2), count(*)
+		SELECT count(*) FILTER (WHERE c.vendor_app_id::text = $2), count(*)
 		FROM connections c JOIN vendor_apps v ON v.id = c.vendor_app_id
 		WHERE c.user_id = $1 AND c.status <> 'revoked' AND v.vendor <> $3`, userID, vendorAppID, AnchorVendor).Scan(&perApp, &total)
 	if err != nil {
@@ -192,4 +201,13 @@ func count(ctx context.Context, q Querier, what, sql string, args ...any) (int, 
 		return 0, fmt.Errorf("store: count %s: %w", what, err)
 	}
 	return n, nil
+}
+
+// MaxUserConnectionsPerApp is the highest number of userID's live
+// (non-revoked, non-anchor) connections to any one vendor app.
+func MaxUserConnectionsPerApp(ctx context.Context, q Querier, userID string) (int, error) {
+	return count(ctx, q, "connections per app", `
+		SELECT coalesce(max(n), 0) FROM (
+			SELECT count(*) AS n FROM connections c JOIN vendor_apps v ON v.id = c.vendor_app_id
+			WHERE c.user_id = $1 AND c.status <> 'revoked' AND v.vendor <> $2 GROUP BY c.vendor_app_id) per_app`, userID, AnchorVendor)
 }
