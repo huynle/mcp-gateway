@@ -73,6 +73,19 @@ func ReserveConnection(ctx context.Context, q store.Querier, l Limiter, userID, 
 	return nil
 }
 
+// Check is the cap decision for a store that counts itself (in-memory
+// test stores): n is what userID already holds of r.
+func Check(ctx context.Context, l Limiter, userID string, r Resource, n int) error {
+	if l == nil {
+		return nil
+	}
+	limit := l.Limit(ctx, userID, r)
+	if limit <= 0 {
+		return nil
+	}
+	return check(ctx, l, userID, r, n, limit)
+}
+
 func check(ctx context.Context, l Limiter, userID string, r Resource, n, limit int) error {
 	if n < limit {
 		return nil

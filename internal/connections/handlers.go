@@ -10,11 +10,13 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -182,7 +184,7 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request, c caller) {
 	case q.Get("disconnected") != "":
 		data.Notice = "Account disconnected. Its tokens were deleted."
 	}
-	data.Error = flowErrorMessage(q.Get("error"))
+	data.Error = flowErrorText(q)
 	p.render(w, r, http.StatusOK, "connections.html", data)
 }
 
@@ -225,9 +227,14 @@ func (p *Portal) callback(w http.ResponseWriter, r *http.Request, c caller) {
 		Error: q.Get("error"), ErrorDescription: q.Get("error_description"),
 	})
 	var class string
+	var ce *caps.ExceededError
 	switch {
 	case err == nil:
 		http.Redirect(w, r, "/connections?connected="+url.QueryEscape(info.ID), http.StatusSeeOther)
+		return
+	case errors.As(err, &ce):
+		v := url.Values{"error": {caps.Class}, "resource": {string(ce.Resource)}, "limit": {strconv.Itoa(ce.Limit)}}
+		http.Redirect(w, r, "/connections?"+v.Encode(), http.StatusSeeOther)
 		return
 	case errors.Is(err, ErrPersonalRefused):
 		class = "personal_refused"

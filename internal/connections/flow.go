@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -226,6 +227,10 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 		case err == nil:
 			conn = existing
 			if conn.Status == store.ConnectionRevoked {
+				// Reviving a disconnected account takes a slot again.
+				if err := tx.ReserveConnection(ctx, s.limiter(), req.UserID, app.ID); err != nil {
+					return err
+				}
 				conn.Scopes = granted
 			} else {
 				conn.Scopes = unionScopes(conn.Scopes, granted)
@@ -235,6 +240,9 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 				return err
 			}
 		case errors.Is(err, store.ErrNotFound):
+			if err := tx.ReserveConnection(ctx, s.limiter(), req.UserID, app.ID); err != nil {
+				return err
+			}
 			conn = &store.Connection{
 				UserID: req.UserID, VendorAppID: app.ID, ExternalAccountID: bound.ExternalAccountID,
 				Label: label, DisplayName: bound.DisplayName, Scopes: granted, Status: store.ConnectionActive,
@@ -254,6 +262,11 @@ func (s *Service) Callback(ctx context.Context, req CallbackRequest) (Info, erro
 		conn.LastRefreshedAt = &now
 		return nil
 	})
+	var ce *caps.ExceededError
+	if errors.As(err, &ce) {
+		s.record(ctx, req.UserID, "", label, map[string]string{"action": "connect_refused", "vendor": app.Vendor, "variant": app.Variant, "resource": string(ce.Resource)}, "denied", caps.Class)
+		return Info{}, ce
+	}
 	if err != nil {
 		return Info{}, fmt.Errorf("connections: store connection: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -38,6 +39,12 @@ type Tx interface {
 	// transaction ends.
 	LockConnection(ctx context.Context, id string) (*store.Connection, error)
 	CreateConnection(ctx context.Context, c *store.Connection) error
+	// ReserveConnection is the cap check before a new (or revived
+	// revoked) connection of userID to vendorAppID: it locks the user's
+	// connection budget until the transaction ends and refuses with
+	// *caps.ExceededError at the per-app or total cap. A nil l never
+	// refuses.
+	ReserveConnection(ctx context.Context, l caps.Limiter, userID, vendorAppID string) error
 	UpdateConnection(ctx context.Context, c *store.Connection) error
 	SetConnectionStatus(ctx context.Context, id, status string) error
 	TouchConnectionRefreshed(ctx context.Context, id string, at time.Time) error
@@ -101,6 +108,10 @@ func (t pgTx) FindConnection(ctx context.Context, userID, vendorAppID, externalA
 
 func (t pgTx) LockConnection(ctx context.Context, id string) (*store.Connection, error) {
 	return store.LockConnection(ctx, t.tx, id)
+}
+
+func (t pgTx) ReserveConnection(ctx context.Context, l caps.Limiter, userID, vendorAppID string) error {
+	return caps.ReserveConnection(ctx, t.tx, l, userID, vendorAppID)
 }
 
 func (t pgTx) CreateConnection(ctx context.Context, c *store.Connection) error {
