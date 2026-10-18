@@ -8,7 +8,7 @@ import (
 )
 
 func TestErrorsMatchTheirSentinels(t *testing.T) {
-	var err error = fmt.Errorf("wrapped: %w", &ExportTooSoonError{RetryAfter: 90 * time.Second})
+	err := fmt.Errorf("wrapped: %w", &ExportTooSoonError{RetryAfter: 90 * time.Second})
 	if !errors.Is(err, ErrExportTooSoon) {
 		t.Error("ExportTooSoonError does not match ErrExportTooSoon")
 	}
@@ -16,8 +16,8 @@ func TestErrorsMatchTheirSentinels(t *testing.T) {
 	if !errors.As(err, &soon) || soon.RetryAfter != 90*time.Second {
 		t.Errorf("errors.As = %v", soon)
 	}
-	err = &BlockedError{Reasons: []string{"a", "b"}}
-	if !errors.Is(err, ErrBlocked) || errors.Is(err, ErrExportTooSoon) {
+	blocked := error(&BlockedError{Reasons: []string{"a", "b"}})
+	if !errors.Is(blocked, ErrBlocked) || errors.Is(blocked, ErrExportTooSoon) {
 		t.Error("BlockedError sentinel matching is wrong")
 	}
 }

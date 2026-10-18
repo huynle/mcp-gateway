@@ -290,6 +290,8 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
+//
+//nolint:unparam // the form without the account lifecycle (tests); production calls newPortalWithAccount
 func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	return newPortalWithAccount(cfg, st, reader, tokenSvc, policySvc, approvalSvc, connSvc, registry, gatewayTools, rateSettings, nil, log, extras...)
 }

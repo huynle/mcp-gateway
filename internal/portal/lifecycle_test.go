@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -155,39 +156,40 @@ func TestDeletePageStates(t *testing.T) {
 func TestDeleteSelf(t *testing.T) {
 	h, a := newLifecycleHarness(t)
 	ck, p := h.session(t, memberSub, "Member")
-	post := func(phrase string) *http.Response {
+	post := func(phrase string) *httptest.ResponseRecorder {
 		return h.do(t, request{method: http.MethodPost, path: "/account/delete", cookie: ck,
-			form: url.Values{"_csrf": {p.CSRFToken}, "confirm": {phrase}}}).Result()
+			form: url.Values{"_csrf": {p.CSRFToken}, "confirm": {phrase}}})
 	}
-	if res := post("delete it"); res.StatusCode != http.StatusUnprocessableEntity || len(a.deleted) != 0 {
-		t.Errorf("wrong phrase = %d, deleted %v", res.StatusCode, a.deleted)
+	if rec := post("delete it"); rec.Code != http.StatusUnprocessableEntity || len(a.deleted) != 0 {
+		t.Errorf("wrong phrase = %d, deleted %v", rec.Code, a.deleted)
 	}
 	a.deleteErr = account.ErrReauthRequired
-	if res := post(account.ConfirmPhrase); res.StatusCode != http.StatusForbidden {
-		t.Errorf("stale sign-in = %d, want 403", res.StatusCode)
+	if rec := post(account.ConfirmPhrase); rec.Code != http.StatusForbidden {
+		t.Errorf("stale sign-in = %d, want 403", rec.Code)
 	}
 	a.deleteErr = &account.BlockedError{Reasons: []string{"owns published servers"}}
-	if res := post(account.ConfirmPhrase); res.StatusCode != http.StatusConflict {
-		t.Errorf("blocked = %d, want 409", res.StatusCode)
+	if rec := post(account.ConfirmPhrase); rec.Code != http.StatusConflict {
+		t.Errorf("blocked = %d, want 409", rec.Code)
 	}
 	a.deleteErr = nil
-	res := post("  Delete My Account ")
-	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/account/deleted" {
-		t.Fatalf("delete = %d %q", res.StatusCode, res.Header.Get("Location"))
+	rec := post("  Delete My Account ")
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/account/deleted" {
+		t.Fatalf("delete = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if len(a.deleted) != 1 || a.deleted[0] != "self:"+p.UserID {
 		t.Errorf("deleted = %v", a.deleted)
 	}
 	cleared := false
-	for _, c := range res.Cookies() {
+	cookies := (&http.Response{Header: rec.Header()}).Cookies()
+	for _, c := range cookies {
 		if c.Name == identity.SessionCookie && c.MaxAge < 0 {
 			cleared = true
 		}
 	}
 	if !cleared {
-		t.Errorf("session cookie not cleared: %v", res.Cookies())
+		t.Errorf("session cookie not cleared: %v", cookies)
 	}
-	rec := h.do(t, request{method: http.MethodGet, path: "/account/deleted"})
+	rec = h.do(t, request{method: http.MethodGet, path: "/account/deleted"})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "deleted") {
 		t.Errorf("deleted page = %d", rec.Code)
 	}
@@ -215,9 +217,9 @@ func TestAdminDeleteUser(t *testing.T) {
 	if rec := h.do(t, request{method: http.MethodPost, path: path, cookie: admin, form: url.Values{"_csrf": {ap.CSRFToken}, "confirm": {"nope"}}}); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("wrong phrase = %d", rec.Code)
 	}
-	res := h.do(t, request{method: http.MethodPost, path: path, cookie: admin, form: url.Values{"_csrf": {ap.CSRFToken}, "confirm": {account.AdminConfirmPhrase}}}).Result()
-	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/admin/users" {
-		t.Errorf("admin delete = %d %q", res.StatusCode, res.Header.Get("Location"))
+	rec := h.do(t, request{method: http.MethodPost, path: path, cookie: admin, form: url.Values{"_csrf": {ap.CSRFToken}, "confirm": {account.AdminConfirmPhrase}}})
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/admin/users" {
+		t.Errorf("admin delete = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if len(a.deleted) != 1 || a.deleted[0] != ap.UserID+":"+mp.UserID {
 		t.Errorf("deleted = %v", a.deleted)
