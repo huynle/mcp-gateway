@@ -54,11 +54,13 @@ func (s *Service) serveConnect(w http.ResponseWriter, r *http.Request) {
 	c := newConn(t.ID, ws, s.limits)
 	s.touch(t.ID)
 	s.reg.put(t.ID, c)
-	s.log.Info("tunnel: connected", "tunnel_id", t.ID, "owner_user_id", t.OwnerUserID)
+	s.claimHolder(c)
+	s.log.Info("tunnel: connected", "tunnel_id", t.ID, "owner_user_id", t.OwnerUserID, "epoch", c.epoch.Load())
 
 	go s.heartbeat(c)
 	reason := s.readLoop(c)
 	s.reg.remove(t.ID, c)
+	s.releaseHolder(c)
 	c.close(websocket.StatusNormalClosure, "")
 	s.log.Info("tunnel: disconnected", "tunnel_id", t.ID, "reason", reason)
 }
@@ -119,8 +121,69 @@ func (s *Service) heartbeat(c *conn) {
 			s.log.Warn("tunnel: heartbeat lookup failed", "tunnel_id", c.tunnelID, "error", err)
 		default:
 			s.touch(c.tunnelID)
+			if !s.checkHolder(c) {
+				return
+			}
 		}
 	}
+}
+
+// claimHolder records this replica as the holder of c's tunnel (relay
+// only). A failure is logged; the heartbeat retries.
+func (s *Service) claimHolder(c *conn) {
+	if s.relay == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	epoch, err := s.relay.holders.ClaimHolder(ctx, c.tunnelID, s.relay.self, s.now())
+	if err != nil {
+		s.log.Warn("tunnel: holder claim failed", "tunnel_id", c.tunnelID, "error", err)
+		return
+	}
+	c.epoch.Store(epoch)
+}
+
+// releaseHolder forgets this replica as the holder, unless a newer
+// connection has taken over.
+func (s *Service) releaseHolder(c *conn) {
+	epoch := c.epoch.Load()
+	if s.relay == nil || epoch == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.relay.holders.ReleaseHolder(ctx, c.tunnelID, epoch); err != nil {
+		s.log.Warn("tunnel: holder release failed", "tunnel_id", c.tunnelID, "error", err)
+	}
+}
+
+// checkHolder runs at each heartbeat with the relay on: it re-claims a
+// missing holder row and closes c (code 4001, like an in-process
+// replacement) when a newer connection on another replica holds the
+// tunnel. It returns false when c was closed.
+func (s *Service) checkHolder(c *conn) bool {
+	if s.relay == nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(c.life, 5*time.Second)
+	h, err := s.relay.holders.Holder(ctx, c.tunnelID)
+	cancel()
+	mine := c.epoch.Load()
+	switch {
+	case errors.Is(err, store.ErrNotFound) || (err == nil && mine == 0):
+		s.claimHolder(c)
+	case err != nil:
+		s.log.Warn("tunnel: holder lookup failed", "tunnel_id", c.tunnelID, "error", err)
+	case h.Epoch > mine:
+		s.log.Info("tunnel: replaced by a newer connection on another replica", "tunnel_id", c.tunnelID, "epoch", mine, "newer_epoch", h.Epoch)
+		s.reg.remove(c.tunnelID, c)
+		c.close(closeReplaced, "replaced")
+		return false
+	case h.Epoch < mine:
+		s.claimHolder(c)
+	}
+	return true
 }
 
 func (s *Service) touch(id string) {

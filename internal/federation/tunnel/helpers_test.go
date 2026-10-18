@@ -17,9 +17,70 @@ type memStore struct {
 	next    int
 	tunnels map[string]*store.MCPTunnel
 	touches int
+	// holders is the HolderStore side (migration 00026).
+	holders map[string]store.MCPTunnelHolder
+	epochs  int64
 }
 
-func newMemStore() *memStore { return &memStore{tunnels: map[string]*store.MCPTunnel{}} }
+func newMemStore() *memStore {
+	return &memStore{tunnels: map[string]*store.MCPTunnel{}, holders: map[string]store.MCPTunnelHolder{}}
+}
+
+func (m *memStore) ClaimHolder(_ context.Context, id, holder string, at time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.tunnels[id]
+	if !ok {
+		return 0, store.ErrNotFound
+	}
+	t.LastSeenAt = &at
+	m.epochs++
+	m.holders[id] = store.MCPTunnelHolder{TunnelID: id, Holder: holder, Epoch: m.epochs, ClaimedAt: at}
+	return m.epochs, nil
+}
+
+func (m *memStore) ReleaseHolder(_ context.Context, id string, epoch int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h, ok := m.holders[id]; ok && h.Epoch == epoch {
+		delete(m.holders, id)
+	}
+	return nil
+}
+
+func (m *memStore) Holder(_ context.Context, id string) (*store.MCPTunnelHolder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.holders[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	t := m.tunnels[id]
+	h.LastSeenAt, h.Revoked = t.LastSeenAt, t.RevokedAt != nil
+	return &h, nil
+}
+
+// holder returns the tunnel's holder row, if any.
+func (m *memStore) holder(id string) (store.MCPTunnelHolder, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.holders[id]
+	return h, ok
+}
+
+// setLastSeen moves a tunnel's last_seen_at (staleness tests).
+func (m *memStore) setLastSeen(id string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tunnels[id].LastSeenAt = &at
+}
+
+// setHolder overwrites a tunnel's holder row (tests).
+func (m *memStore) setHolder(id, holder string, epoch int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.holders[id] = store.MCPTunnelHolder{TunnelID: id, Holder: holder, Epoch: epoch, ClaimedAt: time.Now()}
+}
 
 func (m *memStore) CreateTunnel(_ context.Context, owner, name string, hash []byte) (*store.MCPTunnel, error) {
 	m.mu.Lock()
