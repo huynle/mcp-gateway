@@ -91,6 +91,29 @@ type Config struct {
 	// GATEWAY_OIDC_<NAME>_* (name upper-cased) configures each; a non-empty
 	// GATEWAY_OIDC_PROVIDERS replaces the file's list entirely.
 	OIDCProviders []OIDCProvider `yaml:"oidc_providers"`
+
+	// RelayListenAddr is the internal listener for tunnel requests
+	// forwarded by peer replicas (GATEWAY_RELAY_LISTEN_ADDR, e.g. :18081).
+	// Never expose it through the ingress. The relay is enabled only when
+	// RelayListenAddr, RelayAdvertiseAddr and RelaySecret are all set
+	// (docs/tunnel.md "Multiple replicas"); all empty = single replica.
+	RelayListenAddr string `yaml:"relay_listen_addr"`
+	// RelayAdvertiseAddr is this replica's relay base URL as peers reach
+	// it (GATEWAY_RELAY_ADVERTISE_ADDR, e.g. http://$(POD_IP):18081).
+	RelayAdvertiseAddr string `yaml:"relay_advertise_addr"`
+	// RelaySecret is the HMAC key shared by every replica
+	// (GATEWAY_RELAY_SECRET), at least MinRelaySecretBytes. Never logged.
+	RelaySecret string `yaml:"relay_secret"`
+}
+
+// MinRelaySecretBytes is the minimum length of GATEWAY_RELAY_SECRET
+// (tunnel.MinRelaySecretBytes).
+const MinRelaySecretBytes = 32
+
+// RelayEnabled reports whether the cross-replica tunnel relay is
+// configured.
+func (c Config) RelayEnabled() bool {
+	return c.RelayListenAddr != "" && c.RelayAdvertiseAddr != "" && c.RelaySecret != ""
 }
 
 // OIDCProvider is one company identity provider (Google, Entra, Okta, dex).
@@ -189,6 +212,15 @@ func applyEnv(getenv func(string) string, cfg *Config) error {
 	}
 	if v := getenv(EnvPrefix + "JOBS_DATABASE_URL"); v != "" {
 		cfg.JobsDatabaseURL = v
+	}
+	if v := getenv(EnvPrefix + "RELAY_LISTEN_ADDR"); v != "" {
+		cfg.RelayListenAddr = v
+	}
+	if v := getenv(EnvPrefix + "RELAY_ADVERTISE_ADDR"); v != "" {
+		cfg.RelayAdvertiseAddr = v
+	}
+	if v := getenv(EnvPrefix + "RELAY_SECRET"); v != "" {
+		cfg.RelaySecret = v
 	}
 	return applyIdentityEnv(getenv, cfg)
 }
@@ -301,6 +333,9 @@ func (c *Config) normalize() {
 	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
 	c.DatabaseURL = strings.TrimSpace(c.DatabaseURL)
 	c.JobsDatabaseURL = strings.TrimSpace(c.JobsDatabaseURL)
+	c.RelayListenAddr = strings.TrimSpace(c.RelayListenAddr)
+	c.RelayAdvertiseAddr = strings.TrimRight(strings.TrimSpace(c.RelayAdvertiseAddr), "/")
+	c.RelaySecret = strings.TrimSpace(c.RelaySecret)
 	c.BaseURL = strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	c.DefaultRole = strings.TrimSpace(c.DefaultRole)
 	c.BootstrapAdmins = normalizeList(c.BootstrapAdmins, false)
@@ -356,7 +391,36 @@ func (c Config) validate() error {
 	}
 	errs = append(errs, c.validateDatabase()...)
 	errs = append(errs, c.validateIdentity()...)
+	errs = append(errs, c.validateRelay()...)
 	return errors.Join(errs...)
+}
+
+// validateRelay: all three relay settings or none; never echoes the secret.
+func (c Config) validateRelay() []error {
+	set := 0
+	for _, v := range []string{c.RelayListenAddr, c.RelayAdvertiseAddr, c.RelaySecret} {
+		if v != "" {
+			set++
+		}
+	}
+	if set == 0 {
+		return nil
+	}
+	if set != 3 {
+		return []error{errors.New("relay_listen_addr, relay_advertise_addr and relay_secret must be set together (or none of them)")}
+	}
+	var errs []error
+	if len(c.RelaySecret) < MinRelaySecretBytes {
+		errs = append(errs, fmt.Errorf("relay_secret must be at least %d bytes", MinRelaySecretBytes))
+	}
+	if u, err := url.Parse(c.RelayAdvertiseAddr); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		errs = append(errs, errors.New("relay_advertise_addr must be an http(s) URL with scheme and host only (no path, user info or query)"))
+	}
+	if c.RelayListenAddr == c.ListenAddr {
+		errs = append(errs, errors.New("relay_listen_addr must differ from listen_addr (the relay is internal only)"))
+	}
+	return errs
 }
 
 // providerNameRE bounds provider names so they are safe in URL paths and
