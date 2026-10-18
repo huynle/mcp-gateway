@@ -1,0 +1,100 @@
+# GoReleaser v2: the user-side client binaries (`mcp-gateway`, the client
+# CLI, and its `mcp-gateway-tunnel` alias) for GitHub Releases and the
+# huynle/homebrew-tap Homebrew tap. The gateway server ships as a container
+# image (ci.yml release job), not here. Run by .github/workflows/release.yml
+# on tags v*; locally: goreleaser release --snapshot --clean.
+# See docs/tunnel.md (install) and docs/deploy.md (releases).
+version: 2
+
+project_name: mcp-gateway
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: mcp-gateway
+    main: ./cmd/mcp-gateway
+    binary: mcp-gateway
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    # Same as the Makefile's LDFLAGS (-s -w -X main.version=<git describe>).
+    ldflags: ["-s -w -X main.version=v{{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+  - id: mcp-gateway-tunnel
+    main: ./cmd/mcp-gateway-tunnel
+    binary: mcp-gateway-tunnel
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version=v{{ .Version }}"]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: mcp-gateway
+    ids: [mcp-gateway, mcp-gateway-tunnel]
+    # Versionless names so .../releases/latest/download/<name> always works
+    # (scripts/install.sh relies on it).
+    name_template: "mcp-gateway_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+  extra_files:
+    - glob: scripts/install.sh
+
+release:
+  github:
+    owner: huynle
+    name: mcp-gateway
+  extra_files:
+    - glob: scripts/install.sh
+  prerelease: auto
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^Merge ", "^docs", "^test"]
+
+# Homebrew: GoReleaser deprecated `brews` (formulas) in v2.10 in favour of
+# casks for prebuilt binaries. Pushed over git+SSH with the write deploy key
+# of huynle/homebrew-tap (secret HOMEBREW_TAP_DEPLOY_KEY, no PAT). Without
+# the key (forks, local snapshots) the cask is only written to dist/.
+homebrew_casks:
+  - name: mcp-gateway
+    ids: [mcp-gateway]
+    binaries: [mcp-gateway, mcp-gateway-tunnel]
+    homepage: https://github.com/huynle/mcp-gateway
+    description: Client CLI for MCP gateway (connect local stdio MCP servers through a tunnel)
+    commit_msg_template: "mcp-gateway {{ .Tag }}"
+    commit_author:
+      name: mcp-gateway-release
+      email: mcp-gateway-release@users.noreply.github.com
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_DEPLOY_KEY" }}auto{{ else }}true{{ end }}'
+    # The binaries are not notarized: drop the quarantine bit so macOS runs
+    # them (see GoReleaser "Signing and Notarizing" for casks).
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mcp-gateway"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mcp-gateway-tunnel"]
+          end
+    repository:
+      owner: huynle
+      name: homebrew-tap
+      branch: main
+      git:
+        url: "git@github.com:huynle/homebrew-tap.git"
+        private_key: '{{ index .Env "HOMEBREW_TAP_DEPLOY_KEY" }}'

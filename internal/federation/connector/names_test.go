@@ -118,6 +118,13 @@ func TestBuildTools(t *testing.T) {
 	if c.Kind != connectors.KindWrite || c.Reconcile.Kind != connectors.ReconcileNone || c.ResultIDs != nil {
 		t.Errorf("write tool kind/reconcile/resultIDs = %s/%s/%v", c.Kind, c.Reconcile.Kind, c.ResultIDs != nil)
 	}
+	// Quirk 47ab9sk7: upstream tools are never deduplicated by arguments
+	// (a write is often an unannotated read); every call runs.
+	for _, tool := range got {
+		if tool.Idempotency != connectors.IdempotencyPerCall {
+			t.Errorf("%s idempotency = %q, want per_call", tool.FullName(), tool.Idempotency)
+		}
+	}
 	if string(byName["notes.no_schema"].InputSchema) != `{"type":"object","properties":{},"additionalProperties":false}` {
 		t.Errorf("no-schema tool schema = %s", byName["notes.no_schema"].InputSchema)
 	}

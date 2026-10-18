@@ -94,7 +94,7 @@ func newLedgerFixture(t *testing.T, confirm mcp.ConfirmHandler) *ledgerFixture {
 	}
 	write.ResultIDs = func(res connectors.Result) map[string]string {
 		m, _ := res.Content.(map[string]any)
-		if m == nil {
+		if m == nil || m["number"] == nil {
 			return nil
 		}
 		return map[string]string{"number": fmt.Sprint(m["number"]), "url": fmt.Sprint(m["url"])}
@@ -108,14 +108,19 @@ func newLedgerFixture(t *testing.T, confirm mcp.ConfirmHandler) *ledgerFixture {
 	}
 	read := stubTool("github", "list_issues", connectors.KindRead)
 	read.Handler = write.Handler
-	for _, tool := range []connectors.Tool{write, read} {
+	// A tool whose idempotency is its upstream's concern, like every tool of
+	// a user-added MCP server (no ResultIDs: nothing is kept).
+	perCall := stubTool("github", "upstream_write", connectors.KindWrite)
+	perCall.Idempotency = connectors.IdempotencyPerCall
+	perCall.Handler = write.Handler
+	for _, tool := range []connectors.Tool{write, read, perCall} {
 		if err := reg.Register(tool); err != nil {
 			t.Fatal(err)
 		}
 	}
 	accounts := connectors.NewStaticAccountSource()
 	accounts.Add("user-1", connectors.Account{ID: ledgerAcct, App: "github", Label: connectors.LabelCompany, DisplayName: "Work"})
-	d := &stubDecider{outcomes: map[string]policy.Outcome{"github.create_issue": policy.OutcomeAllow, "github.list_issues": policy.OutcomeAllow}}
+	d := &stubDecider{outcomes: map[string]policy.Outcome{"github.create_issue": policy.OutcomeAllow, "github.list_issues": policy.OutcomeAllow, "github.upstream_write": policy.OutcomeAllow}}
 	if confirm != nil {
 		d.outcomes["github.create_issue"], d.outcomes["github.list_issues"] = policy.OutcomeConfirm, policy.OutcomeConfirm
 	}
@@ -410,5 +415,76 @@ func TestLedgerStageConsumesTheApprovalAndRunsTheStoredArguments(t *testing.T) {
 	cc, _, err = f2.run(t, t.Context(), "github.list_issues", nil)
 	if err != nil || cc.OperationID == "" || f2.st.Operation(cc.OperationID).State != store.LedgerSucceeded {
 		t.Errorf("confirmed read: err=%v op=%q", err, cc.OperationID)
+	}
+}
+
+// Quirk 47ab9sk7: identical calls of a per-call tool (user-added MCP
+// servers) both run and both return the upstream's result; each is its
+// own ledger operation.
+func TestLedgerStagePerCallToolsRunEveryIdenticalCall(t *testing.T) {
+	f := newLedgerFixture(t, nil)
+	args := map[string]any{"path": "m5bgl1ye"}
+	first, res1, err := f.run(t, t.Context(), "github.upstream_write", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Minute)
+	second, res2, err := f.run(t, t.Context(), "github.upstream_write", map[string]any{"path": "m5bgl1ye"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.callCount() != 2 {
+		t.Fatalf("identical per-call writes ran %d times, want 2", f.callCount())
+	}
+	for _, res := range []connectors.Result{res1, res2} {
+		if m, _ := res.Content.(map[string]any); m["body"] != "SECRET" || m[mcp.ReplayKey] != nil {
+			t.Errorf("result = %v, want the upstream's content", res.Content)
+		}
+	}
+	if first.OperationID == "" || second.OperationID == "" || first.OperationID == second.OperationID {
+		t.Errorf("operations = %q, %q", first.OperationID, second.OperationID)
+	}
+	for _, id := range []string{first.OperationID, second.OperationID} {
+		if row := f.st.Operation(id); row == nil || row.State != store.LedgerSucceeded || !strings.HasPrefix(row.IdempotencyKey, "call:") {
+			t.Errorf("row %s = %+v", id, row)
+		}
+	}
+	if ev := f.audit.events[len(f.audit.events)-1]; ev.ErrorClass == "replayed" {
+		t.Errorf("audit = %+v", ev)
+	}
+}
+
+// A replay answer is explicit: it names the operation, the tool and the
+// window, says the call was not run again, and never carries an empty
+// result object.
+func TestLedgerStageReplayAnswerIsExplicit(t *testing.T) {
+	f := newLedgerFixture(t, nil)
+	f.handler = func(context.Context, connectors.Call) (connectors.Result, error) {
+		return connectors.Result{Content: map[string]any{}}, nil
+	}
+	args := map[string]any{"repo": "acme/web", "title": "no ids"}
+	first, _, err := f.run(t, t.Context(), "github.create_issue", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, res, err := f.run(t, t.Context(), "github.create_issue", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := res.Content.(map[string]any)
+	if m[mcp.ReplayKey] != "replayed" || m["operation_id"] != first.OperationID || m["tool"] != "github.create_issue" || m["state"] != "succeeded" {
+		t.Errorf("replay = %v", m)
+	}
+	if _, ok := m["result"]; ok {
+		t.Errorf("replay without stored ids must not carry a result: %v", m)
+	}
+	msg, _ := m["message"].(string)
+	for _, want := range []string{"not run again", first.OperationID, "no result identifiers were stored", "change the arguments"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if _, ok := m["window_ends_at"].(string); !ok {
+		t.Errorf("window_ends_at = %v", m["window_ends_at"])
 	}
 }

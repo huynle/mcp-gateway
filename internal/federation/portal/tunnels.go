@@ -12,6 +12,27 @@ import (
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
+// Install commands for the client CLI (GitHub Releases, Homebrew tap;
+// see docs/tunnel.md).
+var tunnelInstall = []installCommand{
+	{Label: "Homebrew (macOS, Linux)", Command: "brew install huynle/tap/mcp-gateway"},
+	{Label: "Install script (checks the release checksum)", Command: "curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh"},
+}
+
+type installCommand struct{ Label, Command string }
+
+const (
+	tokenPlaceholder = "<token shown once>"
+	stdioArgs        = `--stdio "<your server command>"`
+	httpArgs         = "--http http://localhost:PORT/mcp"
+)
+
+// tunnelCommand is the `mcp-gateway tunnel` command line for a gateway, a
+// token (or its placeholder) and the --stdio / --http arguments.
+func tunnelCommand(base, token, target string) string {
+	return "MCP_GATEWAY_TUNNEL_TOKEN=" + token + " mcp-gateway tunnel --gateway " + base + " " + target
+}
+
 // validTunnelName mirrors tunnel.Service: 1-100 printable characters.
 func validTunnelName(name string) bool {
 	n := utf8.RuneCountInString(name)
@@ -48,7 +69,11 @@ func (p *Portal) createTunnel(w http.ResponseWriter, r *http.Request, c caller) 
 		ID: tun.ID, Name: tun.Name, Token: token,
 		Command:    "mcp-gateway-tunnel --gateway " + p.d.BaseURL + " --token " + token + stdio,
 		EnvCommand: "MCP_GATEWAY_TUNNEL_TOKEN=" + token + " mcp-gateway-tunnel --gateway " + p.d.BaseURL + stdio,
+
+		StdioCommand: tunnelCommand(p.d.BaseURL, token, stdioArgs),
+		HTTPCommand:  tunnelCommand(p.d.BaseURL, token, httpArgs),
 	}
+	data.Install = tunnelInstall
 	p.log.Info("tunnel created", "event", "federation.tunnel_created", "user_id", c.UserID, "tunnel_id", tun.ID)
 	p.render(w, r, http.StatusOK, "servers.html", data)
 }

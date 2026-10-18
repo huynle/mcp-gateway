@@ -21,7 +21,7 @@ import (
 
 // FS is the embedded asset tree served under /static/.
 //
-//go:embed htmx.min.js review.js review.css portal.css theme.js
+//go:embed htmx.min.js review.js review.css portal.css theme.js copy.js
 var FS embed.FS
 
 // HashLen is the number of hex digits of the content hash in a URL.
