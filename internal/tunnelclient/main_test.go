@@ -1,4 +1,4 @@
-package main
+package tunnelclient
 
 import (
 	"bufio"
@@ -139,7 +139,7 @@ func runCmd(t *testing.T, args []string, env map[string]string) (*syncBuffer, fu
 	stderr := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	code := make(chan int, 1)
-	go func() { code <- run(ctx, args, func(k string) string { return env[k] }, stderr) }()
+	go func() { code <- Run(ctx, Options{}, args, func(k string) string { return env[k] }, stderr) }()
 	var once sync.Once
 	var rc int
 	stop := func() int {
