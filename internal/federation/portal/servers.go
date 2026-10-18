@@ -92,16 +92,22 @@ type serverRow struct {
 }
 
 type tunnelRow struct {
-	ID, Name   string
-	Online     bool
-	CreatedAt  time.Time
-	LastSeenAt *time.Time
+	ID, Name string
+	// StdioCommand and HTTPCommand are the run commands with a token
+	// placeholder (the token is shown only when the tunnel is created).
+	StdioCommand, HTTPCommand string
+	Online                    bool
+	CreatedAt                 time.Time
+	LastSeenAt                *time.Time
 }
 
 // newTunnel is a tunnel just created: its token is shown on this response
 // only.
 type newTunnel struct {
 	ID, Name, Token, Command, EnvCommand string
+	// StdioCommand and HTTPCommand are the `mcp-gateway tunnel` commands
+	// with the token in the environment.
+	StdioCommand, HTTPCommand string
 }
 
 type listData struct {
@@ -112,8 +118,10 @@ type listData struct {
 	Shared    []serverRow
 	Tunnels   []tunnelRow
 	NewTunnel *newTunnel
-	Notice    string
-	Error     string
+	// Install lists the client CLI install commands, shown with tunnels.
+	Install []installCommand
+	Notice  string
+	Error   string
 }
 
 func (p *Portal) list(w http.ResponseWriter, r *http.Request, c caller) {
@@ -153,7 +161,11 @@ func (p *Portal) loadList(ctx context.Context, c caller) (listData, error) {
 	for _, t := range tunnels {
 		names[t.ID] = t.Name
 		if t.RevokedAt == nil {
-			data.Tunnels = append(data.Tunnels, tunnelRow{ID: t.ID, Name: t.Name, Online: p.d.Tunnels.Online(t.ID), CreatedAt: t.CreatedAt, LastSeenAt: t.LastSeenAt})
+			data.Tunnels = append(data.Tunnels, tunnelRow{
+				ID: t.ID, Name: t.Name, Online: p.d.Tunnels.Online(t.ID), CreatedAt: t.CreatedAt, LastSeenAt: t.LastSeenAt,
+				StdioCommand: tunnelCommand(p.d.BaseURL, tokenPlaceholder, stdioArgs),
+				HTTPCommand:  tunnelCommand(p.d.BaseURL, tokenPlaceholder, httpArgs),
+			})
 		}
 	}
 	for i := range servers {
@@ -172,6 +184,9 @@ func (p *Portal) loadList(ctx context.Context, c caller) (listData, error) {
 		} else {
 			data.Shared = append(data.Shared, row)
 		}
+	}
+	if len(data.Tunnels) > 0 {
+		data.Install = tunnelInstall
 	}
 	return data, nil
 }
