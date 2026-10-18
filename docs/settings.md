@@ -32,3 +32,58 @@ The management MCP exposes `gateway.get_rate_limits` and
 
 `GATEWAY_RATE_USER_PER_MIN` and `GATEWAY_RATE_APP_PER_MIN` are fallback
 defaults only. They do not overwrite persisted settings on restart or deploy.
+
+## Resource limits (per-user caps)
+
+A public gateway limits what one user may hold. `/admin/settings/resource-caps`
+sets the organization values; `/admin/users/<id>/limits` (the **Limits** button
+on `/admin/users`) sets one user's overrides. My account shows the user's
+limits and current usage (read only).
+
+| Resource | ENV default | Counted |
+|---|---|---|
+| `servers` | `GATEWAY_CAP_SERVERS=10` | MCP servers the user owns |
+| `tunnels` | `GATEWAY_CAP_TUNNELS=5` | the user's tunnels that are not revoked |
+| `connections_per_app` | `GATEWAY_CAP_CONNECTIONS_PER_APP=5` | live (not revoked) app connections to one vendor app |
+| `connections_total` | `GATEWAY_CAP_CONNECTIONS_TOTAL=20` | live app connections over all vendor apps |
+| `pending_approvals` | `GATEWAY_CAP_PENDING_APPROVALS=50` | pending approvals that have not expired |
+
+Effective limit: per-user administrator override, else organization value,
+else ENV default. **0 means unlimited** and can only be set by an
+administrator (ENV values must be 1..100000; an invalid ENV value stops
+startup). Values are 0..100000; a blank field clears the value so the parent
+applies. Changes are audited (`organization.resource_caps_changed`,
+`organization.user_resource_caps_changed`, with the changed values and, for a
+user, `target_user`) and apply at once on the replica; others refresh within
+two seconds. Lowering a limit never deletes anything: only new resources are
+refused.
+
+Enforcement is server side, inside the transaction that inserts the row
+(`internal/caps.Reserve`): a transaction-scoped Postgres advisory lock per
+(user, resource) serialises concurrent creates of that user, then the count
+sees every committed row, so parallel requests cannot exceed the limit. It
+applies to every creation path:
+
+- servers: the servers portal (Add server) and `gateway.add_server` (one shared budget);
+- tunnels: tunnel creation in the portal (`tunnel` store);
+- app connections: the connect callback, only before inserting a **new**
+  connection or reviving a disconnected one. Reconnecting or granting more
+  access to a live connection is never blocked. Internal anchor accounts of
+  user-added servers and the gateway tools (vendor `mcp`) do not count. The
+  development-only fake-vendor seed is not capped;
+- pending approvals: every approval request (`approvals.Service.Create`); the
+  tool call answers class `cap_exceeded`.
+
+A refusal says "You have reached the limit of N …; … or ask an admin to raise
+the limit", is logged (`event=caps.exceeded`, `class=cap_exceeded`, user,
+resource, limit) and, for tool calls and connect refusals, audited with class
+`cap_exceeded`.
+
+The management MCP exposes `gateway.get_limits` (your limits and usage;
+administrators also see organization values, ENV defaults, overrides and may
+pass `user_id`) and, for administrators only, `gateway.set_org_limits` and
+`gateway.set_user_limits` (`user_id`, any of the resource names with 0..100000,
+and/or `clear: [resource, …]`). Both setters always require approval.
+
+Storage: migration 00028 (`gateway_resource_caps`, singleton;
+`gateway_user_resource_caps`, row-level security, `gateway_app` read only).
