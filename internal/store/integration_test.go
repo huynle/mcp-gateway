@@ -121,7 +121,8 @@ func (e *testEnv) reset(t *testing.T) {
 		users, identities, sessions, roles, role_assignments, policy_versions,
 		user_restrictions, tokens, oauth_clients, oauth_refresh_tokens,
 		vendor_apps, connections, connection_secrets, approvals,
-		ledger_operations, ledger_attempts, audit_events, signing_keys, job_locks
+		ledger_operations, ledger_attempts, audit_events, signing_keys, job_locks,
+		signup_invites, signup_events
 		CASCADE`)
 	if err != nil {
 		t.Fatalf("reset: %v", err)

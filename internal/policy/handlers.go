@@ -47,6 +47,7 @@ const (
 //	POST /admin/roles/{name}/delete      delete (refused while assigned)
 //	GET  /admin/settings/default-role    choose the role new users get
 //	POST /admin/settings/default-role
+//	POST /admin/settings/default-role/member-baseline  apply the public member baseline
 //
 // Mount it behind the portal's admin and CSRF checks (portal.MountAdmin);
 // every handler also refuses non-admins itself with the same 404 a
@@ -84,6 +85,7 @@ func (p *Portal) Mount(mount func(pattern string, handler http.Handler)) {
 	mount("POST /admin/roles/{name}/delete", p.admin(p.remove))
 	mount("GET /admin/settings/default-role", p.admin(p.defaultRoleForm))
 	mount("POST /admin/settings/default-role", p.admin(p.setDefaultRole))
+	mount("POST /admin/settings/default-role/member-baseline", p.admin(p.applyMemberBaseline))
 }
 
 // caller is the signed-in admin as the templates see them.
@@ -421,6 +423,10 @@ type defaultRoleData struct {
 	Current string
 	Error   string
 	Saved   bool
+	// BaselineApps are the apps "Apply public member baseline" grants;
+	// BaselineSaved confirms it ran.
+	BaselineApps  []string
+	BaselineSaved bool
 }
 
 func (p *Portal) defaultRoleForm(w http.ResponseWriter, r *http.Request, c caller) {
@@ -439,7 +445,8 @@ func (p *Portal) renderDefaultRole(w http.ResponseWriter, r *http.Request, c cal
 			current = role.Name
 		}
 	}
-	p.render(w, r, status, "default_role.html", defaultRoleData{Title: "Default role", Caller: c, Roles: roles, Current: current, Error: errMsg, Saved: r.URL.Query().Get("saved") == "1"})
+	p.render(w, r, status, "default_role.html", defaultRoleData{Title: "Default role", Caller: c, Roles: roles, Current: current, Error: errMsg,
+		Saved: r.URL.Query().Get("saved") == "1", BaselineApps: MemberBaselineApps(p.registry), BaselineSaved: r.URL.Query().Get("baseline") == "1"})
 }
 
 func (p *Portal) setDefaultRole(w http.ResponseWriter, r *http.Request, c caller) {
@@ -458,6 +465,14 @@ func (p *Portal) setDefaultRole(w http.ResponseWriter, r *http.Request, c caller
 		return
 	}
 	http.Redirect(w, r, "/admin/settings/default-role?saved=1", http.StatusSeeOther)
+}
+
+func (p *Portal) applyMemberBaseline(w http.ResponseWriter, r *http.Request, c caller) {
+	if err := p.svc.ApplyMemberBaseline(r.Context(), c.UserID, MemberBaselineApps(p.registry)); err != nil {
+		p.fail(w, r, "apply member baseline", err)
+		return
+	}
+	http.Redirect(w, r, "/admin/settings/default-role?baseline=1", http.StatusSeeOther)
 }
 
 // --- rendering ---------------------------------------------------------------

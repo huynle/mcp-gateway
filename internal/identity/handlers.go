@@ -8,6 +8,8 @@ import (
 	"html"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
@@ -83,6 +85,9 @@ func (s *Service) start(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusInternalServerError, "Could not start sign-in.")
 		return
 	}
+	if code := strings.TrimSpace(r.URL.Query().Get("invite")); code != "" && len(code) <= maxInviteParam {
+		ls.Invite = code
+	}
 	value, err := ls.encode(loginKey(p.cfg.ClientSecret))
 	if err != nil {
 		s.renderError(w, r, http.StatusInternalServerError, "Could not start sign-in.")
@@ -150,8 +155,18 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	if prev, err := r.Cookie(SessionCookie); err == nil && prev.Value != "" {
 		s.revokeByCookie(r.Context(), prev.Value, now)
 	}
-	res, err := s.SignIn(r.Context(), p.cfg.Name, claims)
+	res, err := s.SignInWith(r.Context(), p.cfg.Name, claims, Attempt{ClientIP: s.ClientIP(r), InviteCode: ls.Invite})
 	switch {
+	case errors.Is(err, ErrSignupRateLimited):
+		w.Header().Set("Retry-After", strconv.Itoa(int(signupWindow.Seconds())))
+		s.renderError(w, r, http.StatusTooManyRequests, "Too many new accounts were created recently. Try again later.")
+		return
+	case errors.Is(err, ErrInviteRequired):
+		s.renderError(w, r, http.StatusForbidden, "This gateway is invite-only. Open the invite link an administrator sent you, then sign in.")
+		return
+	case errors.Is(err, ErrInviteInvalid):
+		s.renderError(w, r, http.StatusForbidden, "This invite is invalid, expired or already used. Ask an administrator for a new invite link.")
+		return
 	case errors.Is(err, ErrNotAllowed):
 		s.renderError(w, r, http.StatusForbidden, "This account is not allowed to use the gateway. Sign in with your company account, or ask an administrator.")
 		return
@@ -164,6 +179,10 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, res.Cookie)
+	if res.Pending {
+		http.Redirect(w, r, PendingPath, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, ls.ReturnTo, http.StatusSeeOther)
 }
 
@@ -240,23 +259,33 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, err := s.resolveSession(r.Context(), ck.Value)
+		p, pending, err := s.resolveSession(r.Context(), ck.Value)
 		if err != nil {
 			s.log.Error("session lookup failed", "event", "identity.session_lookup_failed", "error", err)
 		}
-		if p == nil {
+		switch {
+		case p != nil:
+			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
+		case pending != nil:
+			// Never a Principal: everything that needs one treats the
+			// request as anonymous; only the pending page and sign-out
+			// look at PendingFrom.
+			next.ServeHTTP(w, r.WithContext(WithPendingUser(r.Context(), pending)))
+		default:
 			next.ServeHTTP(w, r)
-			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))
 	})
 }
 
 // resolveSession validates the session secret and returns its principal,
-// or nil when the session is not usable.
-func (s *Service) resolveSession(ctx context.Context, secret string) (*Principal, error) {
+// or the pending account (approval mode), or neither when the session is
+// not usable.
+func (s *Service) resolveSession(ctx context.Context, secret string) (*Principal, *PendingUser, error) {
 	now := s.now()
-	var p *Principal
+	var (
+		p       *Principal
+		pending *PendingUser
+	)
 	err := s.store.Bypass(ctx, func(tx Tx) error {
 		sess, err := tx.FindSessionByTokenHash(ctx, hashSecret(secret))
 		if errors.Is(err, store.ErrNotFound) {
@@ -279,7 +308,17 @@ func (s *Service) resolveSession(ctx context.Context, secret string) (*Principal
 		if err != nil {
 			return err
 		}
-		if u.Status != store.UserActive {
+		switch u.Status {
+		case store.UserActive:
+		case store.UserPending:
+			if now.Sub(lastSeen) >= touchInterval {
+				if err := tx.TouchSession(ctx, sess.ID, now); err != nil {
+					return err
+				}
+			}
+			pending = &PendingUser{UserID: u.ID, DisplayName: u.DisplayName, SessionID: sess.ID, CSRFToken: csrfToken(secret)}
+			return nil
+		default:
 			return tx.RevokeSession(ctx, sess.ID, now)
 		}
 		roles, err := roleNames(ctx, tx, u.ID)
@@ -294,5 +333,5 @@ func (s *Service) resolveSession(ctx context.Context, secret string) (*Principal
 		p = &Principal{UserID: u.ID, DisplayName: u.DisplayName, Roles: roles, SessionID: sess.ID, CSRFToken: csrfToken(secret)}
 		return nil
 	})
-	return p, err
+	return p, pending, err
 }

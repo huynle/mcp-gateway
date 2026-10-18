@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/portal/static"
@@ -59,6 +61,10 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	POST /admin/users/{id}/disable admin
 //	POST /admin/users/{id}/enable  admin
 //	POST /admin/users/{id}/role    admin: replace the user's role
+//	GET  /pending                  a pending account's page (signup.go)
+//	POST /admin/users/{id}/approve admin: approve a pending account
+//	POST /admin/users/{id}/reject  admin: reject (disable) it
+//	POST /admin/users/invites...   admin, invite mode: create / revoke
 //	GET|POST /admin/users/{id}/delete admin: delete the user (SetAccount)
 //	/auth/...                      identity.Service.Handler
 //	GET  /static/...               embedded assets
@@ -81,6 +87,7 @@ func (p *Portal) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /{$}", p.home)
 	mux.HandleFunc("GET /signin", p.signIn)
+	mux.HandleFunc("GET "+identity.PendingPath, p.pendingPage)
 	mux.HandleFunc("GET /privacy", p.publicPage("privacy.html"))
 	mux.HandleFunc("GET /terms", p.publicPage("terms.html"))
 	mux.HandleFunc("GET /support", p.publicPage("support.html"))
@@ -113,6 +120,10 @@ func (p *Portal) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/disable", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminDisable))))
 	mux.Handle("POST /admin/users/{id}/enable", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminEnable))))
 	mux.Handle("POST /admin/users/{id}/role", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminSetRole))))
+	mux.Handle("POST /admin/users/{id}/approve", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminApprove))))
+	mux.Handle("POST /admin/users/{id}/reject", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminReject))))
+	mux.Handle("POST /admin/users/invites", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminCreateInvite))))
+	mux.Handle("POST /admin/users/invites/{id}/revoke", p.requireAdmin(p.csrf(http.HandlerFunc(p.adminRevokeInvite))))
 	// Sign-out is a POST and therefore behind the CSRF check as well.
 	mux.Handle("/auth/", p.csrf(p.svc.Handler()))
 	mux.Handle("GET /static/", p.static())
@@ -204,6 +215,9 @@ func (p *Portal) static() http.Handler {
 // the current path as return_to.
 func (p *Portal) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if redirectPending(w, r) {
+			return
+		}
 		if identity.PrincipalFrom(r.Context()) == nil {
 			http.Redirect(w, r, "/signin?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 			return
@@ -232,6 +246,9 @@ func (p *Portal) requireAdmin(next http.Handler) http.Handler {
 // listings need it reachable without signing in and without a redirect).
 // Signed-in users go straight to My account, as before.
 func (p *Portal) home(w http.ResponseWriter, r *http.Request) {
+	if redirectPending(w, r) {
+		return
+	}
 	publicCaching(w, r)
 	if identity.PrincipalFrom(r.Context()) != nil {
 		http.Redirect(w, r, "/account", http.StatusSeeOther)
@@ -248,36 +265,58 @@ type signInProvider struct {
 
 type signInData struct {
 	Providers []signInProvider
+	// InviteOnly: GATEWAY_SIGNUP_MODE=invite; HasInvite: the page was
+	// opened from an invite link.
+	InviteOnly, HasInvite bool
 }
 
 func (p *Portal) signIn(w http.ResponseWriter, r *http.Request) {
+	if redirectPending(w, r) {
+		return
+	}
 	if identity.PrincipalFrom(r.Context()) != nil {
 		http.Redirect(w, r, "/account", http.StatusSeeOther)
 		return
 	}
 	returnTo := identity.SafeReturnTo(r.URL.Query().Get("return_to"))
-	p.render(w, r, http.StatusOK, "signin.html", signInData{Providers: p.providers(returnTo)})
+	data := signInData{InviteOnly: p.svc.SignupMode() == config.SignupInvite}
+	invite := inviteParam(r)
+	data.HasInvite = invite != ""
+	data.Providers = p.providers(returnTo, invite)
+	if invite != "" {
+		// The invite code is in the page: never cache it.
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	p.render(w, r, http.StatusOK, "signin.html", data)
 }
 
 // providers is the sign-in buttons, each returning to returnTo (already
-// checked with identity.SafeReturnTo).
-func (p *Portal) providers(returnTo string) []signInProvider {
+// checked with identity.SafeReturnTo) and carrying the invite code, if
+// any, to /auth/{provider}/start.
+func (p *Portal) providers(returnTo string, invite ...string) []signInProvider {
 	var out []signInProvider
 	for _, prov := range p.svc.Providers() {
-		out = append(out, signInProvider{
-			DisplayName: prov.DisplayName,
-			StartURL:    "/auth/" + prov.Name + "/start?return_to=" + url.QueryEscape(returnTo),
-		})
+		start := "/auth/" + prov.Name + "/start?return_to=" + url.QueryEscape(returnTo)
+		if len(invite) > 0 && invite[0] != "" {
+			start += "&invite=" + url.QueryEscape(invite[0])
+		}
+		out = append(out, signInProvider{DisplayName: prov.DisplayName, StartURL: start})
 	}
 	return out
 }
 
 type adminUsersData struct {
 	Users     []identity.UserSummary
+	Pending   []identity.UserSummary
 	Roles     []store.Role
 	Deletable bool
 	// Limits links each user's resource limits page.
 	Limits bool
+	// SignupMode is GATEWAY_SIGNUP_MODE; InviteMode shows the invites.
+	SignupMode string
+	InviteMode bool
+	Invites    []inviteRow
+	NewInvite  *newInvite
 }
 
 func (p *Portal) adminUsers(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +337,22 @@ func (p *Portal) loadAdminUsers(r *http.Request) (adminUsersData, error) {
 	if err != nil {
 		return adminUsersData{}, err
 	}
-	return adminUsersData{Users: users, Roles: roles, Deletable: p.lifecycle != nil, Limits: p.resourceCaps != nil}, nil
+	data := adminUsersData{Roles: roles, Deletable: p.lifecycle != nil, Limits: p.resourceCaps != nil, SignupMode: p.svc.SignupMode(), InviteMode: p.svc.SignupMode() == config.SignupInvite}
+	for _, u := range users {
+		if u.Status == store.UserPending {
+			data.Pending = append(data.Pending, u)
+		} else {
+			data.Users = append(data.Users, u)
+		}
+	}
+	if data.InviteMode {
+		invites, err := p.svc.ListInvites(r.Context())
+		if err != nil {
+			return adminUsersData{}, err
+		}
+		data.Invites = inviteRows(invites, time.Now())
+	}
+	return data, nil
 }
 
 func (p *Portal) adminDisable(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +394,12 @@ func (p *Portal) adminAction(w http.ResponseWriter, r *http.Request, userID stri
 	case errors.Is(err, store.ErrNotFound):
 		p.notFound(w, r)
 		return
+	case errors.Is(err, identity.ErrNotPending):
+		p.errorPage(w, r, http.StatusConflict, "Not pending", "This account is not waiting for approval any more.")
+		return
+	case errors.Is(err, identity.ErrUserPending):
+		p.errorPage(w, r, http.StatusConflict, "Pending approval", "This account is waiting for approval: approve or reject it first.")
+		return
 	case err != nil:
 		p.serverError(w, r, err)
 		return
@@ -353,7 +413,7 @@ func (p *Portal) adminAction(w http.ResponseWriter, r *http.Request, userID stri
 		p.serverError(w, r, err)
 		return
 	}
-	for _, u := range data.Users {
+	for _, u := range append(data.Pending, data.Users...) {
 		if u.ID == userID {
 			row := userRow{Principal: identity.PrincipalFrom(r.Context()), User: u, Roles: data.Roles, Deletable: data.Deletable, Limits: data.Limits}
 			if err := p.tpl.render(w, http.StatusOK, "admin_users.html", "user_row", row); err != nil {

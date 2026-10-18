@@ -43,10 +43,14 @@ const (
 	reasonTenantNotAllowed = "tenant_not_allowed"
 	reasonDomainNotAllowed = "domain_not_allowed"
 	reasonNoDomain         = "no_domain_claim"
+	reasonNoVerifiedEmail  = "no_verified_email"
 )
 
 // allow decides whether claims from provider p may sign in. It returns the
 // rejection reason, or "" when allowed.
+//
+// A provider configured with ALLOWED_DOMAINS="*" admits any account whose
+// claims carry a verified email with a domain.
 //
 // Tenants (Entra "tid") and hosted domains are alternatives: matching either
 // configured list admits the user. The domain is read from DomainClaim when
@@ -59,6 +63,16 @@ func allow(p config.OIDCProvider, c Claims) string {
 	}
 	if strings.TrimSpace(c.Subject) == "" {
 		return reasonNoSubject
+	}
+	// Any-domain providers (ALLOWED_DOMAINS="*") admit every account, but
+	// only with a verified email: the email is what admins see and what
+	// identifies the person on the approval page, and an unverified one
+	// is free text the account holder typed.
+	if p.AnyDomain() {
+		if !c.EmailVerified || emailDomain(c.Email) == "" {
+			return reasonNoVerifiedEmail
+		}
+		return ""
 	}
 	if len(p.AllowedTenants) > 0 {
 		if tid := c.extraString("tid"); tid != "" && contains(p.AllowedTenants, tid) {

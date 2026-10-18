@@ -28,13 +28,20 @@ const loginTTL = 10 * time.Minute
 // maxReturnTo bounds the return path copied into the cookie.
 const maxReturnTo = 2048
 
+// maxInviteParam bounds the invite code copied into the cookie (a real
+// code is 48 bytes).
+const maxInviteParam = 128
+
 type loginState struct {
-	Provider string    `json:"p"`
-	State    string    `json:"s"`
-	Nonce    string    `json:"n"`
-	Verifier string    `json:"v"`
-	ReturnTo string    `json:"r"`
-	Expires  time.Time `json:"e"`
+	Provider string `json:"p"`
+	State    string `json:"s"`
+	Nonce    string `json:"n"`
+	Verifier string `json:"v"`
+	ReturnTo string `json:"r"`
+	// Invite is the sign-up invite code the browser brought (invite
+	// mode); it never leaves the gateway.
+	Invite  string    `json:"i,omitempty"`
+	Expires time.Time `json:"e"`
 }
 
 var errLoginState = errors.New("identity: invalid login state")

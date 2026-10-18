@@ -29,6 +29,10 @@ func dexProvider() config.OIDCProvider {
 	}
 }
 
+func anyDomainGoogle() config.OIDCProvider {
+	return config.OIDCProvider{Name: "google", Issuer: "https://accounts.google.com", ClientID: "c", ClientSecret: "s", AllowedDomains: []string{config.AnyDomainWildcard}}
+}
+
 func testConfig(providers ...config.OIDCProvider) identity.Config {
 	return identity.Config{
 		BaseURL:         "http://localhost:18080",
@@ -251,6 +255,48 @@ func TestSignInAllowRules(t *testing.T) {
 			name:     "no domain information at all",
 			provider: dexProvider(),
 			claims:   identity.Claims{Issuer: dexIssuer, Subject: "1"},
+			allowed:  false,
+		},
+		{
+			name:     "any domain: verified gmail account",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://accounts.google.com", Subject: "1", Email: "someone@gmail.com", EmailVerified: true},
+			allowed:  true,
+		},
+		{
+			name:     "any domain: verified workspace account",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://accounts.google.com", Subject: "1", Email: "a@corp.test", EmailVerified: true, Extra: map[string]any{"hd": "corp.test"}},
+			allowed:  true,
+		},
+		{
+			name:     "any domain: unverified email is refused",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://accounts.google.com", Subject: "1", Email: "someone@gmail.com", EmailVerified: false},
+			allowed:  false,
+		},
+		{
+			name:     "any domain: missing email is refused even with hd",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://accounts.google.com", Subject: "1", EmailVerified: true, Extra: map[string]any{"hd": "corp.test"}},
+			allowed:  false,
+		},
+		{
+			name:     "any domain: email without a domain is refused",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://accounts.google.com", Subject: "1", Email: "someone", EmailVerified: true},
+			allowed:  false,
+		},
+		{
+			name:     "any domain: issuer must still match",
+			provider: anyDomainGoogle(),
+			claims:   identity.Claims{Issuer: "https://evil.test", Subject: "1", Email: "someone@gmail.com", EmailVerified: true},
+			allowed:  false,
+		},
+		{
+			name:     "a literal star domain claim does not match a normal allow-list",
+			provider: dexProvider(),
+			claims:   identity.Claims{Issuer: dexIssuer, Subject: "1", Email: "a@example.com", EmailVerified: true, Extra: map[string]any{"hd": "*"}},
 			allowed:  false,
 		},
 		{

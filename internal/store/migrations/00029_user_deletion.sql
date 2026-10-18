@@ -17,7 +17,8 @@
 
 -- +goose Up
 ALTER TABLE users DROP CONSTRAINT users_status_check;
-ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active', 'disabled', 'deleted'));
+-- 'pending' comes from 00027 (public sign-up approval) and must survive.
+ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active', 'disabled', 'pending', 'deleted'));
 ALTER TABLE users ADD COLUMN deleted_at timestamptz;
 
 CREATE OR REPLACE VIEW admin_users WITH (security_invoker = true) AS
@@ -36,4 +37,5 @@ GRANT SELECT ON admin_users TO gateway_app, gateway_jobs;
 UPDATE users SET status = 'disabled', disabled_at = coalesce(disabled_at, deleted_at) WHERE status = 'deleted';
 ALTER TABLE users DROP COLUMN IF EXISTS deleted_at;
 ALTER TABLE users DROP CONSTRAINT users_status_check;
-ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active', 'disabled'));
+-- Back to 00027's set: pending rows are left as they are.
+ALTER TABLE users ADD CONSTRAINT users_status_check CHECK (status IN ('active', 'disabled', 'pending'));

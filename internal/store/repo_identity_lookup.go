@@ -174,6 +174,7 @@ func SetUserStatus(ctx context.Context, q Querier, userID, status string, at tim
 	case UserActive:
 	case UserDisabled:
 		disabledAt = &at
+	case UserPending:
 	default:
 		return fmt.Errorf("store: set user status: unknown status %q", status)
 	}

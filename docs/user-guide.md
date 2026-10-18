@@ -4,7 +4,7 @@ For coworkers using the gateway from an AI harness. Replace `https://gw.example.
 
 ## 1. Sign in to the portal
 
-Open `https://gw.example.com` and press *Continue with <your company provider>*. You sign in with your normal company account; the gateway never sees your password. The first sign-in creates your user with the default role; an admin assigns other roles on `/admin/users`. The *Light / System / Dark* switch at the top right of every page sets the colour theme for this browser (*System* follows your operating system). You will need to sign in again at least every **30 days**: every harness token you own stops working until you do (the harness shows *"sign in to the portal to reactivate your tokens"*), and signing in reactivates all of them at once.
+Open `https://gw.example.com` and press *Continue with <your company provider>*. You sign in with your normal company account; the gateway never sees your password. The first sign-in creates your user with the default role; an admin assigns other roles on `/admin/users`. The *Light / System / Dark* switch at the top right of every page sets the colour theme for this browser (*System* follows your operating system). On a public gateway an administrator may have to approve your account first (you see *Waiting for approval* until then; sign in again later), or new accounts may need an invite link (open the link, then sign in); see [public-signup.md](public-signup.md). You will need to sign in again at least every **30 days**: every harness token you own stops working until you do (the harness shows *"sign in to the portal to reactivate your tokens"*), and signing in reactivates all of them at once.
 
 ## 2. Connect a harness
 
@@ -116,6 +116,9 @@ JSON-RPC error codes the harness surfaces (the message says what to do; `error.d
 |---|---|---|
 | HTTP `401` *invalid_token* (no JSON-RPC answer) | no token, revoked, expired, you are disabled, or you have not signed in for 30 days (*sign in to the portal to reactivate your tokens*) | sign in at the portal; if that does not help, make a new token or reconnect the harness |
 | HTTP `429` + `Retry-After` | too many failed authentications from your address | fix the token; wait |
+| sign-in page *Waiting for approval* | your new account needs an admin's approval | wait; sign in again later |
+| sign-in page *This gateway is invite-only* / *This invite is invalid, expired or already used* (`403`) | new accounts need a valid invite link | ask an administrator for a (new) invite link |
+| sign-in page `429` *Too many new accounts were created recently* | the gateway's new-account limit is reached | try again in an hour |
 | `-32602 unknown tool "x"` | the tool does not exist **or** your role hides it | `tools/list`; ask an admin if you expected it |
 | `-32602 account required: … set "account" to one of: …` | you have several accounts for the app | tell the model which account (or pass `account=<id>`); `<app>.list_accounts` shows them |
 | `-32602 unknown account` | the `account` is not yours / not for this app | use one from `<app>.list_accounts` |

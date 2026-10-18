@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -47,6 +48,17 @@ type Config struct {
 	CookieSecure bool
 	// HTTPClient talks to the providers; nil means a 30 s default.
 	HTTPClient *http.Client
+	// SignupMode is config.SignupOpen (also when empty), SignupApproval
+	// or SignupInvite (GATEWAY_SIGNUP_MODE; see signup.go).
+	SignupMode string
+	// SignupPerIPPerHour and SignupGlobalPerHour bound new accounts per
+	// client IP and in total per rolling hour; zero means the defaults
+	// (10 and 100).
+	SignupPerIPPerHour  int
+	SignupGlobalPerHour int
+	// ClientIP derives the per-IP key from the callback request; nil means
+	// the host part of RemoteAddr.
+	ClientIP func(*http.Request) string
 }
 
 // FromConfig derives the identity Config from the gateway configuration.
@@ -59,6 +71,10 @@ func FromConfig(c config.Config) Config {
 		IdleTimeout:     c.SessionIdleTimeout,
 		AbsoluteTimeout: c.SessionAbsoluteTimeout,
 		CookieSecure:    c.SessionCookieSecure,
+
+		SignupMode:          c.SignupMode,
+		SignupPerIPPerHour:  c.SignupPerIPPerHour,
+		SignupGlobalPerHour: c.SignupGlobalPerHour,
 	}
 }
 
@@ -93,11 +109,14 @@ type UserSummary struct {
 }
 
 // SignInResult is a completed sign-in: the new principal and the session
-// cookie to set.
+// cookie to set. A pending account (approval mode) gets a session too, but
+// Principal is nil, Pending is true and PendingUser describes it.
 type SignInResult struct {
-	Principal *Principal
-	Created   bool
-	Cookie    *http.Cookie
+	Principal   *Principal
+	Pending     bool
+	PendingUser *PendingUser
+	Created     bool
+	Cookie      *http.Cookie
 }
 
 // Service owns users, identities, sessions and the sign-in flow.
@@ -113,6 +132,7 @@ type Service struct {
 	mu           sync.RWMutex
 	hooks        []DisableHook
 	errorHandler ErrorHandler
+	audit        audit.Recorder
 }
 
 // New builds the service. Provider discovery is lazy (first use), so a
@@ -129,6 +149,19 @@ func New(cfg Config, st Store, log *slog.Logger) (*Service, error) {
 	}
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	switch cfg.SignupMode {
+	case "":
+		cfg.SignupMode = config.SignupOpen
+	case config.SignupOpen, config.SignupApproval, config.SignupInvite:
+	default:
+		return nil, fmt.Errorf("identity: unknown sign-up mode %q", cfg.SignupMode)
+	}
+	if cfg.SignupPerIPPerHour <= 0 {
+		cfg.SignupPerIPPerHour = defaultSignupPerIP
+	}
+	if cfg.SignupGlobalPerHour <= 0 {
+		cfg.SignupGlobalPerHour = defaultSignupGlobal
 	}
 	s := &Service{
 		cfg:    cfg,
@@ -177,12 +210,22 @@ func (s *Service) OnDisable(h DisableHook) {
 	s.hooks = append(s.hooks, h)
 }
 
-// SignIn completes a company sign-in with verified claims from provider
-// providerName: it enforces the provider's allow-list, creates the user on
-// first sign-in with the default role (identity = issuer+subject, never
-// email; no cross-provider linking), grants bootstrap admins the admin
-// role, records the sign-in time and opens a fresh session.
+// SignIn is SignInWith for trusted in-process callers (tests, tools):
+// no client IP, no invite code, and exempt from the new-account rate
+// limit, which guards the browser sign-in (callback). The sign-up mode
+// still applies.
 func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*SignInResult, error) {
+	return s.SignInWith(ctx, providerName, c, Attempt{trusted: true})
+}
+
+// SignInWith completes a company sign-in with verified claims from
+// provider providerName: it enforces the provider's allow-list, creates
+// the user on first sign-in as the sign-up mode says (identity =
+// issuer+subject, never email; no cross-provider linking; new accounts
+// rate limited), grants bootstrap admins the admin role (they are always
+// active), records the sign-in time and opens a fresh session. A pending
+// account gets a session but no Principal (SignInResult.Pending).
+func (s *Service) SignInWith(ctx context.Context, providerName string, c Claims, at Attempt) (*SignInResult, error) {
 	p, ok := s.byName[providerName]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, providerName)
@@ -194,6 +237,8 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 			"reason", reason, "domain", domainOf(p.cfg, c))
 		return nil, fmt.Errorf("%w: %s", ErrNotAllowed, reason)
 	}
+	bootstrap := s.admins[adminKey(c.Issuer, c.Subject)]
+	invite := s.cfg.SignupMode == config.SignupInvite && !bootstrap
 
 	now := s.now()
 	secret, hash, err := newSessionSecret()
@@ -211,18 +256,7 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 		ident, err := tx.FindIdentity(ctx, c.Issuer, c.Subject)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
-			user, err = tx.CreateUser(ctx, c.displayName())
-			if err != nil {
-				return err
-			}
-			if ident, err = tx.CreateIdentity(ctx, user.ID, c.Issuer, c.Subject); err != nil {
-				return err
-			}
-			role, err := s.defaultRole(ctx, tx)
-			if err != nil {
-				return err
-			}
-			if err := tx.AssignRole(ctx, user.ID, role.ID, nil); err != nil {
+			if user, ident, err = s.signUp(ctx, tx, c, at, bootstrap, invite, now); err != nil {
 				return err
 			}
 			created = true
@@ -232,11 +266,21 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 			if user, err = tx.GetUser(ctx, ident.UserID); err != nil {
 				return err
 			}
-			if user.Status != store.UserActive {
+			switch {
+			case user.Status == store.UserActive:
+			case user.Status == store.UserPending && bootstrap:
+				// Bootstrap admins are always active, even when listed
+				// after they first signed up.
+				if err := s.activate(ctx, tx, user.ID, now); err != nil {
+					return err
+				}
+				user.Status = store.UserActive
+			case user.Status == store.UserPending:
+			default:
 				return ErrUserDisabled
 			}
 		}
-		if s.admins[adminKey(c.Issuer, c.Subject)] {
+		if bootstrap {
 			role, err := tx.EnsureRole(ctx, AdminRole, "Manages users, roles, vendor apps and settings")
 			if err != nil {
 				return err
@@ -255,29 +299,130 @@ func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*S
 		return err
 	})
 	if err != nil {
-		if errors.Is(err, ErrUserDisabled) {
-			s.log.Warn("sign-in rejected",
-				"event", "identity.signin_rejected",
-				"provider", providerName, "issuer", c.Issuer, "subject", c.Subject,
-				"user_id", user.ID, "reason", "user_disabled")
-		}
+		s.signInFailed(ctx, providerName, c, user, err)
 		return nil, err
+	}
+	pending := user.Status == store.UserPending
+	if created {
+		s.record(ctx, user.ID, map[string]string{"action": "user.signed_up", "mode": s.cfg.SignupMode, "status": user.Status, "provider": providerName}, "succeeded")
+		if pending {
+			// Admins see the account under Pending approval on /admin/users.
+			s.log.Info("new account waiting for approval", "event", "identity.signup_pending",
+				"provider", providerName, "issuer", c.Issuer, "subject", c.Subject, "user_id", user.ID)
+		}
 	}
 	s.log.Info("user signed in",
 		"event", "identity.signin",
 		"provider", providerName, "issuer", c.Issuer, "subject", c.Subject,
-		"user_id", user.ID, "created", created, "roles", roles)
-	return &SignInResult{
-		Principal: &Principal{
-			UserID:      user.ID,
-			DisplayName: c.displayName(),
-			Roles:       roles,
-			SessionID:   session.ID,
-			CSRFToken:   csrfToken(secret),
-		},
-		Created: created,
-		Cookie:  s.sessionCookie(secret, now.Add(s.cfg.AbsoluteTimeout)),
-	}, nil
+		"user_id", user.ID, "created", created, "roles", roles, "status", user.Status)
+	res := &SignInResult{Created: created, Cookie: s.sessionCookie(secret, now.Add(s.cfg.AbsoluteTimeout))}
+	if pending {
+		res.Pending = true
+		res.PendingUser = &PendingUser{UserID: user.ID, DisplayName: c.displayName(), SessionID: session.ID, CSRFToken: csrfToken(secret)}
+		return res, nil
+	}
+	res.Principal = &Principal{
+		UserID:      user.ID,
+		DisplayName: c.displayName(),
+		Roles:       roles,
+		SessionID:   session.ID,
+		CSRFToken:   csrfToken(secret),
+	}
+	return res, nil
+}
+
+// signUp creates the account of a first sign-in inside tx: rate limit
+// (bootstrap admins exempt), invite (invite mode), status by mode,
+// default role for active accounts. Any error rolls the whole sign-in
+// back, so a refused sign-up leaves nothing behind.
+func (s *Service) signUp(ctx context.Context, tx Tx, c Claims, at Attempt, bootstrap, invite bool, now time.Time) (*store.User, *store.Identity, error) {
+	if invite {
+		if strings.TrimSpace(at.InviteCode) == "" {
+			return nil, nil, ErrInviteRequired
+		}
+		if !validInviteShape(at.InviteCode) {
+			return nil, nil, ErrInviteInvalid
+		}
+	}
+	key := signupClientKey(at.ClientIP)
+	limited := !bootstrap && !at.trusted
+	if limited {
+		if err := s.checkSignupRate(ctx, tx, key, now); err != nil {
+			return nil, nil, err
+		}
+	}
+	status := store.UserActive
+	if !bootstrap {
+		status = s.newUserStatus()
+	}
+	user, err := tx.CreateUser(ctx, c.displayName(), status)
+	if err != nil {
+		return nil, nil, err
+	}
+	ident, err := tx.CreateIdentity(ctx, user.ID, c.Issuer, c.Subject)
+	if err != nil {
+		return nil, nil, err
+	}
+	if invite {
+		if _, err := tx.ConsumeInvite(ctx, hashInvite(at.InviteCode), user.ID, now); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, nil, ErrInviteInvalid
+			}
+			return nil, nil, err
+		}
+	}
+	if status == store.UserActive {
+		role, err := s.defaultRole(ctx, tx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := tx.AssignRole(ctx, user.ID, role.ID, nil); err != nil {
+			return nil, nil, err
+		}
+	}
+	if limited {
+		if err := tx.RecordSignup(ctx, key, now, now.Add(-signupWindow)); err != nil {
+			return nil, nil, err
+		}
+	}
+	return user, ident, nil
+}
+
+// activate moves a pending user to active with the default role.
+func (s *Service) activate(ctx context.Context, tx Tx, userID string, now time.Time) error {
+	if err := tx.TransitionUserStatus(ctx, userID, store.UserPending, store.UserActive, now); err != nil {
+		return err
+	}
+	role, err := s.defaultRole(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return tx.AssignRole(ctx, userID, role.ID, nil)
+}
+
+// signInFailed logs (and for the rate limit, audits) a refused sign-in.
+func (s *Service) signInFailed(ctx context.Context, providerName string, c Claims, user *store.User, err error) {
+	var rl *SignupRateLimitedError
+	switch {
+	case errors.Is(err, ErrUserDisabled):
+		s.log.Warn("sign-in rejected",
+			"event", "identity.signin_rejected",
+			"provider", providerName, "issuer", c.Issuer, "subject", c.Subject,
+			"user_id", user.ID, "reason", "user_disabled")
+	case errors.As(err, &rl):
+		s.log.Warn("sign-up refused: too many new accounts",
+			"event", "identity.signup_rate_limited",
+			"provider", providerName, "issuer", c.Issuer, "subject", c.Subject, "scope", rl.Scope)
+		s.record(ctx, "", map[string]string{"action": "signup.rate_limited", "scope": rl.Scope, "provider": providerName}, "denied")
+	case errors.Is(err, ErrInviteRequired), errors.Is(err, ErrInviteInvalid):
+		reason := "invite_required"
+		if errors.Is(err, ErrInviteInvalid) {
+			reason = "invite_invalid"
+		}
+		s.log.Warn("sign-in rejected",
+			"event", "identity.signin_rejected",
+			"provider", providerName, "issuer", c.Issuer, "subject", c.Subject, "reason", reason)
+	}
 }
 
 // defaultRole is the role a new user receives: the one admins flagged as
@@ -312,18 +457,7 @@ func roleNames(ctx context.Context, tx Tx, userID string) ([]string, error) {
 // registered hooks in the same transaction. actorID is the acting admin
 // ("" for system) and is only logged.
 func (s *Service) DisableUser(ctx context.Context, actorID, userID string) error {
-	now := s.now()
-	var revoked int64
-	err := s.store.Bypass(ctx, func(tx Tx) error {
-		if err := tx.SetUserStatus(ctx, userID, store.UserDisabled, now); err != nil {
-			return err
-		}
-		var err error
-		if revoked, err = tx.RevokeUserSessions(ctx, userID, now); err != nil {
-			return err
-		}
-		return s.RunDisableHooks(ctx, tx.Raw(), userID)
-	})
+	revoked, err := s.disable(ctx, userID, "")
 	if err != nil {
 		return err
 	}
@@ -331,10 +465,46 @@ func (s *Service) DisableUser(ctx context.Context, actorID, userID string) error
 	return nil
 }
 
+// disable sets userID disabled (from any status when from is empty, else
+// only from status from: ErrNotPending/ErrNotFound otherwise), revokes
+// its sessions and runs the hooks in one transaction.
+func (s *Service) disable(ctx context.Context, userID, from string) (int64, error) {
+	now := s.now()
+	var revoked int64
+	err := s.store.Bypass(ctx, func(tx Tx) error {
+		if from == "" {
+			if err := tx.SetUserStatus(ctx, userID, store.UserDisabled, now); err != nil {
+				return err
+			}
+		} else {
+			if err := s.requirePending(ctx, tx, userID); err != nil {
+				return err
+			}
+			if err := tx.TransitionUserStatus(ctx, userID, from, store.UserDisabled, now); err != nil {
+				return notPending(err)
+			}
+		}
+		var err error
+		if revoked, err = tx.RevokeUserSessions(ctx, userID, now); err != nil {
+			return err
+		}
+		return s.RunDisableHooks(ctx, tx.Raw(), userID)
+	})
+	return revoked, err
+}
+
 // EnableUser re-activates a disabled user. Nothing revoked on disable is
-// restored.
+// restored. A pending user is refused with ErrUserPending: approval is a
+// separate, audited decision that also assigns the default role.
 func (s *Service) EnableUser(ctx context.Context, actorID, userID string) error {
 	err := s.store.Bypass(ctx, func(tx Tx) error {
+		u, err := tx.GetUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if u.Status == store.UserPending {
+			return ErrUserPending
+		}
 		return tx.SetUserStatus(ctx, userID, store.UserActive, s.now())
 	})
 	if err != nil {
@@ -344,9 +514,19 @@ func (s *Service) EnableUser(ctx context.Context, actorID, userID string) error 
 	return nil
 }
 
-// SetUserRole replaces the user's roles with the named existing role.
+// SetUserRole replaces the user's roles with the named existing role
+// (ErrUserPending for a user waiting for approval).
 func (s *Service) SetUserRole(ctx context.Context, actorID, userID, roleName string) error {
 	err := s.store.Bypass(ctx, func(tx Tx) error {
+		u, err := tx.GetUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if u.Status == store.UserPending {
+			// Approval assigns the default role; a role granted before
+			// it would outlive a rejection decision's intent.
+			return ErrUserPending
+		}
 		role, err := tx.FindRoleByName(ctx, roleName)
 		if err != nil {
 			return err

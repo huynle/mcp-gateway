@@ -31,7 +31,9 @@ type Tx interface {
 
 	FindIdentity(ctx context.Context, issuer, subject string) (*store.Identity, error)
 	GetUser(ctx context.Context, id string) (*store.User, error)
-	CreateUser(ctx context.Context, displayName string) (*store.User, error)
+	// CreateUser creates a user in status (store.UserActive or
+	// store.UserPending).
+	CreateUser(ctx context.Context, displayName, status string) (*store.User, error)
 	CreateIdentity(ctx context.Context, userID, issuer, subject string) (*store.Identity, error)
 	RecordSignIn(ctx context.Context, userID, identityID, displayName string, at time.Time) error
 
@@ -47,6 +49,19 @@ type Tx interface {
 
 	ListUsers(ctx context.Context) ([]store.User, error)
 	SetUserStatus(ctx context.Context, userID, status string, at time.Time) error
+	// TransitionUserStatus moves the user from status from to status to
+	// (store.ErrNotFound when it is not in from).
+	TransitionUserStatus(ctx context.Context, userID, from, to string, at time.Time) error
+
+	// Sign-up (signup.go): the new-account counter, serialised by
+	// LockSignups, and single-use invites.
+	LockSignups(ctx context.Context) error
+	CountSignups(ctx context.Context, clientKey []byte, since time.Time) (global, perKey int, err error)
+	RecordSignup(ctx context.Context, clientKey []byte, at, pruneBefore time.Time) error
+	CreateInvite(ctx context.Context, inv *store.SignupInvite) error
+	ConsumeInvite(ctx context.Context, codeHash []byte, userID string, at time.Time) (string, error)
+	RevokeInvite(ctx context.Context, id string, at time.Time) error
+	ListInvites(ctx context.Context, limit int) ([]store.SignupInvite, error)
 
 	CreateSession(ctx context.Context, userID string, tokenHash []byte, expiresAt time.Time) (*store.Session, error)
 	FindSessionByTokenHash(ctx context.Context, hash []byte) (*store.Session, error)
@@ -81,8 +96,8 @@ func (t pgTx) GetUser(ctx context.Context, id string) (*store.User, error) {
 	return t.tx.Users().Get(ctx, id)
 }
 
-func (t pgTx) CreateUser(ctx context.Context, displayName string) (*store.User, error) {
-	u := &store.User{DisplayName: displayName, Status: store.UserActive}
+func (t pgTx) CreateUser(ctx context.Context, displayName, status string) (*store.User, error) {
+	u := &store.User{DisplayName: displayName, Status: status}
 	if err := t.tx.Users().Create(ctx, u); err != nil {
 		return nil, err
 	}
@@ -159,4 +174,34 @@ func (t pgTx) RevokeSession(ctx context.Context, id string, at time.Time) error 
 
 func (t pgTx) RevokeUserSessions(ctx context.Context, userID string, at time.Time) (int64, error) {
 	return store.RevokeUserSessions(ctx, t.tx, userID, at)
+}
+
+func (t pgTx) TransitionUserStatus(ctx context.Context, userID, from, to string, at time.Time) error {
+	return store.TransitionUserStatus(ctx, t.tx, userID, from, to, at)
+}
+
+func (t pgTx) LockSignups(ctx context.Context) error { return store.LockSignups(ctx, t.tx) }
+
+func (t pgTx) CountSignups(ctx context.Context, clientKey []byte, since time.Time) (int, int, error) {
+	return store.CountSignupEvents(ctx, t.tx, clientKey, since)
+}
+
+func (t pgTx) RecordSignup(ctx context.Context, clientKey []byte, at, pruneBefore time.Time) error {
+	return store.RecordSignupEvent(ctx, t.tx, clientKey, at, pruneBefore)
+}
+
+func (t pgTx) CreateInvite(ctx context.Context, inv *store.SignupInvite) error {
+	return store.CreateSignupInvite(ctx, t.tx, inv)
+}
+
+func (t pgTx) ConsumeInvite(ctx context.Context, codeHash []byte, userID string, at time.Time) (string, error) {
+	return store.ConsumeSignupInvite(ctx, t.tx, codeHash, userID, at)
+}
+
+func (t pgTx) RevokeInvite(ctx context.Context, id string, at time.Time) error {
+	return store.RevokeSignupInvite(ctx, t.tx, id, at)
+}
+
+func (t pgTx) ListInvites(ctx context.Context, limit int) ([]store.SignupInvite, error) {
+	return store.ListSignupInvites(ctx, t.tx, limit)
 }
