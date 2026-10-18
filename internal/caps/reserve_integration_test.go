@@ -3,6 +3,7 @@
 package caps_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,10 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/huynle/mcp-gateway/internal/caps"
+	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
+	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/store/migrations"
 )
@@ -291,5 +296,45 @@ func TestIntegrationReservePendingApprovalsConcurrent(t *testing.T) {
 	}
 	if got := parallel(t, 10, 3, func(int) error { return create(time.Now().Add(time.Hour)) }); got != 3 {
 		t.Fatalf("parallel approvals = %d, want 3", got)
+	}
+}
+
+// The production create paths reserve inside their insert transaction:
+// parallel creates through each store never exceed the cap.
+func TestIntegrationCreatePathsEnforceCaps(t *testing.T) {
+	st := openCapsDB(t)
+	ctx := t.Context()
+	keys, err := crypto.NewStaticProvider("k1", map[string][]byte{"k1": bytes.Repeat([]byte{7}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &fixed{v: caps.Values{caps.Servers: 2, caps.Tunnels: 2}}
+
+	alice := mkUser(t, st, "alice")
+	portalStore := fedportal.NewStoreWithCaps(st, l)
+	if got := parallel(t, 8, 2, func(i int) error {
+		return portalStore.CreateServer(ctx, alice, &store.MCPServer{Name: fmt.Sprintf("p%d", i), URL: "https://example.com/mcp"})
+	}); got != 2 {
+		t.Fatalf("portal servers = %d, want 2", got)
+	}
+
+	bob := mkUser(t, st, "bob")
+	connStore := connector.NewPostgresStoreWithCaps(st, keys, l)
+	if got := parallel(t, 8, 2, func(i int) error {
+		return connStore.CreateServer(ctx, &store.MCPServer{Name: fmt.Sprintf("g%d", i), URL: "https://example.com/mcp", OwnerUserID: bob})
+	}); got != 2 {
+		t.Fatalf("gateway tool servers = %d, want 2", got)
+	}
+	// Both paths share one budget.
+	if err := portalStore.CreateServer(ctx, bob, &store.MCPServer{Name: "p-bob", URL: "https://example.com/mcp"}); !errors.Is(err, caps.ErrExceeded) {
+		t.Fatalf("portal after tool = %v", err)
+	}
+
+	tunStore := tunnel.NewStoreWithCaps(st, l)
+	if got := parallel(t, 8, 2, func(i int) error {
+		_, err := tunStore.CreateTunnel(ctx, alice, fmt.Sprintf("t%d", i), []byte(fmt.Sprintf("tok-%d", i)))
+		return err
+	}); got != 2 {
+		t.Fatalf("tunnels = %d, want 2", got)
 	}
 }

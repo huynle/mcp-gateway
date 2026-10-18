@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -48,6 +49,7 @@ type GatewayAccounts interface {
 type pgStore struct {
 	st   *store.Store
 	keys crypto.KeyProvider
+	caps caps.Limiter // per-user server cap (nil: unlimited)
 
 	mu    sync.Mutex
 	appID string // the anchor vendor app, once known
@@ -57,6 +59,12 @@ type pgStore struct {
 // vendor app's placeholder secret.
 func NewPostgresStore(st *store.Store, keys crypto.KeyProvider) Store {
 	return &pgStore{st: st, keys: keys}
+}
+
+// NewPostgresStoreWithCaps is NewPostgresStore with the per-user server
+// cap enforced in CreateServer's transaction.
+func NewPostgresStoreWithCaps(st *store.Store, keys crypto.KeyProvider, l caps.Limiter) Store {
+	return &pgStore{st: st, keys: keys, caps: l}
 }
 
 // AllowHostsLoader reads the admin allow list (netguard_allow_hosts,
@@ -122,6 +130,9 @@ func (p *pgStore) UserConnection(ctx context.Context, userID, serverID string) (
 // ErrServerNameTaken.
 func (p *pgStore) CreateServer(ctx context.Context, s *store.MCPServer) error {
 	err := p.st.WithUser(ctx, s.OwnerUserID, func(tx store.Tx) error {
+		if err := caps.Reserve(ctx, tx, p.caps, s.OwnerUserID, caps.Servers); err != nil {
+			return err
+		}
 		return store.CreateMCPServer(ctx, tx, s)
 	})
 	var pg *pgconn.PgError

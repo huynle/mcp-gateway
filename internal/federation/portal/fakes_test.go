@@ -32,14 +32,15 @@ const (
 // --- store ---------------------------------------------------------------------
 
 type fakeStore struct {
-	mu      sync.Mutex
-	seq     int
-	servers map[string]*store.MCPServer
-	viewers map[string][]string // published server -> users with a role
-	conns   map[string]store.MCPUserConnection
-	creds   map[string]CredentialInfo
-	tunnels []store.MCPTunnel
-	deleted []string
+	mu        sync.Mutex
+	createErr error
+	seq       int
+	servers   map[string]*store.MCPServer
+	viewers   map[string][]string // published server -> users with a role
+	conns     map[string]store.MCPUserConnection
+	creds     map[string]CredentialInfo
+	tunnels   []store.MCPTunnel
+	deleted   []string
 	// updateErr, when set, is UpdateServer's answer.
 	updateErr error
 }
@@ -105,6 +106,9 @@ func (f *fakeStore) GetServer(_ context.Context, userID, id string) (*store.MCPS
 func (f *fakeStore) CreateServer(_ context.Context, userID string, s *store.MCPServer) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return f.createErr
+	}
 	for _, o := range f.servers {
 		if o.Name == s.Name {
 			return ErrNameTaken
@@ -409,12 +413,16 @@ func (f *fakeAuth) Disconnect(_ context.Context, userID, serverID string) error 
 // --- tunnels -----------------------------------------------------------------------
 
 type fakeTunnels struct {
-	st      *fakeStore
-	online  map[string]bool
-	revoked []string
+	st        *fakeStore
+	createErr error
+	online    map[string]bool
+	revoked   []string
 }
 
 func (f *fakeTunnels) CreateTunnel(_ context.Context, owner, name string) (*store.MCPTunnel, string, error) {
+	if f.createErr != nil {
+		return nil, "", f.createErr
+	}
 	f.st.mu.Lock()
 	defer f.st.mu.Unlock()
 	t := store.MCPTunnel{ID: f.st.nextID(), OwnerUserID: owner, Name: name, CreatedAt: time.Now()}

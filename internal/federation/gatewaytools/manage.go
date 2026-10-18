@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
@@ -113,6 +114,7 @@ func (c *Connector) addServer(ctx context.Context, user string, args map[string]
 	if err != nil {
 		return connectors.Result{}, err
 	}
+	var ce *caps.ExceededError
 	switch err := c.d.Manager.CreateServer(ctx, s); {
 	case errors.Is(err, permissions.ErrNotPermitted):
 		return connectors.Result{}, fail("not_permitted", "your roles do not allow adding MCP servers; ask an admin for a role that may add MCP servers")
@@ -120,6 +122,8 @@ func (c *Connector) addServer(ctx context.Context, user string, args map[string]
 		return connectors.Result{}, fail("name_invalid", "the name %q is reserved for a built-in app; choose another", s.Name)
 	case errors.Is(err, connector.ErrInvalidServerName):
 		return connectors.Result{}, fail("name_invalid", "use 1-63 lower-case letters, digits, '-' or '_' for the name")
+	case errors.As(err, &ce):
+		return connectors.Result{}, fail(caps.Class, "%s", ce.Error())
 	case errors.Is(err, connector.ErrServerNameTaken):
 		return connectors.Result{}, fail("name_taken", "the name %q is already taken; choose another", s.Name)
 	case err != nil:

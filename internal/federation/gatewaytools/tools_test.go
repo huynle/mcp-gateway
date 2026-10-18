@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
@@ -595,5 +596,14 @@ func TestDeleteServer(t *testing.T) {
 	// A value that is not a server name or id never reaches the audit row.
 	if id := tool.ResourceIdentity(map[string]any{"server": "Bearer abc def"}); id["server"] == "Bearer abc def" {
 		t.Errorf("resource identity echoes an arbitrary value: %v", id)
+	}
+}
+
+func TestAddServerAtCap(t *testing.T) {
+	w := newWorld(t)
+	w.mgr.createErr = fmt.Errorf("store: %w", &caps.ExceededError{Resource: caps.Servers, Limit: 10})
+	class, msg := w.fail(alice, ToolAddServer, map[string]any{"name": "notes", "url": "https://x.example.com/mcp", "auth_kind": "none", "credential_mode": "per_user"})
+	if class != caps.Class || !strings.HasPrefix(msg, "You have reached the limit of 10 MCP servers") || !strings.Contains(msg, "ask an admin") {
+		t.Fatalf("at cap = %s %q", class, msg)
 	}
 }

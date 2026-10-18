@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
@@ -48,6 +49,9 @@ type WireOptions struct {
 	// Permissions gates Manager.CreateServer; nil uses
 	// permissions.NewPostgres over Store.
 	Permissions AddServerPermission
+	// Caps limits each user's servers and live tunnels, checked inside
+	// the creating transaction (nil: unlimited).
+	Caps caps.Limiter
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -110,7 +114,7 @@ func Wire(o WireOptions) (*Federation, error) {
 		return nil, fmt.Errorf("federation: auth: %w", err)
 	}
 	f.Snapshots = snapshot.NewService(o.Store)
-	f.Tunnels, err = tunnel.NewService(tunnel.Options{Store: tunnel.NewStore(o.Store), Log: o.Log})
+	f.Tunnels, err = tunnel.NewService(tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Log: o.Log})
 	if err != nil {
 		return nil, fmt.Errorf("federation: tunnel: %w", err)
 	}
@@ -119,7 +123,7 @@ func Wire(o WireOptions) (*Federation, error) {
 		perms = permissions.NewPostgres(o.Store, permissions.Options{Log: o.Log})
 	}
 	f.Permissions = perms
-	ps := &pgStore{st: o.Store, keys: o.Keys}
+	ps := &pgStore{st: o.Store, keys: o.Keys, caps: o.Caps}
 	f.GatewayAccounts = ps
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,

@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
@@ -55,9 +56,14 @@ func (p *Portal) createTunnel(w http.ResponseWriter, r *http.Request, c caller) 
 		p.fail(w, r, "list servers", lerr)
 		return
 	}
+	var ce *caps.ExceededError
 	switch {
 	case errors.Is(err, errInvalidTunnelName) || errors.Is(err, tunnel.ErrInvalidName):
 		data.Error = "A tunnel name must be 1–100 printable characters."
+		p.render(w, r, http.StatusUnprocessableEntity, "servers.html", data)
+		return
+	case errors.As(err, &ce):
+		data.Error = ce.Error()
 		p.render(w, r, http.StatusUnprocessableEntity, "servers.html", data)
 		return
 	case err != nil:
