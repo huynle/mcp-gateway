@@ -466,3 +466,20 @@ func TestSignupRateLimitIs429(t *testing.T) {
 		t.Fatalf("second sign-up from the same IP = %d (Retry-After %q), want 429", resp.StatusCode, resp.Header.Get("Retry-After"))
 	}
 }
+
+func TestUntrustedAttemptWithoutIPIsStillLimited(t *testing.T) {
+	svc, _, _ := signupService(t, config.SignupOpen, func(c *identity.Config) { c.SignupPerIPPerHour, c.SignupGlobalPerHour = 1, 10 })
+	ctx := context.Background()
+	if _, err := svc.SignInWith(ctx, "dex", claimsFor("x1"), identity.Attempt{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SignInWith(ctx, "dex", claimsFor("x2"), identity.Attempt{}); !errors.Is(err, identity.ErrSignupRateLimited) {
+		t.Fatalf("second account without an IP = %v, want rate limited", err)
+	}
+	// SignIn (trusted, in-process) is exempt.
+	for i := 0; i < 3; i++ {
+		if _, err := svc.SignIn(ctx, "dex", claimsFor(fmt.Sprint("trusted", i))); err != nil {
+			t.Fatalf("trusted SignIn %d: %v", i, err)
+		}
+	}
+}

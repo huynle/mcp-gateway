@@ -210,10 +210,12 @@ func (s *Service) OnDisable(h DisableHook) {
 	s.hooks = append(s.hooks, h)
 }
 
-// SignIn is SignInWith without browser context (no client IP, no invite
-// code).
+// SignIn is SignInWith for trusted in-process callers (tests, tools):
+// no client IP, no invite code, and exempt from the new-account rate
+// limit, which guards the browser sign-in (callback). The sign-up mode
+// still applies.
 func (s *Service) SignIn(ctx context.Context, providerName string, c Claims) (*SignInResult, error) {
-	return s.SignInWith(ctx, providerName, c, Attempt{})
+	return s.SignInWith(ctx, providerName, c, Attempt{trusted: true})
 }
 
 // SignInWith completes a company sign-in with verified claims from
@@ -343,7 +345,8 @@ func (s *Service) signUp(ctx context.Context, tx Tx, c Claims, at Attempt, boots
 		}
 	}
 	key := signupClientKey(at.ClientIP)
-	if !bootstrap {
+	limited := !bootstrap && !at.trusted
+	if limited {
 		if err := s.checkSignupRate(ctx, tx, key, now); err != nil {
 			return nil, nil, err
 		}
@@ -377,7 +380,7 @@ func (s *Service) signUp(ctx context.Context, tx Tx, c Claims, at Attempt, boots
 			return nil, nil, err
 		}
 	}
-	if !bootstrap {
+	if limited {
 		if err := tx.RecordSignup(ctx, key, now, now.Add(-signupWindow)); err != nil {
 			return nil, nil, err
 		}

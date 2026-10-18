@@ -97,6 +97,11 @@ type Attempt struct {
 	ClientIP string
 	// InviteCode is honoured in invite mode only.
 	InviteCode string
+	// trusted marks SignIn's in-process callers: exempt from the
+	// new-account limit. An Attempt built outside the package (the
+	// callback included) is never trusted, so an empty ClientIP still
+	// counts (as one "unknown" client) rather than skipping the limit.
+	trusted bool
 }
 
 // PendingUser is a signed-in account waiting for approval. It is attached
