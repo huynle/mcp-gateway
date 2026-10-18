@@ -142,10 +142,19 @@ func run() error {
 		if err := rateSvc.Refresh(ctx); err != nil {
 			return fmt.Errorf("rate settings: %w", err)
 		}
+		// Per-user resource caps (servers, tunnels, app connections,
+		// pending approvals): ENV defaults, persisted overrides.
+		capsSvc := settings.NewCaps(settings.NewPostgresCapsStore(st), settings.CapsOptions{Defaults: capDefaults(cfg), Audit: rec, Log: log})
+		if err := capsSvc.Refresh(ctx); err != nil {
+			return fmt.Errorf("resource caps: %w", err)
+		}
+		if connSvc != nil {
+			connSvc.SetCaps(capsSvc)
+		}
 		limiter := mcp.NewRateLimiter(mcp.RateLimitConfig{UserPerMinute: cfg.RateUserPerMin, AppPerMinute: cfg.RateAppPerMin, Provider: rateSvc})
 		// User-added MCP servers: their tools join the registry after the
 		// built-in connectors (federation.go).
-		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log)
+		fed, err := newFederation(ctx, cfg, st, keys, registry, policySvc, perms, metrics, log, withFederationCaps(capsSvc))
 		if err != nil {
 			return err
 		}
@@ -164,6 +173,9 @@ func run() error {
 		approvalSvc, err := newApprovals(cfg, st, keys, rec, metrics, getenv, log, slackNotifier)
 		if err != nil {
 			return err
+		}
+		if approvalSvc != nil {
+			approvalSvc.SetCaps(capsSvc)
 		}
 		if slackNotifier != nil && approvalSvc != nil {
 			slackNotifier.SetArguments(approvalSvc)

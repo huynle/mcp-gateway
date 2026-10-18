@@ -71,6 +71,9 @@ type Federation struct {
 	// (WireOptions.Permissions or permissions.NewPostgres); the servers
 	// portal gates Add server on it too.
 	Permissions AddServerPermission
+	// Caps is WireOptions.Caps: the servers portal's store enforces the
+	// same server cap.
+	Caps caps.Limiter
 	// GatewayAccounts supplies the anchor account of the gateway.*
 	// management tools (internal/federation/gatewaytools).
 	GatewayAccounts GatewayAccounts
@@ -90,7 +93,7 @@ func Wire(o WireOptions) (*Federation, error) {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	f := &Federation{}
+	f := &Federation{Caps: o.Caps}
 	allow := o.AllowList
 	if allow == nil {
 		f.AllowList = netguard.NewCachedAllowList(AllowHostsLoader(o.Store), netguard.CachedAllowListOptions{Log: o.Log})

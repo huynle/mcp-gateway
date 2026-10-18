@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -36,7 +37,7 @@ import (
 // It loads the servers and keeps reloading them until ctx ends. Like app
 // connections it needs a database and a key provider (credentials are
 // sealed); without either it returns nil and nothing is mounted.
-func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys crypto.KeyProvider, registry *connectors.Registry, policySvc *policy.Service, perms connector.AddServerPermission, metrics *observability.Metrics, log *slog.Logger) (*connector.Federation, error) {
+func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys crypto.KeyProvider, registry *connectors.Registry, policySvc *policy.Service, perms connector.AddServerPermission, metrics *observability.Metrics, log *slog.Logger, extra ...func(*connector.WireOptions)) (*connector.Federation, error) {
 	if st == nil || keys == nil {
 		log.Warn("no key provider: user-added MCP servers are not mounted")
 		return nil, nil
@@ -50,6 +51,9 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	}
 	if metrics != nil {
 		opts.Metrics = metrics.Registry()
+	}
+	for _, f := range extra {
+		f(&opts)
 	}
 	fed, err := connector.Wire(opts)
 	if err != nil {
@@ -178,7 +182,7 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 			return id, csrf, identity.PrincipalFrom(r.Context()).IsAdmin()
 		}
 		fedportal.NewPortal(fedportal.Deps{
-			Store: fedportal.NewStore(st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
+			Store: fedportal.NewStoreWithCaps(st, fed.Caps), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log}, Permissions: fed.Permissions,
 			Policy: pol, Identity: identityFn, Audit: rec, Log: log, BaseURL: baseURL,
 		}).Mount(mountUser)
@@ -251,4 +255,17 @@ func connectFinish(log *slog.Logger) func(http.ResponseWriter, *http.Request, st
 		}
 		http.Redirect(w, r, target+"?connect=ok", http.StatusSeeOther)
 	}
+}
+
+// withFederationCaps enforces the per-user server and tunnel caps in the
+// federation's create transactions.
+func withFederationCaps(l caps.Limiter) func(*connector.WireOptions) {
+	return func(o *connector.WireOptions) { o.Caps = l }
+}
+
+// capDefaults are the resource caps' ENV defaults (GATEWAY_CAP_*).
+func capDefaults(cfg config.Config) caps.Values {
+	c := cfg.Caps
+	return caps.Values{caps.Servers: c.Servers, caps.Tunnels: c.Tunnels, caps.ConnectionsPerApp: c.ConnectionsPerApp,
+		caps.ConnectionsTotal: c.ConnectionsTotal, caps.PendingApprovals: c.PendingApprovals}
 }

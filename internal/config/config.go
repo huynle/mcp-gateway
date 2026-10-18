@@ -76,6 +76,11 @@ type Config struct {
 	// per minute, shared by every user (GATEWAY_RATE_APP_PER_MIN, default
 	// 600): vendor quotas are per registered app.
 	RateAppPerMin int `yaml:"rate_app_per_min"`
+	// Caps are the per-user resource caps' fallback defaults
+	// (GATEWAY_CAP_*; internal/settings): persisted organization values
+	// and per-user administrator overrides take precedence. They must be
+	// positive: unlimited (0) is only an administrator setting.
+	Caps ResourceCaps `yaml:"caps"`
 	// EnableFakeConnector registers the in-process "fake" connector
 	// (GATEWAY_ENABLE_FAKE_CONNECTOR). Development and test stacks only:
 	// its tools and accounts are make-believe.
@@ -129,6 +134,7 @@ func Default() Config {
 		MCPMaxBody:             1 << 20,
 		RateUserPerMin:         60,
 		RateAppPerMin:          600,
+		Caps:                   ResourceCaps{Servers: 10, Tunnels: 5, ConnectionsPerApp: 5, ConnectionsTotal: 20, PendingApprovals: 50},
 		DefaultRole:            "member",
 	}
 }
@@ -247,6 +253,15 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			n, err := strconv.Atoi(strings.TrimSpace(v))
 			if err != nil {
 				return fmt.Errorf("%s%s: %w", EnvPrefix, item.name, err)
+			}
+			*item.dst = n
+		}
+	}
+	for _, item := range cfg.Caps.fields() {
+		if v := getenv(EnvPrefix + "CAP_" + item.name); v != "" {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil {
+				return fmt.Errorf("%sCAP_%s: %w", EnvPrefix, item.name, err)
 			}
 			*item.dst = n
 		}
@@ -389,6 +404,11 @@ func (c Config) validateIdentity() []error {
 	if c.RateUserPerMin <= 0 {
 		errs = append(errs, fmt.Errorf("rate_user_per_min must be positive, got %d", c.RateUserPerMin))
 	}
+	for _, item := range c.Caps.fields() {
+		if *item.dst <= 0 || *item.dst > maxCap {
+			errs = append(errs, fmt.Errorf("cap %s must be between 1 and %d, got %d", strings.ToLower(item.name), maxCap, *item.dst))
+		}
+	}
 	if c.RateAppPerMin <= 0 {
 		errs = append(errs, fmt.Errorf("rate_app_per_min must be positive, got %d", c.RateAppPerMin))
 	}
@@ -474,4 +494,29 @@ func postgresUser(raw string) (string, error) {
 		return "", errors.New("must name the database role (user) to connect as")
 	}
 	return u.User.Username(), nil
+}
+
+// ResourceCaps are the default per-user resource caps.
+type ResourceCaps struct {
+	Servers           int `yaml:"servers"`             // GATEWAY_CAP_SERVERS, default 10
+	Tunnels           int `yaml:"tunnels"`             // GATEWAY_CAP_TUNNELS, default 5
+	ConnectionsPerApp int `yaml:"connections_per_app"` // GATEWAY_CAP_CONNECTIONS_PER_APP, default 5
+	ConnectionsTotal  int `yaml:"connections_total"`   // GATEWAY_CAP_CONNECTIONS_TOTAL, default 20
+	PendingApprovals  int `yaml:"pending_approvals"`   // GATEWAY_CAP_PENDING_APPROVALS, default 50
+}
+
+// maxCap mirrors caps.Max.
+const maxCap = 100000
+
+func (c *ResourceCaps) fields() []struct {
+	name string
+	dst  *int
+} {
+	return []struct {
+		name string
+		dst  *int
+	}{
+		{"SERVERS", &c.Servers}, {"TUNNELS", &c.Tunnels}, {"CONNECTIONS_PER_APP", &c.ConnectionsPerApp},
+		{"CONNECTIONS_TOTAL", &c.ConnectionsTotal}, {"PENDING_APPROVALS", &c.PendingApprovals},
+	}
 }
