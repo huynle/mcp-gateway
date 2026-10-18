@@ -24,6 +24,10 @@ type Encrypted struct {
 const (
 	UserActive   = "active"
 	UserDisabled = "disabled"
+	// UserPending is a new account waiting for an admin's approval
+	// (GATEWAY_SIGNUP_MODE=approval, schema 27). Like disabled, it is not
+	// active: no module issues or accepts credentials for it.
+	UserPending = "pending"
 )
 
 // User is a person who signed in with the company identity provider.
