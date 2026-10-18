@@ -63,7 +63,7 @@ kubectl -n mcp-gateway create secret generic mcp-gateway-app --from-literal=log-
 
 ## Values
 
-Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`). The ones that shape the deployment:
+Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`), except `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`), which has no chart key yet: set it through `extraEnv` (`- {name: GATEWAY_AUDIT_RETENTION, value: 4380h}`) when the default does not fit. The ones that shape the deployment:
 
 | Value | Default | Notes |
 |---|---|---|
@@ -159,7 +159,7 @@ The production shape is `deploy/helm/values-production.example.yaml`; copy it in
 
 **Before the first production deploy**: database backups configured and a restore rehearsed (migrations are forward-only; `docs/runbooks/deploy-and-rollback.md`); the production vendor apps registered with the production callback URLs (`docs/vendor-apps.md` section 6 checklist); each runbook drilled once on staging (`docs/runbooks/README.md`, drill log); the pilot checklist agreed (`docs/pilot-checklist.md`).
 
-**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`).
+**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no audit export endpoint (`trpz0p16`). Audit retention: `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`; the `audit.purge` job, [observability.md](observability.md)).
 
 ## Environments
 

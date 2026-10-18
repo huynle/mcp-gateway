@@ -133,7 +133,21 @@ JSON-RPC error codes the harness surfaces (the message says what to do; `error.d
 
 Read results can carry a marker (`empty`, `partial`, `unavailable`) that tells the model "nothing found" from "could not look" — `partial` means a page or size limit was hit; ask for a narrower query.
 
-## 7. Leaving, or losing a device
+## 7. Your data: download it, delete your account
+
+**Download my data** (My account → *Your data*): one JSON file (`mcp-gateway-export-<date>.json`, format `mcp-gateway.user-export.v1`) with your profile and sign-in identities, roles, app connections, harness tokens and harness sign-ins, the MCP servers you own and your connections to servers, tunnels, approvals, write operations, your audit events and your rate-limit settings. It is metadata only: **never** tokens, vendor credentials, server credentials, approval arguments or anything stored encrypted; server URLs lose any `user:password@` and `?query`. Each section is capped (audit events 10 000, operations and approvals 5 000, the rest 1 000; newest first) and a capped section says `"truncated": true` with a note; ask an admin for a complete audit export ([runbook](runbooks/audit-export.md)). You can download once every **10 minutes**; earlier you get *Export limit* with the wait. Every download is in your activity (`user.data_exported`).
+
+**Delete my account** (My account → *Delete my account…*): for safety this needs a company sign-in from the **last 10 minutes** (the page offers *Sign in with …* and brings you back) and typing `delete my account`. Deletion, in one step:
+
+- signs you out everywhere, revokes every harness token and harness sign-in;
+- disconnects every app account (revoked at the vendor where it supports that) and deletes the stored credentials;
+- deletes your tunnels, your **private** MCP servers and your connections to MCP servers, and drops the arguments of any open approval;
+- clears your name and your sign-in identity: signing in again later creates a **new, empty** account.
+
+What stays: your audit events, write operations and approval records (without arguments), under an anonymous id — the gateway's legal record; they leave with the normal retention (one year by default). Deletion is refused, with the reason on the page, while you own **published** MCP servers (other people use them: ask an admin to unpublish or delete them first — the gateway does not transfer ownership), while you are the **last admin**, or for a bootstrap admin account (configured by the operators). Deletion cannot be undone.
+
+## 8. Leaving, or losing a device
 
 - Lost laptop: `/tokens` → *Revoke* the token(s) on it, `/harnesses` → *Disconnect* its harnesses. Nothing else is needed; vendor accounts stay connected.
 - Leaving the team: an admin disables you; every token, harness and app connection is revoked at once. Your activity history stays for the audit trail.
+- Leaving for good: delete your account (section 7), or ask an admin to delete it.

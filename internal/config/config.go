@@ -60,6 +60,10 @@ type Config struct {
 	// last company sign-in is older than this (GATEWAY_TOKEN_SIGNIN_MAX_AGE,
 	// default 720h = 30 days; decision uamxx6ba).
 	TokenSignInMaxAge time.Duration `yaml:"token_signin_max_age"`
+	// AuditRetention is how long audit events are kept before the
+	// audit.purge job deletes them (GATEWAY_AUDIT_RETENTION, default 8760h
+	// = 365 days, at least MinAuditRetention; Brain task mjdzepbx).
+	AuditRetention time.Duration `yaml:"audit_retention"`
 	// MCPMaxBody bounds the size of one /mcp request body in bytes
 	// (GATEWAY_MCP_MAX_BODY, default 1 MiB); larger requests get 413.
 	MCPMaxBody int64 `yaml:"mcp_max_body"`
@@ -113,6 +117,13 @@ type OIDCProvider struct {
 	DomainClaim string `yaml:"domain_claim"`
 }
 
+// Audit retention bounds (GATEWAY_AUDIT_RETENTION). The minimum keeps a
+// typo ("24h") from wiping the audit trail; there is no "keep forever".
+const (
+	DefaultAuditRetention = 365 * 24 * time.Hour
+	MinAuditRetention     = 30 * 24 * time.Hour
+)
+
 // Default returns the built-in configuration used when nothing overrides it.
 func Default() Config {
 	return Config{
@@ -125,6 +136,7 @@ func Default() Config {
 		SessionAbsoluteTimeout: 7 * 24 * time.Hour,
 		SessionCookieSecure:    true,
 		TokenSignInMaxAge:      30 * 24 * time.Hour,
+		AuditRetention:         DefaultAuditRetention,
 		PolicyReloadInterval:   15 * time.Second,
 		MCPMaxBody:             1 << 20,
 		RateUserPerMin:         60,
@@ -224,6 +236,13 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sTOKEN_SIGNIN_MAX_AGE: %w", EnvPrefix, err)
 		}
 		cfg.TokenSignInMaxAge = d
+	}
+	if v := getenv(EnvPrefix + "AUDIT_RETENTION"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("%sAUDIT_RETENTION: %w", EnvPrefix, err)
+		}
+		cfg.AuditRetention = d
 	}
 	if v := getenv(EnvPrefix + "POLICY_RELOAD_INTERVAL"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -379,6 +398,9 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.TokenSignInMaxAge <= 0 {
 		errs = append(errs, fmt.Errorf("token_signin_max_age must be positive, got %v", c.TokenSignInMaxAge))
+	}
+	if c.AuditRetention < MinAuditRetention {
+		errs = append(errs, fmt.Errorf("audit_retention must be at least %v, got %v", MinAuditRetention, c.AuditRetention))
 	}
 	if c.MCPMaxBody <= 0 {
 		errs = append(errs, fmt.Errorf("mcp_max_body must be positive, got %d", c.MCPMaxBody))
