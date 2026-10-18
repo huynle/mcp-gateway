@@ -33,16 +33,6 @@ func (m *memAudit) Record(_ context.Context, ev audit.Event) error {
 	return nil
 }
 
-func (m *memAudit) actions() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var out []string
-	for _, ev := range m.events {
-		out = append(out, ev.ResourceIdentity["action"])
-	}
-	return out
-}
-
 func (m *memAudit) find(action string) (audit.Event, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -262,7 +252,7 @@ func TestInviteMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	if !strings.HasPrefix(code, "mgwi_") || inv.ID == "" || strings.Contains(fmt.Sprint(inv.CodeHash), code) {
+	if !strings.HasPrefix(code, "mgwi_") || inv.ID == "" || strings.Contains(string(inv.CodeHash), code) {
 		t.Errorf("invite = %q, %+v", code, inv)
 	}
 	if ev, ok := rec.find("signup_invite.created"); !ok || ev.UserID != "admin-1" || ev.ResourceIdentity["invite_id"] != inv.ID {
@@ -416,7 +406,7 @@ func httpHandlerFunc(fn func(context.Context)) http.Handler {
 
 func serve(t *testing.T, h http.Handler, ck *http.Cookie) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.AddCookie(ck)
 	h.ServeHTTP(httptest.NewRecorder(), req)
 }

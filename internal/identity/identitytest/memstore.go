@@ -390,7 +390,8 @@ func (t *memTx) RecordSignup(_ context.Context, key []byte, at, pruneBefore time
 			kept = append(kept, e)
 		}
 	}
-	t.m.signups = append(kept, signupEvent{key: bytes.Clone(key), at: at})
+	kept = append(kept, signupEvent{key: bytes.Clone(key), at: at})
+	t.m.signups = kept
 	return nil
 }
 
