@@ -87,6 +87,17 @@ Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key unde
 
 `values.schema.json` validates types, enums and formats (durations, CIDRs, provider names) before rendering.
 
+### Public sign-up
+
+The chart does not template the sign-up variables; set them through `extraEnv` when the gateway is public ([public-signup.md](public-signup.md)):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `GATEWAY_OIDC_<NAME>_ALLOWED_DOMAINS` = `*` (`oidc.providers[].allowedDomains: ["*"]`) | | Any account of the provider with a verified email. Must be the only entry; not with tenants or a domain claim. |
+| `GATEWAY_SIGNUP_MODE` | `approval` when any provider uses `*`, else `open` | `open`, `approval` (pending until an admin approves on `/admin/users`) or `invite` (single-use invite links). |
+| `GATEWAY_SIGNUP_RATE_IP_PER_HOUR` | `10` | New accounts per client IP per rolling hour. The IP is the TCP peer: behind the Ingress it is usually the controller, so this acts as a second global limit. |
+| `GATEWAY_SIGNUP_RATE_GLOBAL_PER_HOUR` | `100` | New accounts in total per rolling hour, across replicas. |
+
 ### Public paths
 
 The Ingress routes `/` (exact), `/mcp`, `/oauth`, `/.well-known`, `/auth`, `/signin`, `/account`, `/tokens`, `/connections`, `/connect`, `/approvals`, `/operations`, `/harnesses`, `/activity`, `/admin`, `/static` and `/slack` to the `http` Service. `/healthz` and `/readyz` stay cluster-internal (probes), and `/metrics` is on another port and another Service that no Ingress references.

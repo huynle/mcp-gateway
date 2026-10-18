@@ -5,6 +5,15 @@ settings at `/admin/settings`; users manage their own preferences at
 `/account`. Database values take precedence over environment configuration,
 which is only the bootstrap/fallback when no persisted value exists.
 
+## Sign-up and the default role
+
+Sign-up modes (`GATEWAY_SIGNUP_MODE`), any-domain providers, the pending
+approval queue and invites on `/admin/users`, the new-account rate limit and
+the **Apply public member baseline** action on
+`/admin/settings/default-role` are described in
+[public-signup.md](public-signup.md). They are environment configuration and
+explicit admin actions, not persisted settings.
+
 ## Rate limits
 
 `/admin/settings/rate-limits` controls:
