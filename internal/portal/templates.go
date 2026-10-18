@@ -32,6 +32,7 @@ type userRow struct {
 	Principal *identity.Principal
 	User      identity.UserSummary
 	Roles     []store.Role
+	Limits    bool // link the user's resource limits page
 	// Deletable shows the Delete link (an account service is wired).
 	Deletable bool
 }
@@ -47,7 +48,7 @@ func parseTemplates() (*templates, error) {
 		"hasRole": slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
 			d, _ := p.Data.(adminUsersData)
-			return userRow{Principal: p.Principal, User: u, Roles: d.Roles, Deletable: d.Deletable}
+			return userRow{Principal: p.Principal, User: u, Roles: d.Roles, Limits: d.Limits, Deletable: d.Deletable}
 		},
 	}
 	names, err := fs.Glob(templateFS, "templates/*.html")

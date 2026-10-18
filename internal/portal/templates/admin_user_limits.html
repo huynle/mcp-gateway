@@ -1,0 +1,11 @@
+{{define "title"}}{{.Data.Title}}{{end}}{{define "content"}}
+<h1>Limits for {{.Data.Name}}</h1>
+<p class="muted"><code>{{.Data.ID}}</code> · <a href="/admin/users">All users</a> · <a href="/admin/settings/resource-caps">Organization limits</a></p>
+<section class="card"><h2>Resource limits</h2>
+<form method="post" action="/admin/users/{{.Data.ID}}/limits" class="stack"><input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+<table><thead><tr><th>Resource</th><th>In use</th><th>Effective</th><th>Override</th></tr></thead><tbody>
+{{range .Data.Rows}}<tr><td>{{.Noun}}</td><td>{{with .Used}}{{.}}{{else}}<span class="muted">?</span>{{end}}</td><td>{{if eq .Limit 0}}unlimited{{else}}{{.Limit}}{{end}}</td><td><input type="number" name="{{.Field}}" min="0" max="100000" value="{{with .Override}}{{.}}{{end}}" placeholder="organization" aria-label="{{.Noun}} override"></td></tr>
+{{end}}</tbody></table>
+<span class="muted">Blank uses the organization value; 0 is unlimited.</span>
+<p><button class="btn primary" type="submit">Save overrides</button></p></form></section>
+{{end}}

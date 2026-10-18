@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -140,6 +141,8 @@ type Service struct {
 	// tools and visibility are the tool catalog (SetToolCatalog).
 	tools      *connectors.Registry
 	visibility ToolVisibility
+	// caps limits new connections per user (SetCaps; nil: unlimited).
+	caps caps.Limiter
 }
 
 // New builds the service. keys encrypts vendor app secrets and token

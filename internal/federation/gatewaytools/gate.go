@@ -152,7 +152,7 @@ func (d decider) Visible(ctx context.Context, in policy.Input) (bool, error) {
 
 func adminRateTool(name string) bool {
 	switch name {
-	case ToolSetOrgRateLimits, ToolSetAppRateLimit, ToolSetUserRateLimit:
+	case ToolSetOrgRateLimits, ToolSetAppRateLimit, ToolSetUserRateLimit, ToolSetOrgLimits, ToolSetUserLimits:
 		return true
 	}
 	return false

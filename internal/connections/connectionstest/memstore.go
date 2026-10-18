@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connections"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -288,6 +289,28 @@ func (t *memTx) LockConnection(ctx context.Context, id string) (*store.Connectio
 	l.Lock() // held until release()
 	t.locked = append(t.locked, l)
 	return t.GetConnection(ctx, id)
+}
+
+// ReserveConnection counts the user's live, non-anchor connections like
+// the PostgreSQL store (caps.ReserveConnection).
+func (t *memTx) ReserveConnection(ctx context.Context, l caps.Limiter, userID, vendorAppID string) error {
+	t.m.mu.Lock()
+	perApp, total := 0, 0
+	for _, c := range t.m.conns {
+		a := t.m.apps[c.VendorAppID]
+		if c.UserID != userID || c.Status == store.ConnectionRevoked || (a != nil && a.Vendor == store.AnchorVendor) {
+			continue
+		}
+		total++
+		if c.VendorAppID == vendorAppID {
+			perApp++
+		}
+	}
+	t.m.mu.Unlock()
+	if err := caps.Check(ctx, l, userID, caps.ConnectionsPerApp, perApp); err != nil {
+		return err
+	}
+	return caps.Check(ctx, l, userID, caps.ConnectionsTotal, total)
 }
 
 func (t *memTx) CreateConnection(_ context.Context, c *store.Connection) error {

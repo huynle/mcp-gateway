@@ -119,6 +119,9 @@ type Deps struct {
 	BaseURL string
 	Log     *slog.Logger
 	Rates   RateSettings
+	// Caps are the per-user resource caps (*settings.CapsService);
+	// without it get_limits and the limit setters are not registered.
+	Caps ResourceCaps
 	// Approvals are the vendor apps' approval modes (*policy.Service);
 	// without it get/set_tool_approval cover user-added servers only.
 	Approvals ToolApprovals
@@ -296,6 +299,9 @@ func (c *Connector) Tools() []connectors.Tool {
 	if c.d.Rates != nil {
 		out = append(out, c.rateTools(bounds, write)...)
 	}
+	if c.d.Caps != nil {
+		out = append(out, c.capsTools(bounds, write)...)
+	}
 	return out
 }
 
@@ -342,6 +348,16 @@ func (c *Connector) Call(ctx context.Context, call connectors.Call) (connectors.
 		return c.setAppRateLimit(ctx, user, args)
 	case ToolSetUserRateLimit:
 		return c.setUserRateLimit(ctx, user, args)
+	}
+	if c.d.Caps != nil {
+		switch name {
+		case ToolGetLimits:
+			return c.getLimits(ctx, user, args)
+		case ToolSetOrgLimits:
+			return c.setOrgLimits(ctx, user, args)
+		case ToolSetUserLimits:
+			return c.setUserLimits(ctx, user, args)
+		}
 	}
 	return connectors.Result{}, connectors.ErrUnknownTool
 }

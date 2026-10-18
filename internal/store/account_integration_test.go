@@ -62,6 +62,9 @@ func newAccountFixture(t *testing.T, env *testEnv, st *store.Store) *accountFixt
 	if _, err := env.super.Exec(ctx, `INSERT INTO gateway_user_rate_limits (user_id, self_per_min) VALUES ($1, 5)`, f.alice); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := env.super.Exec(ctx, `INSERT INTO gateway_user_resource_caps (user_id, servers) VALUES ($1, 3), ($2, 4)`, f.alice, f.bob); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 3; i++ {
 		if _, err := env.super.Exec(ctx, `INSERT INTO audit_events (user_id, tool, decision) VALUES ($1, 'github.list_repos', 'allow')`, f.alice); err != nil {
 			t.Fatal(err)
@@ -105,7 +108,7 @@ func TestIntegrationAccountExportSections(t *testing.T) {
 	want := map[string]int{
 		"profile": 1, "identities": 1, "roles": 0, "connections": 1, "tokens": 1, "harness_grants": 0,
 		"mcp_servers": 1, "mcp_server_connections": 0, "tunnels": 1, "approvals": 1, "ledger_operations": 0,
-		"audit_events": 3, "rate_limits": 1,
+		"audit_events": 3, "rate_limits": 1, "resource_caps": 1,
 	}
 	if len(store.ExportSections) != len(want) {
 		t.Errorf("ExportSections = %v", store.ExportSections)
@@ -252,6 +255,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 		"tunnels":                        `SELECT count(*) FROM mcp_tunnels WHERE owner_user_id = $1`,
 		"role assignments":               `SELECT count(*) FROM role_assignments WHERE user_id = $1`,
 		"rate limits":                    `SELECT count(*) FROM gateway_user_rate_limits WHERE user_id = $1`,
+		"resource caps":                  `SELECT count(*) FROM gateway_user_resource_caps WHERE user_id = $1`,
 		"personal fields on user":        `SELECT count(*) FROM users WHERE id = $1 AND (display_name <> '' OR last_company_sign_in_at IS NOT NULL OR gateway_tools_enabled)`,
 		"user not tombstoned":            `SELECT count(*) FROM users WHERE id = $1 AND (status <> 'deleted' OR deleted_at IS NULL)`,
 		"refresh tokens still live":      `SELECT count(*) FROM oauth_refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL`,

@@ -31,7 +31,7 @@ The compiled Cedar set has an implicit **gateway layer** (`internal/policy/gatew
 @id("gateway/management/confirm_delete") permit confirm on App::"gateway" when resource.name == "gateway.delete_server"
 ```
 
-- reads and `add_server`: **allow**; `delete_server`, the rate-limit setters and `set_tool_approval`: **confirm** (approval required; a role allow cannot lift it);
+- reads and `add_server`: **allow**; `delete_server`, the rate-limit and resource-limit setters and `set_tool_approval`: **confirm** (approval required; a role allow cannot lift it);
 - token narrowing still applies: a **read-only token** never sees `add_server` or `delete_server`; a token restricted to other apps sees no `gateway.*`;
 - user restrictions and role **deny** rules apply; a role **allow** cannot lift the delete confirmation;
 - the admin role gets nothing extra (still confirm on delete);
@@ -47,9 +47,13 @@ Approvals and ledger operations need a `connections` row (decision `mrvsu07m`). 
 
 The settings tools are documented in [settings.md](settings.md):
 `get_rate_limits`, `set_my_rate_limit`, and the admin-only
-`set_org_rate_limits`, `set_app_rate_limit`, `set_user_rate_limit`. Persisted
-UI/MCP values override ENV defaults. The setters are writes and always require
-approval; admin-only tools are absent from a non-admin's tool list.
+`set_org_rate_limits`, `set_app_rate_limit`, `set_user_rate_limit`; for the
+per-user resource limits `get_limits` and the admin-only `set_org_limits`,
+`set_user_limits`. Persisted UI/MCP values override ENV defaults. The setters
+are writes and always require approval; admin-only tools are absent from a
+non-admin's tool list. `add_server` refuses with class `cap_exceeded` ("You
+have reached the limit of N MCP servers…") once the caller owns their server
+limit; the servers portal shares the same budget.
 
 All tools take only the arguments listed (`additionalProperties: false`; anything else is refused). `server` is a server's **name or ID**. Links are absolute (`GATEWAY_BASE_URL` + path).
 
@@ -99,6 +103,7 @@ Tool failures are tool results with `isError` and a fixed audit class (`mcp.Clas
 | `server_not_found` | the server does not exist, is not visible to the caller, or (refresh, delete) is not the caller's: one wording for all, by name or ID |
 | `secret_refused` | see add_server |
 | `args_invalid` | unknown argument, wrong type, missing value, bad combination |
+| `cap_exceeded` | add_server: the caller already owns their server limit ([settings.md](settings.md#resource-limits-per-user-caps)) |
 | `name_invalid`, `name_taken`, `not_permitted` | add_server; `not_permitted` also set_tool_approval (vendor app as a non-admin, published server as its owner, someone else's server) |
 | `app_not_found` | get/set_tool_approval: not a built-in app with write tools and no server of that name / ID visible to the caller (one wording) |
 | `not_reviewed` | set_tool_approval: the server has no approved snapshot yet |

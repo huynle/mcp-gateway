@@ -22,6 +22,9 @@ type WireOptions struct {
 	// Activity is *permissions.Service (GatewayToolsActive).
 	Activity     Activity
 	RateSettings RateSettings
+	// ResourceCaps are the per-user resource caps (*settings.CapsService):
+	// gateway.get_limits and the admin limit setters. Optional.
+	ResourceCaps ResourceCaps
 	// Approvals are the vendor apps' approval modes (*policy.Service);
 	// VendorOf names an app's vendor for the admin page link
 	// (connections.Service.VendorFor); Audit records server approval-mode
@@ -72,7 +75,7 @@ func Wire(o WireOptions) (*Tools, error) {
 	d := Deps{
 		Servers: fedportal.NewStore(o.Store), Snapshots: f.Snapshots, Detector: f.Auth, Manager: f.Manager, Clients: factory,
 		URLCheck: f.Guard, Gate: gate, BaseURL: o.BaseURL, Log: o.Log, Rates: o.RateSettings,
-		Approvals: o.Approvals, VendorOf: o.VendorOf, Audit: o.Audit,
+		Approvals: o.Approvals, VendorOf: o.VendorOf, Audit: o.Audit, Caps: o.ResourceCaps,
 	}
 	if o.RateSettings != nil {
 		d.Admin = o.RateSettings

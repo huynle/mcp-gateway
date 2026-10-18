@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -103,6 +104,9 @@ func (h *ConfirmHandler) Confirm(ctx context.Context, cc *mcp.CallContext, next 
 		UserID: cc.Principal.UserID, TokenID: cc.Principal.TokenID, AccountID: cc.AccountID, AccountLabel: cc.AccountLabel,
 		Tool: cc.Call.Tool, Args: cc.Call.Args, ResourceIdentity: resource, PolicyVersionID: cc.PolicyVersion, Digest: b.Digest,
 	})
+	if ce := (*caps.ExceededError)(nil); errors.As(err, &ce) {
+		return connectors.Result{}, mcp.NewToolError(mcp.CodeDenied, caps.Class, ce.Error())
+	}
 	if err != nil {
 		h.log.Error("approval not created", "event", "approvals.create_failed", "tool", cc.Call.Tool,
 			"error", observability.RedactError(err), observability.RequestIDAttr(ctx))

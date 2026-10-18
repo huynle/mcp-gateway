@@ -130,11 +130,15 @@ type fakeManager struct {
 	permitted map[string]bool
 	changed   []string
 	created   []*store.MCPServer
+	createErr error
 }
 
 func (m *fakeManager) CreateServer(_ context.Context, s *store.MCPServer) error {
 	if !m.permitted[s.OwnerUserID] {
 		return permissions.ErrNotPermitted
+	}
+	if m.createErr != nil {
+		return m.createErr
 	}
 	if err := connector.ValidateServerName(s.Name); err != nil {
 		return err

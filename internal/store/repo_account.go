@@ -21,7 +21,7 @@ const UserDeleted = "deleted"
 var ExportSections = []string{
 	"profile", "identities", "roles", "connections", "tokens", "harness_grants",
 	"mcp_servers", "mcp_server_connections", "tunnels", "approvals",
-	"ledger_operations", "audit_events", "rate_limits",
+	"ledger_operations", "audit_events", "rate_limits", "resource_caps",
 }
 
 // exportQueries: $1 is the user id, $2 the row limit. Every query filters
@@ -66,6 +66,8 @@ var exportQueries = map[string]string{
 		FROM admin_audit_events WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT $2`,
 	"rate_limits": `SELECT admin_per_min, self_per_min, updated_at
 		FROM gateway_user_rate_limits WHERE user_id = $1 LIMIT $2`,
+	"resource_caps": `SELECT servers, tunnels, connections_per_app, connections_total, pending_approvals, updated_at
+		FROM gateway_user_resource_caps WHERE user_id = $1 LIMIT $2`,
 }
 
 // ExportSection returns up to limit rows of one export section for userID
@@ -261,6 +263,7 @@ func DeleteUserData(ctx context.Context, q Querier, userID string, at time.Time)
 		{"role assignments", `DELETE FROM role_assignments WHERE user_id = $1`},
 		{"restrictions", `DELETE FROM user_restrictions WHERE user_id = $1`},
 		{"rate limits", `DELETE FROM gateway_user_rate_limits WHERE user_id = $1`},
+		{"resource caps", `DELETE FROM gateway_user_resource_caps WHERE user_id = $1`},
 	} {
 		if _, err := q.Exec(ctx, stmt.sql, withTime(stmt.sql, userID, at)...); err != nil {
 			return nil, fmt.Errorf("store: delete user %s: %w", stmt.what, err)

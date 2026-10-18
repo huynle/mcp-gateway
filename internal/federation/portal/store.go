@@ -7,16 +7,24 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
 // pgStore is the Store over *store.Store: every call runs as the user
 // (WithUser), so row-level security decides visibility and ownership
 // (decision 17iv8p3b).
-type pgStore struct{ st *store.Store }
+type pgStore struct {
+	st   *store.Store
+	caps caps.Limiter
+}
 
 // NewStore adapts a *store.Store to the portal's Store.
 func NewStore(st *store.Store) Store { return &pgStore{st: st} }
+
+// NewStoreWithCaps is NewStore with the per-user server cap enforced in
+// CreateServer's transaction (*caps.ExceededError at the cap).
+func NewStoreWithCaps(st *store.Store, l caps.Limiter) Store { return &pgStore{st: st, caps: l} }
 
 func (p *pgStore) as(ctx context.Context, userID string, fn func(store.Tx) error) error {
 	return p.st.WithUser(ctx, userID, fn)
@@ -53,7 +61,12 @@ func (p *pgStore) GetServer(ctx context.Context, userID, serverID string) (*stor
 
 func (p *pgStore) CreateServer(ctx context.Context, userID string, s *store.MCPServer) error {
 	s.OwnerUserID = userID
-	err := p.as(ctx, userID, func(tx store.Tx) error { return store.CreateMCPServer(ctx, tx, s) })
+	err := p.as(ctx, userID, func(tx store.Tx) error {
+		if err := caps.Reserve(ctx, tx, p.caps, userID, caps.Servers); err != nil {
+			return err
+		}
+		return store.CreateMCPServer(ctx, tx, s)
+	})
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && pg.Code == "23505" {
 		return ErrNameTaken

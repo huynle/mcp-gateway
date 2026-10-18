@@ -26,6 +26,7 @@
   <td>{{if .User.LastCompanySignInAt}}{{.User.LastCompanySignInAt.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
   <td>{{.User.CreatedAt.Format "2006-01-02"}}</td>
   <td>
+    {{if .Limits}}<a class="btn small" href="/admin/users/{{.User.ID}}/limits">Limits</a>{{end}}
     {{if eq .User.ID .Principal.UserID}}
     {{else}}{{if eq .User.Status "active"}}
     <form class="inline" method="post" action="/admin/users/{{.User.ID}}/disable" hx-post="/admin/users/{{.User.ID}}/disable" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML" hx-confirm="Disable {{.User.DisplayName}}? Their sessions end immediately.">

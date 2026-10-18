@@ -13,6 +13,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
@@ -501,8 +502,12 @@ func (p *Portal) create(w http.ResponseWriter, r *http.Request, c caller) {
 		AuthConfig: v.authConfig, HeaderConfig: v.headerConfig,
 	}
 	if err := p.d.Store.CreateServer(ctx, c.UserID, s); err != nil {
-		if errors.Is(err, ErrNameTaken) {
+		var ce *caps.ExceededError
+		switch {
+		case errors.Is(err, ErrNameTaken):
 			err = bad("The name %q is already taken.", f.Name)
+		case errors.As(err, &ce):
+			err = bad("%s", ce.Error())
 		}
 		p.formError(w, r, c, f, err)
 		return

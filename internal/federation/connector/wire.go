@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
@@ -48,6 +49,9 @@ type WireOptions struct {
 	// Permissions gates Manager.CreateServer; nil uses
 	// permissions.NewPostgres over Store.
 	Permissions AddServerPermission
+	// Caps limits each user's servers and live tunnels, checked inside
+	// the creating transaction (nil: unlimited).
+	Caps caps.Limiter
 	// TunnelRelay enables the cross-replica tunnel relay; nil keeps tunnels
 	// local to the replica holding their connection. Holders defaults to
 	// tunnel.NewHolderStore(Store) and Metrics to WireOptions.Metrics.
@@ -71,6 +75,9 @@ type Federation struct {
 	// (WireOptions.Permissions or permissions.NewPostgres); the servers
 	// portal gates Add server on it too.
 	Permissions AddServerPermission
+	// Caps is WireOptions.Caps: the servers portal's store enforces the
+	// same server cap.
+	Caps caps.Limiter
 	// GatewayAccounts supplies the anchor account of the gateway.*
 	// management tools (internal/federation/gatewaytools).
 	GatewayAccounts GatewayAccounts
@@ -90,7 +97,7 @@ func Wire(o WireOptions) (*Federation, error) {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	f := &Federation{}
+	f := &Federation{Caps: o.Caps}
 	allow := o.AllowList
 	if allow == nil {
 		f.AllowList = netguard.NewCachedAllowList(AllowHostsLoader(o.Store), netguard.CachedAllowListOptions{Log: o.Log})
@@ -114,7 +121,7 @@ func Wire(o WireOptions) (*Federation, error) {
 		return nil, fmt.Errorf("federation: auth: %w", err)
 	}
 	f.Snapshots = snapshot.NewService(o.Store)
-	topts := tunnel.Options{Store: tunnel.NewStore(o.Store), Log: o.Log}
+	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Log: o.Log}
 	if o.TunnelRelay != nil {
 		r := *o.TunnelRelay
 		if r.Holders == nil {
@@ -134,7 +141,7 @@ func Wire(o WireOptions) (*Federation, error) {
 		perms = permissions.NewPostgres(o.Store, permissions.Options{Log: o.Log})
 	}
 	f.Permissions = perms
-	ps := &pgStore{st: o.Store, keys: o.Keys}
+	ps := &pgStore{st: o.Store, keys: o.Keys, caps: o.Caps}
 	f.GatewayAccounts = ps
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,
