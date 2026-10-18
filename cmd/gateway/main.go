@@ -35,6 +35,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/connectors/fake"
 	"github.com/huynle/mcp-gateway/internal/crypto"
+	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -160,7 +161,7 @@ func run() error {
 		}
 		// The gateway.* management tools (behind the permission and the
 		// per-user setting; gatewaytools).
-		gw, err := newGatewayTools(fed, st, registry, perms, rateSvc, policySvc, connSvc, rec, cfg.BaseURL, log)
+		gw, err := newGatewayTools(fed, st, registry, perms, rateSvc, policySvc, connSvc, rec, cfg.BaseURL, log, func(o *gatewaytools.WireOptions) { o.ResourceCaps = capsSvc })
 		if err != nil {
 			return err
 		}

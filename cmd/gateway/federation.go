@@ -73,7 +73,7 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 // The approval-mode tools read and change vendor app modes through
 // policySvc (admin page links name the vendor connSvc maps the app to)
 // and audit server mode changes through rec.
-func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, rateSettings *isettings.Service, policySvc *policy.Service, connSvc *connections.Service, rec audit.Recorder, baseURL string, log *slog.Logger) (*gatewaytools.Tools, error) {
+func newGatewayTools(fed *connector.Federation, st *store.Store, registry *connectors.Registry, activity gatewaytools.Activity, rateSettings *isettings.Service, policySvc *policy.Service, connSvc *connections.Service, rec audit.Recorder, baseURL string, log *slog.Logger, extra ...func(*gatewaytools.WireOptions)) (*gatewaytools.Tools, error) {
 	if fed == nil {
 		return nil, nil
 	}
@@ -86,6 +86,9 @@ func newGatewayTools(fed *connector.Federation, st *store.Store, registry *conne
 	}
 	if connSvc != nil {
 		opts.VendorOf = connSvc.VendorFor
+	}
+	for _, f := range extra {
+		f(&opts)
 	}
 	gw, err := gatewaytools.Wire(opts)
 	if err != nil {
