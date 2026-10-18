@@ -1,0 +1,38 @@
+{{define "title"}}Delete account{{end}}
+{{define "content"}}
+{{with .Data}}
+<h1>{{if .Admin}}Delete user {{if .Name}}{{.Name}}{{else}}<span class="muted">(no name)</span>{{end}}{{else}}Delete my account{{end}}</h1>
+{{with .Error}}<div class="error"><p>{{.}}</p></div>{{end}}
+<section class="card">
+  <h2>What deletion does</h2>
+  <ul>
+    <li>Signs {{if .Admin}}them{{else}}you{{end}} out everywhere and revokes every harness token and harness sign-in.</li>
+    <li>Disconnects every app account (revoked at the vendor where the vendor supports it) and deletes the stored credentials.</li>
+    <li>Deletes {{if .Admin}}their{{else}}your{{end}} tunnels, private MCP servers and connections to MCP servers, and drops the arguments of open approvals.</li>
+    <li>Clears the name and sign-in identity. Signing in again later creates a new, empty account.</li>
+    <li>Keeps the audit history and operation records (a legal record), under an anonymous id only.</li>
+  </ul>
+  <p>This cannot be undone.{{if not .Admin}} Download your data first from <a href="/account#your-data">My account</a> if you want a copy.{{end}}</p>
+</section>
+{{if .Blockers}}
+<div class="error">
+  <p>The account cannot be deleted yet:</p>
+  <ul>{{range .Blockers}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{else if not .Fresh}}
+<section class="card">
+  <p>For your safety, deleting your account needs a sign-in from the last {{.WindowMins}} minutes. Sign in again, then come back here.</p>
+  <p>{{range .ReauthLinks}}<a class="btn" href="{{.StartURL}}">Sign in with {{.DisplayName}}</a> {{end}}</p>
+</section>
+{{else}}
+<form method="post" action="{{.Action}}" class="stack">
+  <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+  <label>Type <code>{{.Phrase}}</code> to confirm
+    <input type="text" name="confirm" autocomplete="off" required>
+  </label>
+  <p><button class="btn danger" type="submit">Delete permanently</button></p>
+</form>
+{{end}}
+<p><a href="{{if .Admin}}/admin/users{{else}}/account{{end}}">Cancel</a></p>
+{{end}}
+{{end}}

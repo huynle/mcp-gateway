@@ -36,4 +36,15 @@
   </form>
 </section>
 {{end}}{{end}}
+{{with .Data}}{{if .Lifecycle}}
+<section class="card setting" id="your-data">
+  <h2>Your data</h2>
+  <p>Download my data: one JSON file with your profile, roles, app connections, tokens, harness sign-ins, MCP servers, tunnels, approvals, operations, audit events and settings. It never contains tokens, secrets or approval arguments. Once every 10 minutes.</p>
+  <form method="post" action="/account/export">
+    <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+    <p><button class="btn small" type="submit">Download my data</button></p>
+  </form>
+  <p><a class="btn danger small" href="/account/delete">Delete my account…</a></p>
+</section>
+{{end}}{{end}}
 {{end}}

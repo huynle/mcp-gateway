@@ -57,7 +57,7 @@ All live in Helm values (`gateway.*`), env names in brackets. Change one at a ti
 | Rate limits (`rateLimits.userPerMinute` 60, `appPerMinute` 600) | | `-32029` without any vendor 429 (`vendor_rate_limited_total` flat) | the vendor rate-limits the gateway (`MCPGatewayVendorRateLimited`) |
 | Sign-in freshness (`tokens.signinMaxAge`) | 30d | `signin_stale` failures annoy active users who rarely open the portal (consider 45d; offboarding relies on it, do not exceed 60d) | the company's leaver process is slow and relies on this cutoff |
 | Token max expiry (fixed at 90 days, default 30 in `/tokens`) | | not tunable in v1 | |
-| Audit retention | 1 year by design; **no purge job yet** (`mjdzepbx`) | | decide the retention before the job lands; export needs ([`runbooks/audit-export.md`](runbooks/audit-export.md)) |
+| Audit retention | `GATEWAY_AUDIT_RETENTION=8760h` (365 days; minimum 720h), deleted daily by the `audit.purge` job | | decide the retention; export what you need before it ages out ([`runbooks/audit-export.md`](runbooks/audit-export.md)) |
 | OAuth refresh TTL / client idle (`oauth.refreshTokenTTL` 30d, `oauth.clientIdle` 30d) | | harnesses used less than monthly must re-register and sign in again (complaints) | — |
 | Alert thresholds (`metrics.prometheusRule.*`) | see values | false positives (auth spike from one misconfigured harness; refresh failures during a vendor outage) | an incident was missed |
 
@@ -76,6 +76,6 @@ Open the gateway to the team only when all of these hold for the last pilot week
 - [ ] Runbooks: each drilled at least once; deltas fixed.
 - [ ] Defaults: the tuned values are in the production values file and recorded in Brain plan `36bakiw8` "Open items".
 - [ ] The team-wide default role and the per-app personal-account policy are agreed with whoever owns security.
-- [ ] Open follow-ups are Brain tasks with owners (at least: `trpz0p16` audit export, `mjdzepbx` audit purge, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run; `6br0isjh` Slack id→name is landed), and none of them is a blocker for the team.
+- [ ] Open follow-ups are Brain tasks with owners (at least: `trpz0p16` audit export, `fire4u3k` CSP, `jni63atp` test databases, `5yosafvz` conformance run; `6br0isjh` Slack id→name is landed), and none of them is a blocker for the team.
 
 Record the sign-off (date, pilot users count, tuned defaults, open items) as the outcome on Brain task `pn4voyen` and in the plan's open items.

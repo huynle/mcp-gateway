@@ -66,6 +66,14 @@ Render-time invariants. Called from the Deployment so every render runs them.
 {{- if hasSuffix "/" .Values.gateway.baseURL }}
 {{- fail "gateway.baseURL must not end with a slash" }}
 {{- end }}
+{{- if .Values.tunnelRelay.enabled }}
+{{- if not .Values.tunnelRelay.existingSecret }}
+{{- fail "tunnelRelay.existingSecret is required when tunnelRelay.enabled (the GATEWAY_RELAY_SECRET shared by every replica)" }}
+{{- end }}
+{{- if has (int .Values.tunnelRelay.port) (list (int .Values.gateway.httpPort) (int .Values.gateway.metricsPort)) }}
+{{- fail "tunnelRelay.port must differ from gateway.httpPort and gateway.metricsPort" }}
+{{- end }}
+{{- end }}
 {{- range .Values.oidc.providers }}
 {{- if not (regexMatch "^[a-z0-9-]+$" .name) }}
 {{- fail (printf "oidc.providers[].name %q: lower-case letters, digits and hyphens only" .name) }}
@@ -127,6 +135,22 @@ Job has its own, smaller, set).
   value: {{ printf "0.0.0.0:%d" (int $g.metricsPort) | quote }}
 - name: GATEWAY_DRAIN_TIMEOUT
   value: {{ printf "%ds" (int $g.drainTimeoutSeconds) | quote }}
+{{- if .Values.tunnelRelay.enabled }}
+{{- $r := .Values.tunnelRelay }}
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+- name: GATEWAY_RELAY_LISTEN_ADDR
+  value: {{ printf ":%d" (int $r.port) | quote }}
+- name: GATEWAY_RELAY_ADVERTISE_ADDR
+  value: {{ printf "http://$(POD_IP):%d" (int $r.port) | quote }}
+- name: GATEWAY_RELAY_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ $r.existingSecret | quote }}
+      key: {{ $r.secretKey | quote }}
+{{- end }}
 - name: GATEWAY_LOG_LEVEL
   value: {{ $g.logLevel | quote }}
 - name: GATEWAY_LOG_FORMAT

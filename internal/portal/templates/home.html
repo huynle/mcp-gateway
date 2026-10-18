@@ -1,0 +1,33 @@
+{{define "title"}}Connect your AI agents to your work apps{{end}}
+{{define "content"}}
+{{with .Data.Legal}}
+<div class="legal">
+<h1>MCP Gateway</h1>
+<p>This MCP Gateway, run by {{.OperatorDisplay}}, connects the AI agents you use (Claude, ChatGPT, Cursor, VS Code and other <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> clients) to the apps you work in, through one address and one sign-in, with rules and approvals you control.</p>
+
+<h2>What it does</h2>
+<ul>
+  <li><strong>Connect your apps.</strong> You link your own Google Workspace, Microsoft 365, GitHub, Slack or Atlassian account with that vendor's own consent screen. The gateway then offers your agents tools such as "search my mail", "list my calendar events" or "open a pull request", acting only as you and only on the accounts you connected.</li>
+  <li><strong>Connect your agents.</strong> Agents sign in to the gateway with OAuth or with a token you generate; you can see and disconnect every agent on the Harnesses and Tokens pages.</li>
+  <li><strong>Stay in control.</strong> Every tool call is checked against the policy of your role. Actions that change something (sending a message, editing a file) can require your approval in the portal first. Everything your agents do is listed in your Activity.</li>
+  <li><strong>Bring your own servers.</strong> MCP servers you run yourself can be added and reached through the gateway.</li>
+</ul>
+
+<h2>What happens to your data</h2>
+<p>The gateway stores what it needs to work: your name and sign-in identifier from your identity provider, the access tokens of the apps you connect (encrypted), pending approvals, and a record of the tool calls made in your name. The content your agents read or write (mails, files, messages) passes through to the agent you chose and is not kept, except a write that is waiting for your approval. We do not sell your data, show ads or use it to train AI models. You can disconnect apps, revoke agents and manage your account at any time from My account. The <a href="/privacy">Privacy Policy</a> has the details.</p>
+<p>Google user data: the gateway's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<p class="muted">The gateway does not generate content itself. Answers, summaries and actions come from the AI agent you connect, which can be wrong: review what it proposes before you approve it.</p>
+
+<h2>How to sign in</h2>
+<ol>
+  <li>Choose <a href="/signin">Sign in</a> and continue with your account provider{{if $.Data.Providers}} ({{range $i, $p := $.Data.Providers}}{{if $i}}, {{end}}{{$p.DisplayName}}{{end}}){{end}}. Your user is created on first sign-in.</li>
+  <li>On <strong>Connections</strong>, connect the apps you want your agents to use.</li>
+  <li>Add the gateway's address to your agent (the <strong>Harnesses</strong> and <strong>Tokens</strong> pages show how) and sign the agent in.</li>
+</ol>
+<p><a class="btn primary" href="/signin">Sign in</a></p>
+
+<h2 id="contact">Contact</h2>
+<p>Questions, support or privacy requests: {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}. See also <a href="/support">Support</a>, the <a href="/privacy">Privacy Policy</a> and the <a href="/terms">Terms of Service</a>.</p>
+</div>
+{{end}}
+{{end}}

@@ -60,6 +60,10 @@ type Config struct {
 	// last company sign-in is older than this (GATEWAY_TOKEN_SIGNIN_MAX_AGE,
 	// default 720h = 30 days; decision uamxx6ba).
 	TokenSignInMaxAge time.Duration `yaml:"token_signin_max_age"`
+	// AuditRetention is how long audit events are kept before the
+	// audit.purge job deletes them (GATEWAY_AUDIT_RETENTION, default 8760h
+	// = 365 days, at least MinAuditRetention; Brain task mjdzepbx).
+	AuditRetention time.Duration `yaml:"audit_retention"`
 	// MCPMaxBody bounds the size of one /mcp request body in bytes
 	// (GATEWAY_MCP_MAX_BODY, default 1 MiB); larger requests get 413.
 	MCPMaxBody int64 `yaml:"mcp_max_body"`
@@ -105,6 +109,29 @@ type Config struct {
 	// existing users are never limited by them.
 	SignupPerIPPerHour  int `yaml:"signup_rate_ip_per_hour"`
 	SignupGlobalPerHour int `yaml:"signup_rate_global_per_hour"`
+
+	// RelayListenAddr is the internal listener for tunnel requests
+	// forwarded by peer replicas (GATEWAY_RELAY_LISTEN_ADDR, e.g. :18081).
+	// Never expose it through the ingress. The relay is enabled only when
+	// RelayListenAddr, RelayAdvertiseAddr and RelaySecret are all set
+	// (docs/tunnel.md "Multiple replicas"); all empty = single replica.
+	RelayListenAddr string `yaml:"relay_listen_addr"`
+	// RelayAdvertiseAddr is this replica's relay base URL as peers reach
+	// it (GATEWAY_RELAY_ADVERTISE_ADDR, e.g. http://$(POD_IP):18081).
+	RelayAdvertiseAddr string `yaml:"relay_advertise_addr"`
+	// RelaySecret is the HMAC key shared by every replica
+	// (GATEWAY_RELAY_SECRET), at least MinRelaySecretBytes. Never logged.
+	RelaySecret string `yaml:"relay_secret"`
+}
+
+// MinRelaySecretBytes is the minimum length of GATEWAY_RELAY_SECRET
+// (tunnel.MinRelaySecretBytes).
+const MinRelaySecretBytes = 32
+
+// RelayEnabled reports whether the cross-replica tunnel relay is
+// configured.
+func (c Config) RelayEnabled() bool {
+	return c.RelayListenAddr != "" && c.RelayAdvertiseAddr != "" && c.RelaySecret != ""
 }
 
 // Sign-up modes (Config.SignupMode).
@@ -144,6 +171,13 @@ func (p OIDCProvider) AnyDomain() bool {
 	return len(p.AllowedDomains) == 1 && p.AllowedDomains[0] == AnyDomainWildcard
 }
 
+// Audit retention bounds (GATEWAY_AUDIT_RETENTION). The minimum keeps a
+// typo ("24h") from wiping the audit trail; there is no "keep forever".
+const (
+	DefaultAuditRetention = 365 * 24 * time.Hour
+	MinAuditRetention     = 30 * 24 * time.Hour
+)
+
 // Default returns the built-in configuration used when nothing overrides it.
 func Default() Config {
 	return Config{
@@ -156,6 +190,7 @@ func Default() Config {
 		SessionAbsoluteTimeout: 7 * 24 * time.Hour,
 		SessionCookieSecure:    true,
 		TokenSignInMaxAge:      30 * 24 * time.Hour,
+		AuditRetention:         DefaultAuditRetention,
 		PolicyReloadInterval:   15 * time.Second,
 		MCPMaxBody:             1 << 20,
 		RateUserPerMin:         60,
@@ -223,6 +258,15 @@ func applyEnv(getenv func(string) string, cfg *Config) error {
 	if v := getenv(EnvPrefix + "JOBS_DATABASE_URL"); v != "" {
 		cfg.JobsDatabaseURL = v
 	}
+	if v := getenv(EnvPrefix + "RELAY_LISTEN_ADDR"); v != "" {
+		cfg.RelayListenAddr = v
+	}
+	if v := getenv(EnvPrefix + "RELAY_ADVERTISE_ADDR"); v != "" {
+		cfg.RelayAdvertiseAddr = v
+	}
+	if v := getenv(EnvPrefix + "RELAY_SECRET"); v != "" {
+		cfg.RelaySecret = v
+	}
 	return applyIdentityEnv(getenv, cfg)
 }
 
@@ -257,6 +301,13 @@ func applyIdentityEnv(getenv func(string) string, cfg *Config) error {
 			return fmt.Errorf("%sTOKEN_SIGNIN_MAX_AGE: %w", EnvPrefix, err)
 		}
 		cfg.TokenSignInMaxAge = d
+	}
+	if v := getenv(EnvPrefix + "AUDIT_RETENTION"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("%sAUDIT_RETENTION: %w", EnvPrefix, err)
+		}
+		cfg.AuditRetention = d
 	}
 	if v := getenv(EnvPrefix + "POLICY_RELOAD_INTERVAL"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -340,6 +391,9 @@ func (c *Config) normalize() {
 	c.LogFormat = strings.ToLower(strings.TrimSpace(c.LogFormat))
 	c.DatabaseURL = strings.TrimSpace(c.DatabaseURL)
 	c.JobsDatabaseURL = strings.TrimSpace(c.JobsDatabaseURL)
+	c.RelayListenAddr = strings.TrimSpace(c.RelayListenAddr)
+	c.RelayAdvertiseAddr = strings.TrimRight(strings.TrimSpace(c.RelayAdvertiseAddr), "/")
+	c.RelaySecret = strings.TrimSpace(c.RelaySecret)
 	c.BaseURL = strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
 	c.DefaultRole = strings.TrimSpace(c.DefaultRole)
 	c.BootstrapAdmins = normalizeList(c.BootstrapAdmins, false)
@@ -404,7 +458,36 @@ func (c Config) validate() error {
 	}
 	errs = append(errs, c.validateDatabase()...)
 	errs = append(errs, c.validateIdentity()...)
+	errs = append(errs, c.validateRelay()...)
 	return errors.Join(errs...)
+}
+
+// validateRelay: all three relay settings or none; never echoes the secret.
+func (c Config) validateRelay() []error {
+	set := 0
+	for _, v := range []string{c.RelayListenAddr, c.RelayAdvertiseAddr, c.RelaySecret} {
+		if v != "" {
+			set++
+		}
+	}
+	if set == 0 {
+		return nil
+	}
+	if set != 3 {
+		return []error{errors.New("relay_listen_addr, relay_advertise_addr and relay_secret must be set together (or none of them)")}
+	}
+	var errs []error
+	if len(c.RelaySecret) < MinRelaySecretBytes {
+		errs = append(errs, fmt.Errorf("relay_secret must be at least %d bytes", MinRelaySecretBytes))
+	}
+	if u, err := url.Parse(c.RelayAdvertiseAddr); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		errs = append(errs, errors.New("relay_advertise_addr must be an http(s) URL with scheme and host only (no path, user info or query)"))
+	}
+	if c.RelayListenAddr == c.ListenAddr {
+		errs = append(errs, errors.New("relay_listen_addr must differ from listen_addr (the relay is internal only)"))
+	}
+	return errs
 }
 
 // providerNameRE bounds provider names so they are safe in URL paths and
@@ -427,6 +510,9 @@ func (c Config) validateIdentity() []error {
 	}
 	if c.TokenSignInMaxAge <= 0 {
 		errs = append(errs, fmt.Errorf("token_signin_max_age must be positive, got %v", c.TokenSignInMaxAge))
+	}
+	if c.AuditRetention < MinAuditRetention {
+		errs = append(errs, fmt.Errorf("audit_retention must be at least %v, got %v", MinAuditRetention, c.AuditRetention))
 	}
 	if c.MCPMaxBody <= 0 {
 		errs = append(errs, fmt.Errorf("mcp_max_body must be positive, got %d", c.MCPMaxBody))

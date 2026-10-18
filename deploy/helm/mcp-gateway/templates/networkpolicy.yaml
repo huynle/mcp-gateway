@@ -38,6 +38,16 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    {{- if .Values.tunnelRelay.enabled }}
+    # Tunnel relay: gateway pods of this release only.
+    - ports:
+        - port: {{ int .Values.tunnelRelay.port }}
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "mcp-gateway.selectorLabels" . | nindent 14 }}
+    {{- end }}
   egress:
     {{- if $eg.dns.enabled }}
     - ports:
@@ -77,6 +87,15 @@ spec:
               {{- toYaml . | nindent 14 }}
             {{- end }}
         {{- end }}
+    {{- if .Values.tunnelRelay.enabled }}
+    - ports:
+        - port: {{ int .Values.tunnelRelay.port }}
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              {{- include "mcp-gateway.selectorLabels" . | nindent 14 }}
+    {{- end }}
     {{- with $eg.extra }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

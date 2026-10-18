@@ -76,7 +76,7 @@
   <td>{{.User.CreatedAt.Format "2006-01-02"}}</td>
   <td>
     {{if eq .User.ID .Principal.UserID}}
-    {{else if eq .User.Status "pending"}}
+    {{else}}{{if eq .User.Status "pending"}}
     <form class="inline" method="post" action="/admin/users/{{.User.ID}}/approve" hx-post="/admin/users/{{.User.ID}}/approve" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML">
       <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
       <button class="btn primary" type="submit">Approve</button>
@@ -95,7 +95,7 @@
       <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
       <button class="btn" type="submit">Enable</button>
     </form>
-    {{end}}
+    {{end}}{{if .Deletable}} <a class="btn danger" href="/admin/users/{{.User.ID}}/delete">Delete…</a>{{end}}{{end}}
   </td>
 </tr>
 {{end}}

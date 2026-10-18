@@ -210,10 +210,7 @@ func (s *Service) SignOut(w http.ResponseWriter, r *http.Request) {
 	if ck, err := r.Cookie(SessionCookie); err == nil && ck.Value != "" {
 		s.revokeByCookie(r.Context(), ck.Value, s.now())
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: SessionCookie, Value: "", Path: "/", HttpOnly: true,
-		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1,
-	})
+	s.ClearSessionCookie(w)
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

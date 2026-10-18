@@ -470,9 +470,6 @@ func (s *Service) DisableUser(ctx context.Context, actorID, userID string) error
 // its sessions and runs the hooks in one transaction.
 func (s *Service) disable(ctx context.Context, userID, from string) (int64, error) {
 	now := s.now()
-	s.mu.RLock()
-	hooks := slices.Clone(s.hooks)
-	s.mu.RUnlock()
 	var revoked int64
 	err := s.store.Bypass(ctx, func(tx Tx) error {
 		if from == "" {
@@ -491,12 +488,7 @@ func (s *Service) disable(ctx context.Context, userID, from string) (int64, erro
 		if revoked, err = tx.RevokeUserSessions(ctx, userID, now); err != nil {
 			return err
 		}
-		for _, h := range hooks {
-			if err := h(ctx, tx.Raw(), userID); err != nil {
-				return fmt.Errorf("identity: disable hook: %w", err)
-			}
-		}
-		return nil
+		return s.RunDisableHooks(ctx, tx.Raw(), userID)
 	})
 	return revoked, err
 }

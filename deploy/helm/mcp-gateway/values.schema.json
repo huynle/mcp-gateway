@@ -241,6 +241,16 @@
         }
       }
     },
+    "tunnelRelay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "existingSecret": { "type": "string" },
+        "secretKey": { "type": "string", "minLength": 1 }
+      }
+    },
     "networkPolicy": {
       "type": "object",
       "properties": {

@@ -115,6 +115,8 @@ func (d Data) items(links []Link) []Item {
 //     flashes the other palette.
 //   - "nav": the page header with the brand, the links, the theme toggle
 //     and the sign-out form.
+//   - "footer": the links to the public Privacy Policy, Terms of Service
+//     and Support pages (package portal); layouts render it after </main>.
 //
 // Neither has inline script or style (CSP). The toggle is rendered hidden
 // and theme.js reveals it: without JavaScript there is no dead control and
@@ -158,7 +160,15 @@ const Partial = `{{define "page.head"}}<meta charset="utf-8">
     </form>
     {{- end}}
   </div>
-</header>{{end}}`
+</header>{{end}}
+
+{{define "footer"}}<footer class="site-footer">
+  <nav aria-label="Legal">
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/terms">Terms of Service</a>
+    <a href="/support">Support</a>
+  </nav>
+</footer>{{end}}`
 
 // AssetFuncName is the template function Add registers: {{asset "x.css"}}
 // is static.URL("x.css"), the asset's path with its content-hash query.

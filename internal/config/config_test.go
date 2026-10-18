@@ -219,6 +219,9 @@ func TestIdentityDefaults(t *testing.T) {
 	if cfg.DefaultRole != "member" {
 		t.Errorf("DefaultRole = %q, want member", cfg.DefaultRole)
 	}
+	if cfg.AuditRetention != 365*24*time.Hour {
+		t.Errorf("AuditRetention = %v, want 8760h", cfg.AuditRetention)
+	}
 	if cfg.TokenSignInMaxAge != 30*24*time.Hour {
 		t.Errorf("TokenSignInMaxAge = %v, want 720h", cfg.TokenSignInMaxAge)
 	}
@@ -246,6 +249,7 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 		"GATEWAY_SESSION_ABSOLUTE_TIMEOUT":    "48h",
 		"GATEWAY_SESSION_COOKIE_SECURE":       "false",
 		"GATEWAY_TOKEN_SIGNIN_MAX_AGE":        "240h",
+		"GATEWAY_AUDIT_RETENTION":             "720h",
 		"GATEWAY_POLICY_RELOAD_INTERVAL":      "5s",
 		"GATEWAY_MCP_MAX_BODY":                " 4096 ",
 		"GATEWAY_DEFAULT_ROLE":                "staff",
@@ -267,6 +271,9 @@ func TestOIDCProvidersFromEnv(t *testing.T) {
 	}
 	if cfg.BaseURL != "https://gw.example.com" {
 		t.Errorf("BaseURL = %q, want trailing slash trimmed", cfg.BaseURL)
+	}
+	if cfg.AuditRetention != 720*time.Hour {
+		t.Errorf("AuditRetention = %v, want 720h", cfg.AuditRetention)
 	}
 	if cfg.TokenSignInMaxAge != 240*time.Hour {
 		t.Errorf("TokenSignInMaxAge = %v, want 240h", cfg.TokenSignInMaxAge)
@@ -360,6 +367,9 @@ func TestIdentityValidation(t *testing.T) {
 		"bad user rate":         {"GATEWAY_RATE_USER_PER_MIN": "many"},
 		"negative app rate":     {"GATEWAY_RATE_APP_PER_MIN": "-5"},
 		"bad fake flag":         {"GATEWAY_ENABLE_FAKE_CONNECTOR": "yes"},
+		"short audit retention": {"GATEWAY_AUDIT_RETENTION": "24h"},
+		"zero audit retention":  {"GATEWAY_AUDIT_RETENTION": "0"},
+		"bad audit retention":   {"GATEWAY_AUDIT_RETENTION": "1y"},
 	}
 	for name, overrides := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -32,6 +32,8 @@ type userRow struct {
 	Principal *identity.Principal
 	User      identity.UserSummary
 	Roles     []store.Role
+	// Deletable shows the Delete link (an account service is wired).
+	Deletable bool
 }
 
 type templates struct {
@@ -45,7 +47,7 @@ func parseTemplates() (*templates, error) {
 		"hasRole": slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
 			d, _ := p.Data.(adminUsersData) // also the invite-created page
-			return userRow{Principal: p.Principal, User: u, Roles: d.Roles}
+			return userRow{Principal: p.Principal, User: u, Roles: d.Roles, Deletable: d.Deletable}
 		},
 	}
 	names, err := fs.Glob(templateFS, "templates/*.html")

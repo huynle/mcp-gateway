@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/store"
+	"github.com/huynle/mcp-gateway/internal/store/migrations"
 )
 
 // Public sign-up storage (migration 00027): the pending status and its
@@ -199,5 +200,85 @@ func TestIntegrationTunnelOwnerMustBeActive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// Migrations 00027 (pending) and 00029 (deleted) both widen
+// users_status_check: at the latest version a user can be pending and
+// another deleted, and going down to 26 and up again works (00029's down
+// keeps pending, 00027's down disables it).
+func TestIntegrationUserStatusesAcrossSignupAndDeletion(t *testing.T) {
+	env := setup(t)
+	env.reset(t)
+	ctx := t.Context()
+	st := env.open(t)
+	now := time.Now().UTC()
+
+	var pending, deleted string
+	err := st.WithJobs(ctx, func(tx store.Tx) error {
+		p := &store.User{DisplayName: "Waiting", Status: store.UserPending}
+		if err := tx.Users().Create(ctx, p); err != nil {
+			return err
+		}
+		pending = p.ID
+		d := &store.User{DisplayName: "Leaving", Status: store.UserActive}
+		if err := tx.Users().Create(ctx, d); err != nil {
+			return err
+		}
+		deleted = d.ID
+		if _, err := store.DeleteUserData(ctx, tx, deleted, now); err != nil {
+			return err
+		}
+		// A pending user can be deleted too (an admin removing a sign-up).
+		q := &store.User{DisplayName: "Spam", Status: store.UserPending}
+		if err := tx.Users().Create(ctx, q); err != nil {
+			return err
+		}
+		_, err := store.DeleteUserData(ctx, tx, q.ID, now)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("pending + deleted at the latest schema: %v", err)
+	}
+	status := func(id string) string {
+		var s string
+		if err := env.super.QueryRow(ctx, `SELECT status FROM users WHERE id = $1`, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if status(pending) != store.UserPending || status(deleted) != store.UserDeleted {
+		t.Fatalf("statuses = %s / %s", status(pending), status(deleted))
+	}
+
+	// Down to 26 and back up.
+	if err := migrations.DownTo(ctx, env.superURL, 26); err != nil {
+		t.Fatalf("down to 26: %v", err)
+	}
+	if v, err := migrations.Version(ctx, env.superURL); err != nil || v != 26 {
+		t.Fatalf("version after down = %d, %v", v, err)
+	}
+	if status(pending) != store.UserDisabled || status(deleted) != store.UserDisabled {
+		t.Errorf("after down: %s / %s, want disabled / disabled", status(pending), status(deleted))
+	}
+	if err := migrations.Up(ctx, env.superURL); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if v, err := migrations.Version(ctx, env.superURL); err != nil || v != store.ExpectedSchemaVersion {
+		t.Fatalf("version after up = %d, %v", v, err)
+	}
+	if _, err := env.super.Exec(ctx, `UPDATE users SET status = 'pending' WHERE id = $1`, pending); err != nil {
+		t.Errorf("pending after the round trip: %v", err)
+	}
+
+	// Going down only past 00029 leaves pending rows pending.
+	if err := migrations.DownTo(ctx, env.superURL, 27); err != nil {
+		t.Fatalf("down to 27: %v", err)
+	}
+	if status(pending) != store.UserPending {
+		t.Errorf("00029 down changed a pending user to %s", status(pending))
+	}
+	if err := migrations.Up(ctx, env.superURL); err != nil {
+		t.Fatalf("up: %v", err)
 	}
 }
