@@ -21,7 +21,7 @@ const (
 	// one's stored result IDs instead of running again (decision dovthftx).
 	IdempotencyDigest Idempotency = ""
 	// IdempotencyPerCall: every call is a new ledger operation; nothing is
-	// replayed (quirk 47ab9sk7).
+	// replayed (quirk 47ab9sk7, decision bbgv2sqv).
 	IdempotencyPerCall Idempotency = "per_call"
 )
 
