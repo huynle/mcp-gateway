@@ -198,6 +198,11 @@ func run() error {
 		if connSvc != nil {
 			jobList = append(jobList, connSvc.KeepAliveJob())
 		}
+		purge, err := audit.NewPurgeJob(st, audit.PurgeOptions{Retention: cfg.AuditRetention, Recorder: rec, Metrics: metrics, Log: log})
+		if err != nil {
+			return err
+		}
+		jobList = append(jobList, purge)
 		if len(jobList) > 0 {
 			if _, err := startJobs(ctx, st, log, jobList...); err != nil {
 				return err

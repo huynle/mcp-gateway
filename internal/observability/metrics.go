@@ -43,6 +43,7 @@ type Metrics struct {
 	ledgerOperations *prometheus.CounterVec
 	refreshFailures  *prometheus.CounterVec
 	vendorRateLimit  *prometheus.CounterVec
+	auditPurged      prometheus.Counter
 }
 
 // NewMetrics builds the catalogue on a fresh registry. Call it once per
@@ -79,11 +80,18 @@ func NewMetrics() *Metrics {
 			Name: "vendor_rate_limited_total",
 			Help: "Vendor 429 responses by app.",
 		}, []string{"app"}),
+		auditPurged: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "audit_events_purged_total",
+			Help: "Audit events deleted by the retention purge (audit.purge job).",
+		}),
 	}
 	m.reg.MustRegister(m.httpDuration, m.authFailures, m.policyDecisions, m.approvals,
-		m.ledgerOperations, m.refreshFailures, m.vendorRateLimit)
+		m.ledgerOperations, m.refreshFailures, m.vendorRateLimit, m.auditPurged)
 	return m
 }
+
+// AuditPurged counts audit events deleted by the retention purge.
+func (m *Metrics) AuditPurged(n int) { m.auditPurged.Add(float64(n)) }
 
 // Registry exposes the private registry for tests and for optional extra
 // collectors wired by main.
