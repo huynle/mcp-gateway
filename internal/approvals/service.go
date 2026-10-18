@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -180,6 +182,8 @@ type Service struct {
 
 	mu      sync.Mutex
 	waiters map[string][]chan struct{}
+	// caps limits each user's pending approvals (SetCaps; nil: unlimited).
+	caps atomic.Pointer[capsHolder]
 }
 
 // New builds the service. keys encrypts the stored arguments.
@@ -263,7 +267,16 @@ func (s *Service) Create(ctx context.Context, req Request) (*Approval, error) {
 		Resource:     resource,
 		AccountLabel: req.AccountLabel,
 	}
-	err = s.st.AsUser(ctx, req.UserID, func(tx Tx) error { return tx.CreateApproval(ctx, rec) })
+	err = s.st.AsUser(ctx, req.UserID, func(tx Tx) error {
+		if err := tx.ReservePendingApproval(ctx, s.limiter(), req.UserID, now); err != nil {
+			return err
+		}
+		return tx.CreateApproval(ctx, rec)
+	})
+	var ce *caps.ExceededError
+	if errors.As(err, &ce) {
+		return nil, ce
+	}
 	if err != nil {
 		return nil, fmt.Errorf("approvals: create: %w", err)
 	}

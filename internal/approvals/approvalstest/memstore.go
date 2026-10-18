@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/approvals"
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -88,6 +89,18 @@ type memTx struct {
 }
 
 func (t *memTx) visible(r *store.ApprovalRecord) bool { return t.user == "" || r.UserID == t.user }
+
+// ReservePendingApproval counts the user's pending, unexpired approvals
+// like the PostgreSQL store.
+func (t *memTx) ReservePendingApproval(ctx context.Context, l caps.Limiter, userID string, at time.Time) error {
+	n := 0
+	for _, r := range t.m.rows {
+		if r.UserID == userID && r.Status == store.ApprovalPending && r.ExpiresAt.After(at) {
+			n++
+		}
+	}
+	return caps.Check(ctx, l, userID, caps.PendingApprovals, n)
+}
 
 func (t *memTx) CreateApproval(_ context.Context, a *store.ApprovalRecord) error {
 	if a.ID == "" || a.Payload == nil {

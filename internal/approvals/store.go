@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -25,6 +26,12 @@ type Store interface {
 // store.Tx for that.
 type Tx interface {
 	CreateApproval(ctx context.Context, a *store.ApprovalRecord) error
+	// ReservePendingApproval is the cap check before CreateApproval: it
+	// locks userID's approval budget until the transaction ends and
+	// refuses with *caps.ExceededError when the user already has the
+	// cap's number of pending, unexpired approvals at at. nil l never
+	// refuses.
+	ReservePendingApproval(ctx context.Context, l caps.Limiter, userID string, at time.Time) error
 	GetApproval(ctx context.Context, id string) (*store.ApprovalRecord, error)
 	ListApprovals(ctx context.Context, userID string, pendingOnly bool, limit int) ([]store.ApprovalRecord, error)
 	DecideApproval(ctx context.Context, id, userID, status string, at time.Time) (*store.ApprovalRecord, error)
@@ -54,6 +61,10 @@ func FromStoreTx(tx store.Tx) Tx { return pgTx{tx} }
 
 // pgTx implements Tx over a store transaction.
 type pgTx struct{ tx store.Tx }
+
+func (t pgTx) ReservePendingApproval(ctx context.Context, l caps.Limiter, userID string, _ time.Time) error {
+	return caps.Reserve(ctx, t.tx, l, userID, caps.PendingApprovals)
+}
 
 func (t pgTx) CreateApproval(ctx context.Context, a *store.ApprovalRecord) error {
 	return store.CreateApproval(ctx, t.tx, a)
