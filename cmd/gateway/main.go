@@ -155,6 +155,13 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		if cfg.RelayEnabled() {
+			if fed == nil {
+				log.Warn("GATEWAY_RELAY_* set but user-added MCP servers are not mounted: no tunnel relay")
+			} else if err := serveRelay(ctx, cfg, fed, log); err != nil {
+				return err
+			}
+		}
 		accounts = gw.Accounts(federationAccounts(fed, accounts))
 		muxExtras = append(muxExtras, withFederationRoutes(fed))
 		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)

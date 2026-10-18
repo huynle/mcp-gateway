@@ -92,6 +92,12 @@ spec:
             - name: metrics
               containerPort: {{ int .Values.gateway.metricsPort }}
               protocol: TCP
+            {{- if .Values.tunnelRelay.enabled }}
+            # Internal only: peer gateway pods forward tunnel requests here.
+            - name: tunnel-relay
+              containerPort: {{ int .Values.tunnelRelay.port }}
+              protocol: TCP
+            {{- end }}
           env:
             {{- include "mcp-gateway.env" . | nindent 12 }}
           {{- with .Values.extraEnvFrom }}

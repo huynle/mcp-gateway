@@ -126,6 +126,7 @@ All on the private registry; no user, token, account or request identifiers as l
 | `connection_refresh_failures_total` | counter | `app` | connections |
 | `vendor_rate_limited_total` | counter | `app` | connectors (429 / Retry-After) |
 | `audit_events_purged_total` | counter | — | `audit.purge` job (rows deleted) |
+| `tunnel_relay_requests_total` | counter | `side` (`forward`, `serve`), `result` (fixed words, see docs/tunnel.md) | tunnel relay (only when `GATEWAY_RELAY_*` is set) |
 
 Scrape `http://127.0.0.1:19090/metrics` inside the pod or via the Helm-defined private port; never expose it on the public listener.
 

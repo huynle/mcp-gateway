@@ -178,6 +178,9 @@ type options struct {
 	federation bool
 	// fedTimeout bounds each upstream operation (0: client default).
 	fedTimeout time.Duration
+	// tunnelRelay turns on the cross-replica tunnel relay with its own
+	// internal listener (world.relay) and secret relaySecret.
+	tunnelRelay bool
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the
@@ -205,6 +208,7 @@ type world struct {
 	limiter  *mcp.TokenBucketLimiter
 	srv      *httptest.Server
 	fed      *connector.Federation // nil unless options.federation
+	relay    *httptest.Server      // the relay listener; nil unless options.tunnelRelay
 	gw       *gatewaytools.Tools   // nil unless options.federation
 	perms    *permissions.Service
 

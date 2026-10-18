@@ -112,7 +112,8 @@ if errors.As(err, &te) && te.Class == tunnel.ClassOffline { /* "tunnel offline" 
 | `(*Service).Handler() http.Handler` | the `/tunnel/connect` endpoint |
 | `(*Service).RoundTripper() http.RoundTripper` | serves tunnel URLs only, never dials |
 | `(*Service).HTTPClient(base *http.Client) *http.Client` | a copy of `base` (or a zero client) with that transport. Redirects must stay in the same tunnel |
-| `(*Service).Online(id) bool` | a live connection exists **on this replica** |
+| `(*Service).Online(id) bool` | a live connection exists on this replica or, with the relay, a fresh holder on another |
+| `(*Service).RelayEnabled() bool`, `(*Service).RelayHandler() http.Handler`, `RelayPath`, `RelayOptions`, `NewHolderStore` | the cross-replica relay (see *Multiple replicas*) |
 | `URL(id, path)`, `ParseURL(raw)`, `ClientURL(raw)`, `IsTunnelURL(raw)` | tunnel URL helpers |
 | `GenerateToken`, `ParseToken`, `HashToken`, `TokenScanPattern` | token format `mgt_<8 base62>_<43 base62>`, SHA-256 of the whole token stored |
 | `NewStore(*store.Store) Store` | owner calls under `WithUser`, token lookup, re-check and touch under `WithJobs` |
@@ -137,7 +138,7 @@ Tunnel servers use `svc.HTTPClient(...)` **instead of** netguard's client. Its t
 | `ResponseHeaderTimeout` | 30s | `timeout` (`Timeout() == true`), cancel sent to the client |
 | `HeartbeatInterval` | 30s | ping failure drops the connection |
 
-Transport errors are `*tunnel.Error{Class, Reason}`, with these classes: `tunnel_offline` (no live connection on this replica, or it dropped mid-request), `not_tunnel`, `too_large`, `timeout`, `busy` and `unreachable` (the client could not finish the response). Messages carry only the class and a short reason, never URLs, headers, bodies or tokens. Through the federation client they surface as its `*client.Error` (`unreachable` or `timeout`), and `errors.As(err, *tunnel.Error)` recovers the tunnel class. The tunnel client answers 502 when the local server is unreachable and 503 when it is busy. These are ordinary HTTP statuses, which the federation client classifies as `unreachable`.
+Transport errors are `*tunnel.Error{Class, Reason}`, with these classes: `tunnel_offline` (no live connection on this replica and no usable holder elsewhere, or it dropped mid-request), `not_tunnel`, `too_large`, `timeout`, `busy` and `unreachable` (the client could not finish the response). Messages carry only the class and a short reason, never URLs, headers, bodies or tokens. Through the federation client they surface as its `*client.Error` (`unreachable` or `timeout`), and `errors.As(err, *tunnel.Error)` recovers the tunnel class. The tunnel client answers 502 when the local server is unreachable and 503 when it is busy. These are ordinary HTTP statuses, which the federation client classifies as `unreachable`.
 
 ## Wire protocol (v1)
 
@@ -155,9 +156,31 @@ Transport errors are `*tunnel.Error{Class, Reason}`, with these classes: `tunnel
 
 The gateway assigns stream ids per connection. A request carries its whole (bounded) body. A response streams as `head`, `data*`, `end`, so SSE and Streamable HTTP responses flow as they are produced. Both sides drop hop-by-hop headers, `Host` and `Content-Length`. Frame size limits: 1 MiB read by the gateway, 32 MiB read by the client.
 
-## Multi-replica note
+## Multiple replicas (cross-replica relay)
 
-Live connections are held **per replica, in process**. A tunnel's calls must be served by the replica that holds its connection. For the single-instance amos deploy this is always true. With several replicas, a request on another replica sees `tunnel_offline`, so sticky routing by tunnel ID (or a broker) is needed before tunnels work across replicas. Revocation works across replicas within one heartbeat interval.
+Live connections are held **per replica, in process**. With several replicas behind a load balancer without sticky sessions, the WebSocket lands on one replica (the *holder*) and a tunnel request may arrive on another. The relay (Brain decision `efq0ncag` item 5) forwards such a request to the holder over an internal, authenticated HTTP hop, so tunnels work from every replica.
+
+**Disabled unless all three are set** (`config.Config.RelayEnabled`); with none set nothing changes: no holder rows, `tunnel_offline` on a replica without the connection, `Online` is local only. Setting only some of them refuses to start.
+
+| Env | Example | Meaning |
+|---|---|---|
+| `GATEWAY_RELAY_LISTEN_ADDR` | `:18081` | internal relay listener; must differ from `GATEWAY_LISTEN_ADDR`. Never on the Service/Ingress |
+| `GATEWAY_RELAY_ADVERTISE_ADDR` | `http://$(POD_IP):18081` | this replica's relay base URL as peers reach it (scheme and host only); `POD_IP` from the downward API |
+| `GATEWAY_RELAY_SECRET` | 32+ random bytes | HMAC key, identical on every replica; never logged or echoed |
+
+How it works:
+
+1. **Holder registry** (`mcp_tunnel_holders`, migration 00026, `gateway_jobs` only; the request-path role has no access). On connect the replica upserts `(tunnel_id, holder = advertise address, epoch = nextval(global sequence))` and touches `last_seen_at`. On disconnect it deletes the row only if it still has its epoch. Every heartbeat it re-claims a missing row, and if the row shows a **newer epoch** (the client reconnected to another replica) it closes its own connection with 4001, like an in-process replacement.
+2. **Lookup.** The tunnel transport uses the local connection when there is one. Otherwise it reads the holder row; it is `tunnel_offline` when there is none, the tunnel is revoked, `last_seen_at` is older than 3 × `HeartbeatInterval` (a crashed replica's row expires on its own), the address is not a plain `http(s)://host[:port]`, or the row names this replica itself.
+3. **Forward.** `POST <holder>/tunnel-relay/v1/roundtrip` with the tunnel id, epoch, unix time, a random nonce, the request head (method, path+query, cleaned headers; base64url JSON) and `X-Mgw-Relay-Signature = HMAC-SHA256(secret, "mcp-gateway-relay.v1\n" id \n epoch \n time \n nonce \n head \n sha256(body))`. The body is the request body, bounded by `MaxRequestBytes` (4 MiB) before it is sent.
+4. **Serve (holder).** It checks the signature in constant time, the clock skew (±30 s), that the nonce is unused (replay cache for the skew window, bounded at 65 536 entries → `busy`), the body bound (413 `too_large`), and that it holds **that tunnel with that epoch** (409 `not_holder` otherwise). It then sends the request down its WebSocket and answers 200 with the response head in `X-Mgw-Relay-Head`, streams the body as it arrives (SSE included), and ends with the trailer `X-Mgw-Relay-End: ok` or the error class. Refusals carry `X-Mgw-Relay-Error` (`unauthorized`, `not_holder`, `bad_request` or a tunnel class).
+5. **Errors** map to the existing `*tunnel.Error` classes: the holder's `timeout`, `too_large`, `busy`, `unreachable` pass through; an unreachable or rejecting peer (wrong secret, clock) is `tunnel_offline` (reasons `relay_unreachable`, `relay_rejected`, logged as an operator error without URLs or secrets); `not_holder` (handover race) retries the lookup once, then `tunnel_offline`. The sender bounds the wait for the head at `ResponseHeaderTimeout` + 5 s, so the holder's own timeout normally wins. Response bodies keep `MaxResponseBytes` (10 MiB, non-SSE) on the sending side; a missing end trailer is `unreachable` (`relay_truncated`).
+6. **Revocation** across replicas: the revoking replica drops its own connection at once; every replica's lookup sees `revoked` immediately; the holder closes the WebSocket (4003) at its next heartbeat.
+7. `(*Service).Online` is true for a local connection or, relay on, a fresh holder elsewhere (one registry read), so the portal and admin pages show the tunnel online on every replica. Readiness is unaffected.
+
+Wiring: `connector.WireOptions.TunnelRelay` (`tunnel.RelayOptions`; holders default to `tunnel.NewHolderStore`), and `cmd/gateway/relay.go` serves `(*Service).RelayHandler()` (only `RelayPath`, 404 elsewhere) on its own `server.Server`, with a dedicated proxy-less HTTP client for peers. Metric: `tunnel_relay_requests_total{side="forward"|"serve", result}`; results are fixed words (`ok`, `miss`, `stale`, `revoked`, `self`, `bad_holder`, `lookup_error`, `unreachable_peer`, `unauthorized`, `not_holder`, `bad_request`, a tunnel class, …), never ids or addresses. Logs carry the tunnel id and epoch, never the secret or a peer URL in errors.
+
+Deployment (Helm: `tunnelRelay.enabled=true`, `tunnelRelay.existingSecret`, `tunnelRelay.secretKey` (default `relay-secret`), `tunnelRelay.port` (default 18081)) sets the three variables plus `POD_IP` from `status.podIP`, adds the `tunnel-relay` containerPort (on no Service), and adds NetworkPolicy ingress and egress rules on that port limited to the release's own gateway pods. See [deploy.md](deploy.md).
 
 ## Mounting caveats
 
@@ -166,6 +189,8 @@ Live connections are held **per replica, in process**. A tunnel's calls must be 
 - Browsers cannot set `Authorization` on a WebSocket, so the endpoint is not reachable cross-site. The library's origin check is left on.
 
 ## Tests
+
+- Relay: `go test -race ./internal/federation/tunnel/` (`relay_test.go`: two Services over one store with their own relay listeners: round trip and SSE streaming through the non-holder, relay off = old behaviour and no holder rows, handover, newer connection elsewhere closes the old one with `ErrReplaced`, revocation across replicas, stale/self/wrong-epoch/bad-address holders, unreachable holder, mismatched secret, error classes (timeout, response and request bounds, status pass-through), the endpoint's checks (missing/wrong signature, tampered body, changed epoch, skew both ways, replay, not holder, other tunnel, 413, method and path), option validation); `internal/config/relay_test.go`; `TestIntegrationMCPTunnelHolders` (store, jobs-only grant); `TestIntegrationTunnelRelayAcrossReplicas` / `TestIntegrationTunnelRelayDisabled` (`cmd/gateway`: two in-process gateways wired by `newFederation` over one database, WebSocket on A and the tool call through B's `/mcp`, handover to B, relay path not on the public mux, revocation on both); `TestSecurityFedTunnelRelay` (public handler never serves the relay even for a signed request; bad, missing, stale, replayed, wrong-epoch refused); `TestTunnelRelay` (Helm).
 
 - `go test -race ./cmd/mcp-gateway/` covers subcommand dispatch (help, version, unknown → exit 2) and that `mcp-gateway tunnel --help` lists every flag; `tests/test-install-script.sh` covers `install.sh` (OS/arch mapping, `$VERSION`, unsupported platforms, checksum mismatch and missing entry, shellcheck).
 
