@@ -1,0 +1,56 @@
+name: Release CLI
+
+# Builds the user-side client binaries (mcp-gateway, mcp-gateway-tunnel)
+# with GoReleaser (.goreleaser.yaml) on a version tag, publishes a GitHub
+# Release with archives, checksums.txt and install.sh, attests their build
+# provenance and, when the deploy key is configured, pushes the Homebrew
+# cask to huynle/homebrew-tap. The server container image is released by
+# ci.yml, not here. See docs/deploy.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release and upload assets
+      id-token: write # OIDC for artifact attestations
+      attestations: write # store the provenance attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # GoReleaser needs the tags and history for the changelog
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: client tests
+        run: go test -race -count=1 ./cmd/mcp-gateway/... ./cmd/mcp-gateway-tunnel/... ./internal/tunnelclient/...
+      - name: install script tests
+        run: tests/test-install-script.sh
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.18.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Write deploy key of huynle/homebrew-tap. Empty (forks): the cask
+          # is not pushed (skip_upload in .goreleaser.yaml).
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+            scripts/install.sh

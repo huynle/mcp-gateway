@@ -318,6 +318,11 @@ func TestStaticAssetsAreEmbedded(t *testing.T) {
 			t.Errorf("GET %s = %d %q", path, rec.Code, rec.Header().Get("Content-Type"))
 		}
 	}
+	// The copy buttons' script (federation portal tunnels).
+	if rec := h.do(t, request{method: http.MethodGet, path: "/static/copy.js"}); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Header().Get("Content-Type"), "javascript") || !strings.Contains(rec.Body.String(), "data-copy-target") {
+		t.Errorf("GET /static/copy.js = %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
 	if rec := h.do(t, request{method: http.MethodGet, path: "/static/../templates/layout.html"}); rec.Code == http.StatusOK {
 		t.Error("templates must not be served as static files")
 	}

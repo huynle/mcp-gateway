@@ -53,6 +53,12 @@ type Intent struct {
 	PolicyVersionID  string
 	ApprovalID       string
 	ResourceIdentity map[string]string
+	// PerCall records the operation under a key unique to it (CallKey)
+	// instead of DigestKey: identical arguments never replay a prior
+	// success and never wait on an open prior. Set for tools whose
+	// idempotency is the upstream's concern (user-added MCP servers, quirk
+	// 47ab9sk7); with an ApprovalID the key is still ApprovalKey.
+	PerCall bool
 }
 
 // Operation is a ledger row as the rest of the gateway sees it: metadata
@@ -76,7 +82,10 @@ type Operation struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	FinishedAt        *time.Time
-	ApprovalArgs      map[string]any
+	// WindowEnd is when the idempotency key stops referring to this
+	// operation (CreatedAt + Config.IdempotencyWindow).
+	WindowEnd    time.Time
+	ApprovalArgs map[string]any
 }
 
 // Open reports whether the operation still awaits an outcome.
@@ -240,6 +249,8 @@ func (s *Service) Config() Config { return s.cfg }
 //     service, through Options.Approvals) and the key is ApprovalKey; the
 //     returned operation carries the approval's stored arguments in
 //     ApprovalArgs;
+//   - with PerCall (and no approval) the key is a fresh CallKey: no
+//     prior lookup, always a new operation;
 //   - otherwise the key is DigestKey and the newest operation with that
 //     key inside Config.IdempotencyWindow decides: succeeded means
 //     PriorReplay, in_progress or unknown means PriorPending, failed or
@@ -257,9 +268,18 @@ func (s *Service) Begin(ctx context.Context, in Intent) (*Operation, Prior, erro
 		return nil, Prior{}, ErrApprovalsUnavailable
 	}
 	now := s.now()
-	key := DigestKey(in.UserID, in.AccountID, in.Tool, in.Digest)
-	if in.ApprovalID != "" {
+	var key string
+	switch {
+	case in.ApprovalID != "":
 		key = ApprovalKey(in.ApprovalID)
+	case in.PerCall:
+		k, err := CallKey()
+		if err != nil {
+			return nil, Prior{}, err
+		}
+		key = k
+	default:
+		key = DigestKey(in.UserID, in.AccountID, in.Tool, in.Digest)
 	}
 	var (
 		op    *Operation
@@ -283,7 +303,7 @@ func (s *Service) Begin(ctx context.Context, in Intent) (*Operation, Prior, erro
 					return err
 				}
 			}
-		} else {
+		} else if !in.PerCall {
 			found, err := tx.LatestByKey(ctx, key, now.Add(-s.cfg.IdempotencyWindow))
 			switch {
 			case errors.Is(err, store.ErrNotFound):
@@ -481,7 +501,7 @@ func fromRow(row *store.LedgerOperation) *Operation {
 	op := &Operation{
 		ID: row.ID, UserID: row.UserID, AccountID: row.ConnectionID, Tool: row.Tool, State: row.State, Key: row.IdempotencyKey,
 		PolicyVersionID: row.PolicyVersionID, ReconcileAttempts: row.ReconcileAttempts,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, FinishedAt: row.FinishedAt,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, FinishedAt: row.FinishedAt, WindowEnd: row.WindowEnd,
 		ResultIDs: decodeIDs(row.ResultIDs), ResourceIdentity: decodeIDs(row.Resource),
 	}
 	if row.ApprovalID != nil {

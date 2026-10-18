@@ -225,7 +225,7 @@ var unknownClasses = map[client.Class]bool{
 
 // classText is what each class tells the user.
 var classText = map[string]string{
-	"tunnel_offline":       "the server's tunnel is offline; start mcp-gateway-tunnel and retry",
+	"tunnel_offline":       "the server's tunnel is offline; start `mcp-gateway tunnel` and retry",
 	"upstream_unreachable": "the server could not be reached",
 	"upstream_blocked":     "the server's address is not allowed (ask an admin to allow-list it)",
 	"upstream_forbidden":   "the server refused the request (forbidden)",

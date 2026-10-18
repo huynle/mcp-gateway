@@ -321,13 +321,19 @@ func TestE2EDuplicateWritesReplayAndWindow(t *testing.T) {
 	var replay struct {
 		Ledger      string            `json:"_ledger"`
 		OperationID string            `json:"operation_id"`
+		Tool        string            `json:"tool"`
+		Message     string            `json:"message"`
 		Result      map[string]string `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(text(t, res)), &replay); err != nil {
 		t.Fatal(err)
 	}
-	if replay.Ledger != "replayed" || replay.Result["id"] != note.ID || replay.OperationID == "" {
+	if replay.Ledger != "replayed" || replay.Result["id"] != note.ID || replay.OperationID == "" || replay.Tool != "fake.post_note" {
 		t.Errorf("replay = %+v (note %s)", replay, note.ID)
+	}
+	// The answer says what happened and how to run it again.
+	if !strings.Contains(replay.Message, "not run again") || !strings.Contains(replay.Message, replay.OperationID) || !strings.Contains(replay.Message, "id="+note.ID) {
+		t.Errorf("replay message = %q", replay.Message)
 	}
 	if notes := w.fake.State().Notes(w.aliceAcc); len(notes) != 1 {
 		t.Errorf("notes = %d, want 1", len(notes))

@@ -23,6 +23,7 @@ jobs:
           go-version-file: go.mod
       - run: make fmt-check
       - run: tests/test-release-workflow.sh
+      - run: tests/test-install-script.sh
 
   lint:
     name: golangci-lint
