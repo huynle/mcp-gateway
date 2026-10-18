@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/jobs"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/store/migrations"
 )
@@ -392,4 +393,89 @@ func retryConcurrentUpdate(fn func() error) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return err
+}
+
+// TestIntegrationPurgeJobDeletesOnlyExpiredRows: the retention job, run
+// by the jobs runner under its lease, deletes events older than the
+// retention in batches and leaves newer ones; the append-only trigger
+// still refuses every other DELETE and UPDATE (Brain task mjdzepbx).
+func TestIntegrationPurgeJobDeletesOnlyExpiredRows(t *testing.T) {
+	env := setup(t)
+	env.reset(t)
+	if _, err := env.super.Exec(t.Context(), `DELETE FROM job_locks WHERE name = $1`, audit.PurgeJobName); err != nil {
+		t.Fatal(err)
+	}
+	st := env.open(t)
+	ctx := t.Context()
+	alice := newUser(t, st, "alice")
+	// Five expired rows (two batches of 3), two inside the window.
+	for _, age := range []string{"400 days", "380 days", "370 days", "366 days", "366 days", "300 days", "1 hour"} {
+		if _, err := env.super.Exec(ctx, `INSERT INTO audit_events (user_id, decision, created_at) VALUES ($1, 'allow', now() - $2::interval)`, alice, age); err != nil {
+			t.Fatalf("insert %s: %v", age, err)
+		}
+	}
+	job, err := audit.NewPurgeJob(st, audit.PurgeOptions{Retention: 365 * 24 * time.Hour, BatchSize: 3, Recorder: audit.NewStoreRecorder(st)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := jobs.NewRunner(jobs.NewPostgresLocker(st), jobs.Options{Holder: "purge-test"})
+	if err := runner.Register(job); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); _ = runner.Run(runCtx) }()
+	deadline := time.Now().Add(10 * time.Second)
+	var left int
+	for {
+		if err := env.super.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE user_id = $1`, alice).Scan(&left); err != nil {
+			t.Fatal(err)
+		}
+		if left == 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if left != 2 {
+		t.Fatalf("%d of alice's rows left, want the 2 inside the retention", left)
+	}
+	var oldest time.Time
+	if err := env.super.QueryRow(ctx, `SELECT min(created_at) FROM audit_events WHERE user_id = $1`, alice).Scan(&oldest); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(oldest) > 365*24*time.Hour {
+		t.Errorf("an expired row survived: %v", oldest)
+	}
+	var holder string
+	if err := env.super.QueryRow(ctx, `SELECT holder FROM job_locks WHERE name = $1`, audit.PurgeJobName).Scan(&holder); err != nil {
+		t.Fatalf("job lease: %v", err)
+	}
+	if holder != "purge-test" {
+		t.Errorf("lease holder = %q, want purge-test", holder)
+	}
+	var deleted string
+	if err := env.super.QueryRow(ctx, `SELECT resource->>'deleted' FROM audit_events WHERE user_id IS NULL AND resource->>'action' = $1`, audit.ActionPurged).Scan(&deleted); err != nil {
+		t.Fatalf("purge system event: %v", err)
+	}
+	if deleted != "5" {
+		t.Errorf("system event deleted = %q, want 5", deleted)
+	}
+	// The trigger still blocks a DELETE without the purge flag.
+	err = st.WithJobs(ctx, func(tx store.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM audit_events WHERE user_id = $1`, alice)
+		return err
+	})
+	if err == nil {
+		t.Error("DELETE without app.audit_purge succeeded, want trigger error")
+	}
+	// gateway_app cannot purge at all.
+	err = st.WithUser(ctx, alice, func(tx store.Tx) error {
+		_, err := store.PurgeAuditBatch(ctx, tx, time.Now().Add(time.Hour), 10)
+		return err
+	})
+	if err == nil {
+		t.Error("PurgeAuditBatch through gateway_app succeeded, want permission error")
+	}
 }

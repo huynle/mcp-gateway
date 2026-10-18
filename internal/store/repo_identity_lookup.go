@@ -167,6 +167,7 @@ func RevokeUserSessions(ctx context.Context, q Querier, userID string, at time.T
 }
 
 // SetUserStatus sets a user active or disabled, maintaining disabled_at.
+// A deleted user's tombstone is never changed (ErrNotFound).
 func SetUserStatus(ctx context.Context, q Querier, userID, status string, at time.Time) error {
 	var disabledAt *time.Time
 	switch status {
@@ -177,7 +178,7 @@ func SetUserStatus(ctx context.Context, q Querier, userID, status string, at tim
 		return fmt.Errorf("store: set user status: unknown status %q", status)
 	}
 	tag, err := q.Exec(ctx, `
-		UPDATE users SET status = $2, disabled_at = $3, updated_at = now() WHERE id = $1`,
+		UPDATE users SET status = $2, disabled_at = $3, updated_at = now() WHERE id = $1 AND status <> 'deleted'`,
 		userID, status, disabledAt)
 	if err != nil {
 		return fmt.Errorf("store: set user status: %w", err)
@@ -189,12 +190,12 @@ func SetUserStatus(ctx context.Context, q Querier, userID, status string, at tim
 }
 
 // ListUsers returns every user's metadata (through the admin_users view)
-// ordered by creation time. Cross-user, so it only lists everyone under
+// ordered by creation time, leaving out deleted users' tombstones. Cross-user, so it only lists everyone under
 // WithJobs; under WithUser it yields the caller's own row.
 func ListUsers(ctx context.Context, q Querier) ([]User, error) {
 	rows, err := q.Query(ctx, `
 		SELECT id, display_name, status, last_company_sign_in_at, disabled_at, created_at, updated_at
-		FROM admin_users ORDER BY created_at, id`)
+		FROM admin_users WHERE status <> 'deleted' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list users: %w", err)
 	}

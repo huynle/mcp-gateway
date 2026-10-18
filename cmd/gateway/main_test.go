@@ -127,9 +127,15 @@ func TestMuxMountsPortal(t *testing.T) {
 			t.Errorf("%s /mcp WWW-Authenticate = %q", method, got)
 		}
 	}
+	// The public homepage, then the legal and support pages, without sign-in.
+	for _, path := range []string{"/", "/privacy", "/terms", "/support"} {
+		if rec := do(t, mux, http.MethodGet, path); rec.Code != http.StatusOK {
+			t.Errorf("anonymous GET %s = %d %q, want 200 (public page)", path, rec.Code, rec.Header().Get("Location"))
+		}
+	}
 	rec := do(t, mux, http.MethodGet, "/")
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/signin" {
-		t.Errorf("GET / = %d %q, want redirect to /signin", rec.Code, rec.Header().Get("Location"))
+	if !strings.Contains(rec.Body.String(), `href="/privacy"`) {
+		t.Error("homepage does not link the privacy policy")
 	}
 	rec = do(t, mux, http.MethodGet, "/signin")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Local dex") {

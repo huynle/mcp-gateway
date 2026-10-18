@@ -54,8 +54,21 @@ func sameTunnelRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// Online reports whether the tunnel has a live connection on this replica.
-func (s *Service) Online(tunnelID string) bool { return s.reg.get(tunnelID) != nil }
+// Online reports whether the tunnel has a live connection on this
+// replica or, with the relay enabled, a fresh holder on another replica
+// (one registry read, bounded to 2s).
+func (s *Service) Online(tunnelID string) bool {
+	if s.reg.get(tunnelID) != nil {
+		return true
+	}
+	if s.relay == nil || !uuidRE.MatchString(tunnelID) {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, err := s.relay.lookup(ctx, tunnelID)
+	return err == nil
+}
 
 type transport struct{ s *Service }
 
@@ -71,28 +84,38 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, newError(ClassNotTunnel, "", nil)
 	}
 	c := t.s.reg.get(id)
-	if c == nil {
+	if c == nil && t.s.relay == nil {
 		closeBody()
 		return nil, newError(ClassOffline, "", nil)
 	}
-	limits := c.limits
 	var body []byte
 	if req.Body != nil {
-		body, err = io.ReadAll(io.LimitReader(req.Body, limits.MaxRequestBytes+1))
+		body, err = io.ReadAll(io.LimitReader(req.Body, t.s.limits.MaxRequestBytes+1))
 		closeBody()
 		if err != nil {
 			return nil, err
 		}
-		if int64(len(body)) > limits.MaxRequestBytes {
+		if int64(len(body)) > t.s.limits.MaxRequestBytes {
 			return nil, newError(ClassTooLarge, "request_body", nil)
 		}
 	}
+	if c == nil {
+		// Held by another replica, perhaps: forward to the holder.
+		return t.s.relay.forward(req, id, uri, body)
+	}
+	return t.s.roundTripConn(c, req, req.Method, uri, req.Header, body)
+}
+
+// roundTripConn sends one request on the local connection c and waits for
+// the response head. req supplies the context and Response.Request.
+func (s *Service) roundTripConn(c *conn, req *http.Request, method, uri string, header http.Header, body []byte) (*http.Response, error) {
+	limits := c.limits
 	ctx := req.Context()
 	st, err := c.open(ctx)
 	if err != nil {
 		return nil, err
 	}
-	f := &frame{Type: frameRequest, ID: st.id, Method: req.Method, Path: uri, Header: cleanHeader(req.Header), Data: body}
+	f := &frame{Type: frameRequest, ID: st.id, Method: method, Path: uri, Header: cleanHeader(header), Data: body}
 	if err := c.send(f); err != nil {
 		st.abandon()
 		return nil, newError(ClassOffline, "send", err)

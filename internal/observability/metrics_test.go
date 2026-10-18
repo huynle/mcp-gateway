@@ -34,6 +34,7 @@ func observeAll(m *observability.Metrics) {
 	m.LedgerOperation("unknown")
 	m.ConnectionRefreshFailure("github")
 	m.VendorRateLimited("slack")
+	m.AuditPurged(3)
 }
 
 func TestMetricsCatalogue(t *testing.T) {
@@ -48,6 +49,7 @@ func TestMetricsCatalogue(t *testing.T) {
 		`ledger_operations_total{state="unknown"} 1`,
 		`connection_refresh_failures_total{app="github"} 1`,
 		`vendor_rate_limited_total{app="slack"} 1`,
+		`audit_events_purged_total 3`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("scrape missing %q\n%s", want, out)
@@ -84,7 +86,7 @@ func TestMetricsHaveNoUserIdentifyingLabels(t *testing.T) {
 	}
 	sort.Strings(names)
 	want := []string{
-		"approvals_total", "auth_failures_total", "connection_refresh_failures_total",
+		"approvals_total", "audit_events_purged_total", "auth_failures_total", "connection_refresh_failures_total",
 		"http_request_duration_seconds", "ledger_operations_total", "policy_decisions_total",
 		"vendor_rate_limited_total",
 	}

@@ -1,6 +1,6 @@
 # User offboarding
 
-Removing a coworker's access, immediately or as part of leaving. Background: README "Sign-in, users and the portal" and "Harness tokens", decision `uamxx6ba` (tokens, 30-day sign-in rule). Checked against `internal/identity/service.go` (`DisableUser`, `OnDisable`), `internal/tokens/service.go` (`DisableHook`, `Authenticate`), `internal/authserver/{harnesses.go,jwt.go}` (`DisableHook`, `RevokeUserRefreshTokens`), `internal/store/repo_oauth_lookup.go`, `internal/connections/tokens.go` (`DisableHook`, `disconnectAll`), `internal/portal/portal.go` (`/admin/users` routes), `cmd/gateway/{main.go,authserver.go}` (hook registration).
+Removing a coworker's access, immediately or as part of leaving. Background: README "Sign-in, users and the portal" and "Harness tokens", decision `uamxx6ba` (tokens, 30-day sign-in rule). Checked against `internal/identity/service.go` (`DisableUser`, `OnDisable`; `lifecycle.go` `RunDisableHooks`), `internal/tokens/service.go` (`DisableHook`, `Authenticate`), `internal/authserver/{harnesses.go,jwt.go}` (`DisableHook`, `RevokeUserRefreshTokens`), `internal/store/repo_oauth_lookup.go`, `internal/connections/tokens.go` (`DisableHook`, `disconnectAll`), `internal/portal/portal.go` (`/admin/users` routes), `cmd/gateway/{main.go,authserver.go}` (hook registration).
 
 ## When to use
 
@@ -23,6 +23,39 @@ If any hook fails the whole transaction rolls back and the page shows an error: 
 What disable does **not** do: it does not delete the user, their audit rows, ledger rows or approvals (pending approvals simply expire through `approvals.expire`, and nothing of theirs can run because the token is refused first); it does not touch the IdP (remove them there too); it does not revoke the Slack bot's ability to DM them (no DM is sent without a pending approval, and none can be created). *Enable* (`POST /admin/users/{id}/enable`) restores sign-in only; nothing revoked comes back — they create new tokens and reconnect accounts.
 
 Disable is logged (`event=identity.user_disabled user=<hash> actor_user_id=<hash> sessions_revoked=N`, `tokens.revoked_on_disable revoked=N`, `authserver.revoked_on_disable revoked=N`, `connections.revoked_on_disable revoked=N`); there is **no audit row for the disable itself** in v1 (only the per-connection rows above), so note who disabled whom in the offboarding ticket.
+
+## What "delete" does (one transaction)
+
+Deletion is for a person who should leave **for good** (a public-gateway user closing their account, a data-deletion request, a leaver whose ticket says "delete"). Disable is reversible; delete is not. Checked against `internal/account/service.go` (`DeleteSelf`, `DeleteByAdmin`, blockers), `internal/store/repo_account.go` (`DeleteUserData`), `internal/store/migrations/00029_user_deletion.sql`, `internal/portal/lifecycle.go`.
+
+Two entry points, one service (`account.Service`):
+
+- **Self-service**: My account → *Delete my account…* (`GET|POST /account/delete`). Needs a company sign-in within the last **10 minutes** (`users.last_company_sign_in_at`; the page offers *Sign in with …* back to the page) and the typed phrase `delete my account`.
+- **Admin**: `/admin/users` → *Delete…* (`GET|POST /admin/users/{id}/delete`, admin only, 404 for others, CSRF), typed phrase `delete this account`; no freshness rule for the target. An admin's own account goes through My account (the admin route refuses it).
+
+Refused (nothing changes, the page lists why) while the account **owns published MCP servers** (other users rely on them; an admin unpublishes or deletes them first on `/admin/servers` — the gateway does not transfer ownership, agent decision), is the **last active admin**, or is a **bootstrap admin** (`GATEWAY_BOOTSTRAP_ADMINS`, it would be recreated with admin on the next sign-in: remove it from the configuration first). Deletions are serialised (advisory transaction lock) so two admins cannot delete each other past the last-admin check.
+
+In **one `WithJobs` transaction**:
+
+1. the registered `OnDisable` hooks run exactly as for a disable (tokens revoked, OAuth refresh families revoked and codes deleted, every app connection revoked at the vendor where possible with its `connection_secrets` row deleted and one `disconnected_on_disable` audit event each);
+2. `store.DeleteUserData`: deletes identities, sessions, the user's **private** MCP servers (role links, shared secret, OAuth client, snapshots and other users' connections to them cascade), the user's connections to any MCP server, tunnels, connect flows, authorization codes, role assignments, restrictions and per-user rate limits; keeps but empties tokens and refresh tokens (revoked; token names → `deleted`), connections (`revoked`, `external_account_id` → `deleted:<id>`, display name cleared) and approvals (payload dropped, open ones → `expired`); turns the `users` row into a **tombstone** (`status = deleted`, `deleted_at`, display name and last sign-in cleared, gateway tools off);
+3. one `user` audit event `action=user.deleted` (`by=self`, or `by=admin` under the admin's id with `target_user_id`; counts of servers, tunnels, connections).
+
+If anything fails (a hook, the vendor revoke path returning an error from the hook) the whole transaction rolls back and the account is unchanged. After the commit the federation reloads its servers on this replica (others within a minute); a live tunnel of the user is dropped at its next heartbeat (its row is gone). Log: `event=user.deleted user_id=<hash> actor_user_id=<hash> self=… servers=N tunnels=N connections=N approvals=N`.
+
+**Kept, pseudonymous:** audit events (append-only, the legal record; they reference the user by uuid only and the tombstone has no name or identity left), ledger operations and attempts, approval rows without payload, the revoked connection and token rows. They leave with the audit retention (`GATEWAY_AUDIT_RETENTION`, [audit-export.md](audit-export.md)). A tombstone is never listed on `/admin/users`, cannot be enabled or disabled (`store.SetUserStatus` refuses it), and the same IdP account signing in again gets a **new** user with the default role.
+
+Verification after a delete:
+
+```bash
+U=<user uuid>
+psql "$JOBS_URL" -c "SELECT status, deleted_at, display_name FROM admin_users WHERE id='$U';"   # deleted, timestamp, ''
+psql "$JOBS_URL" -c "SELECT count(*) FROM admin_identities WHERE user_id='$U';"              # 0
+psql "$JOBS_URL" -c "SELECT count(*) FROM admin_tokens WHERE user_id='$U' AND revoked_at IS NULL;"  # 0
+psql "$JOBS_URL" -c "SELECT created_at, actor_user_id, resource FROM admin_audit_events WHERE resource->>'action'='user.deleted' AND (user_id='$U' OR resource->>'target_user_id'='$U');"
+```
+
+Rollback: none. Restore from a database backup is the only way back and would also resurrect everything else since the backup; treat a mistaken deletion as an incident.
 
 ## The 30-day rule (what happens with no action)
 

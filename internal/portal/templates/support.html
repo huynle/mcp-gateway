@@ -1,0 +1,18 @@
+{{define "title"}}Support{{end}}
+{{define "content"}}
+{{with .Data.Legal}}
+<div class="legal">
+<h1>Support</h1>
+<p>Need help with the MCP Gateway run by {{.OperatorDisplay}}? Email {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}. You do not need an account to ask; we aim to answer within two business days.</p>
+<h2>Before you write</h2>
+<ul>
+  <li><strong>An agent cannot connect:</strong> sign in to the portal and check the agent on the Harnesses or Tokens page; sign it in again if its access was revoked or expired.</li>
+  <li><strong>An app says "reconnect":</strong> open Connections and connect the account again.</li>
+  <li><strong>A tool call waits:</strong> it may need your approval on the Approvals page.</li>
+  <li><strong>Something you did not expect happened:</strong> your Activity page lists every call made in your name; revoke the agent and tell us.</li>
+</ul>
+<p>Security issue? Email the address above with "Security" in the subject; please do not disclose it publicly before we have answered.</p>
+<p>See also the <a href="/privacy">Privacy Policy</a> and the <a href="/terms">Terms of Service</a>.</p>
+</div>
+{{end}}
+{{end}}

@@ -52,6 +52,10 @@ type WireOptions struct {
 	// Caps limits each user's servers and live tunnels, checked inside
 	// the creating transaction (nil: unlimited).
 	Caps caps.Limiter
+	// TunnelRelay enables the cross-replica tunnel relay; nil keeps tunnels
+	// local to the replica holding their connection. Holders defaults to
+	// tunnel.NewHolderStore(Store) and Metrics to WireOptions.Metrics.
+	TunnelRelay *tunnel.RelayOptions
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -117,7 +121,18 @@ func Wire(o WireOptions) (*Federation, error) {
 		return nil, fmt.Errorf("federation: auth: %w", err)
 	}
 	f.Snapshots = snapshot.NewService(o.Store)
-	f.Tunnels, err = tunnel.NewService(tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Log: o.Log})
+	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Log: o.Log}
+	if o.TunnelRelay != nil {
+		r := *o.TunnelRelay
+		if r.Holders == nil {
+			r.Holders = tunnel.NewHolderStore(o.Store)
+		}
+		if r.Metrics == nil {
+			r.Metrics = o.Metrics
+		}
+		topts.Relay = &r
+	}
+	f.Tunnels, err = tunnel.NewService(topts)
 	if err != nil {
 		return nil, fmt.Errorf("federation: tunnel: %w", err)
 	}

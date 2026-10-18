@@ -47,6 +47,8 @@ Pass `metrics` and `recorder` to the modules that need them (identity, tokens, p
 | `GATEWAY_METRICS_ADDR` | `127.0.0.1:19090` | `observability.MetricsAddr()` / `ServeMetrics(ctx, "", h)` |
 | `GATEWAY_LOG_SALT` | *(unset: random per process)* | `observability.UserAttr`, `HashUserID`, and the redactor's `user_id` hashing |
 
+`GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`) is read by `config` and passed to `audit.NewPurgeJob` in `cmd/gateway/main.go` (see "Retention purge" below).
+
 Set `GATEWAY_LOG_SALT` to a long random string per deployment and keep it with the other secrets. Without it user hashes are still pseudonymous but change on every restart, so lines from different replicas or restarts cannot be correlated.
 
 ## Exported API
@@ -102,7 +104,13 @@ The `RedactingHandler` enforces this in three layers, applied to the message, ev
 
 One row per tool call (`event_type = tool_call`), per user action without a tool (`user`: token created, connection revoked) and per system event (`system`: failed authentication, job runs). The columns are the `Event` fields; `RequestID` and `ErrorClass` live in `details` and nothing else is ever written there. `AccountID` is the connection ID, `PolicyVersion` the `policy_versions.id`; both must be uuids. `AccountLabel` is `company` or `personal`. `ErrorClass` is redacted and cut to 64 bytes on write: pass a classification (`token_expired`, `vendor_rate_limited`, `timeout`), never vendor text. `created_at` is set by the database at insert; `Event.Time` is informational on write and carries `created_at` on read.
 
-Users see their own rows (`/activity`), admins see metadata for everyone (`/admin/audit`). Retention purge (`AuditRepository.Purge`, one year by default) belongs to the jobs module.
+Users see their own rows (`/activity`), admins see metadata for everyone (`/admin/audit`).
+
+**Account lifecycle events** (`user`, `internal/account`), written in the same transaction as the action: `user.data_exported` (My account → *Download my data*; at most one per user per 10 minutes, the limit reads the last such row) and `user.deleted` (`by=self` under the deleted user's id, or `by=admin` under the admin's id with `target_user_id`; plus the counts `servers`, `tunnels`, `connections`). Log lines `event=user.data_exported` / `event=user.deleted` carry the hashed user ids.
+
+### Retention purge (`audit.purge` job)
+
+`audit.PurgeJob` (Brain task `mjdzepbx`) runs every 24 h on one replica (jobs runner lease, `job_locks.name = 'audit.purge'`) and deletes events older than `GATEWAY_AUDIT_RETENTION` (default `8760h` = 365 days; `config` refuses less than `720h` = 30 days and has no "keep forever"). Each batch of 10 000 rows is its own `WithJobs` transaction that sets `app.audit_purge` (`store.PurgeAuditBatch`), the only way past the append-only trigger; `gateway_app` cannot purge at all. A run logs `event=audit.purged deleted=N batches=B cutoff=<RFC 3339> complete=true|false`, adds N to `audit_events_purged_total` and, when N > 0, records a `system` event with `resource = {action: audit.purged, deleted: N, cutoff}` (`outcome=partial` when the run stopped early, e.g. lease lost; committed batches stay deleted and the next run continues). A failed run logs `jobs.failed job=audit.purge` and retries the next interval.
 
 ## Metric catalogue
 
@@ -117,6 +125,8 @@ All on the private registry; no user, token, account or request identifiers as l
 | `ledger_operations_total` | counter | `state` (`in_progress`, `succeeded`, `failed`, `unknown`, `unresolved`) | ledger / reconciler |
 | `connection_refresh_failures_total` | counter | `app` | connections |
 | `vendor_rate_limited_total` | counter | `app` | connectors (429 / Retry-After) |
+| `audit_events_purged_total` | counter | — | `audit.purge` job (rows deleted) |
+| `tunnel_relay_requests_total` | counter | `side` (`forward`, `serve`), `result` (fixed words, see docs/tunnel.md) | tunnel relay (only when `GATEWAY_RELAY_*` is set) |
 
 Scrape `http://127.0.0.1:19090/metrics` inside the pod or via the Helm-defined private port; never expose it on the public listener.
 

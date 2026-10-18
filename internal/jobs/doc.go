@@ -13,8 +13,8 @@
 // Jobs registered here: approvals expiry (approvals.ExpiryJob), the
 // ledger reconciler (ReconcilerJob, every minute) and the stale
 // in_progress sweep (StaleSweepJob, every 30 s), the connections
-// keep-alive refresh (connections.KeepAliveJob); the audit purge comes
-// with its module.
+// keep-alive refresh (connections.KeepAliveJob) and the audit retention
+// purge (audit.PurgeJob, daily).
 //
 // Design: Brain plan 36bakiw8 section 7; decision nq8wo4g3.
 package jobs

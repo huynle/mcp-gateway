@@ -38,6 +38,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
+	"github.com/huynle/mcp-gateway/internal/account"
 	"github.com/huynle/mcp-gateway/internal/approvals"
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/authserver"
@@ -177,6 +178,9 @@ type options struct {
 	federation bool
 	// fedTimeout bounds each upstream operation (0: client default).
 	fedTimeout time.Duration
+	// tunnelRelay turns on the cross-replica tunnel relay with its own
+	// internal listener (world.relay) and secret relaySecret.
+	tunnelRelay bool
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the
@@ -204,6 +208,7 @@ type world struct {
 	limiter  *mcp.TokenBucketLimiter
 	srv      *httptest.Server
 	fed      *connector.Federation // nil unless options.federation
+	relay    *httptest.Server      // the relay listener; nil unless options.tunnelRelay
 	gw       *gatewaytools.Tools   // nil unless options.federation
 	perms    *permissions.Service
 
@@ -430,6 +435,9 @@ func newWorld(t *testing.T, opts options) *world {
 	// My account: "Gateway management tools", as cmd/gateway wires it
 	// (through the gate when the gateway tools are wired).
 	p.SetGatewayTools(w.gw.Setting(w.perms))
+	// My account: "Your data" (export, delete) and the admin delete, as
+	// cmd/gateway wires it (newAccountLifecycle).
+	p.SetAccount(account.New(st, w.idSvc, account.Options{Log: log, Now: w.now}))
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {

@@ -54,6 +54,10 @@ type Options struct {
 	Log *slog.Logger
 	// Now is the clock (tests). Default time.Now.
 	Now func() time.Time
+	// Relay enables the cross-replica relay (docs/tunnel.md "Multiple
+	// replicas"); nil keeps every tunnel local to the replica holding its
+	// connection.
+	Relay *RelayOptions
 }
 
 // Service manages tunnel tokens, the /tunnel/connect endpoint and the
@@ -65,6 +69,7 @@ type Service struct {
 	log    *slog.Logger
 	now    func() time.Time
 	reg    *registry
+	relay  *relay // nil: relay disabled
 }
 
 // NewService builds a Service.
@@ -80,6 +85,13 @@ func NewService(o Options) (*Service, error) {
 		s.now = time.Now
 	}
 	s.reg = newRegistry()
+	if o.Relay != nil {
+		r, err := newRelay(s, *o.Relay)
+		if err != nil {
+			return nil, err
+		}
+		s.relay = r
+	}
 	return s, nil
 }
 

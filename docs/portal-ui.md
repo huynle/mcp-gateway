@@ -22,6 +22,7 @@ Parse the template set with `nav.Setup(template.New(""))` (it registers `navData
 
 - `page.head`: meta tags, `theme.js` (render-blocking, so a stored theme is applied before the first paint), `portal.css`, `htmx.min.js` (deferred).
 - `nav`: brand, user and admin links (`nav.UserLinks`, `nav.AdminLinks`), the theme toggle and sign-out.
+- `footer`: links to the public Privacy Policy, Terms of Service and Support pages; layouts render `{{template "footer"}}` after `</main>`. The portal's layout and the authserver's (consent, harnesses) do; other modules' layouts can adopt it with that one line.
 - No `<style>` blocks or `style=` attributes in templates: rules go into `internal/portal/static/portal.css`, page-specific sheets (like `review.css`) next to it.
 
 Drift is caught by tests: `navtest.AssertShell` (called from each module's `shell_test.go`) checks a rendered page links the shared stylesheet and theme script and has the toggle and `<main>`; `TestEveryLayoutUsesTheSharedHead` (internal/portal) scans every `templates/*.html` under `internal/`.
@@ -41,3 +42,21 @@ Drift is caught by tests: `navtest.AssertShell` (called from each module's `shel
 ## Wide tables
 
 Wrap a wide table in `<div class="table-scroll">`; it scrolls inside its box, so the page never overflows. Use `.mono`, `.clip` (one line, ellipsis) and `ul.ids` for identifiers, and always put the full value in `title`. Below 60rem every other table in `<main>` scrolls horizontally on its own.
+
+## Public pages (no sign-in)
+
+The gateway is a public service, so a few pages answer anonymous visitors with `200` (Google OAuth verification, the Slack Marketplace and the GitHub Marketplace require a homepage, a privacy policy, terms and a support contact reachable without signing in and without a redirect):
+
+| Route | Template | Signed-in user |
+|---|---|---|
+| `GET /` | `home.html`: what the gateway does, what it does with data (with the Google Limited Use statement), how to sign in (provider names), contact | `303` to `/account`, as before |
+| `GET /privacy` | `privacy.html` (DRAFT privacy policy) | same page with the user's nav |
+| `GET /terms` | `terms.html` (DRAFT terms of service) | same page with the user's nav |
+| `GET /support` | `support.html` (contact, first-aid answers, security reports) | same page with the user's nav |
+
+- The texts are embedded templates (`internal/portal/templates`), no external fetches; operator values come from `portal.Legal` (`portal.LegalFromEnv`, the `GATEWAY_LEGAL_*` variables, see `docs/deploy.md` and `docs/public-launch.md`) and are HTML-escaped; unset ones render as `[operator name]`-style placeholders and are logged at startup (`Legal.Placeholders`).
+- `GATEWAY_LEGAL_DRAFT` (default `true`) shows the `Draft – pending review` notice (`<p class="notice draft" role="note" data-legal-draft>`) on `/privacy` and `/terms`.
+- Caching: anonymous copies `Cache-Control: public, max-age=300`, signed-in copies `no-store` (the nav carries the CSRF token), always `Vary: Cookie`. The usual hardening headers and CSP apply.
+- The sign-in page and the OAuth consent page reference the terms and privacy policy next to the decision.
+- Prose styles: `.legal` (readable width) and `.site-footer` in `portal.css`.
+- Tests: `internal/portal/legal_test.go` (routes, headers, config values, escaping, placeholders, draft marker on/off, sign-in and footer links), `internal/authserver/shell_test.go` (consent links).

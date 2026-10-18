@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/coder/websocket"
 )
@@ -61,6 +62,9 @@ type conn struct {
 	life     context.Context
 	cancel   context.CancelFunc
 	slots    chan struct{}
+	// epoch is this connection's holder epoch (relay only; 0 = not
+	// recorded yet).
+	epoch atomic.Int64
 
 	mu      sync.Mutex
 	nextID  uint64

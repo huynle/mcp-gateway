@@ -165,6 +165,13 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		if cfg.RelayEnabled() {
+			if fed == nil {
+				log.Warn("GATEWAY_RELAY_* set but user-added MCP servers are not mounted: no tunnel relay")
+			} else if err := serveRelay(ctx, cfg, fed, log); err != nil {
+				return err
+			}
+		}
 		accounts = gw.Accounts(federationAccounts(fed, accounts))
 		muxExtras = append(muxExtras, withFederationRoutes(fed))
 		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)
@@ -195,7 +202,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
@@ -211,6 +218,11 @@ func run() error {
 		if connSvc != nil {
 			jobList = append(jobList, connSvc.KeepAliveJob())
 		}
+		purge, err := audit.NewPurgeJob(st, audit.PurgeOptions{Retention: cfg.AuditRetention, Recorder: rec, Metrics: metrics, Log: log})
+		if err != nil {
+			return err
+		}
+		jobList = append(jobList, purge)
 		if len(jobList) > 0 {
 			if _, err := startJobs(ctx, st, log, jobList...); err != nil {
 				return err
@@ -298,7 +310,16 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // their tokens in the same transaction. Providers come from
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
+//
+//nolint:unparam // the form without the account lifecycle (tests); production calls newPortalWithAccount
 func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
+	return newPortalWithAccount(cfg, st, reader, tokenSvc, policySvc, approvalSvc, connSvc, registry, gatewayTools, rateSettings, nil, log, extras...)
+}
+
+// newPortalWithAccount is newPortal with the account lifecycle (data
+// export, account deletion; account.go): lifecycle builds the service over
+// the portal's identity service (nil: neither is mounted).
+func newPortalWithAccount(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, lifecycle accountLifecycle, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -313,6 +334,14 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	if err != nil {
 		return nil, fmt.Errorf("portal: %w", err)
 	}
+	legal, err := portal.LegalFromEnv(os.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("portal: %w", err)
+	}
+	p.SetLegal(legal) // homepage, /privacy, /terms, /support (docs/public-launch.md)
+	if missing := legal.Placeholders(); len(missing) > 0 || legal.Draft {
+		log.Warn("public legal pages show placeholders or the draft marker", "unset", missing, "draft", legal.Draft)
+	}
 	if gatewayTools != nil {
 		p.SetGatewayTools(gatewayTools) // My account: "Gateway management tools"
 	}
@@ -321,6 +350,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	}
 	if rc, ok := rateSettings.(interface{ ResourceCaps() portal.ResourceCaps }); ok {
 		p.SetResourceCaps(rc.ResourceCaps()) // resource limits pages
+	}
+	if lifecycle != nil {
+		p.SetAccount(lifecycle(svc)) // My account: "Your data"; /admin/users: Delete
 	}
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())

@@ -44,7 +44,7 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	}
 	opts := connector.WireOptions{
 		Store: st, Keys: keys, Registry: registry, BaseURL: cfg.BaseURL, Version: version, Log: log,
-		ConnectFinish: connectFinish(log), Permissions: perms,
+		ConnectFinish: connectFinish(log), Permissions: perms, TunnelRelay: tunnelRelayOptions(cfg),
 	}
 	if policySvc != nil {
 		opts.OnChange = policySvc.Invalidate
@@ -61,7 +61,7 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	}
 	fed.Start(ctx)
 	log.Info("user-added MCP servers ready", "server_apps", len(registry.ServerApps()),
-		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath)
+		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath, "tunnel_relay", fed.Tunnels.RelayEnabled())
 	return fed, nil
 }
 

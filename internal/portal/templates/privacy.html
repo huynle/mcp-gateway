@@ -1,0 +1,67 @@
+{{define "title"}}Privacy Policy{{end}}
+{{define "content"}}
+{{with .Data.Legal}}
+<article class="legal">
+<h1>Privacy Policy</h1>
+{{if .Draft}}<p class="notice draft" role="note" data-legal-draft>Draft – pending review. This text has not been reviewed by a lawyer yet and may change before it takes effect.</p>{{end}}
+<p class="muted">Effective {{.EffectiveDisplay}}.</p>
+
+<p>This policy explains what the MCP Gateway at this address (the "gateway") collects, why, how long it is kept, who it is shared with, and what you can do about it. The gateway is run by <strong>{{.OperatorDisplay}}</strong> ("we"), who is responsible for the data described here. Contact: {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}.</p>
+
+<h2>1. What the gateway does</h2>
+<p>The gateway lets AI agents ("harnesses", Model Context Protocol clients) that you connect use tools on the apps you connect (for example Google Workspace, Microsoft 365, GitHub, Slack, Atlassian, or MCP servers you add), acting as you and within the policy of your role. Writes can require your approval first.</p>
+
+<h2>2. What we collect and why</h2>
+<ul>
+  <li><strong>Your account.</strong> When you sign in with your identity provider (OpenID Connect) we receive your name, email address and a permanent account identifier. We store your display name, the provider's issuer and account identifier, your role and the times of your sign-ins. Your email address is used during sign-in to check that your domain is allowed (and as a fallback display name); it is not stored separately.</li>
+  <li><strong>Sessions.</strong> A session cookie keeps you signed in to the portal. We store only a hash of it, with its creation, last-use and expiry times. Sessions end after a period of inactivity and after a maximum lifetime.</li>
+  <li><strong>Agents and tokens.</strong> For each agent you sign in or token you generate: its name, the address it was registered with, a hash of the token (never the token itself), and when it was created, last used, expires or was revoked.</li>
+  <li><strong>Connected apps.</strong> When you connect an app we receive OAuth access and refresh tokens from that vendor, the account identifier and display name, and the permissions (scopes) you granted. Tokens are encrypted before they are stored (envelope encryption; the key-encryption keys are managed in OpenBao / Vault transit or an operator-held key file, never in the database). They are used only to make the tool calls your agents request.</li>
+  <li><strong>Content your agents request.</strong> Mails, events, files, messages or issues your agents read or write are passed between the app and your agent for that request and are not stored by the gateway. The exceptions: a write waiting for your approval is stored encrypted until it is approved, denied or expires; and for writes we keep an operation record (tool, state, a fingerprint of the request, the identifiers of what was created) so that a retried request does not run twice.</li>
+  <li><strong>Activity and audit records.</strong> For every tool call and security-relevant action: who, which agent and tool, which connected account, the policy decision, the outcome, timing and resource identifiers (for example a file or channel id). Not the content. You see your own records under Activity; administrators can see them for security and abuse investigations.</li>
+  <li><strong>Technical logs.</strong> Server logs record requests and errors for operations and security. User identifiers in logs are pseudonymised (a keyed hash), and tokens, secrets and request content are redacted.</li>
+  <li><strong>Your preferences.</strong> Settings you choose (for example a personal rate limit). The colour theme is kept only in your browser's local storage.</li>
+</ul>
+<p>We use this data only to provide, secure and support the gateway, to enforce the policies of your role, and to meet legal obligations. Legal bases where they apply (for example under the GDPR): performance of our agreement with you (providing the service), our legitimate interest in keeping the service secure, and legal obligations.</p>
+
+<h2>3. Google user data</h2>
+<p>When you connect a Google account, the gateway accesses only the Google data needed for the tools your agents call, with the scopes you granted on Google's consent screen: for example reading or sending mail, reading or creating calendar events, and finding or editing Drive files. That data is used solely to perform the requested action and return its result to the agent you chose; it is not stored beyond what section 2 describes, not used for advertising, not sold, and not used to develop, improve or train generalised AI or machine-learning models. People do not read it except with your explicit consent, for security purposes (such as investigating abuse), to comply with applicable law, or when it is aggregated and anonymised for internal operations.</p>
+<p>The gateway's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+<h2>4. Sharing</h2>
+<p>We do not sell or rent personal data, we do not share it for advertising, and the gateway contains no advertising, analytics or third-party tracking scripts. Data leaves the gateway only:</p>
+<ul>
+  <li>to the app you connected, when your agent calls one of its tools (that vendor's own privacy policy applies to what it receives);</li>
+  <li>to the AI agent you connected, which receives the results of the tool calls it makes (its provider's policy applies);</li>
+  <li>to your identity provider during sign-in;</li>
+  <li>when required by law, or to protect the security of the service and its users.</li>
+</ul>
+<p>Hosting: the gateway, its database and its key management run on infrastructure operated by {{.OperatorDisplay}}; we use no other subprocessors for this data.</p>
+
+<h2>5. How long we keep it</h2>
+<ul>
+  <li>Sessions: until they expire or you sign out. Codes and pending approvals: minutes to hours, until used, decided or expired.</li>
+  <li>Connected-app tokens: until you disconnect the app, the vendor revokes them, or your account is deleted.</li>
+  <li>Agent tokens: until they expire or you revoke them.</li>
+  <li>Activity and audit records: up to one year, then deleted.</li>
+  <li>Technical logs: for the retention period of our log storage (no longer than needed for operations and security).</li>
+  <li>Your account: until you delete it or it is removed by an administrator.</li>
+</ul>
+
+<h2>6. Your choices and rights</h2>
+<p>From My account and the portal pages you can see your activity, disconnect any app (which deletes its stored tokens), revoke any agent or token, and export or delete your account. You can also revoke the gateway's access in your Google, Microsoft, GitHub, Slack or Atlassian account settings at any time. Depending on where you live you may have further rights (access, correction, deletion, portability, objection, complaint to a supervisory authority); contact us at the address above and we will answer within 30 days.</p>
+
+<h2>7. Security</h2>
+<p>Traffic is encrypted in transit (HTTPS). Secrets are encrypted at rest with keys held outside the database. Every user's data is isolated in the database by row-level security, so one user's requests cannot read another's. Administrative actions are recorded in the audit log.</p>
+
+<h2>8. Children</h2>
+<p>The gateway is not directed to children under 16 and we do not knowingly collect their data.</p>
+
+<h2>9. Changes</h2>
+<p>We will post changes on this page with a new effective date and, for material changes, tell signed-in users in the portal before they take effect.</p>
+
+<h2>10. Contact</h2>
+<p>{{.OperatorDisplay}} · {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}. See also the <a href="/terms">Terms of Service</a>.</p>
+</article>
+{{end}}
+{{end}}

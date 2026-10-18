@@ -721,3 +721,90 @@ func TestLint(t *testing.T) {
 		})
 	}
 }
+
+// TestTunnelRelay: off by default (no relay env, port or policy rule);
+// enabled, it advertises the pod IP from the downward API, reads the
+// secret from a Secret, opens the container port without adding it to
+// any Service, and the NetworkPolicy admits it from and to the gateway's
+// own pods only. Missing secret or a clashing port refuses to render.
+func TestTunnelRelay(t *testing.T) {
+	off := parse(t, mustRender(t, "values-production.example.yaml"))
+	c := containers(t, find(off, "Deployment", "mcp-gateway"), "Deployment")[0]
+	for _, name := range []string{"GATEWAY_RELAY_LISTEN_ADDR", "GATEWAY_RELAY_ADVERTISE_ADDR", "GATEWAY_RELAY_SECRET", "POD_IP"} {
+		if _, ok := envMap(c)[name]; ok {
+			t.Errorf("relay off: %s is set", name)
+		}
+	}
+
+	on := parse(t, mustRender(t, "values-production.example.yaml", "tunnelRelay.enabled=true", "tunnelRelay.existingSecret=gw-relay"))
+	dep := find(on, "Deployment", "mcp-gateway")
+	c = containers(t, dep, "Deployment")[0]
+	if v := envValue(c, "GATEWAY_RELAY_LISTEN_ADDR"); v != ":18081" {
+		t.Errorf("GATEWAY_RELAY_LISTEN_ADDR = %q", v)
+	}
+	if v := envValue(c, "GATEWAY_RELAY_ADVERTISE_ADDR"); v != "http://$(POD_IP):18081" {
+		t.Errorf("GATEWAY_RELAY_ADVERTISE_ADDR = %q", v)
+	}
+	if fp := dig(envMap(c)["POD_IP"], "valueFrom", "fieldRef", "fieldPath"); fp != "status.podIP" {
+		t.Errorf("POD_IP fieldPath = %v", fp)
+	}
+	// POD_IP must be defined before the variable that references it.
+	order, _ := dig(c, "env").([]any)
+	podIdx, advIdx := -1, -1
+	for i, e := range order {
+		switch dig(e, "name") {
+		case "POD_IP":
+			podIdx = i
+		case "GATEWAY_RELAY_ADVERTISE_ADDR":
+			advIdx = i
+		}
+	}
+	if podIdx < 0 || advIdx < podIdx {
+		t.Errorf("POD_IP (%d) must precede GATEWAY_RELAY_ADVERTISE_ADDR (%d)", podIdx, advIdx)
+	}
+	if s, k := envSecretRef(c, "GATEWAY_RELAY_SECRET"); s != "gw-relay" || k != "relay-secret" {
+		t.Errorf("GATEWAY_RELAY_SECRET from %s/%s", s, k)
+	}
+	found := false
+	for _, p := range dig(c, "ports").([]any) {
+		found = found || (dig(p, "name") == "tunnel-relay" && dig(p, "containerPort") == 18081)
+	}
+	if !found {
+		t.Error("no tunnel-relay containerPort")
+	}
+	for _, svc := range findAll(on, "Service") {
+		for _, p := range dig(svc.Spec, "ports").([]any) {
+			if dig(p, "port") == 18081 || dig(p, "targetPort") == 18081 || dig(p, "targetPort") == "tunnel-relay" {
+				t.Errorf("Service %s exposes the relay port", svc.Name)
+			}
+		}
+	}
+	np := find(on, "NetworkPolicy", "mcp-gateway")
+	for _, dir := range []struct{ rules, peers string }{{"ingress", "from"}, {"egress", "to"}} {
+		ok := false
+		rules, _ := dig(np.Spec, dir.rules).([]any)
+		for _, r := range rules {
+			if dig(r, "ports", 0, "port") != 18081 {
+				continue
+			}
+			peers, _ := dig(r, dir.peers).([]any)
+			if len(peers) != 1 || dig(peers, 0, "podSelector", "matchLabels", "app.kubernetes.io/name") != "mcp-gateway" ||
+				dig(peers, 0, "namespaceSelector") != nil || dig(peers, 0, "ipBlock") != nil {
+				t.Errorf("%s relay rule peers = %v, want the gateway pods only", dir.rules, peers)
+			}
+			ok = true
+		}
+		if !ok {
+			t.Errorf("no %s rule for the relay port", dir.rules)
+		}
+	}
+
+	for name, set := range map[string][]string{
+		"no secret":  {"tunnelRelay.enabled=true"},
+		"http clash": {"tunnelRelay.enabled=true", "tunnelRelay.existingSecret=s", "tunnelRelay.port=18080"},
+	} {
+		if _, _, err := render(t, "values-production.example.yaml", set...); err == nil {
+			t.Errorf("%s: rendered", name)
+		}
+	}
+}

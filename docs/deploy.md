@@ -47,6 +47,7 @@ The chart **never renders a Secret** and never accepts a secret value (`make tes
 | `mcp-gateway-keys` (`keyProvider.file.existingSecret`) | `keys.json` (output of `crypto.GenerateKeyFile`) | the file provider (local clusters only; mounted through an init container that copies it to a 0600 file in a memory-backed emptyDir, because a Secret volume cannot produce a file owned by the gateway user with that mode) |
 | `mcp-gateway-oidc` (`oidc.providers[].clientSecret.secretName`) | `<provider>-client-secret` (or `clientSecret.secretKey`) | `GATEWAY_OIDC_<NAME>_CLIENT_SECRET` |
 | `mcp-gateway-app` (`logSalt.existingSecret`, optional) | `log-salt` | `GATEWAY_LOG_SALT` (keeps user pseudonyms stable across replicas and restarts) |
+| `mcp-gateway-relay` (`tunnelRelay.existingSecret`, when `tunnelRelay.enabled`) | `relay-secret` (or `tunnelRelay.secretKey`), ≥ 32 bytes | `GATEWAY_RELAY_SECRET`, the cross-replica tunnel relay's HMAC key ([tunnel.md](tunnel.md#multiple-replicas-cross-replica-relay)) |
 | `mcp-gateway-tls` (`ingress.tls.secretName`) | `tls.crt`, `tls.key` | the Ingress; cert-manager fills it when the issuer annotation is set |
 
 ```bash
@@ -63,7 +64,7 @@ kubectl -n mcp-gateway create secret generic mcp-gateway-app --from-literal=log-
 
 ## Values
 
-Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`). The ones that shape the deployment:
+Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`), except `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`), which has no chart key yet: set it through `extraEnv` (`- {name: GATEWAY_AUDIT_RETENTION, value: 4380h}`) when the default does not fit. The ones that shape the deployment:
 
 | Value | Default | Notes |
 |---|---|---|
@@ -84,12 +85,17 @@ Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key unde
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator `ServiceMonitor` on the metrics Service. |
 | `metrics.prometheusRule.enabled` | `false` | Prometheus Operator `PrometheusRule` with the alerts the runbooks expect (`templates/prometheusrule.yaml`): `MCPGatewayUnresolvedOperations` (any `ledger_operations_total{state="unresolved"}` increase in `unresolved.window`, 30m), `MCPGatewayConnectionRefreshFailures` (`refreshFailures.perMinute` per app over 15m), `MCPGatewayAuthFailureSpike` (`authFailures.perMinute`, 30/min over 5m for 10m), `MCPGatewayVendorRateLimited` (vendor 429s per app), `MCPGatewayScrapeDown` (`absent(up == 1)` for 5m) and, with `kubeStateMetrics`, `MCPGatewayNoReadyReplicas` / `MCPGatewayReplicasBelowMinimum`. `selector` is the label matcher of your scrape job (the ServiceMonitor's `job` label is the metrics Service name, `<release>-metrics`); `labels` makes the operator pick the rule up; `runbookBaseURL` is prefixed to each `runbook_url`. |
 | `extraEnv`, `extraEnvFrom`, `extraVolumes`, `extraVolumeMounts` | | Escape hatches (e.g. a CA bundle for a private Vault). |
+| `extraEnv` → `GATEWAY_LEGAL_OPERATOR_NAME` | unset → `[operator name]` | Public pages (homepage, `/privacy`, `/terms`, `/support`): the person or organisation running the gateway. No chart value yet; set through `extraEnv`. Checklist: [`public-launch.md`](public-launch.md). |
+| `extraEnv` → `GATEWAY_LEGAL_CONTACT_EMAIL` | unset → `[contact email]` | Bare address for privacy, support and security requests (rendered as a `mailto:` link). |
+| `extraEnv` → `GATEWAY_LEGAL_JURISDICTION` | unset → `[jurisdiction]` | Governing law in the terms. |
+| `extraEnv` → `GATEWAY_LEGAL_EFFECTIVE_DATE` | unset → `[effective date]` | `YYYY-MM-DD`; shown as "Effective 18 October 2026". |
+| `extraEnv` → `GATEWAY_LEGAL_DRAFT` | `true` | Visible "Draft – pending review" marker on `/privacy` and `/terms`; set `false` only after legal review. Invalid values of any `GATEWAY_LEGAL_*` fail startup; unset ones or the draft marker log a startup warning. |
 
 `values.schema.json` validates types, enums and formats (durations, CIDRs, provider names) before rendering.
 
 ### Public paths
 
-The Ingress routes `/` (exact), `/mcp`, `/oauth`, `/.well-known`, `/auth`, `/signin`, `/account`, `/tokens`, `/connections`, `/connect`, `/approvals`, `/operations`, `/harnesses`, `/activity`, `/admin`, `/static` and `/slack` to the `http` Service. `/healthz` and `/readyz` stay cluster-internal (probes), and `/metrics` is on another port and another Service that no Ingress references.
+The Ingress routes `/` (exact), `/mcp`, `/oauth`, `/.well-known`, `/auth`, `/signin`, `/account`, `/tokens`, `/connections`, `/connect`, `/approvals`, `/operations`, `/harnesses`, `/activity`, `/admin`, `/static` and `/slack` to the `http` Service. The public pages `/privacy`, `/terms` and `/support` are **not in the chart's default list yet** (follow-up: add them to `ingress.paths` and regenerate the goldens with helm v3); until then add them to `ingress.paths` or use the `/` Prefix catch-all, otherwise Google, Slack and GitHub reviewers get the ingress 404. `/healthz` and `/readyz` stay cluster-internal (probes), and `/metrics` is on another port and another Service that no Ingress references.
 
 ## Install, upgrade, rollback
 
@@ -137,6 +143,7 @@ The gateway serves Prometheus metrics on `0.0.0.0:19090/metrics` inside the pod,
 - Ingress: the `http` port from `networkPolicy.ingress.http.from` (set it to the ingress controller's namespace), the metrics port from `networkPolicy.ingress.metrics.from`.
 - Egress: DNS (53 UDP/TCP, optionally restricted to `egress.dns.to`), PostgreSQL (`egress.postgres`: CIDRs or namespace/pod selectors; empty = any peer on that port), Vault (`egress.keyProvider`, rendered only for `type=vault`), vendor APIs on 443.
 - **Core `NetworkPolicy` cannot match hostnames.** `egress.vendorAPIs.hosts` (GitHub, Slack, Atlassian, Google, Microsoft; from [`docs/vendor-apps.md`](vendor-apps.md)) is recorded on the policy as an annotation. Without `egress.vendorAPIs.cidrs`, HTTPS egress is allowed to `0.0.0.0/0` **except** the private and link-local ranges (`10/8`, `172.16/12`, `192.168/16`, `169.254/16`: no cloud metadata service, no internal services), which is the tightest cloud-neutral rule for a set of public SaaS endpoints whose addresses change. Clusters with an FQDN-aware CNI (Cilium `toFQDNs`, Calico `GlobalNetworkSet`, an egress proxy) should turn the host list into their own rule and set `cidrs` to the proxy; `egress.extra` appends raw rules.
+- With `tunnelRelay.enabled`, ingress and egress on `tunnelRelay.port` (18081) are allowed between the release's gateway pods only (podSelector on the selector labels); the port is on no Service.
 - Your OIDC issuers must be reachable too: public ones are covered by the vendor rule; a private IdP needs an `egress.extra` entry.
 
 ## Production
@@ -159,7 +166,7 @@ The production shape is `deploy/helm/values-production.example.yaml`; copy it in
 
 **Before the first production deploy**: database backups configured and a restore rehearsed (migrations are forward-only; `docs/runbooks/deploy-and-rollback.md`); the production vendor apps registered with the production callback URLs (`docs/vendor-apps.md` section 6 checklist); each runbook drilled once on staging (`docs/runbooks/README.md`, drill log); the pilot checklist agreed (`docs/pilot-checklist.md`).
 
-**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no audit export endpoint (`trpz0p16`), no audit retention purge job (`mjdzepbx`).
+**Runbooks** (`docs/runbooks/`): [deploy and rollback](runbooks/deploy-and-rollback.md), [key rotation](runbooks/key-rotation.md), [unresolved operations](runbooks/unresolved-operations.md), [user offboarding](runbooks/user-offboarding.md), [vendor app secret rotation](runbooks/vendor-app-secret-rotation.md), [audit export](runbooks/audit-export.md), [incident redaction check](runbooks/incident-redaction-check.md). Known operational gaps with Brain draft tasks: no audit export endpoint (`trpz0p16`). Audit retention: `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`; the `audit.purge` job, [observability.md](observability.md)).
 
 ## Environments
 

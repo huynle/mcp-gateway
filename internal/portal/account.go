@@ -34,6 +34,8 @@ type accountData struct {
 	GatewayTools *gatewayToolsView
 	RateLimits   *rateLimitsView
 	Limits       *limitsView
+	// Lifecycle shows "Your data" (export, delete; SetAccount).
+	Lifecycle bool
 }
 
 type RateSettings interface {
@@ -62,7 +64,7 @@ type gatewayToolsView struct {
 const askAdminForServers = "Gateway management tools need permission to add MCP servers. Ask an admin for a role that may add MCP servers."
 
 func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
-	var data accountData
+	data := accountData{Lifecycle: p.lifecycle != nil}
 	if p.gatewayTools != nil {
 		ctx := r.Context()
 		userID := identity.PrincipalFrom(ctx).UserID
