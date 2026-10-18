@@ -82,7 +82,7 @@ func TestCallbackCapRedirectShowsMessage(t *testing.T) {
 		"/connections?error=cap_exceeded&resource=connections_total&limit=<b>": "You have reached the limit of connected accounts",
 	}
 	for path, want := range cases {
-		if got := connections.FlowErrorMessageForTest(httptest.NewRequest(http.MethodGet, path, nil).URL.Query()); !strings.Contains(got, want) || !strings.Contains(got, "ask an admin") {
+		if got := connections.FlowErrorMessageForTest(httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil).URL.Query()); !strings.Contains(got, want) || !strings.Contains(got, "ask an admin") {
 			t.Errorf("%s: %q, want %q", path, got, want)
 		}
 	}

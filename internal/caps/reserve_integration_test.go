@@ -202,7 +202,7 @@ func TestIntegrationReserveTunnelsConcurrentIgnoresRevoked(t *testing.T) {
 	if err := st.WithUser(ctx, alice, func(tx store.Tx) error {
 		ts, err := store.ListMCPTunnels(ctx, tx, alice)
 		if err != nil || len(ts) == 0 {
-			return fmt.Errorf("list: %v (%d)", err, len(ts))
+			return fmt.Errorf("list: %w (%d)", err, len(ts))
 		}
 		first = ts[0].ID
 		return store.RevokeMCPTunnel(ctx, tx, first, time.Now())
