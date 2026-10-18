@@ -92,6 +92,7 @@ func TestRegistryRejectsInvalidTools(t *testing.T) {
 		"no schema":       func(t *connectors.Tool) { t.InputSchema = nil },
 		"schema not json": func(t *connectors.Tool) { t.InputSchema = json.RawMessage(`{`) },
 		"schema not obj":  func(t *connectors.Tool) { t.InputSchema = json.RawMessage(`{"type":"string"}`) },
+		"bad idempotency": func(t *connectors.Tool) { t.Idempotency = "sometimes" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
