@@ -80,12 +80,17 @@ Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key unde
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator `ServiceMonitor` on the metrics Service. |
 | `metrics.prometheusRule.enabled` | `false` | Prometheus Operator `PrometheusRule` with the alerts the runbooks expect (`templates/prometheusrule.yaml`): `MCPGatewayUnresolvedOperations` (any `ledger_operations_total{state="unresolved"}` increase in `unresolved.window`, 30m), `MCPGatewayConnectionRefreshFailures` (`refreshFailures.perMinute` per app over 15m), `MCPGatewayAuthFailureSpike` (`authFailures.perMinute`, 30/min over 5m for 10m), `MCPGatewayVendorRateLimited` (vendor 429s per app), `MCPGatewayScrapeDown` (`absent(up == 1)` for 5m) and, with `kubeStateMetrics`, `MCPGatewayNoReadyReplicas` / `MCPGatewayReplicasBelowMinimum`. `selector` is the label matcher of your scrape job (the ServiceMonitor's `job` label is the metrics Service name, `<release>-metrics`); `labels` makes the operator pick the rule up; `runbookBaseURL` is prefixed to each `runbook_url`. |
 | `extraEnv`, `extraEnvFrom`, `extraVolumes`, `extraVolumeMounts` | | Escape hatches (e.g. a CA bundle for a private Vault). |
+| `extraEnv` → `GATEWAY_LEGAL_OPERATOR_NAME` | unset → `[operator name]` | Public pages (homepage, `/privacy`, `/terms`, `/support`): the person or organisation running the gateway. No chart value yet; set through `extraEnv`. Checklist: [`public-launch.md`](public-launch.md). |
+| `extraEnv` → `GATEWAY_LEGAL_CONTACT_EMAIL` | unset → `[contact email]` | Bare address for privacy, support and security requests (rendered as a `mailto:` link). |
+| `extraEnv` → `GATEWAY_LEGAL_JURISDICTION` | unset → `[jurisdiction]` | Governing law in the terms. |
+| `extraEnv` → `GATEWAY_LEGAL_EFFECTIVE_DATE` | unset → `[effective date]` | `YYYY-MM-DD`; shown as "Effective 18 October 2026". |
+| `extraEnv` → `GATEWAY_LEGAL_DRAFT` | `true` | Visible "Draft – pending review" marker on `/privacy` and `/terms`; set `false` only after legal review. Invalid values of any `GATEWAY_LEGAL_*` fail startup; unset ones or the draft marker log a startup warning. |
 
 `values.schema.json` validates types, enums and formats (durations, CIDRs, provider names) before rendering.
 
 ### Public paths
 
-The Ingress routes `/` (exact), `/mcp`, `/oauth`, `/.well-known`, `/auth`, `/signin`, `/account`, `/tokens`, `/connections`, `/connect`, `/approvals`, `/operations`, `/harnesses`, `/activity`, `/admin`, `/static` and `/slack` to the `http` Service. `/healthz` and `/readyz` stay cluster-internal (probes), and `/metrics` is on another port and another Service that no Ingress references.
+The Ingress routes `/` (exact), `/mcp`, `/oauth`, `/.well-known`, `/auth`, `/signin`, `/account`, `/tokens`, `/connections`, `/connect`, `/approvals`, `/operations`, `/harnesses`, `/activity`, `/admin`, `/static` and `/slack` to the `http` Service. The public pages `/privacy`, `/terms` and `/support` are **not in the chart's default list yet** (follow-up: add them to `ingress.paths` and regenerate the goldens with helm v3); until then add them to `ingress.paths` or use the `/` Prefix catch-all, otherwise Google, Slack and GitHub reviewers get the ingress 404. `/healthz` and `/readyz` stay cluster-internal (probes), and `/metrics` is on another port and another Service that no Ingress references.
 
 ## Install, upgrade, rollback
 
