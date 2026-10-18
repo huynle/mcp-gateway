@@ -11,6 +11,20 @@ import (
 	"sync"
 )
 
+// Idempotency is a tool's ledger deduplication mode (Tool.Idempotency).
+type Idempotency string
+
+// The modes.
+const (
+	// IdempotencyDigest: an identical unconfirmed write (same user,
+	// account, tool and arguments) inside the window replays the first
+	// one's stored result IDs instead of running again (decision dovthftx).
+	IdempotencyDigest Idempotency = ""
+	// IdempotencyPerCall: every call is a new ledger operation; nothing is
+	// replayed (quirk 47ab9sk7, decision bbgv2sqv).
+	IdempotencyPerCall Idempotency = "per_call"
+)
+
 // Kind says whether a tool only reads from the app or changes something in
 // it. Reads skip approvals and the ledger unless policy says otherwise;
 // writes always go through both (decision dovthftx).
@@ -125,6 +139,13 @@ type Tool struct {
 	// content (decision dovthftx). nil means nothing is kept; reads leave
 	// it nil.
 	ResultIDs func(res Result) map[string]string
+	// Idempotency says how the ledger deduplicates unconfirmed writes:
+	// IdempotencyDigest (the default) replays an identical call inside the
+	// idempotency window; IdempotencyPerCall records every call as its own
+	// operation (tools of user-added MCP servers, whose kind comes from an
+	// upstream hint and whose idempotency is the upstream's concern).
+	// Approved calls are keyed by the approval either way.
+	Idempotency Idempotency
 	// Bounds caps page size and result size.
 	Bounds Bounds
 	// NoAccount marks a tool that runs without a connected account; the
@@ -311,6 +332,8 @@ func (t Tool) validate() error {
 		return fmt.Errorf("%w: %s: input schema is required", ErrInvalidTool, t.FullName())
 	case t.Bounds.MaxPageSize < 0 || t.Bounds.MaxResultBytes < 0:
 		return fmt.Errorf("%w: %s: bounds must not be negative", ErrInvalidTool, t.FullName())
+	case t.Idempotency != IdempotencyDigest && t.Idempotency != IdempotencyPerCall:
+		return fmt.Errorf("%w: %s: idempotency must be empty or %q, got %q", ErrInvalidTool, t.FullName(), IdempotencyPerCall, t.Idempotency)
 	}
 	var schema struct {
 		Type string `json:"type"`
