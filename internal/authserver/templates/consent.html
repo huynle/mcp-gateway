@@ -5,6 +5,7 @@
     {{range .Scopes}}<li>{{.}}</li>{{end}}
   </ul>
   <p class="muted">Tokens will be issued for <code>{{.Resource}}</code> and sent back to <code>{{.RedirectHost}}</code>. Everything the harness does is checked by policy, confirmed where your role requires it, and recorded in your activity. You can disconnect it at any time on the Harnesses page.</p>
+  <p class="muted">By allowing, you let this harness act as you under the <a href="/terms">Terms of Service</a> and the <a href="/privacy">Privacy Policy</a>.</p>
   <form method="post" action="/oauth/authorize/consent">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     {{range $k, $vs := .Hidden}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}

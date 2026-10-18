@@ -21,6 +21,7 @@ type Portal struct {
 	mounts       []mount
 	gatewayTools GatewayTools // nil: no "Gateway management tools" section
 	rateSettings RateSettings // nil: no durable rate-limit settings UI
+	legal        Legal        // operator values on the public pages (SetLegal)
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -33,7 +34,7 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Portal{svc: svc, log: log, tpl: tpl}
+	p := &Portal{svc: svc, log: log, tpl: tpl, legal: DefaultLegal()}
 	svc.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, status int, message string) {
 		p.errorPage(w, r, status, "Sign-in failed", message)
 	})
@@ -43,7 +44,8 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 // Handler returns the portal routes, wrapped in the session middleware and
 // the CSRF check:
 //
-//	GET  /                         redirect to /account or /signin
+//	GET  /                         public homepage; signed in: redirect to /account
+//	GET  /privacy, /terms, /support public legal and support pages (no sign-in)
 //	GET  /signin                   provider buttons
 //	GET  /account                  my account
 //	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
@@ -73,6 +75,9 @@ func (p *Portal) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /{$}", p.home)
 	mux.HandleFunc("GET /signin", p.signIn)
+	mux.HandleFunc("GET /privacy", p.publicPage("privacy.html"))
+	mux.HandleFunc("GET /terms", p.publicPage("terms.html"))
+	mux.HandleFunc("GET /support", p.publicPage("support.html"))
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))
 	if p.gatewayTools != nil {
 		mux.Handle("POST /account/gateway-tools", p.requireUser(p.csrf(http.HandlerFunc(p.setGatewayTools))))
@@ -205,12 +210,17 @@ func (p *Portal) requireAdmin(next http.Handler) http.Handler {
 
 // --- pages -----------------------------------------------------------------
 
+// home is the public homepage (what the gateway is, what it does with
+// data, how to sign in; Google OAuth verification and the Slack / GitHub
+// listings need it reachable without signing in and without a redirect).
+// Signed-in users go straight to My account, as before.
 func (p *Portal) home(w http.ResponseWriter, r *http.Request) {
+	publicCaching(w, r)
 	if identity.PrincipalFrom(r.Context()) != nil {
 		http.Redirect(w, r, "/account", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+	p.render(w, r, http.StatusOK, "home.html", publicData{Legal: p.legal, Providers: p.providers("/account")})
 }
 
 // signInProvider is one button on the sign-in page.
@@ -229,14 +239,20 @@ func (p *Portal) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := identity.SafeReturnTo(r.URL.Query().Get("return_to"))
-	var data signInData
+	p.render(w, r, http.StatusOK, "signin.html", signInData{Providers: p.providers(returnTo)})
+}
+
+// providers is the sign-in buttons, each returning to returnTo (already
+// checked with identity.SafeReturnTo).
+func (p *Portal) providers(returnTo string) []signInProvider {
+	var out []signInProvider
 	for _, prov := range p.svc.Providers() {
-		data.Providers = append(data.Providers, signInProvider{
+		out = append(out, signInProvider{
 			DisplayName: prov.DisplayName,
 			StartURL:    "/auth/" + prov.Name + "/start?return_to=" + url.QueryEscape(returnTo),
 		})
 	}
-	p.render(w, r, http.StatusOK, "signin.html", data)
+	return out
 }
 
 type adminUsersData struct {

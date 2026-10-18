@@ -105,11 +105,12 @@ func (h *harness) do(t *testing.T, r request) *httptest.ResponseRecorder {
 	return rec
 }
 
-func TestHomeRedirects(t *testing.T) {
+func TestHomeIsPublicAndRedirectsSignedInUsers(t *testing.T) {
 	h := newHarness(t)
+	// Anonymous visitors get the public homepage (TestPublicPagesAreServedAnonymously).
 	rec := h.do(t, request{method: http.MethodGet, path: "/"})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/signin" {
-		t.Errorf("anonymous GET / = %d %q, want 303 /signin", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusOK {
+		t.Errorf("anonymous GET / = %d %q, want 200 (public homepage)", rec.Code, rec.Header().Get("Location"))
 	}
 	ck, _ := h.session(t, memberSub, "Member")
 	rec = h.do(t, request{method: http.MethodGet, path: "/", cookie: ck})

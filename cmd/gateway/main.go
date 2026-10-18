@@ -300,6 +300,14 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	if err != nil {
 		return nil, fmt.Errorf("portal: %w", err)
 	}
+	legal, err := portal.LegalFromEnv(os.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("portal: %w", err)
+	}
+	p.SetLegal(legal) // homepage, /privacy, /terms, /support (docs/public-launch.md)
+	if missing := legal.Placeholders(); len(missing) > 0 || legal.Draft {
+		log.Warn("public legal pages show placeholders or the draft marker", "unset", missing, "draft", legal.Draft)
+	}
 	if gatewayTools != nil {
 		p.SetGatewayTools(gatewayTools) // My account: "Gateway management tools"
 	}
