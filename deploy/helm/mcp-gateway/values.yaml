@@ -262,6 +262,21 @@ ingress:
       pathType: Prefix
 
 # Default-deny with explicit ingress and egress. Core NetworkPolicy matches
+# Cross-replica tunnel relay (docs/tunnel.md "Multiple replicas"). With
+# more than one replica a tunnel's WebSocket lands on one pod; enabling the
+# relay lets every other pod forward that tunnel's requests to it over an
+# internal port (never on the Service or the Ingress), so no sticky
+# routing is needed. Sets GATEWAY_RELAY_LISTEN_ADDR=:<port>,
+# GATEWAY_RELAY_ADVERTISE_ADDR=http://$(POD_IP):<port> (downward API) and
+# GATEWAY_RELAY_SECRET from existingSecret/secretKey (>= 32 bytes, the same
+# value on every pod). The NetworkPolicy then admits the relay port from
+# and to the gateway's own pods only.
+tunnelRelay:
+  enabled: false
+  port: 18081
+  existingSecret: ""
+  secretKey: relay-secret
+
 # CIDRs and selectors, never hostnames: the vendor API host list is
 # documented on the policy (annotation) and, without explicit CIDRs, means
 # "HTTPS to the public internet, not to private ranges".
