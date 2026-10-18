@@ -38,6 +38,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 
+	"github.com/huynle/mcp-gateway/internal/account"
 	"github.com/huynle/mcp-gateway/internal/approvals"
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/authserver"
@@ -430,6 +431,9 @@ func newWorld(t *testing.T, opts options) *world {
 	// My account: "Gateway management tools", as cmd/gateway wires it
 	// (through the gate when the gateway tools are wired).
 	p.SetGatewayTools(w.gw.Setting(w.perms))
+	// My account: "Your data" (export, delete) and the admin delete, as
+	// cmd/gateway wires it (newAccountLifecycle).
+	p.SetAccount(account.New(st, w.idSvc, account.Options{Log: log, Now: w.now}))
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
 		if pr == nil {
