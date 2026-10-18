@@ -1,0 +1,53 @@
+{{define "title"}}Terms of Service{{end}}
+{{define "content"}}
+{{with .Data.Legal}}
+<article class="legal">
+<h1>Terms of Service</h1>
+{{if .Draft}}<p class="notice draft" role="note" data-legal-draft>Draft – pending review. This text has not been reviewed by a lawyer yet and may change before it takes effect.</p>{{end}}
+<p class="muted">Effective {{.EffectiveDisplay}}.</p>
+
+<p>These terms govern your use of the MCP Gateway at this address (the "service"), run by <strong>{{.OperatorDisplay}}</strong> ("we"). By signing in you accept them. The <a href="/privacy">Privacy Policy</a> explains how we handle your data.</p>
+
+<h2>1. The service</h2>
+<p>The service connects AI agents you choose to apps you connect, acting as you within the policy of your role, with approvals for actions where your role requires them. Features, connectors and limits may change over time.</p>
+
+<h2>2. Your account</h2>
+<ul>
+  <li>You sign in with an identity provider account that you are entitled to use. Keep your sign-in, agents and generated tokens secure; treat tokens like passwords and revoke any you suspect leaked.</li>
+  <li>You are responsible for what your agents do through the service with your account, including actions you approve.</li>
+  <li>An administrator may change your role, limit your access or disable your account, for example for security reasons or a breach of these terms.</li>
+</ul>
+
+<h2>3. Acceptable use</h2>
+<p>You must not:</p>
+<ul>
+  <li>use the service to break the law, or to infringe others' rights;</li>
+  <li>access accounts, data or apps you are not authorised to use, or try to read other users' data;</li>
+  <li>circumvent the policy, approvals, rate limits or security controls, or probe, scan or overload the service;</li>
+  <li>use the service to send spam or malware, or for harassment;</li>
+  <li>break the terms of the apps you connect (for example Google, Microsoft, GitHub, Slack or Atlassian terms of service).</li>
+</ul>
+
+<h2>4. Connected apps and AI agents</h2>
+<p>Apps you connect and AI agents you use are provided by third parties under their own terms; we are not responsible for them. AI agents can produce inaccurate output or propose wrong actions: review what an agent proposes before approving it. You can disconnect apps and agents at any time.</p>
+
+<h2>5. Your content</h2>
+<p>You keep all rights to your content. You give us only the permission needed to pass it between your apps and your agents as you direct and to run the service as the Privacy Policy describes.</p>
+
+<h2>6. Availability and changes</h2>
+<p>We aim to keep the service available but do not guarantee it is uninterrupted or error-free. We may change or discontinue features, and will give reasonable notice of material changes to these terms on this page.</p>
+
+<h2>7. Disclaimer and liability</h2>
+<p>The service is provided "as is" and "as available", without warranties of any kind to the extent permitted by law. To the extent permitted by law, we are not liable for indirect or consequential damages, lost data or profits, or for actions taken by AI agents or third-party apps. Nothing in these terms limits liability that cannot be limited by law.</p>
+
+<h2>8. Ending use</h2>
+<p>You may stop using the service and delete your account at any time from My account. We may suspend or end your access if you breach these terms or to protect the service or other users.</p>
+
+<h2>9. Governing law</h2>
+<p>These terms are governed by the laws of {{.JurisdictionDisplay}}, without regard to conflict-of-law rules, and disputes belong to its courts, unless the law of your residence requires otherwise.</p>
+
+<h2>10. Contact</h2>
+<p>{{.OperatorDisplay}} · {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}.</p>
+</article>
+{{end}}
+{{end}}

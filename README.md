@@ -296,6 +296,7 @@ docs/runbooks/          operator runbooks (deploy/rollback, key rotation, unreso
 docs/user-guide.md      coworker guide: harness, accounts, approvals, audit, errors
 docs/gateway-management.md  the gateway.* MCP tools (manage your MCP servers from your harness; permission + My account switch)
 docs/pilot-checklist.md what to collect, defaults to tune, sign-off criteria
+docs/public-launch.md   public pages: operator values, legal review, listing URLs
 docs/connectors/        one page per connector (tools, resource identity, writes and reconciliation, setup)
 docs/plans/             design documents
 docs/conformance.md     harness conformance checklist (automated rows from test/e2e, manual OpenCode / Claude Code rows)
