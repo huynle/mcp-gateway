@@ -519,9 +519,19 @@ func (s *Service) EnableUser(ctx context.Context, actorID, userID string) error 
 	return nil
 }
 
-// SetUserRole replaces the user's roles with the named existing role.
+// SetUserRole replaces the user's roles with the named existing role
+// (ErrUserPending for a user waiting for approval).
 func (s *Service) SetUserRole(ctx context.Context, actorID, userID, roleName string) error {
 	err := s.store.Bypass(ctx, func(tx Tx) error {
+		u, err := tx.GetUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if u.Status == store.UserPending {
+			// Approval assigns the default role; a role granted before
+			// it would outlive a rejection decision's intent.
+			return ErrUserPending
+		}
 		role, err := tx.FindRoleByName(ctx, roleName)
 		if err != nil {
 			return err

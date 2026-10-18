@@ -1,7 +1,9 @@
 {{define "title"}}Sign in{{end}}
 {{define "content"}}
 <h1>Sign in</h1>
-<p class="muted">Use your company account. Your user is created on first sign-in.</p>
+{{if .Data.HasInvite}}<p class="ok">You have an invite. Sign in to create your account.</p>
+{{else if .Data.InviteOnly}}<p class="muted">This gateway is invite-only: new accounts need the invite link an administrator sent. Existing users sign in as usual.</p>
+{{else}}<p class="muted">Use your company account. Your user is created on first sign-in.</p>{{end}}
 <div class="stack">
   {{range .Data.Providers}}
   <a class="btn primary" href="{{.StartURL}}">Continue with {{.DisplayName}}</a>

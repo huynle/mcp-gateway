@@ -44,7 +44,7 @@ func parseTemplates() (*templates, error) {
 	funcs := template.FuncMap{
 		"hasRole": slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
-			d, _ := p.Data.(adminUsersData)
+			d, _ := p.Data.(adminUsersData) // also the invite-created page
 			return userRow{Principal: p.Principal, User: u, Roles: d.Roles}
 		},
 	}

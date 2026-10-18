@@ -1,0 +1,12 @@
+{{define "title"}}Waiting for approval{{end}}
+{{define "content"}}
+<h1>Waiting for approval</h1>
+<div class="card">
+  <p>Thanks for signing up, {{.Data.DisplayName}}. An administrator has to approve your account before you can use the gateway.</p>
+  <p class="muted">Until then you cannot create tokens, connect apps or harnesses, or call tools. Sign in again later to check; your account becomes usable as soon as it is approved.</p>
+  <form method="post" action="/auth/signout">
+    <input type="hidden" name="_csrf" value="{{.Data.CSRFToken}}">
+    <button class="btn" type="submit">Sign out</button>
+  </form>
+</div>
+{{end}}

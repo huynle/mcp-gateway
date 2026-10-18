@@ -1,12 +1,60 @@
 {{define "title"}}Users{{end}}
 {{define "content"}}
 <h1>Users</h1>
+<p class="muted">Sign-up mode: <strong>{{.Data.SignupMode}}</strong>{{if eq .Data.SignupMode "approval"}} (new accounts wait below until approved; approving assigns the <a href="/admin/settings/default-role">default role</a>){{else if eq .Data.SignupMode "invite"}} (new accounts need an invite){{end}}.</p>
+{{with .Data.NewInvite}}
+<div class="card ok" id="new-invite">
+  <h2>Invite created</h2>
+  <p>Send this link{{if .Label}} ({{.Label}}){{end}}. It works once, until {{.Expires.Format "2006-01-02 15:04"}} UTC. <strong>It is shown only now.</strong></p>
+  <p><code>{{.Link}}</code></p>
+</div>
+{{end}}
+{{if .Data.Pending}}
+<h2 id="pending">Pending approval <span class="pill pending">{{len .Data.Pending}}</span></h2>
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Roles</th><th>Last company sign-in</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Pending}}{{template "user_row" (userRow $ .)}}{{end}}
+  </tbody>
+</table>
+<h2>All users</h2>
+{{end}}
 <table>
   <thead><tr><th>Name</th><th>Status</th><th>Roles</th><th>Last company sign-in</th><th>Created</th><th></th></tr></thead>
   <tbody>
   {{range .Data.Users}}{{template "user_row" (userRow $ .)}}{{else}}<tr><td colspan="6" class="muted">No users yet.</td></tr>{{end}}
   </tbody>
 </table>
+{{if .Data.InviteMode}}
+<h2 id="invites">Invites</h2>
+<form class="stack" method="post" action="/admin/users/invites">
+  <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+  <label>Note (optional, for you) <input name="label" maxlength="100"></label>
+  <label>Valid for
+    <select name="days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select>
+  </label>
+  <div><button class="btn primary" type="submit">Create invite</button></div>
+</form>
+<table>
+  <thead><tr><th>Note</th><th>State</th><th>Created</th><th>Expires</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Invites}}
+  <tr>
+    <td>{{if .Label}}{{.Label}}{{else}}<span class="muted">none</span>{{end}}</td>
+    <td><span class="pill {{.State}}">{{.State}}</span></td>
+    <td>{{.Created.Format "2006-01-02"}}</td>
+    <td>{{.Expires.Format "2006-01-02 15:04"}}</td>
+    <td>{{if eq .State "unused"}}
+      <form class="inline" method="post" action="/admin/users/invites/{{.ID}}/revoke">
+        <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+        <button class="btn danger" type="submit">Revoke</button>
+      </form>{{end}}
+    </td>
+  </tr>
+  {{else}}<tr><td colspan="5" class="muted">No invites yet.</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}
 {{end}}
 
 {{define "user_row"}}
@@ -14,6 +62,7 @@
   <td>{{.User.DisplayName}}{{if eq .User.ID .Principal.UserID}} <span class="muted">(you)</span>{{end}}</td>
   <td><span class="pill {{.User.Status}}">{{.User.Status}}</span></td>
   <td>
+    {{if eq .User.Status "pending"}}<span class="muted">assigned on approval</span>{{else}}
     <form class="inline" method="post" action="/admin/users/{{.User.ID}}/role" hx-post="/admin/users/{{.User.ID}}/role" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML">
       <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
       <select name="role" onchange="this.form.requestSubmit()" aria-label="Role">
@@ -21,12 +70,21 @@
         {{range .Roles}}<option value="{{.Name}}"{{if hasRole $current .Name}} selected{{end}}>{{.Name}}</option>{{end}}
       </select>
       <noscript><button class="btn" type="submit">Set</button></noscript>
-    </form>
+    </form>{{end}}
   </td>
   <td>{{if .User.LastCompanySignInAt}}{{.User.LastCompanySignInAt.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
   <td>{{.User.CreatedAt.Format "2006-01-02"}}</td>
   <td>
     {{if eq .User.ID .Principal.UserID}}
+    {{else if eq .User.Status "pending"}}
+    <form class="inline" method="post" action="/admin/users/{{.User.ID}}/approve" hx-post="/admin/users/{{.User.ID}}/approve" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <button class="btn primary" type="submit">Approve</button>
+    </form>
+    <form class="inline" method="post" action="/admin/users/{{.User.ID}}/reject" hx-post="/admin/users/{{.User.ID}}/reject" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML" hx-confirm="Reject {{.User.DisplayName}}? The account is disabled.">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <button class="btn danger" type="submit">Reject</button>
+    </form>
     {{else if eq .User.Status "active"}}
     <form class="inline" method="post" action="/admin/users/{{.User.ID}}/disable" hx-post="/admin/users/{{.User.ID}}/disable" hx-target="#user-{{.User.ID}}" hx-swap="outerHTML" hx-confirm="Disable {{.User.DisplayName}}? Their sessions end immediately.">
       <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">

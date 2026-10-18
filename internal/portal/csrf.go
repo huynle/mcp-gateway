@@ -41,7 +41,14 @@ func (p *Portal) csrf(next http.Handler) http.Handler {
 			return
 		}
 		principal := identity.PrincipalFrom(r.Context())
-		if principal == nil {
+		expected, userID := "", ""
+		switch pending := identity.PendingFrom(r.Context()); {
+		case principal != nil:
+			expected, userID = principal.CSRFToken, principal.UserID
+		case pending != nil && r.URL.Path == "/auth/signout":
+			// A pending account may only sign out.
+			expected, userID = pending.CSRFToken, pending.UserID
+		default:
 			p.forbidden(w, r, "Sign in before submitting this form.")
 			return
 		}
@@ -58,8 +65,8 @@ func (p *Portal) csrf(next http.Handler) http.Handler {
 			}
 			token = r.PostForm.Get(csrfField)
 		}
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(principal.CSRFToken)) != 1 {
-			p.log.Warn("request rejected", "event", "portal.csrf_rejected", "user_id", principal.UserID, "path", r.URL.Path)
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
+			p.log.Warn("request rejected", "event", "portal.csrf_rejected", "user_id", userID, "path", r.URL.Path)
 			p.forbidden(w, r, "The form token is missing or expired. Reload the page and try again.")
 			return
 		}
