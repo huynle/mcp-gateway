@@ -48,8 +48,10 @@ const (
 	// DefaultRowLimit caps each export section; RowLimits overrides it for
 	// the long ones.
 	DefaultRowLimit = 1000
-	// ConfirmPhrase must be typed to delete an account.
-	ConfirmPhrase = "delete my account"
+	// ConfirmPhrase must be typed to delete one's own account,
+	// AdminConfirmPhrase to delete someone else's (/admin/users).
+	ConfirmPhrase      = "delete my account"
+	AdminConfirmPhrase = "delete this account"
 )
 
 // RowLimits are the per-section caps that differ from DefaultRowLimit

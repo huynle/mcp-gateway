@@ -182,7 +182,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), rateSvc, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), rateSvc, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
@@ -291,6 +291,13 @@ func openKeyProvider(readiness *observability.Readiness, log *slog.Logger) (cryp
 // GATEWAY_OIDC_PROVIDERS; with none configured the sign-in page says so
 // instead of failing startup.
 func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
+	return newPortalWithAccount(cfg, st, reader, tokenSvc, policySvc, approvalSvc, connSvc, registry, gatewayTools, rateSettings, nil, log, extras...)
+}
+
+// newPortalWithAccount is newPortal with the account lifecycle (data
+// export, account deletion; account.go): lifecycle builds the service over
+// the portal's identity service (nil: neither is mounted).
+func newPortalWithAccount(cfg config.Config, st identity.Store, reader audit.Reader, tokenSvc *tokens.Service, policySvc *policy.Service, approvalSvc *approvals.Service, connSvc *connections.Service, registry *connectors.Registry, gatewayTools portal.GatewayTools, rateSettings portal.RateSettings, lifecycle accountLifecycle, log *slog.Logger, extras ...portalExtra) (http.Handler, error) {
 	svc, err := identity.New(identity.FromConfig(cfg), st, log)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)
@@ -310,6 +317,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	}
 	if rateSettings != nil {
 		p.SetRateSettings(rateSettings)
+	}
+	if lifecycle != nil {
+		p.SetAccount(lifecycle(svc)) // My account: "Your data"; /admin/users: Delete
 	}
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())

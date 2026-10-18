@@ -21,6 +21,7 @@ type Portal struct {
 	mounts       []mount
 	gatewayTools GatewayTools // nil: no "Gateway management tools" section
 	rateSettings RateSettings // nil: no durable rate-limit settings UI
+	lifecycle    Account      // nil: no data export / account deletion
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -48,10 +49,14 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /account                  my account
 //	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
 //	POST /account/rate-limit       my optional lower personal ceiling
+//	POST /account/export           download my data (SetAccount)
+//	GET|POST /account/delete       delete my account (SetAccount)
+//	GET  /account/deleted          after the deletion (anonymous)
 //	GET  /admin/users              admin: list users
 //	POST /admin/users/{id}/disable admin
 //	POST /admin/users/{id}/enable  admin
 //	POST /admin/users/{id}/role    admin: replace the user's role
+//	GET|POST /admin/users/{id}/delete admin: delete the user (SetAccount)
 //	/auth/...                      identity.Service.Handler
 //	GET  /static/...               embedded assets
 func (p *Portal) Handler() http.Handler {
@@ -84,6 +89,9 @@ func (p *Portal) Handler() http.Handler {
 		mux.Handle("POST /admin/settings/rate-limits/org", p.requireAdmin(p.csrf(http.HandlerFunc(p.setOrgRateLimits))))
 		mux.Handle("POST /admin/settings/rate-limits/app", p.requireAdmin(p.csrf(http.HandlerFunc(p.setAppRateLimit))))
 		mux.Handle("POST /admin/settings/rate-limits/user", p.requireAdmin(p.csrf(http.HandlerFunc(p.setUserRateLimit))))
+	}
+	if p.lifecycle != nil {
+		p.mountLifecycle(mux)
 	}
 	// Role gating runs before the CSRF check so a non-admin's POST is the
 	// same 404 as an unknown page rather than a 403 that reveals the route.
@@ -240,8 +248,9 @@ func (p *Portal) signIn(w http.ResponseWriter, r *http.Request) {
 }
 
 type adminUsersData struct {
-	Users []identity.UserSummary
-	Roles []store.Role
+	Users     []identity.UserSummary
+	Roles     []store.Role
+	Deletable bool
 }
 
 func (p *Portal) adminUsers(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +271,7 @@ func (p *Portal) loadAdminUsers(r *http.Request) (adminUsersData, error) {
 	if err != nil {
 		return adminUsersData{}, err
 	}
-	return adminUsersData{Users: users, Roles: roles}, nil
+	return adminUsersData{Users: users, Roles: roles, Deletable: p.lifecycle != nil}, nil
 }
 
 func (p *Portal) adminDisable(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +328,7 @@ func (p *Portal) adminAction(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	for _, u := range data.Users {
 		if u.ID == userID {
-			row := userRow{Principal: identity.PrincipalFrom(r.Context()), User: u, Roles: data.Roles}
+			row := userRow{Principal: identity.PrincipalFrom(r.Context()), User: u, Roles: data.Roles, Deletable: data.Deletable}
 			if err := p.tpl.render(w, http.StatusOK, "admin_users.html", "user_row", row); err != nil {
 				p.log.Error("render failed", "event", "portal.render_failed", "template", "user_row", "error", err)
 			}
