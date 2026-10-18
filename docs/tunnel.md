@@ -1,15 +1,32 @@
-# MCP tunnel (`internal/federation/tunnel`, `cmd/mcp-gateway-tunnel`)
+# MCP tunnel (`internal/federation/tunnel`, `mcp-gateway tunnel`)
 
-The tunnel lets a user connect a **stdio MCP server** or an MCP server on a **private network** to the gateway. The gateway never starts programs and never dials into the user's network. Instead, the user runs `mcp-gateway-tunnel` next to the server. It connects **out** to the gateway over a WebSocket, and the gateway sends the MCP traffic back down that connection. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (tunnel-only stdio), `17iv8p3b` (schema), `dzjepj6k` (tunnel transport), `ejjvsv5y` (stdio bridge); task `kwllocck`.
+The tunnel lets a user connect a **stdio MCP server** or an MCP server on a **private network** to the gateway. The gateway never starts programs and never dials into the user's network. Instead, the user runs `mcp-gateway tunnel` (the client CLI; `mcp-gateway-tunnel` is a compatible alias binary) next to the server. It connects **out** to the gateway over a WebSocket, and the gateway sends the MCP traffic back down that connection. Design: Brain plan `0omkv2e1`, decisions `yhd5kcaz` (tunnel-only stdio), `17iv8p3b` (schema), `dzjepj6k` (tunnel transport), `ejjvsv5y` (stdio bridge); task `kwllocck`.
 
 ```
-harness ──/mcp──▶ gateway ── federation client ── tunnel transport ═══ WebSocket (outbound from the user) ═══▶ mcp-gateway-tunnel ──▶ stdio server (spawned locally)
+harness ──/mcp──▶ gateway ── federation client ── tunnel transport ═══ WebSocket (outbound from the user) ═══▶ mcp-gateway tunnel ──▶ stdio server (spawned locally)
                                                    (tunnel:// URLs only)                                                     └──▶ http://localhost:PORT/mcp
 ```
 
+## Install the client
+
+The client CLI `mcp-gateway` (with the alias `mcp-gateway-tunnel`) is published on [GitHub Releases](https://github.com/huynle/mcp-gateway/releases) for macOS, Linux and Windows on amd64 and arm64 (decision `efq0ncag`):
+
+```sh
+brew install huynle/tap/mcp-gateway        # Homebrew (macOS, Linux): cask in huynle/homebrew-tap
+
+curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh
+#   VERSION=v1.2.3 pins a release; INSTALL_DIR (default $HOME/.local/bin) picks the directory; no sudo
+
+go install github.com/huynle/mcp-gateway/cmd/mcp-gateway@latest   # from source
+```
+
+`install.sh` maps `uname` to the archive (`mcp-gateway_<os>_<arch>.tar.gz`, `.zip` on Windows), downloads it and `checksums.txt` from the same release, refuses a checksum mismatch or a missing entry, and installs both binaries atomically. Each archive, `checksums.txt` and `install.sh` carry a GitHub build provenance attestation: `gh attestation verify mcp-gateway_linux_amd64.tar.gz --repo huynle/mcp-gateway`. The Homebrew cask clears the macOS quarantine attribute because the binaries are not notarized.
+
+`mcp-gateway` subcommands: `tunnel` (below), `version`, `help [command]`. An unknown command prints the usage and exits 2.
+
 ## For users
 
-1. In the portal, create a tunnel. The token (`mgt_…`) is shown **once**. Only its SHA-256 is stored.
+1. In the portal (*Servers → Tunnels*), create a tunnel. The token (`mgt_…`) is shown **once**. Only its SHA-256 is stored. The page shows the install commands and the exact run commands with the gateway URL, the token and the server address filled in, each with a copy button; the tunnel list keeps the commands with a `<token shown once>` placeholder.
 2. Add a server with the URL `tunnel://<tunnel id>` (or `tunnel://<tunnel id>/mcp`; see *Paths* below).
 3. On the machine with the server, run one of:
 
@@ -17,9 +34,12 @@ harness ──/mcp──▶ gateway ── federation client ── tunnel trans
 export MCP_GATEWAY_TUNNEL_TOKEN=mgt_…            # preferred over --token (visible in ps)
 
 # a stdio server: the tunnel client starts it and bridges it
-mcp-gateway-tunnel --gateway https://gateway.huynle.com --stdio "npx -y @modelcontextprotocol/server-everything"
+mcp-gateway tunnel --gateway https://gateway.huynle.com --stdio "npx -y @modelcontextprotocol/server-everything"
 
 # a private HTTP server
+mcp-gateway tunnel --gateway https://gateway.huynle.com --http http://localhost:8080/mcp
+
+# the alias takes the same flags
 mcp-gateway-tunnel --gateway https://gateway.huynle.com --http http://localhost:8080/mcp
 ```
 
@@ -31,6 +51,7 @@ mcp-gateway-tunnel --gateway https://gateway.huynle.com --http http://localhost:
 | `--http URL` | forward to this HTTP MCP server (Streamable HTTP or legacy SSE) |
 | `--verbose` | debug logging |
 | `--version` | print the version |
+| `--help` | list the flags (`mcp-gateway help tunnel` too) |
 
 Exactly one of `--stdio` and `--http` is required. Status lines go to stderr (`connecting to …`, `connected to …, serving …`, `disconnected (…); retrying in …`). The stdio server's own stderr passes through.
 
@@ -95,7 +116,7 @@ if errors.As(err, &te) && te.Class == tunnel.ClassOffline { /* "tunnel offline" 
 | `URL(id, path)`, `ParseURL(raw)`, `ClientURL(raw)`, `IsTunnelURL(raw)` | tunnel URL helpers |
 | `GenerateToken`, `ParseToken`, `HashToken`, `TokenScanPattern` | token format `mgt_<8 base62>_<43 base62>`, SHA-256 of the whole token stored |
 | `NewStore(*store.Store) Store` | owner calls under `WithUser`, token lookup, re-check and touch under `WithJobs` |
-| `NewAgent(AgentOptions)`, `(*Agent).Run(ctx)` | the client side (used by `cmd/mcp-gateway-tunnel`). `Run` returns `ErrRejected`, `ErrReplaced`, `ErrRevoked` or `ctx.Err()` |
+| `NewAgent(AgentOptions)`, `(*Agent).Run(ctx)` | the client side (used by `internal/tunnelclient`, behind `mcp-gateway tunnel` and `mcp-gateway-tunnel`). `Run` returns `ErrRejected`, `ErrReplaced`, `ErrRevoked` or `ctx.Err()` |
 
 ### Tunnel URLs
 
@@ -146,8 +167,10 @@ Live connections are held **per replica, in process**. A tunnel's calls must be 
 
 ## Tests
 
+- `go test -race ./cmd/mcp-gateway/` covers subcommand dispatch (help, version, unknown → exit 2) and that `mcp-gateway tunnel --help` lists every flag; `tests/test-install-script.sh` covers `install.sh` (OS/arch mapping, `$VERSION`, unsupported platforms, checksum mismatch and missing entry, shellcheck).
+
 - `go test -race ./internal/federation/tunnel/...` covers: tokens; create, revoke, authenticate and owner-only authorize; 401 for missing, malformed, unknown, revoked and wrong-scheme tokens (the agent stops with `ErrRejected`); request and response round trip in both URL forms; streaming before the handler ends; offline and non-tunnel classes; a replacement connection (the old agent gets `ErrReplaced`); revoke and heartbeat revocation; disconnect fails in-flight requests and cleans up; request and response size bounds; header timeout cancels the local request; the max-streams bound and slot release; the token never appears in gateway or agent logs; URL parsing.
-- `go test -race ./cmd/mcp-gateway-tunnel/` covers: flag and env parsing (the token never appears in errors), command splitting, the forwarder staying on its target, and these end-to-end runs with the real gateway handler, the command and `internal/federation/client`:
+- `go test -race ./internal/tunnelclient/` (the client shared by `cmd/mcp-gateway` and `cmd/mcp-gateway-tunnel`) covers: flag and env parsing (the token never appears in errors), command splitting, the forwarder staying on its target, and these end-to-end runs with the real gateway handler, the command and `internal/federation/client`:
   - an HTTP go-sdk server on localhost;
   - a **stdio go-sdk server started by `--stdio`** (the test binary re-executed), with two sessions listing and calling tools;
   - the bridge over in-memory pipes, with 4 concurrent sessions and exactly one `initialize` reaching the server;

@@ -71,8 +71,11 @@ const maxResultBytes = 4 << 20
 // tools named "<server>.<sanitized tool>", with the pinned schema and
 // description (prefixed with the server name as provenance and stripped of
 // control and format characters), the reviewed kind (writes reconcile
-// none: an upstream MCP call cannot be checked afterwards), and resource
-// identity {server: <name>}. handler binds each tool to its upstream name
+// none: an upstream MCP call cannot be checked afterwards), per-call
+// idempotency (an identical call runs again instead of replaying: the
+// kind is an upstream hint, unannotated reads count as writes, and no
+// result is stored to replay; quirk 47ab9sk7), and resource identity
+// {server: <name>}. handler binds each tool to its upstream name
 // and kind. Tools that are disabled or unreviewed are left out silently;
 // tools whose name sanitizes to nothing or to the same name as another
 // enabled tool, or whose schema is not a JSON object schema, are left out
@@ -136,8 +139,9 @@ func buildToolsNamed(server *store.MCPServer, rec *snapshot.Record, handler func
 			ResourceIdentity: func(map[string]any) map[string]string {
 				return map[string]string{"server": serverName}
 			},
-			Bounds:  connectors.Bounds{MaxResultBytes: maxResultBytes},
-			Handler: handler(c.up.Name, c.kind),
+			Bounds:      connectors.Bounds{MaxResultBytes: maxResultBytes},
+			Idempotency: connectors.IdempotencyPerCall,
+			Handler:     handler(c.up.Name, c.kind),
 		}
 		if c.kind == connectors.KindWrite {
 			t.Reconcile = connectors.Reconciliation{Kind: connectors.ReconcileNone}

@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,9 +25,13 @@ import (
 // to consume the approval when there is one and to insert the in_progress
 // row, or to report a prior operation under the same idempotency key:
 //
-//   - a prior that succeeded inside the window: the stored result IDs are
-//     returned as the tool result, with "_ledger": "replayed", and the
-//     handler does not run;
+//   - a prior that succeeded inside the window: the handler does not run
+//     and the answer is an explicit replay (replayResult: "_ledger":
+//     "replayed", the operation, tool and window, the stored result IDs
+//     when there are any, and a message saying how to run it again);
+//     tools with connectors.IdempotencyPerCall (user-added MCP servers)
+//     are never deduplicated by arguments (Intent.PerCall), so they never
+//     replay or wait on an identical earlier call;
 //   - a prior still in_progress or unknown: CodePendingVerification with
 //     the operation id in error.data;
 //   - otherwise Call.OperationID and CallContext.OperationID are set (and,
@@ -72,6 +78,7 @@ func LedgerStage(svc *ledger.Service, log *slog.Logger) Stage {
 		in := ledger.Intent{
 			UserID: cc.Principal.UserID, TokenID: cc.Principal.TokenID, AccountID: cc.AccountID, Tool: cc.Call.Tool,
 			Digest: ledger.Digest(cc.Call.Args), PolicyVersionID: cc.PolicyVersion, ApprovalID: cc.ApprovalID,
+			PerCall: cc.Tool.Idempotency == connectors.IdempotencyPerCall,
 		}
 		in.ResourceIdentity = cc.resourceIdentity()
 		op, prior, err := svc.Begin(ctx, in)
@@ -148,18 +155,45 @@ func classifyOutcome(res connectors.Result, err error, tool *connectors.Tool) le
 	return ledger.Failed(errorClass(err, "tool_error"))
 }
 
-// replayResult renders a prior operation's stored result IDs as the tool
-// result: never content, and marked so the harness can tell.
+// replayResult renders a prior operation as the tool result of a replay:
+// never content (only the stored result IDs, and the "result" key only
+// when there are any), marked so the harness can tell, and with a message
+// that says the call was not run again, which operation it repeats and how
+// to run it deliberately.
 func replayResult(op *ledger.Operation) connectors.Result {
-	ids := op.ResultIDs
-	if ids == nil {
-		ids = map[string]string{}
-	}
-	return connectors.Result{Content: map[string]any{
+	content := map[string]any{
 		ReplayKey:      "replayed",
 		"operation_id": op.ID,
-		"result":       ids,
-	}}
+		"tool":         op.Tool,
+		"state":        op.State,
+		"succeeded_at": op.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if !op.WindowEnd.IsZero() {
+		content["window_ends_at"] = op.WindowEnd.UTC().Format(time.RFC3339)
+	}
+	msg := fmt.Sprintf("Replay, not run again: an identical call of %s (same account and arguments) already succeeded as operation %s at %s, and the gateway does not repeat identical writes inside its idempotency window",
+		op.Tool, op.ID, op.CreatedAt.UTC().Format(time.RFC3339))
+	if len(op.ResultIDs) > 0 {
+		content["result"] = op.ResultIDs
+		keys := make([]string, 0, len(op.ResultIDs))
+		for k := range op.ResultIDs {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, k+"="+op.ResultIDs[k])
+		}
+		msg += ". Stored result identifiers: " + strings.Join(parts, ", ")
+	} else {
+		msg += "; no result identifiers were stored for it (the gateway keeps identifiers only, never content)"
+	}
+	msg += ". To run it again deliberately, change the arguments"
+	if !op.WindowEnd.IsZero() {
+		msg += " or retry after " + op.WindowEnd.UTC().Format(time.RFC3339)
+	}
+	content["message"] = msg + "."
+	return connectors.Result{Content: content}
 }
 
 // pendingVerification is the answer while an earlier attempt is open.

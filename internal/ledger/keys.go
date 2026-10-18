@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,11 +13,24 @@ import (
 // Idempotency key scopes (decision dovthftx): an approval executes at
 // most once, so its key is the approval id; an unconfirmed write is keyed
 // by user, account, tool and the canonical argument digest, and the key
-// only refers to the same operation inside Config.IdempotencyWindow.
+// only refers to the same operation inside Config.IdempotencyWindow. A
+// per-call write (Intent.PerCall: tools of user-added MCP servers) gets a
+// random key of its own, so it never matches another operation.
 const (
 	approvalKeyPrefix = "approval:"
 	digestKeyPrefix   = "digest:"
+	callKeyPrefix     = "call:"
 )
+
+// CallKey returns a fresh, unique idempotency key for a per-call write:
+// "call:" and 128 random bits, hex encoded.
+func CallKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return callKeyPrefix + hex.EncodeToString(b[:]), nil
+}
 
 // ApprovalKey is the idempotency key of a write that consumed approval id.
 func ApprovalKey(approvalID string) string { return approvalKeyPrefix + approvalID }

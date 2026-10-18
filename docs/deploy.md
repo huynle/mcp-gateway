@@ -11,6 +11,10 @@ deploy/helm/helm_test.go + testdata/*.golden  make test-helm (build tag helm)
 deploy/smoke/kind-smoke.sh + deploy/smoke/k8s/postgres.yaml   make kind-smoke
 ```
 
+## Releases
+
+The **gateway server** ships only as the container image `ghcr.io/huynle/mcp-gateway` (ci.yml `release` job on `main`, immutable `sha-<commit>` tags with provenance and SBOM); this chart deploys it. The **user-side client CLI** (`mcp-gateway`, with the `mcp-gateway-tunnel` alias, for tunnels) is released separately: pushing a tag `v*` runs `.github/workflows/release.yml`, which uses GoReleaser (`.goreleaser.yaml`) to build darwin/linux/windows × amd64/arm64 (CGO off, `-trimpath`, `-X main.version`), publish a GitHub Release with the archives, `checksums.txt` and `scripts/install.sh`, attest their build provenance, and push the Homebrew cask to `huynle/homebrew-tap` over SSH with the deploy key in the `HOMEBREW_TAP_DEPLOY_KEY` secret (skipped when the secret is empty, e.g. on forks). Cut a client release with `git tag v1.2.3 && git push origin v1.2.3`; try it locally with `goreleaser release --snapshot --clean`. Users install it as described in [tunnel.md](tunnel.md#install-the-client).
+
 ## Prerequisites
 
 - Kubernetes >= 1.25 with an ingress controller, a CNI that enforces `NetworkPolicy` (Calico, Cilium, ...; kind's default does not) and, for TLS, cert-manager or a certificate in a Secret.

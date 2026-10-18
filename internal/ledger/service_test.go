@@ -348,3 +348,68 @@ func ledgerCounter(t *testing.T, m *observability.Metrics, state string) float64
 	}
 	return 0
 }
+
+// A per-call intent (tools whose upstream owns idempotency, e.g. user-added
+// MCP servers) is recorded under a key unique to the operation: identical
+// arguments never replay or wait on an earlier operation (quirk 47ab9sk7).
+func TestBeginPerCallNeverReplaysOrWaits(t *testing.T) {
+	f := newFixture(t)
+	args := map[string]any{"path": "m5bgl1ye"}
+	in := f.intent(args)
+	in.PerCall = true
+	first := f.begin(t, in)
+	if !strings.HasPrefix(first.Key, "call:") || first.Key == ledger.DigestKey(alice, acctA, in.Tool, in.Digest) {
+		t.Errorf("per-call key = %q", first.Key)
+	}
+	// While the first is still in_progress: a new operation, not pending.
+	second := f.begin(t, in)
+	if second.ID == first.ID || second.Key == first.Key {
+		t.Errorf("concurrent identical per-call intents share an operation: %+v %+v", first, second)
+	}
+	for _, op := range []*ledger.Operation{first, second} {
+		if _, err := f.svc.Finish(t.Context(), alice, op.ID, ledger.Succeeded(nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// After a success inside the window: still a new operation.
+	f.now = f.now.Add(time.Hour)
+	third := f.begin(t, in)
+	if third.ID == first.ID || third.ID == second.ID {
+		t.Error("a per-call intent replayed a prior operation")
+	}
+	if f.st.Count() != 3 {
+		t.Errorf("rows = %d, want 3", f.st.Count())
+	}
+}
+
+// An approval still keys the operation by the approval id, per-call or not:
+// an approval executes at most once.
+func TestBeginPerCallWithApprovalUsesTheApprovalKey(t *testing.T) {
+	f := newFixture(t)
+	f.consumer.args["appr-1"] = map[string]any{"path": "x"}
+	in := f.intent(map[string]any{"path": "x"})
+	in.PerCall = true
+	in.ApprovalID = "appr-1"
+	op := f.begin(t, in)
+	if op.Key != ledger.ApprovalKey("appr-1") {
+		t.Errorf("key = %q, want the approval key", op.Key)
+	}
+}
+
+// A replayed prior carries the end of its idempotency window, so the
+// replay answer can say when the same arguments run again.
+func TestBeginReplayCarriesTheWindowEnd(t *testing.T) {
+	f := newFixture(t)
+	args := map[string]any{"id": "it-1"}
+	first := f.begin(t, f.intent(args))
+	if !first.WindowEnd.Equal(f.now.Add(24 * time.Hour)) {
+		t.Errorf("window end = %v", first.WindowEnd)
+	}
+	if _, err := f.svc.Finish(t.Context(), alice, first.ID, ledger.Succeeded(nil)); err != nil {
+		t.Fatal(err)
+	}
+	_, prior, err := f.svc.Begin(t.Context(), f.intent(args))
+	if err != nil || prior.Kind != ledger.PriorReplay || !prior.Operation.WindowEnd.Equal(first.WindowEnd) {
+		t.Errorf("prior = %+v err = %v", prior, err)
+	}
+}
