@@ -33,6 +33,7 @@ type accountData struct {
 	// GatewayTools is nil when the setting is not wired.
 	GatewayTools *gatewayToolsView
 	RateLimits   *rateLimitsView
+	Limits       *limitsView
 }
 
 type RateSettings interface {
@@ -83,6 +84,9 @@ func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
 		u, _ := p.rateSettings.Limits(ctx, userID, "")
 		v := snap.Users[userID]
 		data.RateLimits = &rateLimitsView{OrgUser: snap.UserDefault, OrgApp: snap.AppDefault, EffectiveUser: u, Admin: v.Admin, Self: v.Self}
+	}
+	if p.resourceCaps != nil {
+		data.Limits = &limitsView{Rows: p.capRows(r.Context(), identity.PrincipalFrom(r.Context()).UserID, true)}
 	}
 	p.render(w, r, http.StatusOK, "account.html", data)
 }

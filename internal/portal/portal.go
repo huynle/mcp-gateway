@@ -21,6 +21,7 @@ type Portal struct {
 	mounts       []mount
 	gatewayTools GatewayTools // nil: no "Gateway management tools" section
 	rateSettings RateSettings // nil: no durable rate-limit settings UI
+	resourceCaps ResourceCaps // nil: no resource limits UI
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -77,9 +78,17 @@ func (p *Portal) Handler() http.Handler {
 	if p.gatewayTools != nil {
 		mux.Handle("POST /account/gateway-tools", p.requireUser(p.csrf(http.HandlerFunc(p.setGatewayTools))))
 	}
+	if p.rateSettings != nil || p.resourceCaps != nil {
+		mux.Handle("GET /admin/settings", p.requireAdmin(http.HandlerFunc(p.adminSettings)))
+	}
+	if p.resourceCaps != nil {
+		mux.Handle("GET /admin/settings/resource-caps", p.requireAdmin(http.HandlerFunc(p.adminResourceCaps)))
+		mux.Handle("POST /admin/settings/resource-caps", p.requireAdmin(p.csrf(http.HandlerFunc(p.setOrgResourceCaps))))
+		mux.Handle("GET /admin/users/{id}/limits", p.requireAdmin(http.HandlerFunc(p.adminUserLimits)))
+		mux.Handle("POST /admin/users/{id}/limits", p.requireAdmin(p.csrf(http.HandlerFunc(p.setUserResourceCaps))))
+	}
 	if p.rateSettings != nil {
 		mux.Handle("POST /account/rate-limit", p.requireUser(p.csrf(http.HandlerFunc(p.setMyRateLimit))))
-		mux.Handle("GET /admin/settings", p.requireAdmin(http.HandlerFunc(p.adminSettings)))
 		mux.Handle("GET /admin/settings/rate-limits", p.requireAdmin(http.HandlerFunc(p.adminRateLimits)))
 		mux.Handle("POST /admin/settings/rate-limits/org", p.requireAdmin(p.csrf(http.HandlerFunc(p.setOrgRateLimits))))
 		mux.Handle("POST /admin/settings/rate-limits/app", p.requireAdmin(p.csrf(http.HandlerFunc(p.setAppRateLimit))))
@@ -242,6 +251,8 @@ func (p *Portal) signIn(w http.ResponseWriter, r *http.Request) {
 type adminUsersData struct {
 	Users []identity.UserSummary
 	Roles []store.Role
+	// Limits links each user's resource limits page.
+	Limits bool
 }
 
 func (p *Portal) adminUsers(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +273,7 @@ func (p *Portal) loadAdminUsers(r *http.Request) (adminUsersData, error) {
 	if err != nil {
 		return adminUsersData{}, err
 	}
-	return adminUsersData{Users: users, Roles: roles}, nil
+	return adminUsersData{Users: users, Roles: roles, Limits: p.resourceCaps != nil}, nil
 }
 
 func (p *Portal) adminDisable(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +330,7 @@ func (p *Portal) adminAction(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	for _, u := range data.Users {
 		if u.ID == userID {
-			row := userRow{Principal: identity.PrincipalFrom(r.Context()), User: u, Roles: data.Roles}
+			row := userRow{Principal: identity.PrincipalFrom(r.Context()), User: u, Roles: data.Roles, Limits: data.Limits}
 			if err := p.tpl.render(w, http.StatusOK, "admin_users.html", "user_row", row); err != nil {
 				p.log.Error("render failed", "event", "portal.render_failed", "template", "user_row", "error", err)
 			}

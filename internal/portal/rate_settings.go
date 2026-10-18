@@ -7,7 +7,10 @@ import (
 	"github.com/huynle/mcp-gateway/internal/identity"
 )
 
-type adminSettingsData struct{ Title string }
+type adminSettingsData struct {
+	Title       string
+	Rates, Caps bool
+}
 
 type rateAppRow struct {
 	App    string
@@ -26,7 +29,7 @@ type adminRateData struct {
 }
 
 func (p *Portal) adminSettings(w http.ResponseWriter, r *http.Request) {
-	p.render(w, r, http.StatusOK, "admin_settings.html", adminSettingsData{Title: "Organization settings"})
+	p.render(w, r, http.StatusOK, "admin_settings.html", adminSettingsData{Title: "Organization settings", Rates: p.rateSettings != nil, Caps: p.resourceCaps != nil})
 }
 
 func (p *Portal) adminRateLimits(w http.ResponseWriter, r *http.Request) {

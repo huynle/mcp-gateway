@@ -195,7 +195,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), rateSvc, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
+		portalHandler, err = newPortal(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec))
 		if err != nil {
 			return err
 		}
@@ -318,6 +318,9 @@ func newPortal(cfg config.Config, st identity.Store, reader audit.Reader, tokenS
 	}
 	if rateSettings != nil {
 		p.SetRateSettings(rateSettings)
+	}
+	if rc, ok := rateSettings.(interface{ ResourceCaps() portal.ResourceCaps }); ok {
+		p.SetResourceCaps(rc.ResourceCaps()) // resource limits pages
 	}
 	who := func(r *http.Request) (string, bool) {
 		pr := identity.PrincipalFrom(r.Context())
@@ -523,3 +526,12 @@ func newMux(readiness *observability.Readiness, portalHandler, mcpHandler, slack
 	}
 	return mux
 }
+
+// portalSettings hands the portal the rate settings and, through
+// ResourceCaps, the resource caps (keeps newPortal's signature).
+type portalSettings struct {
+	*settings.Service
+	caps *settings.CapsService
+}
+
+func (s portalSettings) ResourceCaps() portal.ResourceCaps { return s.caps }

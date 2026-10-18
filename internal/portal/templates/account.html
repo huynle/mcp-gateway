@@ -36,4 +36,13 @@
   </form>
 </section>
 {{end}}{{end}}
+{{with .Data}}{{with .Limits}}
+<section class="card setting" id="resource-limits">
+  <h2>Resource limits</h2>
+  <p>How many of each you may have on this gateway. To raise a limit, ask an admin.</p>
+  <table><thead><tr><th>Resource</th><th>Used</th></tr></thead><tbody>
+  {{range .Rows}}<tr><td>{{.Noun}}</td><td>{{if eq .Limit 0}}{{with .Used}}{{.}}{{else}}?{{end}} (unlimited){{else}}{{with .Used}}{{.}}{{else}}?{{end}} of {{.Limit}}{{end}}</td></tr>
+  {{end}}</tbody></table>
+</section>
+{{end}}{{end}}
 {{end}}

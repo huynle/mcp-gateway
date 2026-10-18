@@ -32,6 +32,7 @@ type userRow struct {
 	Principal *identity.Principal
 	User      identity.UserSummary
 	Roles     []store.Role
+	Limits    bool // link the user's resource limits page
 }
 
 type templates struct {
@@ -45,7 +46,7 @@ func parseTemplates() (*templates, error) {
 		"hasRole": slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
 			d, _ := p.Data.(adminUsersData)
-			return userRow{Principal: p.Principal, User: u, Roles: d.Roles}
+			return userRow{Principal: p.Principal, User: u, Roles: d.Roles, Limits: d.Limits}
 		},
 	}
 	names, err := fs.Glob(templateFS, "templates/*.html")
