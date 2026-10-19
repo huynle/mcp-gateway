@@ -270,7 +270,12 @@ func (w *world) pressBadSignature(action, approvalID string) int {
 func TestE2EBoundedWait(t *testing.T) {
 	w := newWorld(t, options{approvalWait: 8 * time.Second})
 	alice := w.client(w.alice)
+	// The approver must finish before the test returns: t.Context() is
+	// cancelled then, which would abort its portal request mid-response.
+	approved := make(chan struct{})
+	defer func() { <-approved }()
 	go func() {
+		defer close(approved)
 		deadline := time.Now().Add(6 * time.Second)
 		for time.Now().Before(deadline) {
 			pend, _ := w.approval.Pending(t.Context(), w.alice.id)
