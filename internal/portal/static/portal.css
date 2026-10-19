@@ -239,3 +239,13 @@ dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellip
 .copyable pre { flex: 1; margin: 0; min-width: 0; }
 .tunnel-install, .tunnel-run details { margin: .5rem 0 1rem; }
 tr.tunnel-run td { border-top: 0; padding-top: 0; }
+
+/* --- install tabs (CSS only: radio + label + panel siblings) -------------- */
+.install-tabs { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius); margin: .5rem 0 1rem; }
+.install-tabs > input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.install-tabs > label { padding: .6rem 1.1rem; cursor: pointer; font-family: var(--mono, ui-monospace, monospace); color: var(--muted); border-bottom: 2px solid transparent; }
+.install-tabs > input:checked + label { color: inherit; border-bottom-color: currentColor; }
+.install-tabs > input:focus-visible + label { outline: 2px solid currentColor; outline-offset: -2px; }
+.install-tabs > .install-panel { display: none; order: 99; width: 100%; padding: .75rem 1rem; border-top: 1px solid var(--line); }
+.install-tabs > input:checked + label + .install-panel { display: block; }
+.install-panel p { margin: 0 0 .5rem; }

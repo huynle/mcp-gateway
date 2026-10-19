@@ -11,6 +11,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
+	"github.com/huynle/mcp-gateway/internal/portal/static"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -45,7 +46,8 @@ type templates struct {
 // page file, so pages can define "title" and "content" independently.
 func parseTemplates() (*templates, error) {
 	funcs := template.FuncMap{
-		"hasRole": slices.Contains[[]string, string],
+		nav.AssetFuncName: static.URL,
+		"hasRole":         slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
 			d, _ := p.Data.(adminUsersData) // also the invite-created page
 			return userRow{Principal: p.Principal, User: u, Roles: d.Roles, Limits: d.Limits, Deletable: d.Deletable}

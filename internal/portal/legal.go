@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
+
 	"github.com/huynle/mcp-gateway/internal/identity"
 )
 
@@ -167,6 +169,16 @@ func (p *Portal) SetLegal(l Legal) { p.legal = l }
 type publicData struct {
 	Legal     Legal
 	Providers []signInProvider
+	// Install is the CLI install commands (homepage only).
+	Install []clientinstall.Command
+}
+
+// installScript sends `curl -fsSL <gateway>/install | sh` to the install
+// script of the latest GitHub release (curl -L follows the redirect). The
+// script verifies each archive against the release's checksums.txt.
+func installScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	http.Redirect(w, r, clientinstall.InstallScriptURL, http.StatusFound)
 }
 
 // publicPage serves one of the public pages (privacy, terms, support) to

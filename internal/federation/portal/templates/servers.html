@@ -47,10 +47,10 @@
 {{with .Install}}
 <details class="tunnel-install"{{if $.NewTunnel}} open{{end}}>
   <summary>Install the <code>mcp-gateway</code> CLI</summary>
-  {{range $i, $c := .}}
-  <p>{{$c.Label}}:</p>
-  <div class="copyable"><pre id="tunnel-install-{{$i}}">{{$c.Command}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-install-{{$i}}" hidden>Copy</button></div>
-  {{end}}
+  <div class="install-tabs" role="group" aria-label="Install the mcp-gateway CLI">
+  {{range $i, $c := .}}<input type="radio" name="tunnel-install-tab" id="tunnel-install-tab-{{$i}}"{{if eq $i 0}} checked{{end}}><label for="tunnel-install-tab-{{$i}}">{{$c.Tab}}</label>
+  <div class="install-panel"><p class="muted">{{$c.Label}}</p><div class="copyable"><pre id="tunnel-install-{{$i}}">{{$c.Command}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-install-{{$i}}" hidden>Copy</button></div></div>
+  {{end}}</div>
   <p class="muted">Or download an archive for your platform from <a href="https://github.com/huynle/mcp-gateway/releases/latest">GitHub Releases</a> (checksums.txt and build provenance attestations included). Then run <code>mcp-gateway tunnel --help</code>.</p>
 </details>
 {{end}}

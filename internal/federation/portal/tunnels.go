@@ -8,19 +8,16 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
+
 	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
-// Install commands for the client CLI (GitHub Releases, Homebrew tap;
-// see docs/tunnel.md).
-var tunnelInstall = []installCommand{
-	{Label: "Homebrew (macOS, Linux)", Command: "brew install huynle/tap/mcp-gateway"},
-	{Label: "Install script (checks the release checksum)", Command: "curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh"},
-}
-
-type installCommand struct{ Label, Command string }
+// tunnelInstall is the client CLI install commands for the gateway at
+// base (shared with the homepage, internal/clientinstall).
+func tunnelInstall(base string) []clientinstall.Command { return clientinstall.Commands(base) }
 
 const (
 	tokenPlaceholder = "<token shown once>"
@@ -79,7 +76,7 @@ func (p *Portal) createTunnel(w http.ResponseWriter, r *http.Request, c caller) 
 		StdioCommand: tunnelCommand(p.d.BaseURL, token, stdioArgs),
 		HTTPCommand:  tunnelCommand(p.d.BaseURL, token, httpArgs),
 	}
-	data.Install = tunnelInstall
+	data.Install = tunnelInstall(p.d.BaseURL)
 	p.log.Info("tunnel created", "event", "federation.tunnel_created", "user_id", c.UserID, "tunnel_id", tun.ID)
 	p.render(w, r, http.StatusOK, "servers.html", data)
 }

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
+
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -119,7 +121,7 @@ type listData struct {
 	Tunnels   []tunnelRow
 	NewTunnel *newTunnel
 	// Install lists the client CLI install commands, shown with tunnels.
-	Install []installCommand
+	Install []clientinstall.Command
 	Notice  string
 	Error   string
 }
@@ -186,7 +188,7 @@ func (p *Portal) loadList(ctx context.Context, c caller) (listData, error) {
 		}
 	}
 	if len(data.Tunnels) > 0 {
-		data.Install = tunnelInstall
+		data.Install = tunnelInstall(p.d.BaseURL)
 	}
 	return data, nil
 }
