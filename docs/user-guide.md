@@ -79,7 +79,7 @@ Whether you may use a **personal** account at all, and whether its writes always
 
 The gateway never runs programs on your machine and never dials into your network. To use an MCP server that speaks stdio (most `npx …` / `uvx …` servers), or one on `localhost` or your home network, you run a small client next to it that connects **out** to the gateway.
 
-1. Install the client once: `brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh` (installs into `~/.local/bin`, verifies the download's checksum, no sudo). Archives for macOS, Linux and Windows are on [GitHub Releases](https://github.com/huynle/mcp-gateway/releases).
+1. Install the client once: `brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://gateway.huynle.com/install | sh` (installs into `~/.local/bin`, verifies the download's checksum, no sudo). Archives for macOS, Linux and Windows are on [GitHub Releases](https://github.com/huynle/mcp-gateway/releases).
 2. In the portal, open **Servers → Tunnels**, name the tunnel (e.g. `laptop`) and press **Create tunnel**. Copy the token now: it is shown only once.
 3. Copy the run command from the page and replace `<your server command>`, e.g. `MCP_GATEWAY_TUNNEL_TOKEN=mgt_… mcp-gateway tunnel --gateway https://gateway.example.com --stdio "npx -y @modelcontextprotocol/server-everything"`. For an HTTP server on your network use `--http http://localhost:8080/mcp` instead.
 4. Add a server with the address `tunnel://<tunnel id>` (copy it from the same page).

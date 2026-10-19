@@ -247,3 +247,37 @@ func TestSignInAndPortalFooterLinkLegalPages(t *testing.T) {
 		t.Error("sign-in page does not name the terms and privacy policy")
 	}
 }
+
+// The homepage shows the CLI install tabs with the gateway's own install
+// URL, and the copy buttons' script is a same-origin asset.
+func TestHomeShowsInstallTabs(t *testing.T) {
+	h := newHarness(t)
+	home := h.do(t, request{method: http.MethodGet, path: "/"}).Body.String()
+	for _, want := range []string{
+		`id="install"`, `class="install-tabs"`, `<label for="install-tab-0">curl</label>`,
+		"curl -fsSL http://localhost:18080/install | sh", "brew install huynle/tap/mcp-gateway",
+		"go install github.com/huynle/mcp-gateway/cmd/mcp-gateway@latest", `data-copy-target="install-cmd-0"`, `/static/copy.js`,
+	} {
+		if !strings.Contains(home, want) {
+			t.Errorf("home page lacks %q", want)
+		}
+	}
+	if strings.Contains(home, "<script>") || strings.Contains(home, " onclick=") {
+		t.Error("home page has inline script; CSP forbids it")
+	}
+}
+
+// GET /install (and /install.sh) redirect anyone, curl included, to the
+// latest release's install script.
+func TestInstallRedirectsToTheReleaseScript(t *testing.T) {
+	h := newHarness(t)
+	for _, path := range []string{"/install", "/install.sh"} {
+		rec := h.do(t, request{method: http.MethodGet, path: path})
+		if rec.Code != http.StatusFound {
+			t.Fatalf("GET %s = %d, want 302", path, rec.Code)
+		}
+		if got, want := rec.Header().Get("Location"), "https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh"; got != want {
+			t.Errorf("GET %s Location = %q, want %q", path, got, want)
+		}
+	}
+}

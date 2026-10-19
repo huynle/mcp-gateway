@@ -10,7 +10,7 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 ## Connect a local MCP server (tunnel)
 
-Install the client CLI (`brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh`), create a tunnel in the portal and run `mcp-gateway tunnel --gateway <url> --stdio "<your server command>"` next to the server. See [`docs/tunnel.md`](docs/tunnel.md).
+Install the client CLI (`brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://gateway.huynle.com/install | sh`), create a tunnel in the portal and run `mcp-gateway tunnel --gateway <url> --stdio "<your server command>"` next to the server. See [`docs/tunnel.md`](docs/tunnel.md).
 
 ## Run locally
 

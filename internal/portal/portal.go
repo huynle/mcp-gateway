@@ -2,6 +2,7 @@ package portal
 
 import (
 	"errors"
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -49,6 +50,7 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 // the CSRF check:
 //
 //	GET  /                         public homepage; signed in: redirect to /account
+//	GET  /install[.sh]             302 to the CLI install script of the latest release
 //	GET  /privacy, /terms, /support public legal and support pages (no sign-in)
 //	GET  /signin                   provider buttons
 //	GET  /account                  my account
@@ -91,6 +93,8 @@ func (p *Portal) Handler() http.Handler {
 	mux.HandleFunc("GET /privacy", p.publicPage("privacy.html"))
 	mux.HandleFunc("GET /terms", p.publicPage("terms.html"))
 	mux.HandleFunc("GET /support", p.publicPage("support.html"))
+	mux.HandleFunc("GET "+clientinstall.InstallPath, installScript)
+	mux.HandleFunc("GET "+clientinstall.InstallPath+".sh", installScript)
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))
 	if p.gatewayTools != nil {
 		mux.Handle("POST /account/gateway-tools", p.requireUser(p.csrf(http.HandlerFunc(p.setGatewayTools))))
@@ -254,7 +258,7 @@ func (p *Portal) home(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/account", http.StatusSeeOther)
 		return
 	}
-	p.render(w, r, http.StatusOK, "home.html", publicData{Legal: p.legal, Providers: p.providers("/account")})
+	p.render(w, r, http.StatusOK, "home.html", publicData{Legal: p.legal, Providers: p.providers("/account"), Install: clientinstall.Commands(p.svc.BaseURL())})
 }
 
 // signInProvider is one button on the sign-in page.

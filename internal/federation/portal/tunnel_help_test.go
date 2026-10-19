@@ -9,7 +9,8 @@ import (
 
 const (
 	brewInstall = "brew install huynle/tap/mcp-gateway"
-	curlInstall = "curl -fsSL https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh | sh"
+	curlInstall = "curl -fsSL " + base + "/install | sh"
+	goInstall   = "go install github.com/huynle/mcp-gateway/cmd/mcp-gateway@latest"
 )
 
 // After creating a tunnel the page shows how to install the CLI and the
@@ -25,7 +26,7 @@ func TestTunnelCreateShowsInstallAndRunCommands(t *testing.T) {
 	token := "mgt_ABCDEFGH_" + strings.Repeat("s", 43)
 	id := e.st.tunnels[0].ID
 	body := html.UnescapeString(r.body)
-	mustContain(t, body, brewInstall, curlInstall,
+	mustContain(t, body, brewInstall, curlInstall, goInstall,
 		"MCP_GATEWAY_TUNNEL_TOKEN="+token+` mcp-gateway tunnel --gateway https://gw.example --stdio "<your server command>"`,
 		"MCP_GATEWAY_TUNNEL_TOKEN="+token+" mcp-gateway tunnel --gateway https://gw.example --http http://localhost:PORT/mcp",
 		"tunnel://"+id,
@@ -50,7 +51,7 @@ func TestTunnelListShowsRunCommandWithoutToken(t *testing.T) {
 	r := e.get("/servers", alice)
 	body := html.UnescapeString(r.body)
 	mustNotContain(t, body, token)
-	mustContain(t, body, brewInstall, curlInstall,
+	mustContain(t, body, brewInstall, curlInstall, goInstall,
 		`MCP_GATEWAY_TUNNEL_TOKEN=<token shown once> mcp-gateway tunnel --gateway https://gw.example --stdio "<your server command>"`,
 		"MCP_GATEWAY_TUNNEL_TOKEN=<token shown once> mcp-gateway tunnel --gateway https://gw.example --http http://localhost:PORT/mcp",
 		"tunnel://"+tun.ID, `src="/static/copy.js?v=`)
