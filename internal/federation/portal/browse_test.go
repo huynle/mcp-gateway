@@ -1,10 +1,11 @@
 package portal
 
 import (
-	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 

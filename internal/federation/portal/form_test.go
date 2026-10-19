@@ -272,8 +272,13 @@ func TestFormTunnelPickerPrefersOnline(t *testing.T) {
 	offline, _, _ := e.tun.CreateTunnel(t.Context(), alice, "box")
 	e.tun.online[online.ID] = true
 	body := e.get("/servers/new", alice).body
-	sel := body[strings.Index(body, `name="tunnel_id"`):]
-	sel = sel[:strings.Index(sel, "</select>")]
+	_, sel, ok := strings.Cut(body, `name="tunnel_id"`)
+	if ok {
+		sel, _, ok = strings.Cut(sel, "</select>")
+	}
+	if !ok {
+		t.Fatalf("no tunnel select in:\n%s", body)
+	}
 	iOn, iOff := strings.Index(sel, online.ID), strings.Index(sel, offline.ID)
 	if iOn < 0 || iOff < 0 || iOn > iOff {
 		t.Fatalf("online tunnel not listed first:\n%s", sel)
