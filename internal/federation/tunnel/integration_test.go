@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -213,5 +214,67 @@ func TestIntegrationTunnelStoreAndConnect(t *testing.T) {
 	}
 	if _, err := svc.Authenticate(ctx, raw); !errors.Is(err, tunnel.ErrUnauthorized) {
 		t.Fatalf("Authenticate(revoked) = %v", err)
+	}
+}
+
+// Concurrent creates of the same name by one owner: exactly one wins, the
+// others get ErrNameTaken; the name is case- and space-insensitive and
+// freed by revoking.
+func TestIntegrationTunnelNameUniquePerOwner(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	alice, bob := newUser(t, st, "Alice"), newUser(t, st, "Bob")
+	svc, err := tunnel.NewService(tunnel.Options{Store: tunnel.NewStore(st)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := svc.CreateTunnel(ctx, alice, "laptop")
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	ok, taken := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, tunnel.ErrNameTaken):
+			taken++
+		default:
+			t.Fatalf("CreateTunnel: %v", err)
+		}
+	}
+	if ok != 1 || taken != n-1 {
+		t.Fatalf("created %d, refused %d; want 1 and %d", ok, taken, n-1)
+	}
+	if _, _, err := svc.CreateTunnel(ctx, alice, " LAPTOP "); !errors.Is(err, tunnel.ErrNameTaken) {
+		t.Errorf("case/space variant: %v, want ErrNameTaken", err)
+	}
+	if _, _, err := svc.CreateTunnel(ctx, bob, "laptop"); err != nil {
+		t.Errorf("other owner: %v", err)
+	}
+	var id string
+	if err := st.WithUser(ctx, alice, func(tx store.Tx) error {
+		list, err := store.ListMCPTunnels(ctx, tx, alice)
+		if len(list) > 0 {
+			id = list[0].ID
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Revoke(ctx, alice, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.CreateTunnel(ctx, alice, "laptop"); err != nil {
+		t.Errorf("after revoke: %v", err)
 	}
 }

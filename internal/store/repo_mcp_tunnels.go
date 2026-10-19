@@ -28,6 +28,23 @@ func CreateMCPTunnel(ctx context.Context, q Querier, t *MCPTunnel) error {
 	return nil
 }
 
+// MCPTunnelNameTaken reports whether ownerID has a live tunnel named name,
+// ignoring case and surrounding space. It first takes a transaction-scoped
+// advisory lock on the owner's tunnel names, so two concurrent creates of
+// the same name in separate transactions cannot both pass the check.
+func MCPTunnelNameTaken(ctx context.Context, q Querier, ownerID, name string) (bool, error) {
+	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('mcp_tunnel_name:' || $1, 0))`, ownerID); err != nil {
+		return false, fmt.Errorf("store: lock mcp tunnel names: %w", err)
+	}
+	var taken bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM mcp_tunnels WHERE owner_user_id = $1
+		AND revoked_at IS NULL AND lower(btrim(name)) = lower(btrim($2)))`, ownerID, name).Scan(&taken)
+	if err != nil {
+		return false, fmt.Errorf("store: mcp tunnel name taken: %w", err)
+	}
+	return taken, nil
+}
+
 // GetMCPTunnel returns a tunnel by ID, revoked or not.
 func GetMCPTunnel(ctx context.Context, q Querier, id string) (*MCPTunnel, error) {
 	var t MCPTunnel

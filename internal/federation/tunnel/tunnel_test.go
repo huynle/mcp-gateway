@@ -22,6 +22,8 @@ type gw struct {
 	ms  *memStore
 	srv *httptest.Server
 	log *syncBuffer
+	// tunnels numbers the names newTunnel gives (a live name is unique per owner).
+	tunnels int
 }
 
 type syncBuffer struct {
@@ -108,7 +110,8 @@ func eventually(t *testing.T, what string, cond func() bool) {
 
 func (g *gw) newTunnel(t *testing.T) (id, token string) {
 	t.Helper()
-	tun, raw, err := g.svc.CreateTunnel(context.Background(), ownerA, "laptop")
+	g.tunnels++
+	tun, raw, err := g.svc.CreateTunnel(context.Background(), ownerA, fmt.Sprintf("laptop-%d", g.tunnels))
 	if err != nil {
 		t.Fatal(err)
 	}

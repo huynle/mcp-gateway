@@ -20,6 +20,9 @@ var (
 	ErrForbidden = errors.New("tunnel: forbidden")
 	// ErrInvalidName: a tunnel name must be 1-100 printable characters.
 	ErrInvalidName = errors.New("tunnel: invalid name")
+	// ErrNameTaken: the owner already has a live (not revoked) tunnel of
+	// that name, ignoring case and surrounding space.
+	ErrNameTaken = errors.New("tunnel: name already used by one of your tunnels")
 )
 
 // MaxNameLen bounds a tunnel's display name.

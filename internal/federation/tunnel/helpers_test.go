@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,11 @@ func (m *memStore) setHolder(id, holder string, epoch int64) {
 func (m *memStore) CreateTunnel(_ context.Context, owner, name string, hash []byte) (*store.MCPTunnel, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, x := range m.tunnels {
+		if x.OwnerUserID == owner && x.RevokedAt == nil && strings.EqualFold(strings.TrimSpace(x.Name), strings.TrimSpace(name)) {
+			return nil, ErrNameTaken
+		}
+	}
 	m.next++
 	t := &store.MCPTunnel{
 		ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", m.next), OwnerUserID: owner, Name: name,

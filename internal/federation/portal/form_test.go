@@ -263,3 +263,20 @@ func TestEditAndDeleteAreOwnerOnly(t *testing.T) {
 		t.Errorf("hook %v", e.hook.changed)
 	}
 }
+
+// The tunnel picker pre-selects an online tunnel over an offline one, lists
+// online tunnels first and shows a short id so same-named tunnels differ.
+func TestFormTunnelPickerPrefersOnline(t *testing.T) {
+	e := newEnv(t)
+	online, _, _ := e.tun.CreateTunnel(t.Context(), alice, "laptop")
+	offline, _, _ := e.tun.CreateTunnel(t.Context(), alice, "box")
+	e.tun.online[online.ID] = true
+	body := e.get("/servers/new", alice).body
+	sel := body[strings.Index(body, `name="tunnel_id"`):]
+	sel = sel[:strings.Index(sel, "</select>")]
+	iOn, iOff := strings.Index(sel, online.ID), strings.Index(sel, offline.ID)
+	if iOn < 0 || iOff < 0 || iOn > iOff {
+		t.Fatalf("online tunnel not listed first:\n%s", sel)
+	}
+	mustContain(t, sel, `value="`+online.ID+`" selected`, "laptop · "+online.ID[:8]+" (online)", "box · "+offline.ID[:8]+" (offline)")
+}

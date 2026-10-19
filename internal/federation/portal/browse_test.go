@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"net/url"
 	"strings"
 	"testing"
@@ -158,4 +159,15 @@ func TestTunnelRevoke(t *testing.T) {
 		t.Errorf("revoke: %d %q %v", r.code, r.hdr.Get("Location"), e.tun.revoked)
 	}
 	mustNotContain(t, e.get("/servers", alice).body, mine.ID)
+}
+
+// A duplicate live tunnel name is refused with a clear message.
+func TestTunnelCreateDuplicateName(t *testing.T) {
+	e := newEnv(t)
+	e.tun.createErr = tunnel.ErrNameTaken
+	r := e.post("/servers/tunnels", alice, url.Values{"name": {"laptop"}})
+	if r.code != 422 {
+		t.Fatalf("status %d", r.code)
+	}
+	mustContain(t, r.body, "You already have a tunnel named")
 }
