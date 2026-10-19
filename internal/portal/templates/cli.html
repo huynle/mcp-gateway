@@ -1,0 +1,27 @@
+{{define "title"}}Install the mcp-gateway CLI{{end}}
+{{define "content"}}
+<div class="legal">
+<h1>Install the <code>mcp-gateway</code> CLI</h1>
+<p>The command-line tool connects MCP servers that run on your own computer to this gateway: a stdio server your agent would normally start itself (for example <code>npx -y some-mcp-server</code>), or an HTTP server on <code>localhost</code> or your private network. It opens an outbound connection to the gateway, so nothing on your computer is exposed to the internet.</p>
+
+<h2 id="install">1. Install</h2>
+{{template "install-tabs" .Data.Install}}
+<p class="muted">The install script detects your OS and CPU, downloads the latest release from <a href="https://github.com/huynle/mcp-gateway/releases/latest">GitHub Releases</a>, verifies it against the release checksums, and installs <code>mcp-gateway</code> into <code>~/.local/bin</code> without sudo (set <code>INSTALL_DIR</code> to change it, <code>VERSION</code> to pin a release). Windows: download the zip from GitHub Releases.</p>
+<p>Check the install:</p>
+<div class="copyable"><pre id="cli-version">mcp-gateway version</pre><button type="button" class="btn small" data-copy="text" data-copy-target="cli-version" hidden>Copy</button></div>
+
+<h2 id="tunnel">2. Connect a local MCP server</h2>
+<ol>
+  <li><a href="/signin?return_to=/servers">Sign in</a> and open <a href="/servers">Servers</a>. Under <strong>Tunnels</strong>, name the tunnel (for example <em>laptop</em>) and choose <strong>Create tunnel</strong>. Copy the token: it is shown once.</li>
+  <li>Choose <strong>Add server</strong> and use the address <code>tunnel://&lt;tunnel id&gt;</code> shown next to the tunnel.</li>
+  <li>On your computer, run the tunnel next to the server and leave it running:
+    <div class="copyable"><pre id="cli-stdio">{{.Data.StdioCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="cli-stdio" hidden>Copy</button></div>
+    or, for a local HTTP server:
+    <div class="copyable"><pre id="cli-http">{{.Data.HTTPCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="cli-http" hidden>Copy</button></div>
+  </li>
+  <li>Back on the server's page, refresh it and approve the tools you want your agents to use. They then appear in every agent connected to the gateway.</li>
+</ol>
+<p class="muted">The server is reachable only while the tunnel runs. Revoke a tunnel on the Servers page at any time. Run <code>mcp-gateway tunnel --help</code> for every option.</p>
+</div>
+<script src="{{asset "copy.js"}}" defer></script>
+{{end}}

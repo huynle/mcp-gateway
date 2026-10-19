@@ -51,6 +51,7 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 // the CSRF check:
 //
 //	GET  /                         public homepage; signed in: redirect to /account
+//	GET  /cli                      public guide: install the CLI, run a tunnel
 //	GET  /install[.sh]             302 to the CLI install script of the latest release
 //	GET  /privacy, /terms, /support public legal and support pages (no sign-in)
 //	GET  /signin                   provider buttons
@@ -94,6 +95,7 @@ func (p *Portal) Handler() http.Handler {
 	mux.HandleFunc("GET /privacy", p.publicPage("privacy.html"))
 	mux.HandleFunc("GET /terms", p.publicPage("terms.html"))
 	mux.HandleFunc("GET /support", p.publicPage("support.html"))
+	mux.HandleFunc("GET /cli", p.cliPage)
 	mux.HandleFunc("GET "+clientinstall.InstallPath, installScript)
 	mux.HandleFunc("GET "+clientinstall.InstallPath+".sh", installScript)
 	mux.Handle("GET /account", p.requireUser(http.HandlerFunc(p.account)))

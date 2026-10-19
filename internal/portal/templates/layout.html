@@ -12,3 +12,7 @@
 {{template "footer"}}
 </body>
 </html>
+{{define "install-tabs"}}<div class="install-tabs" role="group" aria-label="Install the mcp-gateway CLI">
+{{range $i, $c := .}}<input type="radio" name="install-tab" id="install-tab-{{$i}}"{{if eq $i 0}} checked{{end}}><label for="install-tab-{{$i}}">{{$c.Tab}}</label>
+<div class="install-panel"><p class="muted">{{$c.Label}}</p><div class="copyable"><pre id="install-cmd-{{$i}}">{{$c.Command}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="install-cmd-{{$i}}" hidden>Copy</button></div></div>
+{{end}}</div>{{end}}

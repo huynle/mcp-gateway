@@ -8,6 +8,11 @@
   <dt>Session</dt><dd><code>{{.Principal.SessionID}}</code></dd>
 </dl>
 <p><a href="/tokens">Harness tokens</a> let OpenCode, Claude Code and other harnesses call the gateway as you. App connections and approvals appear here as those features land.</p>
+<section class="card setting" id="cli">
+  <h2>Command-line tool</h2>
+  <p>Install <code>mcp-gateway</code> to connect MCP servers running on your own computer through a tunnel. <a href="/cli">Full guide</a></p>
+  {{template "install-tabs" .Data.Install}}
+</section>
 {{with .Data}}{{with .GatewayTools}}
 <section class="card setting" id="gateway-tools">
   <h2>Gateway management tools</h2>
@@ -56,4 +61,5 @@
   <p><a class="btn danger small" href="/account/delete">Delete my account…</a></p>
 </section>
 {{end}}{{end}}
+<script src="{{asset "copy.js"}}" defer></script>
 {{end}}
