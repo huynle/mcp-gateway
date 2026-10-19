@@ -169,8 +169,26 @@ func (p *Portal) SetLegal(l Legal) { p.legal = l }
 type publicData struct {
 	Legal     Legal
 	Providers []signInProvider
-	// Install is the CLI install commands (homepage only).
+	// Install is the CLI install commands (homepage, /cli).
 	Install []clientinstall.Command
+	// StdioCommand and HTTPCommand are the /cli page's tunnel examples.
+	StdioCommand, HTTPCommand string
+}
+
+// cliPage is the public guide to installing the mcp-gateway CLI and
+// running a tunnel, for anyone, signed in or not.
+func (p *Portal) cliPage(w http.ResponseWriter, r *http.Request) {
+	if redirectPending(w, r) {
+		return
+	}
+	publicCaching(w, r)
+	base := strings.TrimRight(p.svc.BaseURL(), "/")
+	p.render(w, r, http.StatusOK, "cli.html", publicData{
+		Legal:        p.legal,
+		Install:      clientinstall.Commands(base),
+		StdioCommand: "MCP_GATEWAY_TUNNEL_TOKEN=<your tunnel token> mcp-gateway tunnel --gateway " + base + ` --stdio "<your server command>"`,
+		HTTPCommand:  "MCP_GATEWAY_TUNNEL_TOKEN=<your tunnel token> mcp-gateway tunnel --gateway " + base + " --http http://localhost:PORT/mcp",
+	})
 }
 
 // installScript sends `curl -fsSL <gateway>/install | sh` to the install

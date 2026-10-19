@@ -167,6 +167,7 @@ const Partial = `{{define "page.head"}}<meta charset="utf-8">
     <a href="/privacy">Privacy Policy</a>
     <a href="/terms">Terms of Service</a>
     <a href="/support">Support</a>
+    <a href="/cli">Install CLI</a>
   </nav>
 </footer>{{end}}`
 

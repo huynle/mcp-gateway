@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
+
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/settings"
@@ -36,6 +38,8 @@ type accountData struct {
 	Limits       *limitsView
 	// Lifecycle shows "Your data" (export, delete; SetAccount).
 	Lifecycle bool
+	// Install is the CLI install commands (the Command-line tool card).
+	Install []clientinstall.Command
 }
 
 type RateSettings interface {
@@ -64,7 +68,7 @@ type gatewayToolsView struct {
 const askAdminForServers = "Gateway management tools need permission to add MCP servers. Ask an admin for a role that may add MCP servers."
 
 func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
-	data := accountData{Lifecycle: p.lifecycle != nil}
+	data := accountData{Lifecycle: p.lifecycle != nil, Install: clientinstall.Commands(p.svc.BaseURL())}
 	if p.gatewayTools != nil {
 		ctx := r.Context()
 		userID := identity.PrincipalFrom(ctx).UserID

@@ -104,7 +104,7 @@ var configured = portal.Legal{
 // shell, with the hardening headers, and they link each other.
 func TestPublicPagesAreServedAnonymously(t *testing.T) {
 	h := newHarness(t)
-	for _, path := range []string{"/", "/privacy", "/terms", "/support"} {
+	for _, path := range []string{"/", "/privacy", "/terms", "/support", "/cli"} {
 		rec := h.do(t, request{method: http.MethodGet, path: path})
 		if rec.Code != http.StatusOK {
 			t.Errorf("anonymous GET %s = %d %q, want 200", path, rec.Code, rec.Header().Get("Location"))
@@ -120,7 +120,7 @@ func TestPublicPagesAreServedAnonymously(t *testing.T) {
 		}
 		body := rec.Body.String()
 		navtest.AssertShell(t, path, body)
-		for _, want := range []string{`href="/privacy"`, `href="/terms"`, `href="/support"`, `<footer class="site-footer"`} {
+		for _, want := range []string{`href="/privacy"`, `href="/terms"`, `href="/support"`, `href="/cli"`, `<footer class="site-footer"`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("GET %s lacks %s", path, want)
 			}
@@ -143,7 +143,7 @@ func TestPublicPagesSignedIn(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/account" {
 		t.Errorf("signed-in GET / = %d %q, want 303 /account", rec.Code, rec.Header().Get("Location"))
 	}
-	for _, path := range []string{"/privacy", "/terms", "/support"} {
+	for _, path := range []string{"/privacy", "/terms", "/support", "/cli"} {
 		rec := h.do(t, request{method: http.MethodGet, path: path, cookie: ck})
 		if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("signed-in GET %s = %d, Cache-Control %q", path, rec.Code, rec.Header().Get("Cache-Control"))
@@ -278,6 +278,37 @@ func TestInstallRedirectsToTheReleaseScript(t *testing.T) {
 		}
 		if got, want := rec.Header().Get("Location"), "https://github.com/huynle/mcp-gateway/releases/latest/download/install.sh"; got != want {
 			t.Errorf("GET %s Location = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// /cli is the public CLI guide: the install tabs with this gateway's
+// /install URL and tunnel commands prefilled with GATEWAY_BASE_URL.
+func TestCLIPage(t *testing.T) {
+	h := newHarness(t)
+	body := h.do(t, request{method: http.MethodGet, path: "/cli"}).Body.String()
+	for _, want := range []string{
+		`class="install-tabs"`, "curl -fsSL http://localhost:18080/install | sh", "brew install huynle/tap/mcp-gateway",
+		"mcp-gateway version", "mcp-gateway tunnel --gateway http://localhost:18080 --stdio",
+		"--http http://localhost:PORT/mcp", `href="/servers"`, "/static/copy.js",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/cli lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "<script>") {
+		t.Error("/cli has inline script")
+	}
+}
+
+// My account (where signed-in users land) has the Command-line tool card.
+func TestAccountShowsCLICard(t *testing.T) {
+	h := newHarness(t)
+	ck, _ := h.session(t, memberSub, "Member")
+	body := h.do(t, request{method: http.MethodGet, path: "/account", cookie: ck}).Body.String()
+	for _, want := range []string{`id="cli"`, "Command-line tool", "curl -fsSL http://localhost:18080/install | sh", `href="/cli"`, "/static/copy.js"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/account lacks %q", want)
 		}
 	}
 }
