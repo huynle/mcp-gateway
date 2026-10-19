@@ -59,6 +59,10 @@ func (p *Portal) createTunnel(w http.ResponseWriter, r *http.Request, c caller) 
 		data.Error = "A tunnel name must be 1–100 printable characters."
 		p.render(w, r, http.StatusUnprocessableEntity, "servers.html", data)
 		return
+	case errors.Is(err, tunnel.ErrNameTaken):
+		data.Error = "You already have a tunnel named “" + name + "”. Choose another name, or revoke that tunnel first."
+		p.render(w, r, http.StatusUnprocessableEntity, "servers.html", data)
+		return
 	case errors.As(err, &ce):
 		data.Error = ce.Error()
 		p.render(w, r, http.StatusUnprocessableEntity, "servers.html", data)

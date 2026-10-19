@@ -115,3 +115,29 @@ func TestAuthorizeOwnerOnly(t *testing.T) {
 		t.Fatalf("revoked tunnel: %v, want ErrForbidden", err)
 	}
 }
+
+// A user cannot have two live tunnels with the same name (case and
+// surrounding space ignored); a revoked one frees the name, and another
+// user may use it.
+func TestCreateTunnelRefusesDuplicateLiveName(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestService(t)
+	first, _, err := s.CreateTunnel(ctx, ownerA, "laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"laptop", "Laptop", " laptop "} {
+		if _, _, err := s.CreateTunnel(ctx, ownerA, name); !errors.Is(err, ErrNameTaken) {
+			t.Errorf("CreateTunnel(%q) = %v, want ErrNameTaken", name, err)
+		}
+	}
+	if _, _, err := s.CreateTunnel(ctx, ownerB, "laptop"); err != nil {
+		t.Errorf("other owner, same name: %v", err)
+	}
+	if err := s.Revoke(ctx, ownerA, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateTunnel(ctx, ownerA, "laptop"); err != nil {
+		t.Errorf("name after revoke: %v", err)
+	}
+}

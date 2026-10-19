@@ -51,7 +51,7 @@
     <label class="check"><input type="radio" name="url_mode" value="tunnel"{{if eq .Form.URLMode "tunnel"}} checked{{end}}{{if not .Tunnels}} disabled{{end}}> Through one of my tunnels (stdio or private servers)</label>
     {{if .Tunnels}}
     <label>Tunnel <select name="tunnel_id">
-      {{range .Tunnels}}<option value="{{.ID}}"{{if eq .ID $.Form.TunnelID}} selected{{end}}>{{.Name}}{{if .Online}} (online){{else}} (offline){{end}}</option>{{end}}
+      {{range .Tunnels}}<option value="{{.ID}}"{{if eq .ID $.Form.TunnelID}} selected{{end}}>{{.Name}} · {{slice .ID 0 8}}{{if .Online}} (online){{else}} (offline){{end}}</option>{{end}}
     </select></label>
     <label>Path on the tunnel <span class="muted">(optional, e.g. /mcp)</span> <input type="text" name="tunnel_path" value="{{.Form.TunnelPath}}" maxlength="512"></label>
     {{else}}<p class="muted">No tunnels yet: create one on the <a href="/servers#tunnels">servers page</a>.</p>{{end}}

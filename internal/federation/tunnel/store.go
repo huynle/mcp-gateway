@@ -32,6 +32,13 @@ func (p pgStore) CreateTunnel(ctx context.Context, ownerUserID, name string, tok
 		if err := caps.Reserve(ctx, tx, p.caps, ownerUserID, caps.Tunnels); err != nil {
 			return err
 		}
+		taken, err := store.MCPTunnelNameTaken(ctx, tx, ownerUserID, name)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return ErrNameTaken
+		}
 		return store.CreateMCPTunnel(ctx, tx, t)
 	})
 	if err != nil {

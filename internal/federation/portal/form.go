@@ -467,6 +467,20 @@ func (p *Portal) formPage(ctx context.Context, c caller, f serverForm, d *detect
 			page.Tunnels = append(page.Tunnels, tunnelRow{ID: t.ID, Name: t.Name, Online: p.d.Tunnels.Online(t.ID)})
 		}
 	}
+	// Online tunnels first (a server added through an offline one cannot
+	// be refreshed), and an online one pre-selected when the form has none.
+	slices.SortStableFunc(page.Tunnels, func(a, b tunnelRow) int {
+		switch {
+		case a.Online == b.Online:
+			return 0
+		case a.Online:
+			return -1
+		}
+		return 1
+	})
+	if page.Form.TunnelID == "" && len(page.Tunnels) > 0 {
+		page.Form.TunnelID = page.Tunnels[0].ID
+	}
 	return page, nil
 }
 
