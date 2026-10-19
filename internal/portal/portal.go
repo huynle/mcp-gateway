@@ -2,12 +2,13 @@ package portal
 
 import (
 	"errors"
-	"github.com/huynle/mcp-gateway/internal/clientinstall"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
 
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/identity"

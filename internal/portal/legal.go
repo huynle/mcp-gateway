@@ -3,13 +3,14 @@ package portal
 import (
 	"errors"
 	"fmt"
-	"github.com/huynle/mcp-gateway/internal/clientinstall"
 	"net/http"
 	"net/mail"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
 
 	"github.com/huynle/mcp-gateway/internal/identity"
 )

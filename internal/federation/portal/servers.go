@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/huynle/mcp-gateway/internal/clientinstall"
 	"net/http"
 	"slices"
 	"time"
+
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
 
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"

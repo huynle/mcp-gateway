@@ -2,12 +2,13 @@ package portal
 
 import (
 	"errors"
-	"github.com/huynle/mcp-gateway/internal/clientinstall"
 	"net/http"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/huynle/mcp-gateway/internal/clientinstall"
 
 	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
