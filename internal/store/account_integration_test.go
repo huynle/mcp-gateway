@@ -40,6 +40,23 @@ func newAccountFixture(t *testing.T, env *testEnv, st *store.Store) *accountFixt
 		t.Fatal(err)
 	}
 	err = st.WithJobs(ctx, func(tx store.Tx) error {
+		m := &store.Machine{OwnerUserID: f.alice, Name: "alice-laptop", PublicKey: make([]byte, 32), Fingerprint: "fp-alice",
+			EnrolledVia: store.MachineEnrolledDevice}
+		if err := store.CreateMachine(ctx, tx, m); err != nil {
+			return err
+		}
+		return store.CreateMachineAccessToken(ctx, tx, []byte("machine-token-alice"), m.ID, time.Now().Add(time.Minute))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = st.WithUser(ctx, f.alice, func(tx store.Tx) error {
+		return store.CreateMachineEnrollmentCode(ctx, tx, &store.MachineEnrollmentCode{OwnerUserID: f.alice, CodeHash: []byte("code-alice"), ExpiresAt: time.Now().Add(time.Hour)})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = st.WithJobs(ctx, func(tx store.Tx) error {
 		if err := tx.Identities().Create(ctx, &store.Identity{UserID: f.alice, Issuer: "https://idp.example.com", Subject: "alice-sub"}); err != nil {
 			return err
 		}
@@ -108,12 +125,12 @@ func TestIntegrationAccountExportSections(t *testing.T) {
 	want := map[string]int{
 		"profile": 1, "identities": 1, "roles": 0, "connections": 1, "tokens": 1, "harness_grants": 0,
 		"mcp_servers": 1, "mcp_server_connections": 0, "tunnels": 1, "approvals": 1, "ledger_operations": 0,
-		"audit_events": 3, "rate_limits": 1, "resource_caps": 1,
+		"audit_events": 3, "rate_limits": 1, "resource_caps": 1, "machines": 1, "machine_enrollment_codes": 1,
 	}
 	if len(store.ExportSections) != len(want) {
 		t.Errorf("ExportSections = %v", store.ExportSections)
 	}
-	forbidden := []string{"token_hash", "ciphertext", "wrapped", "payload", "nonce", "digest", "auth_config", "header_config", "secret"}
+	forbidden := []string{"token_hash", "code_hash", "public_key", "ciphertext", "wrapped", "payload", "nonce", "digest", "auth_config", "header_config", "secret"}
 	for _, section := range store.ExportSections {
 		rows, truncated := exportAs(t, st, f.alice, section, 100)
 		if n, ok := want[section]; !ok || len(rows) != n || truncated {
@@ -231,7 +248,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if len(del.ServerIDs) != 1 || del.ServerIDs[0] != f.server.ID || del.Tunnels != 1 || del.Approvals != 1 || del.Connections != 1 {
+	if len(del.ServerIDs) != 1 || del.ServerIDs[0] != f.server.ID || del.Tunnels != 1 || del.Approvals != 1 || del.Connections != 1 || del.Machines != 1 {
 		t.Errorf("deletion = %+v", del)
 	}
 
@@ -253,6 +270,8 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 		"approval payloads":              `SELECT count(*) FROM approvals WHERE user_id = $1 AND (payload_ciphertext IS NOT NULL OR status <> 'expired')`,
 		"servers":                        `SELECT count(*) FROM mcp_servers WHERE owner_user_id = $1`,
 		"tunnels":                        `SELECT count(*) FROM mcp_tunnels WHERE owner_user_id = $1`,
+		"machines":                       `SELECT count(*) FROM machines WHERE owner_user_id = $1`,
+		"enrollment codes":               `SELECT count(*) FROM machine_enrollment_codes WHERE owner_user_id = $1`,
 		"role assignments":               `SELECT count(*) FROM role_assignments WHERE user_id = $1`,
 		"rate limits":                    `SELECT count(*) FROM gateway_user_rate_limits WHERE user_id = $1`,
 		"resource caps":                  `SELECT count(*) FROM gateway_user_resource_caps WHERE user_id = $1`,

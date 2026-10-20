@@ -332,7 +332,7 @@ func (s *Service) delete(ctx context.Context, actorID, userID string, self bool)
 		}
 		res := map[string]string{
 			"action": ActionDeleted, "by": "self",
-			"servers": strconv.Itoa(len(del.ServerIDs)), "tunnels": strconv.FormatInt(del.Tunnels, 10),
+			"servers": strconv.Itoa(len(del.ServerIDs)), "tunnels": strconv.FormatInt(del.Tunnels, 10), "machines": strconv.FormatInt(del.Machines, 10),
 			"connections": strconv.FormatInt(del.Connections, 10),
 		}
 		if !self {
@@ -349,7 +349,7 @@ func (s *Service) delete(ctx context.Context, actorID, userID string, self bool)
 		return fmt.Errorf("account: delete: %w", err)
 	}
 	s.o.Log.Info("user deleted", "event", ActionDeleted, "user_id", userID, "actor_user_id", actorID, "self", self,
-		"servers", len(del.ServerIDs), "tunnels", del.Tunnels, "connections", del.Connections, "approvals", del.Approvals)
+		"servers", len(del.ServerIDs), "tunnels", del.Tunnels, "machines", del.Machines, "connections", del.Connections, "approvals", del.Approvals)
 	if s.o.OnDeleted != nil {
 		s.o.OnDeleted(ctx, userID, del)
 	}
