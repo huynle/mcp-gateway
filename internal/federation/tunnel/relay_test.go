@@ -41,7 +41,7 @@ func newReplica(t *testing.T, ms *memStore, l Limits, secret []byte) *replica {
 	}))
 	t.Cleanup(relaySrv.Close)
 	buf := &syncBuffer{}
-	opts := Options{Store: ms, Limits: l, Log: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	opts := Options{Store: ms, Machines: ms, Limits: l, Log: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 	if secret != nil {
 		opts.Relay = &RelayOptions{Holders: ms, Advertise: relaySrv.URL, Secret: secret, HTTPClient: &http.Client{}}
 	}
@@ -52,6 +52,7 @@ func newReplica(t *testing.T, ms *memStore, l Limits, secret []byte) *replica {
 	relayHandler.Store(svc.RelayHandler())
 	mux := http.NewServeMux()
 	mux.Handle(ConnectPath, svc.Handler())
+	mux.Handle(MachineConnectPath, testMachineEndpoint(svc))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return &replica{gw: &gw{svc: svc, ms: ms, srv: srv, log: buf}, relaySrv: relaySrv}

@@ -47,12 +47,13 @@ func newGW(t *testing.T, l Limits) *gw {
 	t.Helper()
 	ms := newMemStore()
 	buf := &syncBuffer{}
-	svc, err := NewService(Options{Store: ms, Limits: l, Log: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+	svc, err := NewService(Options{Store: ms, Machines: ms, Limits: l, Log: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle(ConnectPath, svc.Handler())
+	mux.Handle(MachineConnectPath, testMachineEndpoint(svc))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return &gw{svc: svc, ms: ms, srv: srv, log: buf}

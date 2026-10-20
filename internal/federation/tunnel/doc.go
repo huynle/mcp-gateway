@@ -17,6 +17,15 @@
 // URLs. A request to a tunnel with no live connection on this replica
 // fails with an *Error of class tunnel_offline.
 //
+// An enrolled machine (internal/machines, Brain decision ldjix4y1) opens
+// one connection for all of its tunnels instead: the machines API
+// authenticates its short-lived machine token and hands the request to
+// Service.ServeMachine, which serves every tunnel linked to the machine
+// over that WebSocket (MachineSubprotocol, req frames carry the tunnel
+// id) and follows the machine's tunnel set while connected. The client
+// side is MachineAgent, whose targets are NewHTTPForwarder handlers or
+// StartStdio processes (shared with the legacy client).
+//
 // Live connections are per replica: the replica holding a tunnel's
 // connection must serve its calls (sticky routing is future work).
 package tunnel

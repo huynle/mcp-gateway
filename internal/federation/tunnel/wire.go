@@ -32,17 +32,39 @@ import (
 // as they are produced. Hop-by-hop headers and Content-Length are dropped
 // on both sides. Close codes: 4001 replaced by a newer connection, 4003
 // tunnel revoked.
+//
+// Machine connections (subprotocol "mcp-gateway-machine.v1", GET
+// MachineConnectPath with a machine access token, Brain decision
+// ldjix4y1) use the same frames over one WebSocket for every tunnel
+// linked to the machine. Each req frame names its tunnel:
+//
+//	{"t":"req","id":N,"tid":"<tunnel id>",...}
+//
+// Stream ids stay unique per connection, so head, data, end and cancel
+// need no tid. The gateway also sends the machine's current tunnel ids
+// on connect and whenever they change:
+//
+//	{"t":"tunnels","ids":["<tunnel id>",...]}
+//
+// The client may ignore it. Close codes: 4001 replaced by a newer
+// connection of the same machine, 4003 machine revoked.
 const (
 	// ConnectPath is where the gateway mounts Service.Handler.
 	ConnectPath = "/tunnel/connect"
 	// Subprotocol is the negotiated WebSocket subprotocol.
 	Subprotocol = "mcp-gateway-tunnel.v1"
+	// MachineConnectPath is where the machines API mounts its connect
+	// endpoint (Service.ServeMachine behind the machine token check).
+	MachineConnectPath = "/machine/v1/connect"
+	// MachineSubprotocol is the machine connection's subprotocol.
+	MachineSubprotocol = "mcp-gateway-machine.v1"
 
 	frameRequest = "req"
 	frameCancel  = "cancel"
 	frameHead    = "head"
 	frameData    = "data"
 	frameEnd     = "end"
+	frameTunnels = "tunnels"
 
 	// maxChunk bounds one data frame's payload.
 	maxChunk = 32 << 10
@@ -68,6 +90,10 @@ type frame struct {
 	Status int         `json:"s,omitempty"`
 	Data   []byte      `json:"d,omitempty"`
 	Error  string      `json:"e,omitempty"`
+	// Tunnel names a machine connection's tunnel on req frames.
+	Tunnel string `json:"tid,omitempty"`
+	// IDs lists a machine's tunnel ids (tunnels frames).
+	IDs []string `json:"ids,omitempty"`
 }
 
 var errBadFrame = errors.New("tunnel: malformed frame")

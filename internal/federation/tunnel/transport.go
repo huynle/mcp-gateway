@@ -116,6 +116,9 @@ func (s *Service) roundTripConn(c *conn, req *http.Request, method, uri string, 
 		return nil, err
 	}
 	f := &frame{Type: frameRequest, ID: st.id, Method: method, Path: uri, Header: cleanHeader(header), Data: body}
+	if c.l.machine != "" {
+		f.Tunnel = c.tunnelID
+	}
 	if err := c.send(f); err != nil {
 		st.abandon()
 		return nil, newError(ClassOffline, "send", err)

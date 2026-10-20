@@ -58,7 +58,7 @@ func (s *Service) serveConnect(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("tunnel: connected", "tunnel_id", t.ID, "owner_user_id", t.OwnerUserID, "epoch", c.epoch.Load())
 
 	go s.heartbeat(c)
-	reason := s.readLoop(c)
+	reason := s.readLoop(c.l)
 	s.reg.remove(t.ID, c)
 	s.releaseHolder(c)
 	c.close(websocket.StatusNormalClosure, "")
@@ -67,15 +67,15 @@ func (s *Service) serveConnect(w http.ResponseWriter, r *http.Request) {
 
 // readLoop dispatches client frames until the connection fails or closes
 // and returns a short reason.
-func (s *Service) readLoop(c *conn) string {
+func (s *Service) readLoop(l *link) string {
 	for {
-		f, err := readFrame(c.life, c.ws)
+		f, err := readFrame(l.life, l.ws)
 		if err != nil {
 			switch {
-			case c.isClosed():
+			case l.isClosed():
 				return "closed_by_gateway"
 			case errors.Is(err, errBadFrame):
-				_ = c.ws.Close(websocket.StatusUnsupportedData, "malformed frame")
+				_ = l.ws.Close(websocket.StatusUnsupportedData, "malformed frame")
 				return "malformed_frame"
 			case websocket.CloseStatus(err) != -1:
 				return "closed_by_client"
@@ -83,7 +83,7 @@ func (s *Service) readLoop(c *conn) string {
 				return "connection_lost"
 			}
 		}
-		c.dispatch(f)
+		l.dispatch(f)
 	}
 }
 
@@ -94,15 +94,15 @@ func (s *Service) heartbeat(c *conn) {
 	defer tick.Stop()
 	for {
 		select {
-		case <-c.life.Done():
+		case <-c.l.life.Done():
 			return
 		case <-tick.C:
 		}
-		ctx, cancel := context.WithTimeout(c.life, s.limits.HeartbeatInterval)
-		err := c.ws.Ping(ctx)
+		ctx, cancel := context.WithTimeout(c.l.life, s.limits.HeartbeatInterval)
+		err := c.l.ws.Ping(ctx)
 		if err != nil {
 			cancel()
-			if c.life.Err() == nil {
+			if c.l.life.Err() == nil {
 				s.log.Info("tunnel: ping failed", "tunnel_id", c.tunnelID)
 				s.reg.remove(c.tunnelID, c)
 				c.close(websocket.StatusGoingAway, "ping timeout")
@@ -166,7 +166,7 @@ func (s *Service) checkHolder(c *conn) bool {
 	if s.relay == nil {
 		return true
 	}
-	ctx, cancel := context.WithTimeout(c.life, 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.l.life, 5*time.Second)
 	h, err := s.relay.holders.Holder(ctx, c.tunnelID)
 	cancel()
 	mine := c.epoch.Load()

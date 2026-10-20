@@ -75,14 +75,9 @@ func NewAgent(o AgentOptions) (*Agent, error) {
 	if ParseToken(o.Token) != nil {
 		return nil, errors.New("tunnel: the token is not a tunnel token (mgt_...)")
 	}
-	u, err := url.Parse(o.GatewayURL)
-	if err != nil || u.Host == "" || u.User != nil {
-		return nil, errors.New("tunnel: invalid gateway URL")
-	}
-	switch u.Scheme {
-	case "https", "wss", "http", "ws":
-	default:
-		return nil, errors.New("tunnel: gateway URL must be https (or http for local testing)")
+	connect, err := connectURL(o.GatewayURL, ConnectPath)
+	if err != nil {
+		return nil, err
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -96,40 +91,73 @@ func NewAgent(o AgentOptions) (*Agent, error) {
 	if o.MaxStreams <= 0 {
 		o.MaxStreams = 64
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + ConnectPath
+	return &Agent{o: o, connect: connect}, nil
+}
+
+// connectURL is the WebSocket endpoint path under a gateway base URL.
+func connectURL(gateway, path string) (string, error) {
+	u, err := url.Parse(gateway)
+	if err != nil || u.Host == "" || u.User != nil {
+		return "", errors.New("tunnel: invalid gateway URL")
+	}
+	switch u.Scheme {
+	case "https", "wss", "http", "ws":
+	default:
+		return "", errors.New("tunnel: gateway URL must be https (or http for local testing)")
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + path
 	u.RawQuery, u.Fragment = "", ""
-	return &Agent{o: o, connect: u.String()}, nil
+	return u.String(), nil
 }
 
 // Run connects and serves until ctx is cancelled (returns ctx.Err()) or
 // the gateway ends the tunnel for good (ErrRejected, ErrReplaced,
 // ErrRevoked). Other failures reconnect with exponential backoff.
 func (a *Agent) Run(ctx context.Context) error {
-	backoff := a.o.MinBackoff
+	return reconnectLoop(ctx, reconnect{
+		once: a.runOnce, status: a.status, log: a.o.Log, min: a.o.MinBackoff, max: a.o.MaxBackoff,
+	})
+}
+
+// reconnect is the shared reconnect loop's configuration.
+type reconnect struct {
+	once     func(context.Context) (connected bool, err error)
+	status   func(Status)
+	log      *slog.Logger
+	min, max time.Duration
+}
+
+// final reports the errors that end a reconnect loop.
+func final(err error) bool {
+	return errors.Is(err, ErrRejected) || errors.Is(err, ErrReplaced) || errors.Is(err, ErrRevoked)
+}
+
+func reconnectLoop(ctx context.Context, r reconnect) error {
+	backoff := r.min
 	for {
-		a.status(Status{State: StateConnecting})
-		connected, err := a.runOnce(ctx)
+		r.status(Status{State: StateConnecting})
+		connected, err := r.once(ctx)
 		if ctx.Err() != nil {
-			a.status(Status{State: StateDisconnected, Err: ctx.Err()})
+			r.status(Status{State: StateDisconnected, Err: ctx.Err()})
 			return ctx.Err()
 		}
-		if errors.Is(err, ErrRejected) || errors.Is(err, ErrReplaced) || errors.Is(err, ErrRevoked) {
-			a.status(Status{State: StateDisconnected, Err: err})
+		if final(err) {
+			r.status(Status{State: StateDisconnected, Err: err})
 			return err
 		}
 		if connected {
-			backoff = a.o.MinBackoff
+			backoff = r.min
 		}
 		// Full jitter in [backoff/2, backoff].
 		delay := backoff/2 + rand.N(backoff/2+1)
-		a.o.Log.Info("tunnel: disconnected, retrying", "error", err, "retry_in", delay.Round(time.Millisecond))
-		a.status(Status{State: StateDisconnected, Err: err, RetryIn: delay})
+		r.log.Info("tunnel: disconnected, retrying", "error", err, "retry_in", delay.Round(time.Millisecond))
+		r.status(Status{State: StateDisconnected, Err: err, RetryIn: delay})
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(delay):
 		}
-		backoff = min(backoff*2, a.o.MaxBackoff)
+		backoff = min(backoff*2, r.max)
 	}
 }
 
@@ -178,6 +206,25 @@ func hostOf(raw string) string {
 
 // serve reads gateway frames and runs requests until the connection ends.
 func (a *Agent) serve(ctx context.Context, ws *websocket.Conn) error {
+	return serveFrames(ctx, ws, frameServer{
+		resolve: func(*frame) http.Handler { return a.o.Handler },
+		log:     a.o.Log, maxStreams: a.o.MaxStreams,
+	})
+}
+
+// frameServer is how serveFrames answers requests: resolve picks the local
+// handler of a request (nil: no such tunnel here), onTunnels receives the
+// gateway's tunnel lists (machine connections).
+type frameServer struct {
+	resolve    func(*frame) http.Handler
+	onTunnels  func([]string)
+	log        *slog.Logger
+	maxStreams int
+}
+
+// serveFrames reads gateway frames and runs requests until the connection
+// ends (the legacy agent and the machine agent).
+func serveFrames(ctx context.Context, ws *websocket.Conn, fs frameServer) error {
 	life, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() {
@@ -187,7 +234,7 @@ func (a *Agent) serve(ctx context.Context, ws *websocket.Conn) error {
 	}()
 	var mu sync.Mutex
 	running := map[uint64]context.CancelFunc{}
-	sem := make(chan struct{}, a.o.MaxStreams)
+	sem := make(chan struct{}, fs.maxStreams)
 
 	for {
 		f, err := readFrame(life, ws)
@@ -205,6 +252,10 @@ func (a *Agent) serve(ctx context.Context, ws *websocket.Conn) error {
 			return err
 		}
 		switch f.Type {
+		case frameTunnels:
+			if fs.onTunnels != nil {
+				fs.onTunnels(append([]string{}, f.IDs...))
+			}
 		case frameCancel:
 			mu.Lock()
 			if c := running[f.ID]; c != nil {
@@ -228,12 +279,17 @@ func (a *Agent) serve(ctx context.Context, ws *websocket.Conn) error {
 					mu.Unlock()
 					rcancel()
 				}()
+				h := fs.resolve(f)
+				if h == nil {
+					reply(life, ws, f.ID, http.StatusBadGateway, "no local server for this tunnel\n")
+					return
+				}
 				select {
 				case sem <- struct{}{}:
 					defer func() { <-sem }()
-					a.handle(rctx, life, ws, f)
+					handle(rctx, life, ws, f, h, fs.log)
 				default:
-					a.reply(life, ws, f.ID, http.StatusServiceUnavailable, "tunnel client busy\n")
+					reply(life, ws, f.ID, http.StatusServiceUnavailable, "tunnel client busy\n")
 				}
 			}()
 		}
@@ -242,7 +298,7 @@ func (a *Agent) serve(ctx context.Context, ws *websocket.Conn) error {
 
 // reply sends a complete small response. ctx must be the connection's
 // life context: cancelling a write's context closes the whole WebSocket.
-func (a *Agent) reply(ctx context.Context, ws *websocket.Conn, id uint64, status int, msg string) {
+func reply(ctx context.Context, ws *websocket.Conn, id uint64, status int, msg string) {
 	h := http.Header{"Content-Type": {"text/plain; charset=utf-8"}}
 	_ = writeFrame(ctx, ws, &frame{Type: frameHead, ID: id, Status: status, Header: h})
 	_ = writeFrame(ctx, ws, &frame{Type: frameData, ID: id, Data: []byte(msg)})
@@ -252,19 +308,19 @@ func (a *Agent) reply(ctx context.Context, ws *websocket.Conn, id uint64, status
 // handle replays one request against the local handler. ctx is the
 // request's context (cancelled by a cancel frame); frames are written with
 // life, the connection's context.
-func (a *Agent) handle(ctx, life context.Context, ws *websocket.Conn, f *frame) {
+func handle(ctx, life context.Context, ws *websocket.Conn, f *frame, h http.Handler, log *slog.Logger) {
 	if !strings.HasPrefix(f.Path, "/") || f.Method == "" {
-		a.reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
+		reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
 		return
 	}
 	u, err := url.ParseRequestURI(f.Path)
 	if err != nil {
-		a.reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
+		reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
 		return
 	}
 	req, err := http.NewRequestWithContext(ctx, f.Method, "http://tunnel"+f.Path, bytes.NewReader(f.Data))
 	if err != nil {
-		a.reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
+		reply(life, ws, f.ID, http.StatusBadRequest, "bad tunnel request\n")
 		return
 	}
 	req.URL = u
@@ -280,14 +336,14 @@ func (a *Agent) handle(ctx, life context.Context, ws *websocket.Conn, f *frame) 
 			// http.ErrAbortHandler is how a proxying handler reports a
 			// broken upstream stream (as in net/http); anything else is a bug.
 			if p != http.ErrAbortHandler { //nolint:errorlint // sentinel compared as a panic value, like net/http
-				a.o.Log.Error("tunnel: local handler panicked", "panic", fmt.Sprint(p))
+				log.Error("tunnel: local handler panicked", "panic", fmt.Sprint(p))
 			}
 			w.abort("aborted")
 			return
 		}
 		w.finish()
 	}()
-	a.o.Handler.ServeHTTP(w, req)
+	h.ServeHTTP(w, req)
 }
 
 // responseWriter streams a local response back as head, data*, end.
