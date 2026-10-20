@@ -190,6 +190,13 @@ func echoServer() *mcp.Server {
 // TestMain doubles as a stdio MCP server when re-executed by the --stdio
 // end-to-end test.
 func TestMain(m *testing.M) {
+	if os.Getenv("MCP_TUNNEL_TEST_ENV_SERVER") == "1" {
+		if err := environServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			fmt.Fprintln(os.Stderr, "stdio server:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("MCP_TUNNEL_TEST_STDIO_SERVER") == "1" {
 		if err := echoServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			fmt.Fprintln(os.Stderr, "stdio server:", err)

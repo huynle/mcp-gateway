@@ -323,10 +323,20 @@ type stdioProcess struct {
 // environment; its stderr goes to ours.
 // Cancelling ctx sends SIGTERM (then SIGKILL after WaitDelay).
 func startStdio(ctx context.Context, argv []string, stderr io.Writer, log *slog.Logger) (*stdioProcess, error) {
+	return startProcess(ctx, argv, childEnv(os.Environ()), "", stderr, log)
+}
+
+// startProcess starts argv with exactly env (never nil: an empty
+// environment) in dir ("" = ours).
+func startProcess(ctx context.Context, argv, env []string, dir string, stderr io.Writer, log *slog.Logger) (*stdioProcess, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // the user's own command, by design
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
-	cmd.Env = childEnv(os.Environ())
+	if env == nil {
+		env = []string{}
+	}
+	cmd.Env = env
+	cmd.Dir = dir
 	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
