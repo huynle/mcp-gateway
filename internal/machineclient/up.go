@@ -169,7 +169,7 @@ func loadUpConfig(path string, st *State) (*Config, error) {
 		return nil, fmt.Errorf("%s names gateway %s but this machine is logged in to %s; fix the config or log in again", path, cfg.Gateway, st.Gateway)
 	}
 	if len(cfg.Servers) == 0 {
-		return nil, fmt.Errorf("no servers in %s; add some under servers:", path)
+		return nil, fmt.Errorf("no servers in %s (add them under `servers`)", path)
 	}
 	return cfg, nil
 }

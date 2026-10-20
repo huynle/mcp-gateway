@@ -17,7 +17,7 @@ func TestLaunchdPlistLints(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := filepath.Join(o.Home, "Library/LaunchAgents/com.huynle.mcp-gateway.plist")
-	if out, err := exec.Command("/usr/bin/plutil", "-lint", p).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(context.Background(), "/usr/bin/plutil", "-lint", p).CombinedOutput(); err != nil {
 		t.Fatalf("plutil -lint: %v\n%s", err, out)
 	}
 }

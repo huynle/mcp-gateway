@@ -286,7 +286,7 @@ servers:
 	// stdio handler is the process bridge.
 	for tid, want := range map[string]string{"tun-2": "http:/mcp", "tun-1": "stdio:npx"} {
 		rec := httptest.NewRecorder()
-		r.targets[tid].Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}")))
+		r.targets[tid].Handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", strings.NewReader("{}")))
 		if rec.Body.String() != want {
 			t.Errorf("%s handler answered %q, want %q", tid, rec.Body.String(), want)
 		}
@@ -484,7 +484,7 @@ func TestUpRestartsAnExitedStdioServer(t *testing.T) {
 	h.procs.all()[0].exit()
 	waitFor(t, "restart", func() bool { return len(h.procs.all()) == 2 })
 	rec := httptest.NewRecorder()
-	r.targets["tun-1"].Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
+	r.targets["tun-1"].Handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil))
 	if rec.Body.String() != "stdio:srv" {
 		t.Fatalf("handler after restart: %d %q", rec.Code, rec.Body.String())
 	}
