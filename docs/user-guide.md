@@ -86,15 +86,28 @@ The gateway never runs programs on your machine and never dials into your networ
 
 Keep the command running while you use the server; it reconnects on its own. If you lose the token, revoke the tunnel and create a new one. `mcp-gateway tunnel --help` lists every option; details are in [tunnel.md](tunnel.md).
 
-### 3b. Several local servers from one machine (`mcp-gateway login` / `up`)
+## 3b. Connect several local servers from one machine (`mcp-gateway login` / `up`)
 
-For more than one local server, or a computer that runs them unattended, enroll the machine once instead of creating tunnel tokens by hand ([machines.md](machines.md)):
+If you run more than one local MCP server, or want them served while you are away (a headless box), enroll the machine once instead of creating a tunnel per server:
 
-1. `mcp-gateway login --gateway https://gateway.example.com` prints a code and a key fingerprint (four groups of four characters). Open the link while signed in, compare the machine name and fingerprint with what the terminal shows, and press **Approve**. The machine is then yours (whoever approves owns it: never approve a code someone sent you).
-2. List the servers in `~/.config/mcp-gateway/config.yaml` and run `mcp-gateway up` (or `mcp-gateway service install` to keep it running). Each becomes one of your private servers; approve its tools from the review link `up` prints.
-3. **Machines** (`/machines`) shows your machines and their servers. **Revoke** cuts one off at once. For a headless host create a one-time **enrollment code** there and run `mcp-gateway login --enroll-code mge_…`.
+1. Install the client (see 3a) and list your servers in `~/.config/mcp-gateway/config.yaml`:
 
-The machine keeps its private key locally and only ever holds 10-minute tokens; nothing long-lived to leak.
+   ```yaml
+   gateway: https://gateway.example.com
+   servers:
+     fusion360:
+       http: http://127.0.0.1:27182/mcp
+     everything:
+       stdio: npx -y @modelcontextprotocol/server-everything
+   ```
+
+2. Run `mcp-gateway login`. It prints a code and opens `/activate`; check that the page shows this machine's name and the same fingerprint as your terminal, then **Approve**. On a machine without a browser, create an enrollment code on the portal's **Machines** page and run `MCP_GATEWAY_ENROLL_CODE=mge_… mcp-gateway login` there.
+3. Run `mcp-gateway up`. Each server appears in your servers list; `up` prints a review link per new server: open it and approve the tools you want, as for any server.
+4. Optional: `mcp-gateway service install` keeps `up` running in the background (and after a reboot). `mcp-gateway status` checks everything; after editing the config, restart the service or send `up` a SIGHUP.
+
+Stdio servers started this way see only a minimal environment (`PATH`, `HOME`, `USER`, language settings) plus what you list under `env` / `inherit_env`, never your other shell variables. To retire a machine run `mcp-gateway logout`, or revoke it on the **Machines** page (from any device). Details: [machines-cli.md](machines-cli.md).
+
+**Machines** (`/machines`) shows your machines and their servers. **Revoke** cuts one off at once. For a headless host create a one-time **enrollment code** there and run `mcp-gateway login --enroll-code mge_…`.
 
 ## 4. Approvals: when a tool call waits for you
 

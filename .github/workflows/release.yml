@@ -34,7 +34,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: client tests
-        run: go test -race -count=1 ./cmd/mcp-gateway/... ./cmd/mcp-gateway-tunnel/... ./internal/tunnelclient/...
+        run: go test -race -count=1 ./cmd/mcp-gateway/... ./cmd/mcp-gateway-tunnel/... ./internal/tunnelclient/... ./internal/machineclient/...
       - name: install script tests
         run: tests/test-install-script.sh
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
