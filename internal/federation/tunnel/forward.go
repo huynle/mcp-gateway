@@ -1,11 +1,9 @@
-package tunnelclient
+package tunnel
 
 import (
 	"io"
 	"net/http"
-	"net/textproto"
 	"net/url"
-	"strings"
 )
 
 // httpForwarder forwards tunnel requests to one private HTTP MCP server.
@@ -19,7 +17,11 @@ type httpForwarder struct {
 	hc     *http.Client
 }
 
-func newHTTPForwarder(target *url.URL, hc *http.Client) http.Handler {
+// NewHTTPForwarder returns the client-side handler that replays tunnel
+// requests against the private HTTP MCP server at target through hc (the
+// caller's client: no proxies, redirects passed through). The legacy
+// tunnel client (--http) and the machine agent serve it.
+func NewHTTPForwarder(target *url.URL, hc *http.Client) http.Handler {
 	return &httpForwarder{target: target, hc: hc}
 }
 
@@ -44,7 +46,7 @@ func (f *httpForwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.URL = out
 	req.Host = ""
 	req.ContentLength = r.ContentLength
-	copyHeader(req.Header, r.Header)
+	req.Header = cleanHeader(r.Header)
 
 	resp, err := f.hc.Do(req)
 	if err != nil {
@@ -52,7 +54,9 @@ func (f *httpForwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
-	copyHeader(w.Header(), resp.Header)
+	for k, vs := range cleanHeader(resp.Header) {
+		w.Header()[k] = vs
+	}
 	w.WriteHeader(resp.StatusCode)
 	flusher, _ := w.(http.Flusher)
 	buf := make([]byte, 32<<10)
@@ -72,27 +76,5 @@ func (f *httpForwarder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-	}
-}
-
-var hopHeaders = map[string]bool{
-	"Connection": true, "Proxy-Connection": true, "Keep-Alive": true, "Proxy-Authenticate": true,
-	"Proxy-Authorization": true, "Te": true, "Trailer": true, "Transfer-Encoding": true,
-	"Upgrade": true, "Content-Length": true, "Host": true,
-}
-
-func copyHeader(dst, src http.Header) {
-	drop := map[string]bool{}
-	for _, v := range src.Values("Connection") {
-		for name := range strings.SplitSeq(v, ",") {
-			drop[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name))] = true
-		}
-	}
-	for k, vs := range src {
-		ck := textproto.CanonicalMIMEHeaderKey(k)
-		if hopHeaders[ck] || drop[ck] {
-			continue
-		}
-		dst[ck] = append([]string(nil), vs...)
 	}
 }

@@ -243,19 +243,19 @@ func Run(parent context.Context, opts Options, args []string, getenv func(string
 		handler   http.Handler
 		serving   string
 		childDone <-chan struct{}
-		proc      *stdioProcess
+		proc      *tunnel.StdioProcess
 	)
 	if cfg.stdio != nil {
-		proc, err = startStdio(ctx, cfg.stdio, stderr, log)
+		proc, err = tunnel.StartStdio(ctx, tunnel.StdioOptions{Command: cfg.stdio, Env: childEnv(os.Environ()), Stderr: stderr, Log: log})
 		if err != nil {
 			say(stderr, "%s: start stdio server: %v\n", name, err)
 			return 1
 		}
-		defer proc.stop()
-		handler, childDone = proc.bridge, proc.bridge.Done()
+		defer proc.Stop()
+		handler, childDone = proc.Handler(), proc.Done()
 		serving = "stdio server " + filepath.Base(cfg.stdio[0])
 	} else {
-		handler = newHTTPForwarder(cfg.httpTarget, localClient())
+		handler = tunnel.NewHTTPForwarder(cfg.httpTarget, localClient())
 		serving = "HTTP server " + cfg.httpTarget.Host
 	}
 
@@ -342,4 +342,17 @@ func localClient() *http.Client {
 		Transport:     tr,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+}
+
+// childEnv is the stdio server's environment: ours without the tunnel
+// token.
+func childEnv(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, EnvToken+"=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
