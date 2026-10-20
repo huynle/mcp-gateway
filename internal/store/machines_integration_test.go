@@ -244,7 +244,9 @@ func TestIntegrationMachineTokensTunnelsAndRevocation(t *testing.T) {
 
 	// Access token.
 	hash := []byte("access-" + t.Name())
-	if err := jobs(func(tx store.Tx) error { return store.CreateMachineAccessToken(ctx, tx, hash, m.ID, now.Add(10*time.Minute)) }); err != nil {
+	if err := jobs(func(tx store.Tx) error {
+		return store.CreateMachineAccessToken(ctx, tx, hash, m.ID, now.Add(10*time.Minute))
+	}); err != nil {
 		t.Fatal(err)
 	}
 	var tok *store.MachineAccess
