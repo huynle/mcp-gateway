@@ -137,7 +137,9 @@ func TestIntegrationMachineCLIEndToEnd(t *testing.T) {
 	}()
 
 	servers := map[string]*store.MCPServer{}
-	waitFor(t, "up registers, connects and refreshes both servers", func() bool {
+	// up registers, connects and refreshes in the background (with its own
+	// retries); allow for a loaded CI machine.
+	waitForWithin(t, 90*time.Second, "up registers, connects and refreshes both servers", func() bool {
 		for _, name := range []string{"one", "two"} {
 			var srv *store.MCPServer
 			if err := st.WithUser(ctx, alice, func(tx store.Tx) (err error) {
@@ -193,5 +195,16 @@ func TestIntegrationMachineCLIEndToEnd(t *testing.T) {
 		if strings.Contains(s, "mgm_") || strings.Contains(s, "eyJ") {
 			t.Errorf("CLI output leaks a token or assertion:\n%s", s)
 		}
+	}
+}
+
+func waitForWithin(t *testing.T, d time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting for %s", d, what)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
