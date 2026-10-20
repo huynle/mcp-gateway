@@ -222,7 +222,7 @@ func up(ctx context.Context, args []string, getenv func(string) string, stdout, 
 	}
 	conn := newConnector()
 	if conn == nil && !*registerOnly {
-		return fail(stderr, "up", errors.New("the machine connection is not available in this build yet; use --register-only"))
+		return fail(stderr, "up", errors.New("no machine connection available"))
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

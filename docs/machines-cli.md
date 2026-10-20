@@ -139,11 +139,12 @@ Machine login is not supported on Windows yet (owner and mode checks fail closed
 `--register-only` does steps 1–2 and prints each server's review link without connecting or starting anything.
 Servers removed from the config stay registered on the gateway (offline) until you delete them in the portal.
 
-The `Connector` interface (`internal/machineclient/up.go`) is implemented by an adapter over the server side's
-`tunnel.NewMachineAgent`: `Run(ctx, gateway, token, targets, onConnected) error`, with `Target{Kind, URL, Stdio,
-Handler}`. `up` builds each target's `http.Handler` (stdio bridge or HTTP forwarder), so the adapter only routes
-requests by tunnel id. Until that adapter is wired in `cmd/mcp-gateway` (marked TODO), `up` without
-`--register-only` exits with a message.
+The `Connector` interface (`internal/machineclient/up.go`) is implemented by `machineclient.NewTunnelConnector`
+(`tunnelconnector.go`), an adapter over `tunnel.NewMachineAgent`: `Run(ctx, gateway, token, targets, onConnected)
+error`, with `Target{Kind, URL, Stdio, Handler}`. `up` builds each target's `http.Handler` (stdio bridge or HTTP
+forwarder), so the adapter only routes requests by tunnel id. It returns on the first disconnect (so `up` owns
+reconnecting and the status lines) and maps close code 4003 to `ErrRevoked` and 4001 to `ErrReplaced`.
+`cmd/gateway`'s `TestIntegrationMachineCLIEndToEnd` runs the real `Login` + `Up` against a real gateway.
 
 ## Background service
 
