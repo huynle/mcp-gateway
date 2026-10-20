@@ -157,6 +157,18 @@ Transport errors are `*tunnel.Error{Class, Reason}`, with these classes: `tunnel
 
 The gateway assigns stream ids per connection. A request carries its whole (bounded) body. A response streams as `head`, `data*`, `end`, so SSE and Streamable HTTP responses flow as they are produced. Both sides drop hop-by-hop headers, `Host` and `Content-Length`. Frame size limits: 1 MiB read by the gateway, 32 MiB read by the client.
 
+## Machine connections
+
+An enrolled machine ([machines.md](machines.md), Brain decision `ldjix4y1`) opens **one** WebSocket for every tunnel linked to it instead of one per tunnel:
+
+1. `GET /machine/v1/connect` with `Authorization: Bearer mgm_…` (a 10-minute machine access token; checked by `internal/machines`, 401 / 403 `revoked` at the handshake) and subprotocol `mcp-gateway-machine.v1`. The machines API hands the request to `(*Service).ServeMachine(w, r, machineID)`.
+2. The connection becomes the live connection of every live tunnel of the machine (`mcp_tunnels.machine_id`); each is registered and holder-claimed like a legacy connection, so the relay works unchanged. A newer connection of the same machine closes the older with **4001**; revoking the machine (or its owner no longer active) closes it with **4003**.
+3. Frames are the v1 frames above; `req` carries the tunnel id: `{"t":"req","id":N,"tid":"<tunnel id>",…}`. Stream ids are unique per connection, so `head`, `data`, `end` and `cancel` carry no tunnel id. On connect and whenever the set changes the gateway sends `{"t":"tunnels","ids":[…]}` (the client may ignore it). A request for a tunnel the client has no target for is answered 502.
+4. The tunnel set follows the machine while connected: `SyncMachine` (called after the machine API created a tunnel on this replica) and a re-read every `Limits.MachineSyncInterval` (default 5 s, at most `HeartbeatInterval`) attach new tunnels and detach revoked ones without a reconnect; revoking one tunnel detaches only that tunnel. The same re-read notices a revocation through another replica. `DropMachine` closes the connection at once on this replica. Every `HeartbeatInterval` the gateway pings, touches the machine and its tunnels and re-checks the relay holders; if a newer connection of the machine holds a tunnel elsewhere, this connection closes with 4001.
+5. Persistence: `tunnel.MachineStore` (`MachineTunnels`, `TouchMachine`; `tunnel.NewMachineStore(*store.Store)`, jobs role), set as `Options.Machines`; `connector.Wire` does it.
+
+The client side is `tunnel.NewMachineAgent` (targets: tunnel id → `http.Handler`, built with `tunnel.NewHTTPForwarder` or `tunnel.StartStdio`, which the legacy client shares). The legacy `/tunnel/connect`, the `mgt_` tokens and wire format v1 are unchanged; a machine tunnel has no token hash, so `/tunnel/connect` can never match it.
+
 ## Multiple replicas (cross-replica relay)
 
 Live connections are held **per replica, in process**. With several replicas behind a load balancer without sticky sessions, the WebSocket lands on one replica (the *holder*) and a tunnel request may arrive on another. The relay (Brain decision `efq0ncag` item 5) forwards such a request to the holder over an internal, authenticated HTTP hop, so tunnels work from every replica.

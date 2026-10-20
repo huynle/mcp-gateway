@@ -53,6 +53,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/ledger"
+	"github.com/huynle/mcp-gateway/internal/machines"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/permissions"
@@ -210,6 +211,7 @@ type world struct {
 	fed      *connector.Federation // nil unless options.federation
 	relay    *httptest.Server      // the relay listener; nil unless options.tunnelRelay
 	gw       *gatewaytools.Tools   // nil unless options.federation
+	machines *machines.Service     // nil unless options.federation
 	perms    *permissions.Service
 
 	admin, alice, bob    user

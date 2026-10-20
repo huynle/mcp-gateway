@@ -270,5 +270,5 @@ func withFederationCaps(l caps.Limiter) func(*connector.WireOptions) {
 func capDefaults(cfg config.Config) caps.Values {
 	c := cfg.Caps
 	return caps.Values{caps.Servers: c.Servers, caps.Tunnels: c.Tunnels, caps.ConnectionsPerApp: c.ConnectionsPerApp,
-		caps.ConnectionsTotal: c.ConnectionsTotal, caps.PendingApprovals: c.PendingApprovals}
+		caps.ConnectionsTotal: c.ConnectionsTotal, caps.PendingApprovals: c.PendingApprovals, caps.Machines: c.Machines}
 }

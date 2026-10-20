@@ -172,8 +172,13 @@ func run() error {
 				return err
 			}
 		}
+		// Enrolled machines (`mcp-gateway login` / `up`; docs/machines.md).
+		machineSvc, err := newMachines(cfg, st, fed, capsSvc, rec, log)
+		if err != nil {
+			return err
+		}
 		accounts = gw.Accounts(federationAccounts(fed, accounts))
-		muxExtras = append(muxExtras, withFederationRoutes(fed))
+		muxExtras = append(muxExtras, withFederationRoutes(fed), withMachineRoutes(machineSvc))
 		slackNotifier, err := newSlackNotifier(cfg, connSvc, log)
 		if err != nil {
 			return err
@@ -202,7 +207,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withSignupAudit(rec))
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSignupAudit(rec))
 		if err != nil {
 			return err
 		}

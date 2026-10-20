@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 	"unicode"
 
@@ -61,6 +62,10 @@ type Options struct {
 	// replicas"); nil keeps every tunnel local to the replica holding its
 	// connection.
 	Relay *RelayOptions
+	// Machines enables machine connections (ServeMachine;
+	// NewMachineStore(*store.Store) in production). Nil: ServeMachine
+	// answers 503.
+	Machines MachineStore
 }
 
 // Service manages tunnel tokens, the /tunnel/connect endpoint and the
@@ -73,6 +78,10 @@ type Service struct {
 	now    func() time.Time
 	reg    *registry
 	relay  *relay // nil: relay disabled
+
+	machineStore MachineStore
+	machinesMu   sync.Mutex
+	machines     map[string]*link // live machine connections on this replica
 }
 
 // NewService builds a Service.
@@ -88,6 +97,7 @@ func NewService(o Options) (*Service, error) {
 		s.now = time.Now
 	}
 	s.reg = newRegistry()
+	s.machineStore, s.machines = o.Machines, map[string]*link{}
 	if o.Relay != nil {
 		r, err := newRelay(s, *o.Relay)
 		if err != nil {

@@ -114,3 +114,25 @@ func (p pgStore) Holder(ctx context.Context, tunnelID string) (*store.MCPTunnelH
 	})
 	return h, err
 }
+
+// NewMachineStore returns the PostgreSQL-backed MachineStore (machines
+// and their tunnels, WithJobs). st must have the jobs pool configured.
+func NewMachineStore(st *store.Store) MachineStore { return pgStore{st: st} }
+
+func (p pgStore) MachineTunnels(ctx context.Context, machineID string) ([]string, bool, error) {
+	if !uuidRE.MatchString(machineID) {
+		return nil, false, nil
+	}
+	var ids []string
+	var live bool
+	err := p.st.WithJobs(ctx, func(tx store.Tx) error {
+		var err error
+		ids, live, err = store.MachineTunnelIDs(ctx, tx, machineID)
+		return err
+	})
+	return ids, live, err
+}
+
+func (p pgStore) TouchMachine(ctx context.Context, machineID string, at time.Time) error {
+	return p.st.WithJobs(ctx, func(tx store.Tx) error { return store.TouchMachine(ctx, tx, machineID, at, "") })
+}

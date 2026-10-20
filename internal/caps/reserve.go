@@ -34,6 +34,8 @@ func Reserve(ctx context.Context, q store.Querier, l Limiter, userID string, r R
 		n, err = store.CountUserLiveMCPTunnels(ctx, q, userID)
 	case PendingApprovals:
 		n, err = store.CountUserPendingApprovals(ctx, q, userID, time.Now())
+	case Machines:
+		n, err = store.CountUserLiveMachines(ctx, q, userID)
 	default:
 		return fmt.Errorf("caps: reserve %q: use ReserveConnection", r)
 	}
@@ -106,6 +108,9 @@ func Usage(ctx context.Context, q store.Querier, userID string) (Values, error) 
 		return nil, err
 	}
 	if out[PendingApprovals], err = store.CountUserPendingApprovals(ctx, q, userID, time.Now()); err != nil {
+		return nil, err
+	}
+	if out[Machines], err = store.CountUserLiveMachines(ctx, q, userID); err != nil {
 		return nil, err
 	}
 	if _, out[ConnectionsTotal], err = store.CountUserConnections(ctx, q, userID, ""); err != nil {

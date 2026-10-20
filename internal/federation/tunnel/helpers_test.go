@@ -21,10 +21,52 @@ type memStore struct {
 	// holders is the HolderStore side (migration 00026).
 	holders map[string]store.MCPTunnelHolder
 	epochs  int64
+	// machines is the MachineStore side (migration 00030).
+	machines map[string]*memMachine
+}
+
+// memMachine is a machine: live (not revoked, owner active) and its
+// tunnels.
+type memMachine struct {
+	live    bool
+	tunnels []string
+	touches int
+}
+
+func (m *memStore) MachineTunnels(_ context.Context, machineID string) ([]string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mm, ok := m.machines[machineID]
+	if !ok {
+		return nil, false, nil
+	}
+	var live []string
+	for _, id := range mm.tunnels {
+		if t, ok := m.tunnels[id]; ok && t.RevokedAt == nil {
+			live = append(live, id)
+		}
+	}
+	return live, mm.live, nil
+}
+
+func (m *memStore) TouchMachine(_ context.Context, machineID string, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if mm, ok := m.machines[machineID]; ok {
+		mm.touches++
+	}
+	return nil
+}
+
+// setMachine creates or replaces a machine.
+func (m *memStore) setMachine(id string, live bool, tunnels ...string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.machines[id] = &memMachine{live: live, tunnels: tunnels}
 }
 
 func newMemStore() *memStore {
-	return &memStore{tunnels: map[string]*store.MCPTunnel{}, holders: map[string]store.MCPTunnelHolder{}}
+	return &memStore{tunnels: map[string]*store.MCPTunnel{}, holders: map[string]store.MCPTunnelHolder{}, machines: map[string]*memMachine{}}
 }
 
 func (m *memStore) ClaimHolder(_ context.Context, id, holder string, at time.Time) (int64, error) {

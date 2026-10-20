@@ -1,4 +1,4 @@
-package tunnelclient
+package tunnel
 
 import (
 	"bufio"
@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -57,7 +56,7 @@ type rpcMsg struct {
 
 func (m *rpcMsg) hasID() bool { return len(m.ID) > 0 && string(m.ID) != "null" }
 
-type stdioBridge struct {
+type StdioBridge struct {
 	w   io.Writer
 	wmu sync.Mutex
 	log *slog.Logger
@@ -74,18 +73,19 @@ type stdioBridge struct {
 	initializedSent bool
 }
 
-// newStdioBridge reads the server's stdout from r and writes to its stdin
+// NewStdioBridge is the client-side handler that bridges tunnel requests
+// to a stdio MCP server: it reads the server's stdout from r and writes to its stdin
 // through w.
-func newStdioBridge(r io.Reader, w io.Writer, log *slog.Logger) *stdioBridge {
-	b := &stdioBridge{w: w, log: log, pending: map[int64]chan *rpcMsg{}, done: make(chan struct{})}
+func NewStdioBridge(r io.Reader, w io.Writer, log *slog.Logger) *StdioBridge {
+	b := &StdioBridge{w: w, log: log, pending: map[int64]chan *rpcMsg{}, done: make(chan struct{})}
 	go b.readLoop(r)
 	return b
 }
 
 // Done is closed when the server's stdout ends (the process exited).
-func (b *stdioBridge) Done() <-chan struct{} { return b.done }
+func (b *StdioBridge) Done() <-chan struct{} { return b.done }
 
-func (b *stdioBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (b *StdioBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "only POST is supported by the stdio bridge", http.StatusMethodNotAllowed)
@@ -126,7 +126,7 @@ func (b *stdioBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (b *stdioBridge) notify(w http.ResponseWriter, m *rpcMsg) {
+func (b *StdioBridge) notify(w http.ResponseWriter, m *rpcMsg) {
 	if m.Method == "notifications/initialized" {
 		b.initMu.Lock()
 		sent := b.initializedSent
@@ -144,7 +144,7 @@ func (b *stdioBridge) notify(w http.ResponseWriter, m *rpcMsg) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (b *stdioBridge) initialize(w http.ResponseWriter, ctx context.Context, m *rpcMsg) {
+func (b *StdioBridge) initialize(w http.ResponseWriter, ctx context.Context, m *rpcMsg) {
 	b.initMu.Lock()
 	defer b.initMu.Unlock()
 	if b.initResult != nil {
@@ -165,7 +165,7 @@ func (b *stdioBridge) initialize(w http.ResponseWriter, ctx context.Context, m *
 	b.reply(w, m, resp, err)
 }
 
-func (b *stdioBridge) reply(w http.ResponseWriter, req, resp *rpcMsg, err error) {
+func (b *StdioBridge) reply(w http.ResponseWriter, req, resp *rpcMsg, err error) {
 	switch {
 	case errors.Is(err, errChildGone):
 		http.Error(w, "stdio server exited", http.StatusBadGateway)
@@ -184,7 +184,7 @@ func (b *stdioBridge) reply(w http.ResponseWriter, req, resp *rpcMsg, err error)
 var errChildGone = errors.New("stdio server exited")
 
 // call sends a request with a bridge-owned id and waits for its response.
-func (b *stdioBridge) call(ctx context.Context, method string, params json.RawMessage) (*rpcMsg, error) {
+func (b *StdioBridge) call(ctx context.Context, method string, params json.RawMessage) (*rpcMsg, error) {
 	ch := make(chan *rpcMsg, 1)
 	b.mu.Lock()
 	b.nextID++
@@ -215,7 +215,7 @@ func (b *stdioBridge) call(ctx context.Context, method string, params json.RawMe
 }
 
 // write sends one message as a single line.
-func (b *stdioBridge) write(m *rpcMsg) error {
+func (b *StdioBridge) write(m *rpcMsg) error {
 	m.JSONRPC = "2.0"
 	line, err := json.Marshal(m) // compact: no newlines inside
 	if err != nil {
@@ -227,7 +227,7 @@ func (b *stdioBridge) write(m *rpcMsg) error {
 	return err
 }
 
-func (b *stdioBridge) readLoop(r io.Reader) {
+func (b *StdioBridge) readLoop(r io.Reader) {
 	defer b.doneOnce.Do(func() { close(b.done) })
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
@@ -267,7 +267,7 @@ func readLine(br *bufio.Reader, maxLen int) ([]byte, error) {
 	}
 }
 
-func (b *stdioBridge) handleLine(line []byte) {
+func (b *StdioBridge) handleLine(line []byte) {
 	var m rpcMsg
 	if json.Unmarshal(bytes.TrimSpace(line), &m) != nil {
 		b.log.Debug("ignoring non-JSON-RPC output from the stdio server")
@@ -280,7 +280,7 @@ func (b *stdioBridge) handleLine(line []byte) {
 			return
 		}
 		b.log.Debug("refusing server-to-client request", "method", m.Method)
-		_ = b.write(&rpcMsg{ID: m.ID, Error: rpcError(codeMethodNotFound, "not supported through mcp-gateway-tunnel")})
+		_ = b.write(&rpcMsg{ID: m.ID, Error: rpcError(codeMethodNotFound, "not supported through the mcp-gateway tunnel")})
 	case m.Method != "": // notification
 		b.log.Debug("dropping server notification", "method", m.Method)
 	case m.hasID():
@@ -311,23 +311,48 @@ func writeRPC(w http.ResponseWriter, m *rpcMsg) {
 	_, _ = w.Write(b)
 }
 
-// stdioProcess is the stdio MCP server started by the tunnel client.
-type stdioProcess struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	bridge *stdioBridge
-	exited chan struct{}
+// StdioOptions start a stdio MCP server next to the tunnel client.
+type StdioOptions struct {
+	// Command is the program and its arguments (no shell).
+	Command []string
+	// Env is the child's complete environment ("KEY=value"); nothing is
+	// inherited. The caller decides what the server may see (the machine
+	// client passes a clean allowlist, the legacy client its own
+	// environment minus the tunnel token).
+	Env []string
+	// Dir is the working directory ("" = the caller's).
+	Dir string
+	// Stderr receives the server's stderr (nil discards it).
+	Stderr io.Writer
+	// Log receives bridge events. Default: discard.
+	Log *slog.Logger
 }
 
-// startStdio starts argv with the tunnel token removed from its
-// environment; its stderr goes to ours.
-// Cancelling ctx sends SIGTERM (then SIGKILL after WaitDelay).
-func startStdio(ctx context.Context, argv []string, stderr io.Writer, log *slog.Logger) (*stdioProcess, error) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // the user's own command, by design
+// StdioProcess is a stdio MCP server started by StartStdio.
+type StdioProcess struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	bridge *StdioBridge
+	exited chan struct{}
+	stop   sync.Once
+}
+
+// StartStdio starts o.Command with exactly o.Env and returns it with its
+// bridge. Cancelling ctx sends SIGTERM (then SIGKILL after WaitDelay).
+func StartStdio(ctx context.Context, o StdioOptions) (*StdioProcess, error) {
+	if len(o.Command) == 0 || o.Command[0] == "" {
+		return nil, errors.New("tunnel: empty stdio command")
+	}
+	log := o.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	cmd := exec.CommandContext(ctx, o.Command[0], o.Command[1:]...) //nolint:gosec // the user's own command, by design
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
-	cmd.Env = childEnv(os.Environ())
-	cmd.Stderr = stderr
+	cmd.Env = append([]string{}, o.Env...) // non-nil: never inherit
+	cmd.Dir = o.Dir
+	cmd.Stderr = o.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -339,8 +364,8 @@ func startStdio(ctx context.Context, argv []string, stderr io.Writer, log *slog.
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	p := &stdioProcess{cmd: cmd, stdin: stdin, exited: make(chan struct{})}
-	p.bridge = newStdioBridge(stdout, stdin, log)
+	p := &StdioProcess{cmd: cmd, stdin: stdin, exited: make(chan struct{})}
+	p.bridge = NewStdioBridge(stdout, stdin, log)
 	go func() {
 		<-p.bridge.Done() // read all output before Wait closes the pipe
 		err := cmd.Wait()
@@ -350,31 +375,29 @@ func startStdio(ctx context.Context, argv []string, stderr io.Writer, log *slog.
 	return p, nil
 }
 
-// stop closes stdin (the polite MCP shutdown), then escalates to SIGTERM
-// and SIGKILL.
-func (p *stdioProcess) stop() {
-	_ = p.stdin.Close()
-	for _, sig := range []os.Signal{nil, syscall.SIGTERM, os.Kill} {
-		if sig != nil {
-			_ = p.cmd.Process.Signal(sig)
-		}
-		select {
-		case <-p.exited:
-			return
-		case <-time.After(3 * time.Second):
-		}
-	}
-}
+// Handler is the bridge serving tunnel requests to the process.
+func (p *StdioProcess) Handler() http.Handler { return p.bridge }
 
-func childEnv(env []string) []string {
-	out := env[:0:0]
-	for _, kv := range env {
-		if strings.HasPrefix(kv, EnvToken+"=") {
-			continue
+// Done is closed when the process's stdout ended (it exited).
+func (p *StdioProcess) Done() <-chan struct{} { return p.bridge.Done() }
+
+// Stop closes stdin (the polite MCP shutdown), then escalates to SIGTERM
+// and SIGKILL. It returns once the process exited; later calls return at
+// once.
+func (p *StdioProcess) Stop() {
+	p.stop.Do(func() {
+		_ = p.stdin.Close()
+		for _, sig := range []os.Signal{nil, syscall.SIGTERM, os.Kill} {
+			if sig != nil {
+				_ = p.cmd.Process.Signal(sig)
+			}
+			select {
+			case <-p.exited:
+				return
+			case <-time.After(3 * time.Second):
+			}
 		}
-		out = append(out, kv)
-	}
-	return out
+	})
 }
 
 func exitStatus(err error) string {

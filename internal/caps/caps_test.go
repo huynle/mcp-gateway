@@ -16,6 +16,7 @@ func TestExceededErrorMessageClassAndIs(t *testing.T) {
 		caps.ConnectionsPerApp: "You have reached the limit of 3 connected accounts for this app",
 		caps.ConnectionsTotal:  "You have reached the limit of 3 connected accounts",
 		caps.PendingApprovals:  "You have reached the limit of 3 pending approvals",
+		caps.Machines:          "You have reached the limit of 3 machines",
 	}
 	for r, want := range cases {
 		err := fmt.Errorf("wrapped: %w", &caps.ExceededError{Resource: r, Limit: 3})
@@ -43,6 +44,9 @@ func TestValidAndBuiltinDefaults(t *testing.T) {
 		if caps.Builtin[r] <= 0 {
 			t.Errorf("builtin %s = %d, want > 0 (never unlimited by default)", r, caps.Builtin[r])
 		}
+	}
+	if caps.Builtin[caps.Machines] != 5 || !caps.Valid(caps.Machines) {
+		t.Errorf("machines builtin = %d", caps.Builtin[caps.Machines])
 	}
 	if caps.Valid("users") || caps.Valid("") {
 		t.Error("unknown resource valid")

@@ -56,6 +56,7 @@ limits and current usage (read only).
 | `connections_per_app` | `GATEWAY_CAP_CONNECTIONS_PER_APP=5` | live (not revoked) app connections to one vendor app |
 | `connections_total` | `GATEWAY_CAP_CONNECTIONS_TOTAL=20` | live app connections over all vendor apps |
 | `pending_approvals` | `GATEWAY_CAP_PENDING_APPROVALS=50` | pending approvals that have not expired |
+| `machines` | `GATEWAY_CAP_MACHINES=5` | the user's enrolled machines that are not revoked ([machines.md](machines.md)) |
 
 Effective limit: per-user administrator override, else organization value,
 else ENV default. **0 means unlimited** and can only be set by an
@@ -74,7 +75,8 @@ sees every committed row, so parallel requests cannot exceed the limit. It
 applies to every creation path:
 
 - servers: the servers portal (Add server) and `gateway.add_server` (one shared budget);
-- tunnels: tunnel creation in the portal (`tunnel` store);
+- tunnels: tunnel creation in the portal (`tunnel` store) and `PUT /machine/v1/servers/{name}` (a new machine tunnel);
+- machines: device-flow approval and enrollment with a code (a replaced machine of the same name does not count);
 - app connections: the connect callback, only before inserting a **new**
   connection or reviving a disconnected one. Reconnecting or granting more
   access to a live connection is never blocked. Internal anchor accounts of

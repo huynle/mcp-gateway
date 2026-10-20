@@ -121,7 +121,7 @@ func Wire(o WireOptions) (*Federation, error) {
 		return nil, fmt.Errorf("federation: auth: %w", err)
 	}
 	f.Snapshots = snapshot.NewService(o.Store)
-	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Log: o.Log}
+	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Machines: tunnel.NewMachineStore(o.Store), Log: o.Log}
 	if o.TunnelRelay != nil {
 		r := *o.TunnelRelay
 		if r.Holders == nil {

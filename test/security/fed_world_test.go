@@ -34,6 +34,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/machines"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
@@ -76,6 +77,21 @@ func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts o
 	// wires them (off until a user switches them on).
 	w.gw, err = gatewaytools.Wire(gatewaytools.WireOptions{
 		Federation: fed, Store: w.st, Registry: w.reg, Activity: w.perms, BaseURL: baseURL, Log: log, Timeout: opts.fedTimeout,
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	// Enrolled machines, as cmd/gateway's newMachines wires them.
+	factory, err := fedportal.NewClientFactory(fedportal.FactoryOptions{
+		Credentials: fed.Auth, Tunnels: fed.Tunnels, HTTPClient: fed.Guard.Client(), Log: log,
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	w.machines, err = machines.New(machines.Options{
+		Store:   machines.NewStore(w.st, nil),
+		Servers: machines.NewServers(machines.ServersOptions{Store: w.st, Manager: fed.Manager, Snapshots: fed.Snapshots, Clients: factory}),
+		Tunnels: fed.Tunnels, BaseURL: baseURL, Audit: w.rec, Log: log,
 	})
 	if err != nil {
 		w.t.Fatal(err)
@@ -139,6 +155,13 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 		Store: as, Roles: as, Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels, ClientFactory: factory,
 		Hook: fed.Manager, AllowList: fed.AllowList, Identity: identityFn, Audit: w.rec, Log: log,
 	}).Mount(p.MountAdmin)
+	machines.NewPortal(w.machines, identityFn, log).Mount(func(pattern string, h http.Handler) {
+		if strings.Contains(pattern, " /admin/") {
+			p.MountAdmin(pattern, h)
+			return
+		}
+		p.MountUser(pattern, h)
+	})
 }
 
 // mountFederationRoutes mounts the public federation routes (client
@@ -146,6 +169,7 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 func (w *world) mountFederationRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+auth.ClientMetadataPath, w.fed.Auth.ClientMetadataDocument())
 	mux.Handle(tunnel.ConnectPath, w.fed.Tunnels.Handler())
+	w.machines.Mount(mux)
 }
 
 type hookFunc func(ctx context.Context, serverID string)

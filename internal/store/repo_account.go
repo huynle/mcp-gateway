@@ -22,6 +22,7 @@ var ExportSections = []string{
 	"profile", "identities", "roles", "connections", "tokens", "harness_grants",
 	"mcp_servers", "mcp_server_connections", "tunnels", "approvals",
 	"ledger_operations", "audit_events", "rate_limits", "resource_caps",
+	"machines", "machine_enrollment_codes",
 }
 
 // exportQueries: $1 is the user id, $2 the row limit. Every query filters
@@ -66,8 +67,13 @@ var exportQueries = map[string]string{
 		FROM admin_audit_events WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT $2`,
 	"rate_limits": `SELECT admin_per_min, self_per_min, updated_at
 		FROM gateway_user_rate_limits WHERE user_id = $1 LIMIT $2`,
-	"resource_caps": `SELECT servers, tunnels, connections_per_app, connections_total, pending_approvals, updated_at
+	"resource_caps": `SELECT servers, tunnels, connections_per_app, connections_total, pending_approvals, machines, updated_at
 		FROM gateway_user_resource_caps WHERE user_id = $1 LIMIT $2`,
+	"machines": `SELECT id, name, fingerprint, client_version, enrolled_via, enrolled_ip, created_at, last_seen_at, last_ip,
+			revoked_at, revoke_reason
+		FROM machines WHERE owner_user_id = $1 ORDER BY created_at LIMIT $2`,
+	"machine_enrollment_codes": `SELECT id, label, created_at, expires_at, used_at, machine_id, revoked_at
+		FROM machine_enrollment_codes WHERE owner_user_id = $1 ORDER BY created_at LIMIT $2`,
 }
 
 // ExportSection returns up to limit rows of one export section for userID
@@ -185,8 +191,11 @@ func ListIdentitiesForUser(ctx context.Context, q Querier, userID string) ([]Ide
 type UserDeletion struct {
 	// ServerIDs are the deleted private MCP servers (the federation
 	// reloads after the commit).
-	ServerIDs   []string
-	Tunnels     int64
+	ServerIDs []string
+	Tunnels   int64
+	// Machines are the deleted enrolled machines (their live connections
+	// close at the next sync: the owner is no longer active).
+	Machines    int64
 	Connections int64
 	Approvals   int64
 }
@@ -200,7 +209,8 @@ type UserDeletion struct {
 //   - deleted: identities, sessions, private MCP servers the user owns
 //     (role links, shared secret, OAuth client, other users' connections
 //     and snapshots cascade), the user's own connections to any server,
-//     tunnels, connect flows, OAuth authorization codes, connection
+//     tunnels, enrolled machines (tokens and assertion ids cascade),
+//     machine enrollment codes and decided device requests, connect flows, OAuth authorization codes, connection
 //     secrets, role assignments, per-user restrictions and rate limits;
 //   - kept but emptied: tokens and OAuth refresh tokens (revoked, token
 //     names replaced), connections (revoked, external account id and
@@ -236,6 +246,7 @@ func DeleteUserData(ctx context.Context, q Querier, userID string, at time.Time)
 		sql  string
 	}{
 		{&out.Tunnels, "tunnels", `DELETE FROM mcp_tunnels WHERE owner_user_id = $1`},
+		{&out.Machines, "machines", `DELETE FROM machines WHERE owner_user_id = $1`},
 		{&out.Approvals, "approvals", `
 			UPDATE approvals SET payload_key_id = NULL, payload_wrapped_key = NULL, payload_nonce = NULL, payload_ciphertext = NULL,
 				status = CASE WHEN status IN ('pending', 'approved') THEN 'expired'::approval_status ELSE status END
@@ -264,6 +275,8 @@ func DeleteUserData(ctx context.Context, q Querier, userID string, at time.Time)
 		{"restrictions", `DELETE FROM user_restrictions WHERE user_id = $1`},
 		{"rate limits", `DELETE FROM gateway_user_rate_limits WHERE user_id = $1`},
 		{"resource caps", `DELETE FROM gateway_user_resource_caps WHERE user_id = $1`},
+		{"enrollment codes", `DELETE FROM machine_enrollment_codes WHERE owner_user_id = $1`},
+		{"machine requests", `DELETE FROM machine_device_requests WHERE decided_by = $1`},
 	} {
 		if _, err := q.Exec(ctx, stmt.sql, withTime(stmt.sql, userID, at)...); err != nil {
 			return nil, fmt.Errorf("store: delete user %s: %w", stmt.what, err)

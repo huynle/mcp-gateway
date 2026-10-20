@@ -48,6 +48,7 @@ var UserLinks = []Link{
 	{"/tokens", "Tokens"},
 	{"/connections", "Connections"},
 	{"/servers", "Servers"},
+	{"/machines", "Machines"},
 	{"/approvals", "Approvals"},
 	{"/operations", "Operations"},
 	{"/harnesses", "Harnesses"},
@@ -60,6 +61,7 @@ var AdminLinks = []Link{
 	{"/admin/users", "Users"},
 	{"/admin/roles", "Roles"},
 	{"/admin/servers", "All servers"},
+	{"/admin/machines", "All machines"},
 	{"/admin/audit", "Audit"},
 	{"/admin/vendor-apps", "Vendor apps"},
 }

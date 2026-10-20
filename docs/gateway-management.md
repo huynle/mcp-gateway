@@ -118,7 +118,7 @@ Every call is an audit row of the `/mcp` pipeline (tool, decision, outcome, erro
 
 ## Not over MCP
 
-By design there is **no** tool to approve a tool review, change a review, publish or unpublish a server, edit the network allow list, create or revoke a tunnel (or see its token), enter or read any credential, or sign in to a server. Those happen in the browser (servers portal and admin pages).
+By design there is **no** tool to approve a tool review, change a review, publish or unpublish a server, edit the network allow list, create or revoke a tunnel (or see its token), enter or read any credential, or sign in to a server. Those happen in the browser (servers portal and admin pages). Enrolling or revoking a machine ([machines.md](machines.md)) is not a tool either: it needs `mcp-gateway login` plus the browser approval, and machine tokens are refused at `/mcp`.
 
 Changing **approval modes** (Ask / Auto per write tool, of a built-in vendor app or of an already approved server) is possible over MCP with `gateway.set_tool_approval`, but every call **always needs the user's approval in the browser first** (gateway layer confirm; no role can lift it, a read-only token never sees it). It never enables a tool or approves a review: approving a server's tool *review* stays browser-only.
 

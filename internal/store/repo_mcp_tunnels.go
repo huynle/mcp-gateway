@@ -11,17 +11,35 @@ import (
 // known, so GetMCPTunnelByTokenHash and TouchMCPTunnel run through
 // WithJobs; the portal manages tunnels under WithUser.
 
-const mcpTunnelColumns = `id, owner_user_id, name, token_hash, created_at, last_seen_at, revoked_at`
+const mcpTunnelColumns = `id, owner_user_id, name, token_hash, created_at, last_seen_at, revoked_at, machine_id, server_name`
 
 func scanMCPTunnel(row interface{ Scan(dest ...any) error }, t *MCPTunnel) error {
-	return row.Scan(&t.ID, &t.OwnerUserID, &t.Name, &t.TokenHash, &t.CreatedAt, &t.LastSeenAt, &t.RevokedAt)
+	var machine, server *string
+	if err := row.Scan(&t.ID, &t.OwnerUserID, &t.Name, &t.TokenHash, &t.CreatedAt, &t.LastSeenAt, &t.RevokedAt, &machine, &server); err != nil {
+		return err
+	}
+	t.MachineID, t.ServerName = deref(machine), deref(server)
+	return nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // CreateMCPTunnel stores a tunnel; the stored row is written back into t.
+// A legacy tunnel has a TokenHash; a machine tunnel (schema 30) has
+// MachineID and ServerName instead and the machine's owner.
 func CreateMCPTunnel(ctx context.Context, q Querier, t *MCPTunnel) error {
+	var hash any
+	if t.TokenHash != nil {
+		hash = t.TokenHash
+	}
 	err := scanMCPTunnel(q.QueryRow(ctx, `
-		INSERT INTO mcp_tunnels (owner_user_id, name, token_hash) VALUES ($1, $2, $3)
-		RETURNING `+mcpTunnelColumns, t.OwnerUserID, t.Name, t.TokenHash), t)
+		INSERT INTO mcp_tunnels (owner_user_id, name, token_hash, machine_id, server_name) VALUES ($1, $2, $3, $4, $5)
+		RETURNING `+mcpTunnelColumns, t.OwnerUserID, t.Name, hash, nullString(t.MachineID), nullString(t.ServerName)), t)
 	if err != nil {
 		return fmt.Errorf("store: create mcp tunnel: %w", err)
 	}
@@ -59,6 +77,9 @@ func GetMCPTunnel(ctx context.Context, q Querier, id string) (*MCPTunnel, error)
 // is not active (pending approval or disabled) is ErrNotFound: it must
 // not connect (fail closed; schema 27).
 func GetMCPTunnelByTokenHash(ctx context.Context, q Querier, hash []byte) (*MCPTunnel, error) {
+	if len(hash) == 0 {
+		return nil, ErrNotFound // machine tunnels have no token
+	}
 	var t MCPTunnel
 	if err := scanMCPTunnel(q.QueryRow(ctx, `SELECT `+mcpTunnelColumns+` FROM mcp_tunnels
 		WHERE token_hash = $1 AND EXISTS (SELECT 1 FROM users u WHERE u.id = owner_user_id AND u.status = 'active')`, hash), &t); err != nil {
