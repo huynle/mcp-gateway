@@ -18,6 +18,11 @@ import (
 // token or session through any connector path or portal page, and every
 // refusal is byte-identical to the one for a nonexistent id, so neither
 // existence nor ownership leaks.
+// bobItemID is bob's item: letters outside a-f so it can never appear by
+// chance inside a uuid, digest or hex request id on alice's pages (the
+// former "b-1" matched e.g. "…6c9b-1f2e…" in ~5% of runs).
+const bobItemID = "bob-item-qx"
+
 func TestSecurityCrossUserReach(t *testing.T) {
 	w := newWorld(t, options{})
 	aliceToken := w.token(w.alice, tokens.CreateRequest{})
@@ -26,7 +31,7 @@ func TestSecurityCrossUserReach(t *testing.T) {
 
 	// bob's artefacts to point at: a pending approval, a succeeded
 	// operation with a stored result, a token, a harness family.
-	_, err := w.call(bob, "fake.create_item", map[string]any{"id": "b-1", "name": "bob item", "account": w.bobAcc})
+	_, err := w.call(bob, "fake.create_item", map[string]any{"id": bobItemID, "name": "bob item", "account": w.bobAcc})
 	bobApproval := approvalRequired(t, err)
 	if res, err := w.call(bob, "fake.post_note", map[string]any{"text": "bob's note 7f3a", "account": w.bobAcc}); err != nil || res.IsError {
 		t.Fatalf("bob post_note: err=%v res=%+v", err, res)
@@ -159,15 +164,15 @@ func TestSecurityCrossUserReach(t *testing.T) {
 		if code != 200 {
 			t.Errorf("alice GET %s = %d", path, code)
 		}
-		for what, id := range map[string]string{"approval": bobApproval, "operation": bobOp.ID[:8], "token": bobTokenID, "harness": bobFamily, "fake account": w.bobAcc, "github account": w.bobGH, "slack account": w.bobSlack, "github login": "bob-gh", "slack name": "bob@acme", "fake name": "Bob at", "item id": "b-1"} {
+		for what, id := range map[string]string{"approval": bobApproval, "operation": bobOp.ID[:8], "token": bobTokenID, "harness": bobFamily, "fake account": w.bobAcc, "github account": w.bobGH, "slack account": w.bobSlack, "github login": "bob-gh", "slack name": "bob@acme", "fake name": "Bob at", "item id": bobItemID} {
 			if strings.Contains(body, id) {
 				t.Errorf("alice GET %s shows bob's %s %q", path, what, id)
 			}
 		}
 	}
 	// The admin audit view sees both; alice's /activity cannot be widened.
-	if code, _, body := w.get(w.alice, "/activity?user_id="+w.bob.id); code != 200 || strings.Contains(body, "b-1") {
-		t.Errorf("alice /activity?user_id=bob = %d widened=%v", code, strings.Contains(body, "b-1"))
+	if code, _, body := w.get(w.alice, "/activity?user_id="+w.bob.id); code != 200 || strings.Contains(body, bobItemID) {
+		t.Errorf("alice /activity?user_id=bob = %d widened=%v", code, strings.Contains(body, bobItemID))
 	}
 	if code, _, _ := w.get(w.alice, "/admin/audit"); code != 404 {
 		t.Errorf("alice /admin/audit = %d, want 404", code)
@@ -175,6 +180,11 @@ func TestSecurityCrossUserReach(t *testing.T) {
 	// Bob's own view still works (the refusals are not a broken portal).
 	if code, _, body := w.get(w.bob, "/operations"); code != 200 || !strings.Contains(body, bobOp.ID[:8]) {
 		t.Errorf("bob GET /operations = %d, missing his own", code)
+	}
+	// The negative checks above have teeth only if bob's own activity
+	// really shows his item.
+	if code, _, body := w.get(w.bob, "/activity"); code != 200 || !strings.Contains(body, bobItemID) {
+		t.Errorf("bob GET /activity = %d, missing his own item %q", code, bobItemID)
 	}
 	_ = fake.App
 }
