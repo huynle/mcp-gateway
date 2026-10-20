@@ -156,6 +156,11 @@ type MCPTunnel struct {
 	CreatedAt   time.Time
 	LastSeenAt  *time.Time
 	RevokedAt   *time.Time
+	// MachineID and ServerName link the tunnel to an enrolled machine's
+	// server (schema 30); such a tunnel has no TokenHash. Both "" for a
+	// legacy tunnel.
+	MachineID  string
+	ServerName string
 }
 
 // NetguardAllowHost is an admin SSRF allow-list entry: a host name pattern
