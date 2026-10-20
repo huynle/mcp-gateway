@@ -207,7 +207,7 @@ func (g *fakeGateway) checkAssertion(a string) error {
 	}
 	var c struct {
 		Iss, Sub, Aud, Jti string
-		Iat, Exp          int64
+		Iat, Exp           int64
 	}
 	cb, _ := base64.RawURLEncoding.DecodeString(parts[1])
 	if err := json.Unmarshal(cb, &c); err != nil {
