@@ -152,8 +152,9 @@ func listMachines(ctx context.Context, q Querier, sql string, args ...any) ([]Ma
 	return out, rows.Err()
 }
 
-// RevokeMachine revokes a live machine, revokes its tunnels and deletes
-// its access tokens. by is the acting user ("" for none). ErrNotFound when
+// RevokeMachine revokes a live machine and its tunnels. Its access tokens
+// stay until they expire so the machine API can answer "revoked" (every
+// use checks Live). by is the acting user ("" for none). ErrNotFound when
 // the machine does not exist or is already revoked.
 func RevokeMachine(ctx context.Context, q Querier, id, by, reason string, at time.Time) error {
 	tag, err := q.Exec(ctx, `UPDATE machines SET revoked_at = $2, revoked_by = $3, revoke_reason = $4
@@ -166,9 +167,6 @@ func RevokeMachine(ctx context.Context, q Querier, id, by, reason string, at tim
 	}
 	if _, err := q.Exec(ctx, `UPDATE mcp_tunnels SET revoked_at = $2 WHERE machine_id = $1 AND revoked_at IS NULL`, id, at); err != nil {
 		return fmt.Errorf("store: revoke machine tunnels: %w", err)
-	}
-	if _, err := q.Exec(ctx, `DELETE FROM machine_access_tokens WHERE machine_id = $1`, id); err != nil {
-		return fmt.Errorf("store: revoke machine tokens: %w", err)
 	}
 	return nil
 }
@@ -499,8 +497,8 @@ func CreateMachineAccessToken(ctx context.Context, q Querier, hash []byte, machi
 }
 
 // GetMachineAccessToken returns the machine of an unexpired token at at.
-// The caller checks Live (a revoked machine's tokens are deleted, an
-// inactive owner's are not).
+// The caller must check Live: a revoked machine's or inactive owner's
+// token is still found.
 func GetMachineAccessToken(ctx context.Context, q Querier, hash []byte, at time.Time) (*MachineAccess, error) {
 	var a MachineAccess
 	err := scanMachine(q.QueryRow(ctx, `SELECT `+machineColumns+`, u.display_name, u.status, t.expires_at

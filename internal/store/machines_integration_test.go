@@ -329,7 +329,7 @@ func TestIntegrationMachineTokensTunnelsAndRevocation(t *testing.T) {
 		t.Fatalf("after transfer = %v, %v", ids, err)
 	}
 
-	// Revocation: tunnels revoked, tokens deleted, no longer live.
+	// Revocation: tunnels revoked, no longer live (tokens are found but not live).
 	hash2 := []byte("access2-" + t.Name())
 	if err := jobs(func(tx store.Tx) error {
 		if err := store.CreateMachineAccessToken(ctx, tx, hash2, repl.ID, now.Add(10*time.Minute)); err != nil {
@@ -340,10 +340,11 @@ func TestIntegrationMachineTokensTunnelsAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := jobs(func(tx store.Tx) error {
-		_, err := store.GetMachineAccessToken(ctx, tx, hash2, now)
+		var err error
+		tok, err = store.GetMachineAccessToken(ctx, tx, hash2, now)
 		return err
-	}); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("token of a revoked machine = %v", err)
+	}); err != nil || tok.Live() || tok.Machine.RevokeReason != store.MachineRevokedByAdmin {
+		t.Fatalf("token of a revoked machine = %+v, %v (want found, not live)", tok, err)
 	}
 	if err := jobs(func(tx store.Tx) error {
 		var err error
