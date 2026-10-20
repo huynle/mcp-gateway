@@ -86,6 +86,16 @@ The gateway never runs programs on your machine and never dials into your networ
 
 Keep the command running while you use the server; it reconnects on its own. If you lose the token, revoke the tunnel and create a new one. `mcp-gateway tunnel --help` lists every option; details are in [tunnel.md](tunnel.md).
 
+### 3b. Several local servers from one machine (`mcp-gateway login` / `up`)
+
+For more than one local server, or a computer that runs them unattended, enroll the machine once instead of creating tunnel tokens by hand ([machines.md](machines.md)):
+
+1. `mcp-gateway login --gateway https://gateway.example.com` prints a code and a key fingerprint (four groups of four characters). Open the link while signed in, compare the machine name and fingerprint with what the terminal shows, and press **Approve**. The machine is then yours (whoever approves owns it: never approve a code someone sent you).
+2. List the servers in `~/.config/mcp-gateway/config.yaml` and run `mcp-gateway up` (or `mcp-gateway service install` to keep it running). Each becomes one of your private servers; approve its tools from the review link `up` prints.
+3. **Machines** (`/machines`) shows your machines and their servers. **Revoke** cuts one off at once. For a headless host create a one-time **enrollment code** there and run `mcp-gateway login --enroll-code mge_…`.
+
+The machine keeps its private key locally and only ever holds 10-minute tokens; nothing long-lived to leak.
+
 ## 4. Approvals: when a tool call waits for you
 
 Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:
@@ -151,6 +161,6 @@ What stays: your audit events, write operations and approval records (without ar
 
 ## 8. Leaving, or losing a device
 
-- Lost laptop: `/tokens` → *Revoke* the token(s) on it, `/harnesses` → *Disconnect* its harnesses. Nothing else is needed; vendor accounts stay connected.
+- Lost laptop: `/tokens` → *Revoke* the token(s) on it, `/harnesses` → *Disconnect* its harnesses, `/machines` → *Revoke* it if it was an enrolled machine. Nothing else is needed; vendor accounts stay connected.
 - Leaving the team: an admin disables you; every token, harness and app connection is revoked at once. Your activity history stays for the audit trail.
 - Leaving for good: delete your account (section 7), or ask an admin to delete it.

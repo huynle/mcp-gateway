@@ -12,6 +12,8 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 Install the client CLI (`brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://gateway.huynle.com/install | sh`), create a tunnel in the portal and run `mcp-gateway tunnel --gateway <url> --stdio "<your server command>"` next to the server. See [`docs/tunnel.md`](docs/tunnel.md).
 
+For several local servers or a headless host, enroll the machine once (`mcp-gateway login`, approve it at `/activate`), list the servers in `~/.config/mcp-gateway/config.yaml` and run `mcp-gateway up`: one connection, short-lived tokens signed by a key that never leaves the machine. See [`docs/machines.md`](docs/machines.md).
+
 ## Run locally
 
 Requirements: Go 1.26 (the `toolchain` directive in `go.mod` pins the patch release; govulncheck is clean only on a supported Go), Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
@@ -275,6 +277,7 @@ internal/server/        HTTP server lifecycle, bounded graceful drain
 internal/observability/ slog bootstrap with the redacting handler, /healthz, /readyz check registry, private Prometheus registry
 internal/identity/      users, sessions, company sign-in (OIDC relying party); identitytest/ in-memory store for tests
 internal/authserver/    MCP OAuth 2.1 authorization server: discovery (RFC 8414/9728), DCR (RFC 7591), authorize + consent, token (PKCE, RFC 8707, rotating refresh), revoke (RFC 7009), JWKS + key rotation, JWT authenticator + Composite, /harnesses page; authservertest/ in-memory store
+internal/machines/      enrolled machines: device flow + /activate, enrollment codes, Ed25519 JWT assertions → mgm_ tokens, machine API (/machine/v1), /machines and /admin/machines pages (docs/machines.md)
 internal/tokens/        generated mgw_ tokens: format, service, authenticator + BearerMiddleware, portal pages; tokenstest/ in-memory store
 internal/policy/        structured roles compiled to versioned Cedar (cedar-go): model, compiler, Decide, service + cache, PostgreSQL store, admin role pages; policytest/ in-memory store; testdata/ golden files
 internal/approvals/     durable confirmations with bounded wait; Slack DM notifier (notify_slack.go)
