@@ -86,6 +86,27 @@ The gateway never runs programs on your machine and never dials into your networ
 
 Keep the command running while you use the server; it reconnects on its own. If you lose the token, revoke the tunnel and create a new one. `mcp-gateway tunnel --help` lists every option; details are in [tunnel.md](tunnel.md).
 
+## 3b. Connect several local servers from one machine (`mcp-gateway login` / `up`)
+
+If you run more than one local MCP server, or want them served while you are away (a headless box), enroll the machine once instead of creating a tunnel per server:
+
+1. Install the client (see 3a) and list your servers in `~/.config/mcp-gateway/config.yaml`:
+
+   ```yaml
+   gateway: https://gateway.example.com
+   servers:
+     fusion360:
+       http: http://127.0.0.1:27182/mcp
+     everything:
+       stdio: npx -y @modelcontextprotocol/server-everything
+   ```
+
+2. Run `mcp-gateway login`. It prints a code and opens `/activate`; check that the page shows this machine's name and the same fingerprint as your terminal, then **Approve**. On a machine without a browser, create an enrollment code on the portal's **Machines** page and run `MCP_GATEWAY_ENROLL_CODE=mge_… mcp-gateway login` there.
+3. Run `mcp-gateway up`. Each server appears in your servers list; `up` prints a review link per new server: open it and approve the tools you want, as for any server.
+4. Optional: `mcp-gateway service install` keeps `up` running in the background (and after a reboot). `mcp-gateway status` checks everything; after editing the config, restart the service or send `up` a SIGHUP.
+
+Stdio servers started this way see only a minimal environment (`PATH`, `HOME`, `USER`, language settings) plus what you list under `env` / `inherit_env`, never your other shell variables. To retire a machine run `mcp-gateway logout`, or revoke it on the **Machines** page (from any device). Details: [machines-cli.md](machines-cli.md).
+
 ## 4. Approvals: when a tool call waits for you
 
 Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:

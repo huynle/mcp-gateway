@@ -12,6 +12,16 @@ A self-hosted, always-on [MCP](https://modelcontextprotocol.io) gateway that sit
 
 Install the client CLI (`brew install huynle/tap/mcp-gateway`, or `curl -fsSL https://gateway.huynle.com/install | sh`), create a tunnel in the portal and run `mcp-gateway tunnel --gateway <url> --stdio "<your server command>"` next to the server. See [`docs/tunnel.md`](docs/tunnel.md).
 
+**Several local servers from one vetted machine** (headless too): list them in `~/.config/mcp-gateway/config.yaml`, enroll the machine once and keep one connection up:
+
+```sh
+mcp-gateway login              # approve the machine at <gateway>/activate (or --enroll-code for headless machines)
+mcp-gateway up                 # registers every server, connects, prints the review links
+mcp-gateway service install    # optional: launchd / systemd user service running `up`
+```
+
+The machine key (Ed25519) stays in the macOS keychain or a 0600 file; the CLI signs short-lived assertions for 10-minute tokens, so no long-lived secret is on disk. See [`docs/machines-cli.md`](docs/machines-cli.md) (client) and [`docs/machines.md`](docs/machines.md) (gateway).
+
 ## Run locally
 
 Requirements: Go 1.26 (the `toolchain` directive in `go.mod` pins the patch release; govulncheck is clean only on a supported Go), Docker with Compose v2, [golangci-lint](https://golangci-lint.run) v2 for `make lint`.
