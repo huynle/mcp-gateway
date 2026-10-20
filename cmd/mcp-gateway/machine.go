@@ -23,17 +23,9 @@ const EnvEnrollCode = "MCP_GATEWAY_ENROLL_CODE"
 
 // Seams for tests.
 var (
-	// newConnector returns the machine connection used by `up`.
-	//
-	// TODO(machines): wire the real Connector once feat/machines-server is
-	// merged: an adapter over tunnel.NewMachineAgent (internal/federation/
-	// tunnel) that dials GET /machine/v1/connect with a token from the token
-	// func (called on every connect), serves each Target.Handler by tunnel
-	// id, calls onConnected after the handshake, maps close code 4003 to
-	// machineclient.ErrRevoked and 4001 to machineclient.ErrReplaced, and
-	// may return on any disconnect (up reconnects with backoff). Until then
-	// `up` only works with --register-only.
-	newConnector = func() machineclient.Connector { return nil }
+	// newConnector returns the machine connection used by `up`: one
+	// tunnel.MachineAgent serving every server by tunnel id.
+	newConnector = func() machineclient.Connector { return machineclient.NewTunnelConnector(nil) }
 	// openBrowser opens the device-flow approval page.
 	openBrowser = openURL
 	// stdoutIsTerminal decides whether login may open a browser.

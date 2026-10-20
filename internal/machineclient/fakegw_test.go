@@ -314,7 +314,7 @@ func (g *fakeGateway) refresh(w http.ResponseWriter, r *http.Request) {
 	case g.offline:
 		oauthErr(w, 409, "offline")
 	default:
-		writeJSON(w, 200, map[string]any{"version": 1, "added": 3, "changed": 0, "removed": 0, "review_url": g.URL() + "/servers/" + s.serverID})
+		writeJSON(w, 200, map[string]any{"version": 1, "added": []string{"a", "b", "c"}, "changed": []string{}, "removed": []string{}, "review_url": g.URL() + "/servers/" + s.serverID})
 	}
 }
 

@@ -370,13 +370,33 @@ type PutResult struct {
 	ReviewURL string `json:"review_url"`
 }
 
-// RefreshResult is POST /machine/v1/servers/{name}/refresh.
+// RefreshResult is POST /machine/v1/servers/{name}/refresh. Added,
+// Changed and Removed hold the counts of tool names the gateway lists
+// (it answers the names; older fakes answered counts, both decode).
 type RefreshResult struct {
-	Version   int    `json:"version"`
-	Added     int    `json:"added"`
-	Changed   int    `json:"changed"`
-	Removed   int    `json:"removed"`
-	ReviewURL string `json:"review_url"`
+	Version   int       `json:"version"`
+	Added     toolCount `json:"added"`
+	Changed   toolCount `json:"changed"`
+	Removed   toolCount `json:"removed"`
+	ReviewURL string    `json:"review_url"`
+}
+
+// toolCount decodes a list of tool names (or a bare number) as a count.
+type toolCount int
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (c *toolCount) UnmarshalJSON(b []byte) error {
+	var names []string
+	if err := json.Unmarshal(b, &names); err == nil {
+		*c = toolCount(len(names))
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	*c = toolCount(n)
+	return nil
 }
 
 // Self returns the machine and its servers.

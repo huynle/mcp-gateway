@@ -151,10 +151,6 @@ func TestLoginStatusUpLogout(t *testing.T) {
 		t.Fatalf("status: %d\n%s\n%s", code, out, errOut)
 	}
 
-	code, _, errOut = runEnv(env, "up")
-	if code != 1 || !strings.Contains(errOut, "--register-only") {
-		t.Fatalf("up without a connector: %d %s", code, errOut)
-	}
 	code, _, errOut = runEnv(env, "up", "--register-only")
 	if code != 0 || !g.called("PUT /machine/v1/servers/local") || !strings.Contains(errOut, g.srv.URL+"/servers/s1") {
 		t.Fatalf("up --register-only: %d %s", code, errOut)
