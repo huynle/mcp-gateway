@@ -200,7 +200,7 @@ func Default() Config {
 		MCPMaxBody:             1 << 20,
 		RateUserPerMin:         60,
 		RateAppPerMin:          600,
-		Caps:                   ResourceCaps{Servers: 10, Tunnels: 5, ConnectionsPerApp: 5, ConnectionsTotal: 20, PendingApprovals: 50},
+		Caps:                   ResourceCaps{Servers: 10, Tunnels: 5, ConnectionsPerApp: 5, ConnectionsTotal: 20, PendingApprovals: 50, Machines: 5},
 		DefaultRole:            "member",
 		SignupPerIPPerHour:     10,
 		SignupGlobalPerHour:    100,
@@ -656,6 +656,7 @@ type ResourceCaps struct {
 	ConnectionsPerApp int `yaml:"connections_per_app"` // GATEWAY_CAP_CONNECTIONS_PER_APP, default 5
 	ConnectionsTotal  int `yaml:"connections_total"`   // GATEWAY_CAP_CONNECTIONS_TOTAL, default 20
 	PendingApprovals  int `yaml:"pending_approvals"`   // GATEWAY_CAP_PENDING_APPROVALS, default 50
+	Machines          int `yaml:"machines"`            // GATEWAY_CAP_MACHINES, default 5
 }
 
 // maxCap mirrors caps.Max.
@@ -670,6 +671,6 @@ func (c *ResourceCaps) fields() []struct {
 		dst  *int
 	}{
 		{"SERVERS", &c.Servers}, {"TUNNELS", &c.Tunnels}, {"CONNECTIONS_PER_APP", &c.ConnectionsPerApp},
-		{"CONNECTIONS_TOTAL", &c.ConnectionsTotal}, {"PENDING_APPROVALS", &c.PendingApprovals},
+		{"CONNECTIONS_TOTAL", &c.ConnectionsTotal}, {"PENDING_APPROVALS", &c.PendingApprovals}, {"MACHINES", &c.Machines},
 	}
 }

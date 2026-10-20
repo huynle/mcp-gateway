@@ -23,10 +23,12 @@ const (
 	ConnectionsPerApp Resource = "connections_per_app"
 	ConnectionsTotal  Resource = "connections_total"
 	PendingApprovals  Resource = "pending_approvals"
+	// Machines is the number of live enrolled machines (schema 30).
+	Machines Resource = "machines"
 )
 
 // Resources lists every resource in display order.
-var Resources = []Resource{Servers, Tunnels, ConnectionsPerApp, ConnectionsTotal, PendingApprovals}
+var Resources = []Resource{Servers, Tunnels, ConnectionsPerApp, ConnectionsTotal, PendingApprovals, Machines}
 
 // Max is the highest storable cap; 0 means unlimited.
 const Max = 100000
@@ -44,7 +46,7 @@ type Patch map[Resource]*int
 
 // Builtin are the defaults when ENV gives none: the gateway never runs
 // unlimited unless an administrator says so.
-var Builtin = Values{Servers: 10, Tunnels: 5, ConnectionsPerApp: 5, ConnectionsTotal: 20, PendingApprovals: 50}
+var Builtin = Values{Servers: 10, Tunnels: 5, ConnectionsPerApp: 5, ConnectionsTotal: 20, PendingApprovals: 50, Machines: 5}
 
 // Limiter answers a user's effective cap (0 = unlimited) and is told
 // about every refusal (it logs it).
@@ -74,6 +76,8 @@ func (r Resource) Noun() string {
 		return "connected accounts"
 	case PendingApprovals:
 		return "pending approvals"
+	case Machines:
+		return "machines"
 	}
 	return string(r)
 }
@@ -89,6 +93,8 @@ func (r Resource) hint() string {
 		return "Disconnect an account you no longer need"
 	case PendingApprovals:
 		return "Decide or wait for some pending approvals to expire"
+	case Machines:
+		return "Revoke a machine you no longer need"
 	}
 	return "Remove one"
 }

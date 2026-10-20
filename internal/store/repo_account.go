@@ -66,7 +66,7 @@ var exportQueries = map[string]string{
 		FROM admin_audit_events WHERE user_id = $1 ORDER BY created_at DESC, id LIMIT $2`,
 	"rate_limits": `SELECT admin_per_min, self_per_min, updated_at
 		FROM gateway_user_rate_limits WHERE user_id = $1 LIMIT $2`,
-	"resource_caps": `SELECT servers, tunnels, connections_per_app, connections_total, pending_approvals, updated_at
+	"resource_caps": `SELECT servers, tunnels, connections_per_app, connections_total, pending_approvals, machines, updated_at
 		FROM gateway_user_resource_caps WHERE user_id = $1 LIMIT $2`,
 }
 

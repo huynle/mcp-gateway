@@ -21,7 +21,7 @@ import (
 // committed row.
 
 // ResourceCapColumns are the capped resources' column names.
-var ResourceCapColumns = []string{"servers", "tunnels", "connections_per_app", "connections_total", "pending_approvals"}
+var ResourceCapColumns = []string{"servers", "tunnels", "connections_per_app", "connections_total", "pending_approvals", "machines"}
 
 // ErrUnknownResourceCap is a column outside ResourceCapColumns.
 var ErrUnknownResourceCap = errors.New("store: unknown resource cap")
