@@ -534,12 +534,12 @@ func TestServicesAndIngress(t *testing.T) {
 			t.Errorf("path %v backend = %v", dig(p, "path"), dig(p, "backend"))
 		}
 	}
-	for _, want := range []string{"/", "/mcp", "/oauth", "/.well-known", "/auth", "/signin", "/account", "/tokens", "/connections", "/connect", "/approvals", "/operations", "/harnesses", "/activity", "/admin", "/static", "/slack"} {
+	for _, want := range []string{"/", "/mcp", "/oauth", "/.well-known", "/auth", "/signin", "/account", "/tokens", "/connections", "/connect", "/approvals", "/operations", "/harnesses", "/activity", "/admin", "/static", "/slack", "/servers", "/tunnel", "/machine", "/machines", "/activate", "/pending", "/cli", "/install", "/install.sh", "/privacy", "/terms", "/support"} {
 		if !seen[want] {
 			t.Errorf("ingress lacks path %s", want)
 		}
 	}
-	for _, never := range []string{"/healthz", "/readyz", "/metrics"} {
+	for _, never := range []string{"/healthz", "/readyz", "/metrics", "/tunnel-relay"} {
 		if seen[never] {
 			t.Errorf("ingress exposes %s", never)
 		}

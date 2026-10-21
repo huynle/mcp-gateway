@@ -222,8 +222,9 @@ ingress:
   tls:
     enabled: true
     secretName: mcp-gateway-tls
-  # Only the public paths are routed; /healthz, /readyz and the metrics
-  # port never are. Set paths to [{path: /, pathType: Prefix}] for a plain
+  # Only the public paths are routed; /healthz, /readyz, the metrics port
+  # and the tunnel relay port never are. deploy/helm/routes_test.go fails
+  # when the gateway gains a public route this list does not route. Set paths to [{path: /, pathType: Prefix}] for a plain
   # catch-all if your controller cannot take this list.
   paths:
     - path: /
@@ -260,6 +261,30 @@ ingress:
       pathType: Prefix
     - path: /slack
       pathType: Prefix
+    - path: /servers
+      pathType: Prefix
+    - path: /tunnel
+      pathType: Prefix
+    - path: /machine
+      pathType: Prefix
+    - path: /machines
+      pathType: Prefix
+    - path: /activate
+      pathType: Prefix
+    - path: /pending
+      pathType: Prefix
+    - path: /cli
+      pathType: Exact
+    - path: /install
+      pathType: Exact
+    - path: /install.sh
+      pathType: Exact
+    - path: /privacy
+      pathType: Exact
+    - path: /terms
+      pathType: Exact
+    - path: /support
+      pathType: Exact
 
 # Default-deny with explicit ingress and egress. Core NetworkPolicy matches
 # Cross-replica tunnel relay (docs/tunnel.md "Multiple replicas"). With

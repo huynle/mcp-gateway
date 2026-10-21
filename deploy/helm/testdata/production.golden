@@ -500,6 +500,90 @@ spec:
                 name: mcp-gateway
                 port:
                   name: http
+          - path: "/servers"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/tunnel"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/machine"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/machines"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/activate"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/pending"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/cli"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/install"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/install.sh"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/privacy"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/terms"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/support"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
 ---
 # Source: mcp-gateway/templates/prometheusrule.yaml
 # Alert rules for the Prometheus Operator, over the gateway's own metric
