@@ -89,13 +89,22 @@ func (g *gw) startMachine(t *testing.T, token string, targets map[string]http.Ha
 
 func (g *gw) get(t *testing.T, id string) (int, string) {
 	t.Helper()
-	resp, err := g.do(http.MethodPost, "tunnel://"+id+"/mcp", strings.NewReader("{}"))
+	code, body, err := g.try(id)
 	if err != nil {
 		t.Fatalf("request through tunnel %s: %v", id, err)
 	}
+	return code, body
+}
+
+// try is get without failing the test (for eventually conditions).
+func (g *gw) try(id string) (int, string, error) {
+	resp, err := g.do(http.MethodPost, "tunnel://"+id+"/mcp", strings.NewReader("{}"))
+	if err != nil {
+		return 0, "", err
+	}
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(b)
+	return resp.StatusCode, string(b), nil
 }
 
 func waitDone(t *testing.T, run *machineRun) error {
@@ -223,10 +232,11 @@ func TestNewerMachineConnectionReplacesTheOlder(t *testing.T) {
 	if err := waitDone(t, first); !errors.Is(err, ErrReplaced) {
 		t.Fatalf("first agent ended with %v, want ErrReplaced", err)
 	}
-	eventually(t, "second serves", func() bool {
-		_, body := g.get(t, one)
-		return body == "second /mcp"
-	})
+	// The replacement serves before the old connection is closed: once the
+	// first agent has been told it was replaced, the tunnel is never offline.
+	if _, body := g.get(t, one); body != "second /mcp" {
+		t.Fatalf("after the handover the tunnel answered %q, want the new connection", body)
+	}
 }
 
 func TestRevokingOneTunnelOfAMachineKeepsTheOthers(t *testing.T) {
@@ -323,13 +333,15 @@ func TestMachineNewerConnectionOnAnotherReplicaReplacesTheOlder(t *testing.T) {
 	if err := waitDone(t, first); !errors.Is(err, ErrReplaced) {
 		t.Fatalf("connection on A ended with %v, want ErrReplaced", err)
 	}
-	eventually(t, "A forwards to B", func() bool {
-		_, body := a.get(t, two)
-		return body == "second /mcp"
-	})
+	// A dropped its connection before the agent saw 4001: it no longer
+	// lists it, and forwards to B once B's holder rows are visible.
 	if a.svc.MachineConnected(machineOne) {
 		t.Fatal("A still lists the replaced machine connection")
 	}
+	eventually(t, "A forwards to B", func() bool {
+		_, body, err := a.try(two)
+		return err == nil && body == "second /mcp"
+	})
 }
 
 func TestMachinesAreIndependent(t *testing.T) {

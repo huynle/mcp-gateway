@@ -62,11 +62,14 @@ func (s *Service) ServeMachine(w http.ResponseWriter, r *http.Request, machineID
 	old := s.machines[machineID]
 	s.machines[machineID] = l
 	s.machinesMu.Unlock()
+	s.touchMachine(machineID)
+	// Serve the tunnels on the new connection before closing the one it
+	// replaces: registering each view replaces the old one, so a request
+	// during the handover never finds the tunnel offline.
+	s.applyTunnels(l, ids, true)
 	if old != nil {
 		old.close(closeReplaced, "replaced")
 	}
-	s.touchMachine(machineID)
-	s.applyTunnels(l, ids, true)
 	s.log.Info("tunnel: machine connected", "machine_id", machineID, "tunnels", len(ids))
 
 	go s.machineHeartbeat(l)
@@ -116,8 +119,15 @@ func (s *Service) machineLink(machineID string) *link {
 	return s.machines[machineID]
 }
 
-// dropLink forgets every tunnel view of l and closes it.
+// dropLink forgets l as the machine's connection and every tunnel view of
+// it, then closes it, so MachineConnected and Online are false as soon as
+// it returns (the read loop's own cleanup is then a no-op).
 func (s *Service) dropLink(l *link, code websocket.StatusCode, reason string) {
+	s.machinesMu.Lock()
+	if s.machines[l.machine] == l {
+		delete(s.machines, l.machine)
+	}
+	s.machinesMu.Unlock()
 	views := l.viewList()
 	for _, c := range views {
 		s.reg.remove(c.tunnelID, c)
