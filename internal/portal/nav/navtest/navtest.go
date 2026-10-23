@@ -12,7 +12,7 @@ import (
 // a member and to an admin, pinned literally (not derived from package
 // nav) so a test fails if the bar changes by accident.
 var (
-	Member = []string{"/account", "/tokens", "/connections", "/servers", "/machines", "/approvals", "/operations", "/harnesses", "/activity"}
+	Member = []string{"/account", "/tokens", "/connections", "/servers", "/machines", "/approvals", "/secrets", "/operations", "/harnesses", "/activity"}
 	Admin  = append(slices.Clone(Member), "/admin/settings", "/admin/users", "/admin/roles", "/admin/servers", "/admin/machines", "/admin/audit", "/admin/vendor-apps")
 )
 
