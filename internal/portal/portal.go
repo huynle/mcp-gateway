@@ -451,6 +451,11 @@ func (p *Portal) errorPage(w http.ResponseWriter, r *http.Request, status int, t
 	p.render(w, r, status, "error.html", errorData{Title: title, Message: message, Back: "/"})
 }
 
+// NotFoundHandler renders the portal's unknown-page 404, byte for byte
+// the answer for a path nothing is mounted at, so a module's "not yours"
+// or "no such item" pages cannot be told apart from it.
+func (p *Portal) NotFoundHandler() http.Handler { return http.HandlerFunc(p.notFound) }
+
 func (p *Portal) notFound(w http.ResponseWriter, r *http.Request) {
 	p.errorPage(w, r, http.StatusNotFound, "Page not found", "There is no page at this address.")
 }

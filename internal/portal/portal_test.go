@@ -401,3 +401,21 @@ func TestMountedRoutesAreGated(t *testing.T) {
 		t.Errorf("member POST without CSRF token = %d, want 403", rec.Code)
 	}
 }
+
+func TestNotFoundHandlerIsTheUnknownPage(t *testing.T) {
+	h := newHarness(t)
+	member, _ := h.session(t, memberSub, "Member")
+	h.portal.MountUser("GET /mounted/{id}", h.portal.NotFoundHandler())
+	h.h = h.portal.Handler()
+	unknown := h.do(t, request{method: http.MethodGet, path: "/no-such-page", cookie: member})
+	mounted := h.do(t, request{method: http.MethodGet, path: "/mounted/x", cookie: member})
+	if unknown.Code != http.StatusNotFound || mounted.Code != http.StatusNotFound {
+		t.Fatalf("codes = %d, %d", unknown.Code, mounted.Code)
+	}
+	if unknown.Body.String() != mounted.Body.String() {
+		t.Errorf("NotFoundHandler differs from the unknown page:\n%s\n---\n%s", mounted.Body, unknown.Body)
+	}
+	if mounted.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("Cache-Control = %q", mounted.Header().Get("Cache-Control"))
+	}
+}
