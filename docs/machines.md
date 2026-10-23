@@ -18,6 +18,8 @@ mcp-gateway up    ──signed assertion──▶ /machine/token ──▶ mgm_ 
 
 Headless hosts: on **Machines → Enrollment codes** create a one-time code (`mge_…`, valid 1 hour, 24 hours or 7 days, shown once; at most 10 unused codes) and run `mcp-gateway login --enroll-code mge_…` on the host. The machine is the code creator's. Revoke unused codes you no longer need.
 
+**Actions.** A machine can also serve `actions:` from its config: fixed commands that receive an ephemeral secret the user entered on the gateway ([secrets.md](secrets.md)). `up` registers them as one more private server of the machine, **`<machine>-actions`**, one tool per action, served in-process by the CLI over the same connection. For the gateway it is an ordinary machine server: its tools are disabled until the owner approves them on the review page (each tool's description shows the fixed command), and a secret can be bound to one of its tools with `secrets.request`. Configuration and delivery modes: [machines-cli.md](machines-cli.md#actions).
+
 Admins see every machine on **All machines** (`/admin/machines`) and can revoke any.
 
 Running `login` again with the same machine name **replaces** the old machine: the old one is revoked (reason `replaced`) and its tunnels and servers move to the new key (needs-review: chosen so that re-enrolling after a lost key keeps the servers and their reviews).
