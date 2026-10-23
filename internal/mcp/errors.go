@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // JSON-RPC error codes the gateway returns for tools/call. CodeToolNotFound
 // and CodeInvalidParams reuse the standard "invalid params" code (the SDK
 // does the same for unknown tools); the others are in the server-defined
-// range (-32000..-32099), in the gateway's own block -32029..-32035.
+// range (-32000..-32099), in the gateway's own block -32029..-32037
+// (CodeUpstream, -32036, lives in resources.go).
 //
 // The block avoids the codes the official Go SDK reserves for its own
 // signalling (-32001..-32005: ErrUnknown, CodeResourceNotFound,
@@ -18,7 +21,9 @@ import (
 // only, so an answer with one of those codes is mistaken for the SDK's
 // condition (-32003 and -32004 came back to the client as "connection
 // closed" with the *jsonrpc.Error dropped from the chain). errors_test.go
-// guards the block.
+// guards the block. The one deliberate exception is CodeSecretRequired,
+// which is the SDK's own -32042 used with exactly its meaning (a URL
+// elicitation the harness must complete before retrying).
 const (
 	CodeInvalidParams int64 = -32602
 	CodeToolNotFound  int64 = -32602
@@ -41,6 +46,16 @@ const (
 	// portal_url. Changing the arguments cannot fix it, granting more
 	// access to the account on the portal can (the scope stage).
 	CodeScopeRequired int64 = -32035
+	// CodeSecretUnavailable: a {"$secret": handle} reference in the
+	// arguments cannot be used for this call: expired, used up, revoked,
+	// bound to another tool or argument, or not the caller's. One fixed
+	// answer for every cause (ErrSecretUnavailable); the harness asks for
+	// a new secret with secrets.request.
+	CodeSecretUnavailable int64 = -32037
+	// CodeSecretRequired is the SDK's URL elicitation code (-32042): the
+	// user must enter a secret at the link in error.data before the call
+	// can run (secrets.request, and a retry with a handle not entered yet).
+	CodeSecretRequired int64 = sdk.CodeURLElicitationRequired
 	// CodeInternal is the JSON-RPC internal error, used when a gateway
 	// dependency (the account source) failed; the message never carries
 	// the cause.
@@ -86,7 +101,9 @@ func (e *ToolError) Denial() bool {
 		// gateway before policy or at dispatch, Brain task 8ky7l4e6).
 		"tool_disabled", "tool_not_reviewed", "tool_changed", "args_invalid",
 		// Resources and prompts that do not exist or are hidden.
-		"resource_not_found", "prompt_not_found":
+		"resource_not_found", "prompt_not_found",
+		// Ephemeral secrets: the user denied the request; too many requests.
+		"secret_denied", "secret_requests_limited":
 		return true
 	}
 	return false
@@ -134,3 +151,41 @@ func ErrToolNotFound(name string) *ToolError {
 
 // errUnauthenticated is returned when no principal reached the pipeline.
 var errUnauthenticated = NewToolError(CodeUnauthenticated, "unauthenticated", "authentication required")
+
+// secretUnavailableMessage is the one text of every "secret unavailable"
+// answer; it must not depend on the cause.
+const secretUnavailableMessage = "secret unavailable: it expired, was used up or revoked, or is not for this call; " +
+	"request a new one with secrets.request"
+
+// ErrSecretUnavailable is the answer for a secret reference that cannot
+// be used for this call, byte for byte the same whatever the cause
+// (design section 3). It returns a new value each time so a caller that
+// sets fields cannot change the next answer.
+func ErrSecretUnavailable() *ToolError {
+	return NewToolError(CodeSecretUnavailable, "secret_unavailable", secretUnavailableMessage)
+}
+
+// ErrSecretDenied answers a call whose secret request the user denied:
+// a gateway denial on CodeDenied.
+func ErrSecretDenied() *ToolError {
+	return NewToolError(CodeDenied, "secret_denied", "secret request denied")
+}
+
+// NewSecretRequired is the -32042 answer asking the user to enter a
+// secret: message repeats the link, data carries the spec's
+// elicitations[] plus url, handle and fingerprint. Neither may hold a
+// secret value.
+func NewSecretRequired(message string, data map[string]any) *ToolError {
+	te := NewToolError(CodeSecretRequired, "secret_required", message)
+	te.Data = data
+	return te
+}
+
+// ErrSecretsLimited answers a secrets.request beyond the per-user limits
+// (pending requests, requests per hour) with the time to wait.
+func ErrSecretsLimited(retryAfter time.Duration) *ToolError {
+	te := NewToolError(CodeRateLimited, "secret_requests_limited",
+		fmt.Sprintf("too many secret requests; retry in %s", retryAfter.Round(time.Second)))
+	te.RetryAfter = retryAfter
+	return te
+}

@@ -23,7 +23,7 @@ import (
 //     same);
 //   - none at all: no_account, whatever the argument said.
 //
-// Tools marked NoAccount (list_accounts) skip the stage. The chosen
+// Tools marked NoAccount (list_accounts, secrets.request) skip the stage. The chosen
 // account's ID and label go on the CallContext for audit.
 const StageAccount = "account"
 
