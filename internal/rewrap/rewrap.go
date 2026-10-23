@@ -45,7 +45,7 @@ func (c Column) KeyIDColumn() string { return c.Prefix + "_key_id" }
 func (c Column) WrappedKeyColumn() string { return c.Prefix + "_wrapped_key" }
 
 // Columns lists every envelope-encrypted column group (migrations 00004,
-// 00005, 00006, 00014). Keep it in sync with the schema; the registry tests
+// 00005, 00006, 00014, 00031). Keep it in sync with the schema; the registry tests
 // fail otherwise.
 var Columns = []Column{
 	{Table: "vendor_apps", PK: "id", Prefix: "secret"},                                     // vendor app client secret bundles
@@ -55,6 +55,7 @@ var Columns = []Column{
 	{Table: "mcp_server_shared_secrets", PK: "server_id", Prefix: "secret"},                // federation shared credentials
 	{Table: "mcp_server_user_connections", PK: "id", Prefix: "secret"},                     // federation per-user credentials
 	{Table: "mcp_server_oauth_clients", PK: "server_id", Prefix: "secret", Nullable: true}, // federation OAuth client secrets
+	{Table: "secrets", PK: "id", Prefix: "value", Nullable: true},                          // ephemeral secret values (provided rows)
 }
 
 var (

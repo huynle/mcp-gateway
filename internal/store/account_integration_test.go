@@ -222,6 +222,11 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Secrets bound to a server alice does not own (the cascade from her
+	// private servers must not be what removes them).
+	provideSecret(t, st, newPendingSecret(t, st, f.alice, pub.ID, "acct-provided", 1))
+	newPendingSecret(t, st, f.alice, pub.ID, "acct-pending", 1)
+	bobSecret := newPendingSecret(t, st, f.bob, pub.ID, "acct-bob", 1)
 
 	var del *store.UserDeletion
 	err = st.WithJobs(ctx, func(tx store.Tx) error {
@@ -272,6 +277,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 		"tunnels":                        `SELECT count(*) FROM mcp_tunnels WHERE owner_user_id = $1`,
 		"machines":                       `SELECT count(*) FROM machines WHERE owner_user_id = $1`,
 		"enrollment codes":               `SELECT count(*) FROM machine_enrollment_codes WHERE owner_user_id = $1`,
+		"secrets":                        `SELECT count(*) FROM secrets WHERE owner_user_id = $1`,
 		"role assignments":               `SELECT count(*) FROM role_assignments WHERE user_id = $1`,
 		"rate limits":                    `SELECT count(*) FROM gateway_user_rate_limits WHERE user_id = $1`,
 		"resource caps":                  `SELECT count(*) FROM gateway_user_resource_caps WHERE user_id = $1`,
@@ -289,6 +295,9 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 	// pseudonymous id; bob is untouched.
 	if n := count(`SELECT count(*) FROM audit_events WHERE user_id = $1`, f.alice); n != 3 {
 		t.Errorf("alice's audit rows = %d, want 3 kept", n)
+	}
+	if n := count(`SELECT count(*) FROM secrets WHERE id = $1`, bobSecret.ID); n != 1 {
+		t.Errorf("bob's secret = %d rows, want kept", n)
 	}
 	if n := count(`SELECT count(*) FROM tokens WHERE user_id = $1 AND revoked_at IS NULL`, f.bob); n != 1 {
 		t.Errorf("bob's live tokens = %d, want 1", n)
