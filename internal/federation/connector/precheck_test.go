@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -105,5 +106,54 @@ func TestManagerDispatchStillChecksAfterPrecheck(t *testing.T) {
 	}
 	if n := len(f.up.seen()); n != 0 {
 		t.Errorf("dispatch contacted the upstream (%d requests)", n)
+	}
+}
+
+// secretRef is an ephemeral secret reference as an agent writes it.
+func secretRef(handle string) map[string]any { return map[string]any{"$secret": handle} }
+
+const testHandle = "sec_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg"
+
+// A {"$secret": handle} reference where the pinned schema expects a
+// string passes the precheck (it validates a copy with each ref replaced
+// by its handle; design correction 2) and leaves the call's arguments as
+// they were. Anything else about the arguments is still checked.
+func TestManagerPrecheckAcceptsSecretRefs(t *testing.T) {
+	f := newFixture(t)
+	args := map[string]any{"title": secretRef(testHandle)}
+	if err := f.precheck(t, alice, "notes.create_note", args); err != nil {
+		t.Fatalf("precheck with a secret ref = %v", err)
+	}
+	if !reflect.DeepEqual(args, map[string]any{"title": secretRef(testHandle)}) {
+		t.Errorf("precheck changed the arguments: %v", args)
+	}
+	err := f.precheck(t, alice, "notes.create_note", map[string]any{"title": secretRef(testHandle), "owner": "x"})
+	if got := toolErrClass(err); got != "tool:args_invalid" {
+		t.Errorf("ref plus an extra property = %s, want args_invalid", got)
+	}
+	// Not a ref (a second key): still an object where a string is due.
+	err = f.precheck(t, alice, "notes.create_note", map[string]any{"title": map[string]any{"$secret": testHandle, "x": 1}})
+	if got := toolErrClass(err); got != "tool:args_invalid" {
+		t.Errorf("malformed ref = %s, want args_invalid", got)
+	}
+	// The dispatch sees the substituted plaintext, which the schema accepts.
+	f.up.reset()
+	if _, err := f.call(t, alice, "notes.create_note", map[string]any{"title": "correct horse battery"}); err != nil {
+		t.Errorf("dispatch with the substituted value = %v", err)
+	}
+}
+
+// SecretTarget resolves a registered federated tool to the server id and
+// upstream tool name a secret binds to; built-in and unknown tools have
+// none.
+func TestManagerSecretTarget(t *testing.T) {
+	f := newFixture(t)
+	if id, up, ok := f.m.SecretTarget("notes", "create_note"); !ok || id != srvID || up != "create_note" {
+		t.Errorf("SecretTarget(notes, create_note) = %q, %q, %v", id, up, ok)
+	}
+	for _, c := range [][2]string{{"github", "list_issues"}, {"notes", "nope"}, {"nope", "search"}, {"secrets", "request"}} {
+		if id, up, ok := f.m.SecretTarget(c[0], c[1]); ok || id != "" || up != "" {
+			t.Errorf("SecretTarget(%s, %s) = %q, %q, %v; want none", c[0], c[1], id, up, ok)
+		}
 	}
 }
