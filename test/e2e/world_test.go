@@ -57,6 +57,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
+	"github.com/huynle/mcp-gateway/internal/secrets"
 	"github.com/huynle/mcp-gateway/internal/slack"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/store/migrations"
@@ -174,28 +175,34 @@ type options struct {
 	// (connector.Wire: store-backed netguard allow list, auth, snapshots,
 	// tunnels, the Manager's decider and account source).
 	federation bool
+	// secrets wires ephemeral secrets as cmd/gateway does with
+	// GATEWAY_SECRETS_ENABLED (secrets.go): the secrets app, the secret
+	// stage before dispatch, the /s/{id} and /secrets pages and the
+	// disable hook. It needs federation.
+	secrets bool
 }
 
 // world is the gateway wired like cmd/gateway, plus the handles the
 // scenarios need.
 type world struct {
-	t        *testing.T
-	st       *store.Store
-	logs     *syncBuffer
-	rec      *audit.StoreRecorder
-	idSvc    *identity.Service
-	policy   *policy.Service
-	tokens   *tokens.Service
-	conn     *connections.Service
-	approval *approvals.Service
-	ledger   *ledger.Service
-	notifier *memNotifier
-	fake     *fake.Connector
-	slack    *fakeSlack
-	fed      *connector.Federation
-	gw       *gatewaytools.Tools
-	perms    *permissions.Service
-	srv      *httptest.Server
+	t         *testing.T
+	st        *store.Store
+	logs      *syncBuffer
+	rec       *audit.StoreRecorder
+	idSvc     *identity.Service
+	policy    *policy.Service
+	tokens    *tokens.Service
+	conn      *connections.Service
+	approval  *approvals.Service
+	ledger    *ledger.Service
+	notifier  *memNotifier
+	fake      *fake.Connector
+	slack     *fakeSlack
+	fed       *connector.Federation
+	secretSvc *secrets.Service
+	gw        *gatewaytools.Tools
+	perms     *permissions.Service
+	srv       *httptest.Server
 
 	admin, alice, bob    user
 	aliceAcc             string // alice's company fake account (connections row)
@@ -355,6 +362,9 @@ func newWorld(t *testing.T, opts options) *world {
 		// does not.
 		w.grantAddServers(w.alice)
 	}
+	if opts.secrets {
+		w.wireSecrets(keys, reg, decider, log)
+	}
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL
 	w.ledger, err = ledger.New(lcfg, ledger.NewPostgresStore(st), ledger.Options{
@@ -389,6 +399,11 @@ func newWorld(t *testing.T, opts options) *world {
 		if err := pipeline.Insert(mcp.Before, mcp.StagePolicy, mcp.PrecheckStage(w.fed.Manager.Precheck(), log)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if w.secretSvc != nil {
+		// The secret stage immediately before dispatch (cmd/gateway's
+		// withSecretStage).
+		w.insertSecretStage(pipeline, log)
 	}
 	// Resources and prompts of user-added servers, audited and rate
 	// limited like tool calls (cmd/gateway's newMCP does the same).
@@ -454,6 +469,9 @@ func newWorld(t *testing.T, opts options) *world {
 	ledger.NewPortal(w.ledger, session, log).Mount(p.MountUser)
 	if w.fed != nil {
 		w.mountFederationPages(p, session, log)
+	}
+	if w.secretSvc != nil {
+		w.mountSecretPages(p, session, log)
 	}
 	w.idSvc.OnDisable(w.tokens.DisableHook())
 	w.idSvc.OnDisable(w.conn.DisableHook())
