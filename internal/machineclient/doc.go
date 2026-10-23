@@ -15,6 +15,13 @@
 //     a clean environment (BuildStdioSpec), runs the Connector (the
 //     multiplexed WebSocket), refreshes new servers and prints their review
 //     links, reconnects with backoff and reloads on SIGHUP.
+//   - Actions (actions_config.go, actions.go): `actions:` in config.yaml
+//     are fixed commands (no shell) that receive an ephemeral secret by
+//     stdin, fd 3, a one-shot askpass helper or one environment variable,
+//     never argv. Up serves them as the in-process http server
+//     "<machine>-actions", one tool per action (input: the declared
+//     params and "secret"), and scrubs the secret from the output
+//     (docs/plans/2026-10-23-ephemeral-secrets-design.md).
 //   - ServiceInstall / ServiceUninstall / ServiceStatus manage the launchd
 //     LaunchAgent or systemd user unit running `mcp-gateway up`.
 //
