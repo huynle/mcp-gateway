@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +67,11 @@ type PortalOptions struct {
 	// NotFound renders every "no such page" answer. Nil renders a page
 	// with the portal's unknown-page title and message.
 	NotFound http.Handler
+	// FailureLimiter bounds failed entry-link lookups per address
+	// (NewAddressLimiter): every 404 of /s/{id} spends one, and once the
+	// budget is gone /s/{id} answers 429 with Retry-After. Nil disables
+	// the limit.
+	FailureLimiter FailureLimiter
 }
 
 //go:embed templates/*.html
@@ -91,8 +98,10 @@ const maxPortalForm = 64 << 10
 // and checks the caller and the CSRF token of POSTs again itself. Every
 // response is Cache-Control: no-store and X-Frame-Options: DENY. A request
 // that is unknown, someone else's, expired or already answered is the
-// same 404 page as an unknown portal page. The value is read once from the
-// form, wiped after Provide and never rendered, logged or audited.
+// same 404 page as an unknown portal page; with a FailureLimiter those
+// 404s are counted per address and past the budget /s/{id} answers 429.
+// The value is read once from the form, wiped after Provide and never
+// rendered, logged or audited.
 type Portal struct {
 	svc       *Service
 	who       PortalIdentity
@@ -101,6 +110,7 @@ type Portal struct {
 	harnesses HarnessNamer
 	audit     audit.Recorder
 	notFoundH http.Handler
+	limiter   FailureLimiter
 	tpl       *template.Template
 }
 
@@ -114,15 +124,15 @@ func NewPortal(svc *Service, who PortalIdentity, opts PortalOptions) *Portal {
 	}).ParseFS(portalTemplateFS, "templates/*.html"))
 	return &Portal{
 		svc: svc, who: who, log: opts.Log, servers: opts.Servers, harnesses: opts.Harnesses,
-		audit: opts.Audit, notFoundH: opts.NotFound, tpl: tpl,
+		audit: opts.Audit, notFoundH: opts.NotFound, limiter: opts.FailureLimiter, tpl: tpl,
 	}
 }
 
 // Mount registers the routes through mount (portal.MountUser or a
 // ServeMux's Handle).
 func (p *Portal) Mount(mount func(pattern string, handler http.Handler)) {
-	mount("GET "+entryPrefix+"{id}", p.withUser(p.entry))
-	mount("POST "+entryPrefix+"{id}", p.withUser(p.answer))
+	mount("GET "+entryPrefix+"{id}", p.withUser(p.limited(p.entry)))
+	mount("POST "+entryPrefix+"{id}", p.withUser(p.limited(p.answer)))
 	mount("GET /secrets", p.withUser(p.list))
 	mount("POST /secrets/{id}/revoke", p.withUser(p.revoke))
 }
@@ -163,6 +173,28 @@ func (p *Portal) withUser(h pageHandler) http.Handler {
 		}
 		h(w, r, caller{UserID: userID, CSRFToken: token})
 	})
+}
+
+// limited refuses an entry-link request from an address whose failed
+// lookups used up its budget (429, Retry-After); the 404s spend it
+// (notFound).
+func (p *Portal) limited(h pageHandler) pageHandler {
+	if p.limiter == nil {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request, c caller) {
+		if ok, wait := p.limiter.Allow(r); !ok {
+			dropValue(r)
+			secs := int(math.Ceil(wait.Seconds()))
+			if secs < 1 {
+				secs = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			http.Error(w, "too many unknown secret links from your address; try again later", http.StatusTooManyRequests)
+			return
+		}
+		h(w, r, c)
+	}
 }
 
 // --- entry page ------------------------------------------------------------------
@@ -424,6 +456,9 @@ type messageData struct {
 }
 
 func (p *Portal) notFound(w http.ResponseWriter, r *http.Request) {
+	if p.limiter != nil && strings.HasPrefix(r.URL.Path, entryPrefix) {
+		p.limiter.Fail(r)
+	}
 	if p.notFoundH != nil {
 		p.notFoundH.ServeHTTP(w, r)
 		return
