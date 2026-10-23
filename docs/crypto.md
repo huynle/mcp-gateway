@@ -54,6 +54,7 @@ Encrypted column groups (`rewrap.Columns`; four columns `<prefix>_key_id`, `_wra
 | `mcp_server_shared_secrets` | `secret` | federated server shared credentials | no |
 | `mcp_server_user_connections` | `secret` | federated server per-user credentials | no |
 | `mcp_server_oauth_clients` | `secret` | federated server OAuth client secret | yes (public clients) |
+| `secrets` | `value` | ephemeral secret value entered on `/s/<id>` (AAD `{owner, "secret", id, server id}`) | yes (set only while provided; wiped by the expiry job) |
 
 `internal/rewrap` tests fail when a migration adds a `*_wrapped_key` column group the registry does not list (a scan of the embedded migrations, plus an integration check against `information_schema`), so a new encrypted column cannot be left behind at the next rotation. The ledger, audit events, tokens and sessions store no envelopes (tokens and codes are hashed).
 
