@@ -64,7 +64,7 @@ kubectl -n mcp-gateway create secret generic mcp-gateway-app --from-literal=log-
 
 ## Values
 
-Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`), except `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`), which has no chart key yet: set it through `extraEnv` (`- {name: GATEWAY_AUDIT_RETENTION, value: 4380h}`) when the default does not fit. The ones that shape the deployment:
+Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key under `gateway:` with the same default (`gateway.session.*`, `tokens.signinMaxAge`, `mcp.maxBody`, `rateLimits.*`, `policy.reloadInterval`, `approvals.ttl` / `wait`, `ledger.*`, `oauth.*`, `defaultRole`, `bootstrapAdmins`, `secrets.enabled`), except `GATEWAY_AUDIT_RETENTION` (default `8760h`, minimum `720h`), which has no chart key yet: set it through `extraEnv` (`- {name: GATEWAY_AUDIT_RETENTION, value: 4380h}`) when the default does not fit. The ones that shape the deployment:
 
 | Value | Default | Notes |
 |---|---|---|
@@ -73,6 +73,7 @@ Every `GATEWAY_*` variable from [`.env.example`](../.env.example) has a key unde
 | `gateway.httpPort` / `metricsPort` | `18080` / `19090` | `GATEWAY_LISTEN_ADDR=:18080`; `GATEWAY_METRICS_ADDR=0.0.0.0:19090` so the metrics Service can reach the listener (the Compose default `127.0.0.1:19090` would be unreachable from the Service). |
 | `gateway.drainTimeoutSeconds` | `25` | `GATEWAY_DRAIN_TIMEOUT`; `terminationGracePeriodSeconds` = drain + 10 unless `gateway.terminationGracePeriodSeconds` is set. |
 | `gateway.enableFakeConnector` | `false` | **Never in staging or production.** Registers the make-believe `fake` app for every user. NOTES.txt shouts when it is on. |
+| `gateway.secrets.enabled` | `false` | `GATEWAY_SECRETS_ENABLED`: ephemeral secrets ([secrets.md](secrets.md)): `secrets.request`, the `/s/{id}` and `/secrets` pages (routed by the default `ingress.paths`) and the expiry job. Needs `keyProvider`; without one it stays off with a startup warning. |
 | `oidc.providers[]` | `[]` | `{name, displayName, issuer, clientID, clientSecret{secretName, secretKey}, allowedDomains, allowedTenants, domainClaim}` → `GATEWAY_OIDC_PROVIDERS` and `GATEWAY_OIDC_<NAME>_*`. Without any, nobody can sign in. |
 | `keyProvider.type` | `vault` | `vault` (`addr`, `transitKey`, `mount`, token Secret) or `file` (Secret + init container). |
 | `migrate.*` | enabled, weight `-5`, `before-hook-creation` | The pre-install / pre-upgrade Job. |
