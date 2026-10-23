@@ -286,6 +286,8 @@ spec:
               value: "2h"
             - name: GATEWAY_DEFAULT_ROLE
               value: "member"
+            - name: GATEWAY_SECRETS_ENABLED
+              value: "false"
             - name: GATEWAY_ENABLE_FAKE_CONNECTOR
               value: "false"
             - name: GATEWAY_OIDC_PROVIDERS
@@ -536,6 +538,20 @@ spec:
                 port:
                   name: http
           - path: "/pending"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/s"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/secrets"
             pathType: Prefix
             backend:
               service:
