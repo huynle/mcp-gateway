@@ -161,7 +161,7 @@ func withFederationRoutes(fed *connector.Federation) muxExtra {
 // resource and prompt pages ask pol (the policy service) for the
 // per-server actions; approval-mode edits are audited through rec.
 func withFederationPages(fed *connector.Federation, st *store.Store, baseURL string, pol fedportal.ResourcePolicy, rec audit.Recorder) portalExtra {
-	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
+	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
 		if fed == nil {
 			return
 		}
@@ -200,7 +200,7 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 // connector Manager's ServerChanged and, for the allow-list, invalidate
 // netguard's cached allow list; every change is audited through rec.
 func withFederationAdmin(fed *connector.Federation, st *store.Store, rec audit.Recorder) portalExtra {
-	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
+	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
 		if fed == nil {
 			return
 		}

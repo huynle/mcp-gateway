@@ -78,7 +78,7 @@ func ledgerJobs(svc *ledger.Service) []jobs.Job {
 // withOperationsPage mounts GET /operations behind the portal's
 // signed-in check.
 func withOperationsPage(svc *ledger.Service) portalExtra {
-	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
+	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
 		if svc == nil {
 			return
 		}
