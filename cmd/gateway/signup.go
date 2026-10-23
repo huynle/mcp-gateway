@@ -12,7 +12,7 @@ import (
 // events (user.signed_up, user.approved, user.rejected,
 // signup_invite.created / revoked, signup.rate_limited) through rec.
 func withSignupAudit(rec audit.Recorder) portalExtra {
-	return func(idSvc *identity.Service, _ func(string, http.Handler), _ func(*http.Request) (string, string), _ *slog.Logger) {
+	return func(idSvc *identity.Service, _ func(string, http.Handler), _ func(*http.Request) (string, string), _ *slog.Logger, _ http.Handler) {
 		if rec != nil {
 			idSvc.SetAudit(rec)
 		}

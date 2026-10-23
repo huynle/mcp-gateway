@@ -39,7 +39,7 @@ func TestSignupAuditIsWired(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := &signupRecorder{}
-	withSignupAudit(rec)(svc, nil, nil, slog.New(slog.DiscardHandler))
+	withSignupAudit(rec)(svc, nil, nil, slog.New(slog.DiscardHandler), nil)
 	res, err := svc.SignIn(context.Background(), "dex", identity.Claims{Issuer: iss, Subject: "s", Email: "a@example.com", EmailVerified: true})
 	if err != nil {
 		t.Fatal(err)
@@ -54,5 +54,5 @@ func TestSignupAuditIsWired(t *testing.T) {
 	if len(actions) != 2 || actions[0] != "user.signed_up" || actions[1] != "user.approved" {
 		t.Errorf("audited actions = %v", actions)
 	}
-	withSignupAudit(nil)(svc, nil, nil, nil) // nil recorder is a no-op
+	withSignupAudit(nil)(svc, nil, nil, nil, nil) // nil recorder is a no-op
 }

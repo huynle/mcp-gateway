@@ -62,7 +62,7 @@ func withMachineRoutes(svc *machines.Service) muxExtra {
 // withMachinePages mounts /activate, /machines and /admin/machines behind
 // the portal's checks (signed-in active users, CSRF, admin for /admin).
 func withMachinePages(svc *machines.Service) portalExtra {
-	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger) {
+	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
 		if svc == nil {
 			return
 		}

@@ -33,7 +33,7 @@ func TestPortalMountRoutesAdminPatterns(t *testing.T) {
 // Without a federation nothing is mounted.
 func TestFederationAdminNotMountedWithoutFederation(t *testing.T) {
 	m := &recordingMounts{}
-	withFederationAdmin(nil, nil, nil)(nil, portalMount(m), nil, nil)
+	withFederationAdmin(nil, nil, nil)(nil, portalMount(m), nil, nil, nil)
 	if len(m.user)+len(m.admin) != 0 {
 		t.Errorf("mounted %v %v without a federation", m.user, m.admin)
 	}

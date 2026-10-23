@@ -205,18 +205,27 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		// My account's switch goes through the gate so switching off
-		// takes effect at once.
-		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSignupAudit(rec))
+		// The /mcp decider and visibility; the secrets app checks the
+		// target tool against the same visibility.
+		decider := gw.Decider(federationDecider(fed, policySvc))
+		// Ephemeral secrets (GATEWAY_SECRETS_ENABLED; secrets.go).
+		secretSvc, err := newSecrets(cfg, st, keys, fed, registry, mcp.PolicyVisibility{Decider: decider, Log: log}, rec, getenv, log)
 		if err != nil {
 			return err
 		}
-		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), gw.Decider(federationDecider(fed, policySvc)), approvalSvc, rec, metrics, log,
-			federationResources(fed, policySvc), limiter, withFederationPrecheck(fed, log), withLedgerStage(ledgerSvc))
+		// My account's switch goes through the gate so switching off
+		// takes effect at once.
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSecretPages(secretSvc), withSignupAudit(rec))
+		if err != nil {
+			return err
+		}
+		mcpHandler, err = newMCPWithResources(cfg, registry, accounts, composeAuthenticator(tokenSvc, authSvc), decider, approvalSvc, rec, metrics, log,
+			federationResources(fed, policySvc), limiter, withFederationPrecheck(fed, log), withLedgerStage(ledgerSvc), withSecretStage(secretSvc))
 		if err != nil {
 			return err
 		}
 		jobList := append(ledgerJobs(ledgerSvc), authServerJobs(authSvc)...)
+		jobList = append(jobList, secretsJobs(secretSvc)...)
 		if approvalSvc != nil {
 			jobList = append(jobList, approvalSvc.ExpiryJob(0))
 		}
@@ -398,15 +407,17 @@ func newPortalWithAccount(cfg config.Config, st identity.Store, reader audit.Rea
 		svc.OnDisable(connSvc.DisableHook())
 	}
 	for _, extra := range extras {
-		extra(svc, portalMount(p), session, log)
+		extra(svc, portalMount(p), session, log, p.NotFoundHandler())
 	}
 	return p.Handler(), nil
 }
 
 // portalExtra mounts a module's user pages (the ledger's /operations, the
 // authorization server's authorize / consent / harnesses pages) and may
-// register disable hooks on the identity service.
-type portalExtra func(idSvc *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger)
+// register disable hooks on the identity service. notFound is the
+// portal's unknown-page 404, for modules whose "not yours" answer must be
+// indistinguishable from it (the secrets entry page).
+type portalExtra func(idSvc *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, notFound http.Handler)
 
 // muxExtra registers public routes (the OAuth endpoints) on the top-level mux.
 type muxExtra func(*http.ServeMux)

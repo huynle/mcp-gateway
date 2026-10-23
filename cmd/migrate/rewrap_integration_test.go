@@ -211,6 +211,15 @@ func TestIntegrationRewrapFileToVault(t *testing.T) {
 	e = seal(crypto.AAD{Kind: "mcp_server_oauth_clients", RecordID: server})
 	env.exec(t, `INSERT INTO mcp_server_oauth_clients (server_id, owner_user_id, method, client_id, secret_key_id, secret_wrapped_key, secret_nonce, secret_ciphertext)
 		VALUES ($1, $2, 'static', 'cid', $3, $4, $5, $6)`, server, alice, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
+	// A provided ephemeral secret (internal/secrets).
+	secret := env.one(t, `SELECT gen_random_uuid()::text`)
+	e = seal(crypto.AAD{UserID: alice, Kind: "secrets", RecordID: secret})
+	env.exec(t, `INSERT INTO secrets (id, owner_user_id, harness_id, label, server_id, tool, uses_total, uses_left, ttl_seconds,
+			link_expires_at, expires_at, provided_at, request_hash, handle_hash, state,
+			value_key_id, value_wrapped_key, value_nonce, value_ciphertext)
+		VALUES ($1::uuid, $2, 'tok', 'sudo', $3, 'docs.run', 1, 1, 900, now() + interval '10 minutes', now() + interval '15 minutes', now(),
+			sha256(('req-' || $1::text)::bytea), sha256(('sec-' || $1::text)::bytea), 'provided', $4, $5, $6, $7)`,
+		secret, alice, server, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
 
 	// Every registered table now holds file-key envelopes only.
 	countWhere := func(cond string) int {

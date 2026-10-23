@@ -58,7 +58,7 @@ func TestIntegrationAdminServersMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	var idSvc *identity.Service
-	capture := func(s *identity.Service, _ func(string, http.Handler), _ func(*http.Request) (string, string), _ *slog.Logger) {
+	capture := func(s *identity.Service, _ func(string, http.Handler), _ func(*http.Request) (string, string), _ *slog.Logger, _ http.Handler) {
 		idSvc = s
 	}
 	// The real identity store: allow-list rows reference the admin user.
