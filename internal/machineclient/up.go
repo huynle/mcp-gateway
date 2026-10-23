@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -168,10 +169,28 @@ func loadUpConfig(path string, st *State) (*Config, error) {
 	if cfg.Gateway != "" && cfg.Gateway != st.Gateway {
 		return nil, fmt.Errorf("%s names gateway %s but this machine is logged in to %s; fix the config or log in again", path, cfg.Gateway, st.Gateway)
 	}
-	if len(cfg.Servers) == 0 {
-		return nil, fmt.Errorf("no servers in %s (add them under `servers`)", path)
+	if _, err := cfg.ActionsServerName(st.Name); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(cfg.Servers) == 0 && len(cfg.Actions) == 0 {
+		return nil, fmt.Errorf("no servers in %s (add them under `servers`, or commands under `actions`)", path)
 	}
 	return cfg, nil
+}
+
+// servedServers are the config's servers plus, when it has actions, the
+// in-process actions server "<machine>-actions" (kind http), sorted by
+// name. The config was validated by loadUpConfig.
+func servedServers(cfg *Config, machine string) []*Server {
+	out := make([]*Server, 0, len(cfg.Servers)+1)
+	for _, name := range cfg.ServerNames() {
+		out = append(out, cfg.Servers[name])
+	}
+	if name, err := cfg.ActionsServerName(machine); err == nil && name != "" {
+		out = append(out, &Server{Name: name, Kind: KindHTTP, actions: cfg.Actions})
+		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	}
+	return out
 }
 
 type upRunner struct {
@@ -259,8 +278,8 @@ func (u *upRunner) register(ctx context.Context, cfg *Config) (*generation, erro
 		res *PutResult
 	}
 	var regs []reg
-	for _, name := range cfg.ServerNames() {
-		srv := cfg.Servers[name]
+	for _, srv := range servedServers(cfg, u.st.Name) {
+		name := srv.Name
 		res, err := u.api.PutServer(ctx, name, srv.Kind)
 		var ae *APIError
 		switch {
@@ -315,6 +334,10 @@ func (u *upRunner) register(ctx context.Context, cfg *Config) (*generation, erro
 }
 
 func (u *upRunner) target(ctx context.Context, s *Server) (Target, error) {
+	if s.actions != nil {
+		h := newActionsHandler(s.actions, ActionsOptions{Version: u.o.Version, Environ: u.o.Environ, Log: u.o.Log})
+		return Target{Kind: KindHTTP, Handler: h}, nil
+	}
 	if s.Kind == KindHTTP {
 		target, err := url.Parse(s.URL)
 		if err != nil {
