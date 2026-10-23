@@ -24,14 +24,15 @@ func limitedPages(t *testing.T, burst int, user *string) (*fixture, *http.ServeM
 	return f, mux
 }
 
-func serveFrom(mux *http.ServeMux, addr, method, path string, form url.Values) *httptest.ResponseRecorder {
+func serveFrom(t *testing.T, mux *http.ServeMux, addr, method, path string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
 	var body *strings.Reader
 	if form != nil {
 		body = strings.NewReader(form.Encode())
 	} else {
 		body = strings.NewReader("")
 	}
-	req := httptest.NewRequest(method, path, body)
+	req := httptest.NewRequestWithContext(t.Context(), method, path, body)
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -47,18 +48,18 @@ func TestEntryLookupFailuresAreLimitedPerAddress(t *testing.T) {
 	const attacker, other = "198.51.100.7", "203.0.113.9"
 	unknown := "/s/" + strings.Repeat("Z", 43)
 
-	first := serveFrom(mux, attacker, http.MethodGet, unknown, nil)
+	first := serveFrom(t, mux, attacker, http.MethodGet, unknown, nil)
 	if first.Code != http.StatusNotFound {
 		t.Fatalf("first unknown = %d", first.Code)
 	}
 	want := first.Body.String()
 	for i := 2; i <= 3; i++ {
-		rec := serveFrom(mux, attacker, http.MethodGet, unknown, nil)
+		rec := serveFrom(t, mux, attacker, http.MethodGet, unknown, nil)
 		if rec.Code != http.StatusNotFound || rec.Body.String() != want {
 			t.Fatalf("unknown #%d below the budget = %d, want the same 404", i, rec.Code)
 		}
 	}
-	over := serveFrom(mux, attacker, http.MethodGet, unknown, nil)
+	over := serveFrom(t, mux, attacker, http.MethodGet, unknown, nil)
 	if over.Code != http.StatusTooManyRequests {
 		t.Fatalf("unknown past the budget = %d, want 429", over.Code)
 	}
@@ -72,16 +73,16 @@ func TestEntryLookupFailuresAreLimitedPerAddress(t *testing.T) {
 	// The address is limited for real links and POSTs too; another
 	// address is not.
 	r := f.request(t, alice, 0, 1)
-	if rec := serveFrom(mux, attacker, http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusTooManyRequests {
+	if rec := serveFrom(t, mux, attacker, http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("limited address, real link = %d, want 429", rec.Code)
 	}
-	if rec := serveFrom(mux, attacker, http.MethodPost, unknown, deny()); rec.Code != http.StatusTooManyRequests {
+	if rec := serveFrom(t, mux, attacker, http.MethodPost, unknown, deny()); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("limited address, POST = %d, want 429", rec.Code)
 	}
-	if rec := serveFrom(mux, other, http.MethodGet, unknown, nil); rec.Code != http.StatusNotFound || rec.Body.String() != want {
+	if rec := serveFrom(t, mux, other, http.MethodGet, unknown, nil); rec.Code != http.StatusNotFound || rec.Body.String() != want {
 		t.Errorf("other address = %d, want the 404", rec.Code)
 	}
-	if rec := serveFrom(mux, other, http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusOK {
+	if rec := serveFrom(t, mux, other, http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusOK {
 		t.Errorf("other address, real link = %d", rec.Code)
 	}
 }
@@ -91,27 +92,27 @@ func TestSuccessfulLookupsDoNotSpendTheBudget(t *testing.T) {
 	f, mux := limitedPages(t, 2, &user)
 	r := f.request(t, alice, 0, 1)
 	for i := range 5 {
-		if rec := serveFrom(mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusOK {
+		if rec := serveFrom(t, mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusOK {
 			t.Fatalf("GET #%d = %d", i+1, rec.Code)
 		}
 	}
 	// Another user's link is the 404 and spends it.
 	user = bob
 	for range 2 {
-		if rec := serveFrom(mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusNotFound {
+		if rec := serveFrom(t, mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusNotFound {
 			t.Fatalf("bob = %d, want 404", rec.Code)
 		}
 	}
-	if rec := serveFrom(mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusTooManyRequests {
+	if rec := serveFrom(t, mux, "198.51.100.7", http.MethodGet, "/s/"+r.RequestID, nil); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("bob past the budget = %d, want 429", rec.Code)
 	}
 }
 
 func TestAddressLimiterUsesTheClientIPFunc(t *testing.T) {
 	lim := secrets.NewAddressLimiter(1, time.Minute, func(r *http.Request) string { return r.Header.Get("X-Test-IP") })
-	a := httptest.NewRequest(http.MethodGet, "/s/x", nil)
+	a := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/s/x", nil)
 	a.Header.Set("X-Test-IP", "a")
-	b := httptest.NewRequest(http.MethodGet, "/s/x", nil)
+	b := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/s/x", nil)
 	b.Header.Set("X-Test-IP", "b")
 	lim.Fail(a)
 	if ok, wait := lim.Allow(a); ok || wait <= 0 {
