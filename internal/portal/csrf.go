@@ -3,6 +3,7 @@ package portal
 import (
 	"crypto/subtle"
 	"net/http"
+	"strings"
 
 	"github.com/huynle/mcp-gateway/internal/identity"
 )
@@ -66,12 +67,21 @@ func (p *Portal) csrf(next http.Handler) http.Handler {
 			token = r.PostForm.Get(csrfField)
 		}
 		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
-			p.log.Warn("request rejected", "event", "portal.csrf_rejected", "user_id", userID, "path", r.URL.Path)
+			p.log.Warn("request rejected", "event", "portal.csrf_rejected", "user_id", userID, "path", logPath(r))
 			p.forbidden(w, r, "The form token is missing or expired. Reload the page and try again.")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// logPath is the request path as logged: the id of a secret entry link
+// (/s/<id>, internal/secrets) opens that page, so it stays out of logs.
+func logPath(r *http.Request) string {
+	if strings.HasPrefix(r.URL.Path, "/s/") {
+		return "/s/…"
+	}
+	return r.URL.Path
 }
 
 func (p *Portal) forbidden(w http.ResponseWriter, r *http.Request, message string) {

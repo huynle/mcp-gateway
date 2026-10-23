@@ -461,6 +461,6 @@ func (p *Portal) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Portal) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	p.log.Error("portal request failed", "event", "portal.request_failed", "path", r.URL.Path, "error", err)
+	p.log.Error("portal request failed", "event", "portal.request_failed", "path", logPath(r), "error", err)
 	p.errorPage(w, r, http.StatusInternalServerError, "Something went wrong", "The request could not be completed. Try again.")
 }

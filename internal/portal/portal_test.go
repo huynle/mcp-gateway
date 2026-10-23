@@ -1,6 +1,7 @@
 package portal_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -417,5 +418,30 @@ func TestNotFoundHandlerIsTheUnknownPage(t *testing.T) {
 	}
 	if mounted.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("Cache-Control = %q", mounted.Header().Get("Cache-Control"))
+	}
+}
+
+// TestLoggedPathsKeepEntryLinkIDsOut: the id in /s/<id> opens a secret
+// entry page, so a rejected POST logs the path without it.
+func TestLoggedPathsKeepEntryLinkIDsOut(t *testing.T) {
+	h := newHarness(t)
+	var logs bytes.Buffer
+	p, err := portal.New(h.svc, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MountUser("POST /s/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("mounted")) }))
+	h.h = p.Handler()
+	member, _ := h.session(t, memberSub, "Member")
+	const id = "oAUeiozOG65nkEiRZJiPYF78P5LeWHu35LynQjMUD76"
+	rec := h.do(t, request{method: http.MethodPost, path: "/s/" + id, cookie: member, form: url.Values{"action": {"save"}}})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("POST without CSRF = %d", rec.Code)
+	}
+	if !strings.Contains(logs.String(), "portal.csrf_rejected") || !strings.Contains(logs.String(), "/s/…") {
+		t.Errorf("rejection not logged with the redacted path:\n%s", logs.String())
+	}
+	if strings.Contains(logs.String(), id) {
+		t.Errorf("the log holds the entry link id:\n%s", logs.String())
 	}
 }
