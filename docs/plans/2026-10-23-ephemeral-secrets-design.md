@@ -161,3 +161,38 @@ Rollout behind `GATEWAY_SECRETS_ENABLED`, one merge per step:
 5. Docs, flag on for gateway.huynle.com, dogfood `sudo` on a devbox.
 
 Steps 1–3 deliver upstream secrets; step 4 adds machines.
+
+## Corrections after code validation (2026-10-23)
+
+Checked against the code before tasking (main @ 8b04c76). These override the sections above where they differ.
+
+1. **Error codes.** `-32036` is taken (`CodeUpstream`, `internal/mcp/resources.go`). "Secret unavailable" is
+   **`-32037`**. "Secret required" uses the SDK's `-32042` (`sdk.CodeURLElicitationRequired`) with the spec's data
+   shape: `data.elicitations[] = {mode:"url", elicitationId, url, message}`, plus top-level `url`, `handle` and
+   `fingerprint`, and the link repeated in the message text. The gateway is stateless and never sends
+   `notifications/elicitation/complete`; the agent simply retries with the handle.
+2. **Precheck.** `connector.precheck` → `snapshot.Allowed` validates arguments against the pinned schema before
+   policy and would refuse `{"$secret":…}` where a string is expected. Precheck validates a copy with each ref
+   replaced by its handle string; the dispatch-time check sees the real plaintext.
+3. **Consumption.** The ledger only covers writes and approved calls, and `Begin` commits before dispatch. The secret
+   stage runs **immediately before dispatch** (`p.Insert(mcp.Before, mcp.StageDispatch, …)`, after policy, ledger and
+   rate limit) and decrements with a conditional `UPDATE … WHERE uses_left > 0 AND expires_at > now() RETURNING …`.
+   A use is refunded when the call fails before reaching the target (a gateway refusal, or `tunnel_offline` /
+   `tunnel_unavailable`). The expiry job wipes ciphertext; calls never wipe inline.
+4. **Scrubbing.** The secret stage scrubs the result and the error text itself, so ledger result ids, audit and the
+   handler only ever see clean values, for every result type `toCallResult` accepts (string, content, content
+   slices, `*CallToolResult` including `StructuredContent`, JSON). After dispatch it restores the handle-form
+   arguments so audit computes resource identity from the handle. The transport is stateless JSON; there are no SSE
+   chunks. Remaining risk: connectors that log upstream error text internally.
+5. **Machine actions naming.** Machine servers are ordinary private servers with globally unique names and tools named
+   `<server>.<tool>`. The client registers an in-process go-sdk server as an `http` target named `<machine>-actions`
+   with **one tool per action** (description = the fixed command, input schema = declared params + the secret
+   argument), so the existing snapshot review catches new or changed actions. Bindings store server id + tool.
+   Older clients refuse `actions:` (`KnownFields(true)`), which is acceptable.
+6. **Built-in app.** `secrets.request` is its own `secrets` app (connector in `internal/secrets`, reserved name
+   `secrets`, Cedar layer `internal/policy/secrets.go` beside the gateway layer), not a `gateway.*` tool, whose gate
+   hides tools from most users. It is a read tool with `NoAccount: true` plus an explicit forbid when
+   `context.token.read_only` is set.
+7. **Housekeeping.** Secrets join `store.DeleteUserData` and an identity `OnDisable` hook; the feature stays off
+   without a key provider; the 5 pending / 20 per hour limits are constants. Migration `00031_secrets.sql`,
+   `ExpectedSchemaVersion` 31, rewrap registry row for the envelope columns.
