@@ -113,24 +113,29 @@ func oneSecret(ctx context.Context, q Querier, sql string, args ...any) (*Secret
 	return s, nil
 }
 
-// CreateSecret inserts a pending request. s.ID may be preset (otherwise
-// the database chooses it); state, value and timestamps are filled from
-// the inserted row.
+// CreateSecret inserts a pending request. s.ID and s.CreatedAt may be
+// preset (otherwise the database chooses them; the request limits count
+// created_at, so callers with their own clock set it); state, value and
+// the other timestamps are filled from the inserted row.
 func CreateSecret(ctx context.Context, q Querier, s *Secret) error {
 	if len(s.RequestHash) == 0 || len(s.HandleHash) == 0 {
 		return errors.New("store: create secret: request and handle hashes are required")
 	}
-	var id any
+	var id, created any
 	if s.ID != "" {
 		id = s.ID
 	}
+	if !s.CreatedAt.IsZero() {
+		created = s.CreatedAt
+	}
 	got, err := scanSecret(q.QueryRow(ctx, `
 		INSERT INTO secrets (id, owner_user_id, harness_id, label, server_id, tool, arg,
-			uses_total, uses_left, ttl_seconds, link_expires_at, request_hash, handle_hash)
-		VALUES (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			uses_total, uses_left, ttl_seconds, link_expires_at, request_hash, handle_hash, created_at, updated_at)
+		VALUES (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+			coalesce($14::timestamptz, now()), coalesce($14::timestamptz, now()))
 		RETURNING`+secretColumns,
 		id, s.OwnerUserID, s.HarnessID, s.Label, s.ServerID, s.Tool, s.Arg,
-		s.UsesTotal, s.UsesLeft, int(s.TTL/time.Second), s.LinkExpiresAt, s.RequestHash, s.HandleHash))
+		s.UsesTotal, s.UsesLeft, int(s.TTL/time.Second), s.LinkExpiresAt, s.RequestHash, s.HandleHash, created))
 	if err != nil {
 		return fmt.Errorf("store: create secret: %w", err)
 	}
