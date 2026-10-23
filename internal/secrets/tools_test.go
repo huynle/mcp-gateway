@@ -30,8 +30,8 @@ func (f fakeTargets) SecretTarget(app, tool string) (string, string, bool) {
 }
 
 var targets = fakeTargets{
-	"vault.login":                 {server, "vault.login"},
-	"vault.hidden":                {server, "hidden"},
+	"vault.login":                  {server, "vault.login"},
+	"vault.hidden":                 {server, "hidden"},
 	"box-actions.sudo-apt-upgrade": {machineServer, "sudo-apt-upgrade"},
 }
 
@@ -87,8 +87,9 @@ func newToolFixture(t *testing.T) *toolFixture {
 	return &toolFixture{fixture: f, reg: reg, tool: tool}
 }
 
-func (f *toolFixture) call(t *testing.T, owner, tokenID string, args map[string]any) error {
+func (f *toolFixture) call(t *testing.T, args map[string]any) error {
 	t.Helper()
+	owner, tokenID := alice, harness
 	ctx := tokens.WithPrincipal(context.Background(), &tokens.Principal{UserID: owner, TokenID: tokenID})
 	res, err := f.tool.Handler(ctx, connectors.Call{Principal: connectors.Principal{UserID: owner, TokenID: tokenID}, Tool: "secrets.request", Args: args})
 	if err == nil {
@@ -171,15 +172,15 @@ func TestRequestToolValidation(t *testing.T) {
 	}
 	f := newToolFixture(t)
 	for name, args := range cases {
-		te := toolError(t, f.call(t, alice, harness, args))
+		te := toolError(t, f.call(t, args))
 		if te.Code != mcp.CodeInvalidParams {
 			t.Errorf("%s: code %d (%s: %s), want invalid params", name, te.Code, te.Class(), te.Message)
 		}
 	}
 	// An unknown and an invisible tool get the same answer (only the name
 	// they echo differs).
-	unknown := toolError(t, f.call(t, alice, harness, with("tool", "vault.nope")))
-	hidden := toolError(t, f.call(t, alice, harness, with("tool", "vault.hidden")))
+	unknown := toolError(t, f.call(t, with("tool", "vault.nope")))
+	hidden := toolError(t, f.call(t, with("tool", "vault.hidden")))
 	if unknown.Code != mcp.CodeInvalidParams || unknown.Class() != hidden.Class() ||
 		strings.ReplaceAll(unknown.Message, "vault.nope", "X") != strings.ReplaceAll(hidden.Message, "vault.hidden", "X") {
 		t.Errorf("unknown %d %s %q vs hidden %d %s %q", unknown.Code, unknown.Class(), unknown.Message, hidden.Code, hidden.Class(), hidden.Message)
@@ -196,7 +197,7 @@ func TestRequestToolValidation(t *testing.T) {
 
 func TestRequestToolAnswersSecretRequired(t *testing.T) {
 	f := newToolFixture(t)
-	te := toolError(t, f.call(t, alice, harness, map[string]any{
+	te := toolError(t, f.call(t, map[string]any{
 		"label": "vault password", "tool": "vault.login", "arg": "password", "ttl": "30m", "uses": float64(3)}))
 	if te.Code != mcp.CodeSecretRequired || mcp.CodeSecretRequired != -32042 || te.Class() != "secret_required" {
 		t.Fatalf("answer = %d %s %q", te.Code, te.Class(), te.Message)
@@ -261,7 +262,7 @@ func TestRequestToolAnswersSecretRequired(t *testing.T) {
 
 func TestRequestToolMachineAction(t *testing.T) {
 	f := newToolFixture(t)
-	te := toolError(t, f.call(t, alice, harness, map[string]any{"label": "sudo", "tool": "box-actions.sudo-apt-upgrade", "arg": "secret"}))
+	te := toolError(t, f.call(t, map[string]any{"label": "sudo", "tool": "box-actions.sudo-apt-upgrade", "arg": "secret"}))
 	if te.Code != mcp.CodeSecretRequired {
 		t.Fatalf("answer = %d %s %q", te.Code, te.Class(), te.Message)
 	}
@@ -279,11 +280,11 @@ func TestRequestToolLimited(t *testing.T) {
 	f := newToolFixture(t)
 	args := map[string]any{"label": "vault password", "tool": "vault.login", "arg": "password"}
 	for i := 0; i < secrets.MaxPendingPerOwner; i++ {
-		if te := toolError(t, f.call(t, alice, harness, args)); te.Code != mcp.CodeSecretRequired {
+		if te := toolError(t, f.call(t, args)); te.Code != mcp.CodeSecretRequired {
 			t.Fatalf("request %d: %d %s", i, te.Code, te.Message)
 		}
 	}
-	te := toolError(t, f.call(t, alice, harness, args))
+	te := toolError(t, f.call(t, args))
 	if te.Code != mcp.CodeRateLimited || mcp.CodeRateLimited != -32029 || te.Class() != "secret_requests_limited" || te.RetryAfterSeconds() <= 0 {
 		t.Errorf("over the limit: %d %s retry %d", te.Code, te.Class(), te.RetryAfterSeconds())
 	}
