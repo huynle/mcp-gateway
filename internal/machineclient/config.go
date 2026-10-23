@@ -62,6 +62,9 @@ type Server struct {
 	Cwd string
 	// InheritEnv names variables copied from the CLI's environment.
 	InheritEnv []string
+
+	// actions is set on the in-process actions server only (up.go).
+	actions map[string]*Action
 }
 
 // rawConfig and rawServer mirror the YAML; unknown keys are rejected.
