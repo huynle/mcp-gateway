@@ -89,3 +89,18 @@ permit (
 )
 when { resource.name == "gateway.set_user_limits" };
 
+@id("secrets/request")
+permit (
+    principal,
+    action in [Action::"call", Action::"list"],
+    resource in App::"secrets"
+);
+
+@id("secrets/read_only")
+forbid (
+    principal,
+    action in [Action::"call", Action::"list"],
+    resource in App::"secrets"
+)
+when { context.token.read_only };
+

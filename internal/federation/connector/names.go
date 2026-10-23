@@ -27,13 +27,14 @@ var serverNameRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}$`)
 
 // reserved are the built-in connector apps (registered by cmd/gateway)
 // and the vendor products users know them by, plus "mcp" (the vendor of
-// the federation's anchor connections) and "gateway" (the built-in
-// gateway.* management tools, Brain task 99b5yzdb). A server named like
+// the federation's anchor connections), "gateway" (the built-in
+// gateway.* management tools, Brain task 99b5yzdb) and "secrets" (the
+// built-in secrets.request, internal/secrets). A server named like
 // one of them would put its tools next to, or be mistaken for, a built-in
 // app's.
 var reserved = []string{
 	"atlassian", "calendar", "confluence", "contacts", "docs", "drive", "fake", "gateway", "github", "gmail",
-	"google", "jira", "mcp", "microsoft", "sheets", "slack", "tasks",
+	"google", "jira", "mcp", "microsoft", "secrets", "sheets", "slack", "tasks",
 }
 
 // ReservedNames returns the server names nobody may use, sorted.

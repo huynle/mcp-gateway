@@ -142,6 +142,7 @@ func CompileWithLayers(roles []Role, assignments []Assignment, restrictions []Us
 	w.header(assigned)
 	w.tokenPolicies()
 	w.gateway()
+	w.secrets()
 	for _, r := range roles {
 		w.role(r)
 	}
