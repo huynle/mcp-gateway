@@ -74,6 +74,11 @@ var valuePatterns = []struct {
 	{regexp.MustCompile(`\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{10,}`), Redacted},
 	{regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{10,}`), Redacted},
 	{regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{20,}`), Redacted},
+	// Ephemeral secrets (internal/secrets): the id of an entry link opens
+	// that page, plain or URL-encoded (a sign-in return_to), and a handle
+	// is what a harness uses the secret with.
+	{regexp.MustCompile(`(/s/|%2[Ff]s%2[Ff])[A-Za-z0-9]{20,100}`), "$1" + Redacted},
+	{regexp.MustCompile(`\bsec_[A-Za-z0-9]{20,100}`), Redacted},
 	// URL query parameters.
 	{regexp.MustCompile(`(?i)([?&](?:code|state|token|access_token|refresh_token|id_token|client_secret|secret|api_key|apikey|key|password|signature|sig)=)[^&\s"']+`), "$1" + Redacted},
 	// key=value and key: value in free text (vendor error strings).

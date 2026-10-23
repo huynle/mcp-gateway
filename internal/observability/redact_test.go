@@ -43,6 +43,10 @@ const (
 	secSigning   = "signingSECRETvalue111"
 	secPrivKey   = "privateKEYvalue222"
 	secUserUUID  = "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d"
+	// An ephemeral-secret entry link id (/s/<id>) and handle (sec_…):
+	// base62 of 256 bits (internal/secrets).
+	secEntryID = "oAUeiozOG65nkEiRZJiPYF78P5LeWHu35LynQjMUD76"
+	secHandle  = "sec_7Gq2LmXv9TzR4bWk1NcPa8YdE3sHfJ6uQiK0oVxZl5r"
 )
 
 type leakyError struct{ token string }
@@ -176,6 +180,15 @@ func corpus() []leakCase {
 		{"[]byte containing a token", func(l *slog.Logger) { l.Info("x", slog.Any("raw", []byte("t="+secMGW))) }, []string{secMGW}},
 		{"user_id is hashed not raw", func(l *slog.Logger) { l.Info("x", "user_id", secUserUUID) }, []string{secUserUUID}},
 		{"actor_user_id is hashed not raw", func(l *slog.Logger) { l.Info("x", "actor_user_id", secUserUUID) }, []string{secUserUUID}},
+		{"secret entry link path under an innocent key", func(l *slog.Logger) {
+			l.Info("x", "path", "/s/"+secEntryID)
+		}, []string{secEntryID}},
+		{"secret entry link as an encoded return_to", func(l *slog.Logger) {
+			l.Info("x", "location", "/signin?return_to=%2Fs%2F"+secEntryID)
+		}, []string{secEntryID}},
+		{"secret entry link and handle in an error message", func(l *slog.Logger) {
+			l.Error("x", "error", errors.New("Ask the user to open https://gw.example/s/"+secEntryID+" then retry with "+secHandle))
+		}, []string{secEntryID, secHandle}},
 		{"user key under group", func(l *slog.Logger) {
 			l.Info("x", slog.Group("session", "user", secUserUUID))
 		}, []string{secUserUUID}},
@@ -356,6 +369,11 @@ func TestRedactStringHelper(t *testing.T) {
 	got := observability.Redact("Bearer " + secBearer + " and " + secMGW)
 	if strings.Contains(got, secBearer) || strings.Contains(got, secMGW) {
 		t.Errorf("Redact left secrets: %q", got)
+	}
+	for _, harmless := range []string{"/secrets", "/secrets/0b1c2d3e/revoke", "/servers/abc", "/s/…", "/s/short", "sec_short"} {
+		if got := observability.Redact(harmless); got != harmless {
+			t.Errorf("Redact(%q) = %q", harmless, got)
+		}
 	}
 	if observability.Redact("plain text") != "plain text" {
 		t.Error("Redact altered harmless text")
