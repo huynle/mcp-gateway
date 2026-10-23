@@ -50,6 +50,7 @@ var UserLinks = []Link{
 	{"/servers", "Servers"},
 	{"/machines", "Machines"},
 	{"/approvals", "Approvals"},
+	{"/secrets", "Secrets"},
 	{"/operations", "Operations"},
 	{"/harnesses", "Harnesses"},
 	{"/activity", "Activity"},

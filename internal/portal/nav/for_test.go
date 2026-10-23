@@ -42,7 +42,7 @@ func TestForBindsTheRequestsNavDataPerClone(t *testing.T) {
 			t.Errorf("member bar shows %s", href)
 		}
 	}
-	for _, href := range []string{"/account", "/tokens", "/connections", "/approvals", "/operations", "/harnesses", "/activity"} {
+	for _, href := range []string{"/account", "/tokens", "/connections", "/approvals", "/secrets", "/operations", "/harnesses", "/activity"} {
 		if !strings.Contains(member, `href="`+href+`"`) {
 			t.Errorf("member bar lacks %s", href)
 		}
