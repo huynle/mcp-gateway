@@ -47,6 +47,7 @@ type templates struct {
 func parseTemplates() (*templates, error) {
 	funcs := template.FuncMap{
 		nav.AssetFuncName: static.URL,
+		nav.IconFuncName:  nav.Icon,
 		"hasRole":         slices.Contains[[]string, string],
 		"userRow": func(p page, u identity.UserSummary) userRow {
 			d, _ := p.Data.(adminUsersData) // also the invite-created page

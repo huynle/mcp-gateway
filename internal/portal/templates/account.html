@@ -1,64 +1,92 @@
 {{define "title"}}My account{{end}}
 {{define "content"}}
-<h1>My account</h1>
-<dl>
-  <dt>Name</dt><dd>{{.Principal.DisplayName}}</dd>
-  <dt>Roles</dt><dd>{{range $i, $r := .Principal.Roles}}{{if $i}}, {{end}}<span class="pill">{{$r}}</span>{{else}}<span class="muted">none</span>{{end}}</dd>
-  <dt>User ID</dt><dd><code>{{.Principal.UserID}}</code></dd>
-  <dt>Session</dt><dd><code>{{.Principal.SessionID}}</code></dd>
-</dl>
-<p><a href="/tokens">Harness tokens</a> let OpenCode, Claude Code and other harnesses call the gateway as you. App connections and approvals appear here as those features land.</p>
-<section class="card setting" id="cli">
-  <h2>Command-line tool</h2>
-  <p>Install <code>mcp-gateway</code> to connect MCP servers running on your own computer through a tunnel. <a href="/cli">Full guide</a></p>
+<header class="page-head">
+  <div>
+    <h1>My account</h1>
+    <p class="page-desc">Your profile, the command-line tool and your personal limits. <a href="/tokens">Harness tokens</a> let OpenCode, Claude Code and other harnesses call the gateway as you.</p>
+  </div>
+</header>
+
+<section class="panel profile" aria-label="Profile">
+  <div class="profile-head">
+    <span class="avatar large" aria-hidden="true">{{.Nav.Initial}}</span>
+    <div>
+      <h2>{{.Principal.DisplayName}}</h2>
+      <p class="muted">{{range $i, $r := .Principal.Roles}}<span class="pill accent">{{$r}}</span> {{else}}No roles{{end}}</p>
+    </div>
+  </div>
+  <dl class="kv">
+    <dt>User ID</dt><dd><code>{{.Principal.UserID}}</code></dd>
+    <dt>Session</dt><dd><code>{{.Principal.SessionID}}</code></dd>
+  </dl>
+</section>
+
+<section class="panel setting" id="cli">
+  <div class="panel-head">
+    <div><h2>Command-line tool</h2>
+    <p class="muted">Install <code>mcp-gateway</code> to connect MCP servers running on your own computer through a tunnel.</p></div>
+    <a class="btn small" href="/cli">Full guide</a>
+  </div>
   {{template "install-tabs" .Data.Install}}
 </section>
+
+<div class="grid grid-2">
 {{with .Data}}{{with .GatewayTools}}
-<section class="card setting" id="gateway-tools">
-  <h2>Gateway management tools</h2>
-  <p id="gateway-tools-help">Lets your MCP apps (for example OpenCode) list and add MCP servers for you through the <code>gateway.*</code> tools. Secrets, signing in to a server and approving its tools still happen here in the portal: the tools answer with a link.</p>
+<section class="panel setting" id="gateway-tools">
+  <div class="panel-head"><h2>Gateway management tools</h2>{{if .Enabled}}<span class="pill active">on</span>{{else}}<span class="pill none">off</span>{{end}}</div>
+  <p id="gateway-tools-help" class="muted">Lets your MCP apps (for example OpenCode) list and add MCP servers for you through the <code>gateway.*</code> tools. Secrets, signing in to a server and approving its tools still happen here in the portal: the tools answer with a link.</p>
   <form method="post" action="/account/gateway-tools" hx-post="/account/gateway-tools" hx-trigger="change" hx-target="#gateway-tools" hx-select="#gateway-tools" hx-swap="outerHTML">
     <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
     <label class="switch-row">
       <input type="checkbox" class="switch" role="switch" name="enabled" value="on" aria-describedby="gateway-tools-help"{{if .Enabled}} checked{{end}}{{if not .Permitted}} disabled{{end}}>
       <span>Enable gateway management tools</span>
     </label>
-    {{if .Permitted}}<p><button class="btn small" type="submit">Save</button></p>
-    {{else}}<p class="muted">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers.</p>{{end}}
+    {{if .Permitted}}<p class="form-actions"><button class="btn small" type="submit">Save</button></p>
+    {{else}}<p class="callout warn">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers.</p>{{end}}
   </form>
 </section>
 {{end}}{{end}}
+
 {{with .Data}}{{with .RateLimits}}
-<section class="card setting" id="rate-limits">
-  <h2>Rate limits</h2>
-  <p>Your effective tool-call budget is <strong>{{.EffectiveUser}} calls/minute</strong> across all apps. The organization defaults are {{.OrgUser}} per user and {{.OrgApp}} per app.</p>
-  {{with .Admin}}<p class="muted">An administrator set your base limit to {{.}} calls/minute.</p>{{end}}
+<section class="panel setting" id="rate-limits">
+  <div class="panel-head"><h2>Rate limits</h2><span class="pill plain">{{.EffectiveUser}}/min</span></div>
+  <p class="muted">Your effective tool-call budget is <strong>{{.EffectiveUser}} calls/minute</strong> across all apps. The organization defaults are {{.OrgUser}} per user and {{.OrgApp}} per app.</p>
+  {{with .Admin}}<p class="callout info">An administrator set your base limit to {{.}} calls/minute.</p>{{end}}
   <form method="post" action="/account/rate-limit" class="stack">
     <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
-    <label>My lower ceiling <input type="number" name="per_min" min="1" max="100000" value="{{with .Self}}{{.}}{{end}}" placeholder="Use administrator/default limit"></label>
-    <span class="muted">You may lower your own limit or leave this blank to use the administrator/default limit. You cannot raise it.</span>
-    <p><button class="btn small" type="submit">Save rate limit</button></p>
+    <label>My lower ceiling <input type="number" name="per_min" min="1" max="100000" value="{{with .Self}}{{.}}{{end}}" placeholder="Use administrator/default limit">
+      <span class="hint">You may lower your own limit or leave this blank to use the administrator/default limit. You cannot raise it.</span></label>
+    <p class="form-actions"><button class="btn small" type="submit">Save rate limit</button></p>
   </form>
 </section>
 {{end}}{{end}}
+</div>
+
 {{with .Data}}{{with .Limits}}
-<section class="card setting" id="resource-limits">
-  <h2>Resource limits</h2>
-  <p>How many of each you may have on this gateway. To raise a limit, ask an admin.</p>
+<section class="section setting" id="resource-limits">
+  <div class="section-head"><div><h2>Resource limits</h2><p>How many of each you may have on this gateway. To raise a limit, ask an admin.</p></div></div>
   <table><thead><tr><th>Resource</th><th>Used</th></tr></thead><tbody>
-  {{range .Rows}}<tr><td>{{.Noun}}</td><td>{{if eq .Limit 0}}{{with .Used}}{{.}}{{else}}?{{end}} (unlimited){{else}}{{with .Used}}{{.}}{{else}}?{{end}} of {{.Limit}}{{end}}</td></tr>
+  {{range .Rows}}<tr><td>{{.Noun}}</td><td>{{if eq .Limit 0}}{{with .Used}}{{.}}{{else}}?{{end}} <span class="muted">(unlimited)</span>{{else}}{{with .Used}}{{.}}{{else}}?{{end}} of {{.Limit}}{{end}}</td></tr>
   {{end}}</tbody></table>
 </section>
 {{end}}{{end}}
+
 {{with .Data}}{{if .Lifecycle}}
-<section class="card setting" id="your-data">
-  <h2>Your data</h2>
-  <p>Download my data: one JSON file with your profile, roles, app connections, tokens, harness sign-ins, MCP servers, tunnels, approvals, operations, audit events and settings. It never contains tokens, secrets or approval arguments. Once every 10 minutes.</p>
-  <form method="post" action="/account/export">
-    <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
-    <p><button class="btn small" type="submit">Download my data</button></p>
-  </form>
-  <p><a class="btn danger small" href="/account/delete">Delete my account…</a></p>
+<section class="section setting" id="your-data">
+  <div class="section-head"><div><h2>Your data</h2></div></div>
+  <div class="panel">
+    <div class="panel-head"><h3>Download my data</h3></div>
+    <p class="muted">One JSON file with your profile, roles, app connections, tokens, harness sign-ins, MCP servers, tunnels, approvals, operations, audit events and settings. It never contains tokens, secrets or approval arguments. Once every 10 minutes.</p>
+    <form method="post" action="/account/export">
+      <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+      <p class="form-actions"><button class="btn small" type="submit">Download my data</button></p>
+    </form>
+  </div>
+  <div class="danger-zone">
+    <h3>Delete account</h3>
+    <p class="muted">Removes your account and everything it owns from this gateway.</p>
+    <p><a class="btn danger small" href="/account/delete">Delete my account…</a></p>
+  </div>
 </section>
 {{end}}{{end}}
 <script src="{{asset "copy.js"}}" defer></script>

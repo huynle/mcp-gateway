@@ -153,10 +153,16 @@ dl:not([class]) > dd, dl.kv > dd { margin: 0; padding: .6rem var(--sp-4); min-wi
 dl:not([class]) > dt:first-of-type, dl:not([class]) > dt:first-of-type + dd, dl.kv > dt:first-of-type, dl.kv > dt:first-of-type + dd { border-top: 0; }
 
 /* --- app shell (package nav) ---------------------------------------------- */
-body:has(> .sidebar) { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: auto 1fr auto; }
-body:has(> .sidebar) > .sidebar { grid-column: 1; grid-row: 1 / -1; }
+body:has(> .sidebar) {
+  display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: auto 1fr auto;
+  /* The sidebar column's fill and edge run the full page height. */
+  background: linear-gradient(to right, var(--surface) calc(var(--side-w) - 1px), var(--line) calc(var(--side-w) - 1px) var(--side-w), var(--bg) var(--side-w));
+}
+body:has(> .sidebar) > .sidebar { grid-column: 1; grid-row: 1 / -1; align-self: start; }
 body:has(> .sidebar) > :is(main, .site-footer, .topbar) { grid-column: 2; }
+body:has(> .sidebar) > .topbar { grid-row: 1; }
 body:has(> .sidebar) > main { grid-row: 2; }
+body:has(> .sidebar) > .site-footer { grid-row: 3; }
 
 .brand { display: inline-flex; align-items: center; gap: .6rem; color: var(--fg); text-decoration: none; font-weight: 600; letter-spacing: -.01em; font-size: .95rem; }
 a.brand:visited { color: var(--fg); }
@@ -166,10 +172,10 @@ a.brand:visited { color: var(--fg); }
 
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); z-index: 30; }
 .sidebar-head { padding: var(--sp-4) var(--sp-4) var(--sp-3); }
-.site-nav { flex: 1; overflow-y: auto; padding: var(--sp-1) var(--sp-3) var(--sp-4); display: grid; align-content: start; gap: var(--sp-4); scrollbar-width: thin; }
+.site-nav { flex: 1; overflow-y: auto; padding: var(--sp-1) var(--sp-3) var(--sp-4); display: grid; align-content: start; gap: var(--sp-3); scrollbar-width: thin; }
 .nav-group { display: grid; gap: 1px; }
 .nav-label { margin: 0 0 var(--sp-1); padding: 0 var(--sp-2); font-size: var(--text-xs); font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
-.nav-link { display: flex; align-items: center; gap: .65rem; padding: .4rem var(--sp-2); border-radius: var(--radius-sm); color: var(--fg); text-decoration: none; font-size: var(--text-md); transition: background .12s; }
+.nav-link { display: flex; align-items: center; gap: .65rem; padding: .3rem var(--sp-2); border-radius: var(--radius-sm); color: var(--fg); text-decoration: none; font-size: var(--text-md); transition: background .12s; }
 .nav-link:visited { color: var(--fg); }
 .nav-link .icon { color: var(--muted); width: 1.05rem; height: 1.05rem; transition: color .12s; }
 .nav-link:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
@@ -179,6 +185,10 @@ a.brand:visited { color: var(--fg); }
 .sidebar-foot { border-top: 1px solid var(--line); padding: var(--sp-3) var(--sp-3) var(--sp-4); display: grid; gap: var(--sp-3); }
 .who { display: flex; align-items: center; gap: .6rem; min-width: 0; padding: 0 var(--sp-1); }
 .avatar { flex: none; width: 1.9rem; height: 1.9rem; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: var(--text-sm); }
+.avatar.large { width: 3rem; height: 3rem; font-size: 1.15rem; }
+.profile-head { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-4); }
+.profile-head h2 { margin: 0 0 var(--sp-1); }
+.profile-head p { margin: 0; display: flex; flex-wrap: wrap; gap: .3rem; }
 .who-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 .sidebar-tools form { margin: 0; }
@@ -200,7 +210,7 @@ a.brand:visited { color: var(--fg); }
 .theme-choice:focus-visible { outline-offset: 0; }
 
 @media (max-width: 64rem) {
-  body:has(> .sidebar) { display: block; }
+  body:has(> .sidebar) { display: block; background: var(--bg); }
   .topbar { display: flex; }
   .sidebar { position: fixed; inset: 0 auto 0 0; width: min(18rem, 85vw); transform: translateX(-102%); transition: transform .22s var(--ease); box-shadow: var(--elev-2); }
   .sidebar-head { display: none; }
@@ -512,3 +522,6 @@ dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellip
   dl:not([class]) > dd, dl.kv > dd { border-top: 0; padding-top: 0; }
   .site-footer { padding: var(--sp-4); }
 }
+
+/* Utility: push an item to the end of a flex row. */
+.push { margin-left: auto; }

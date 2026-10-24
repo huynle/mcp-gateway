@@ -298,11 +298,12 @@ func FromRequest(r *http.Request) Data {
 // data: {{template "nav" navData}}.
 const FuncName = "navData"
 
-// Funcs is the placeholder FuncMap entry a module adds when it parses its
-// template set (functions must exist at parse time). It renders the
-// anonymous bar; For binds the real data per request.
+// Funcs is the FuncMap a module adds when it parses its template set
+// (functions must exist at parse time): the placeholder navData, which
+// renders the anonymous bar until For binds the real data per request,
+// plus asset and icon so page templates can use them too.
 func Funcs() template.FuncMap {
-	return template.FuncMap{FuncName: func() Data { return Data{} }}
+	return template.FuncMap{FuncName: func() Data { return Data{} }, AssetFuncName: static.URL, IconFuncName: Icon}
 }
 
 // Setup adds the placeholder function and the partial to a module's

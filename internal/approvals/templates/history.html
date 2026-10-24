@@ -1,22 +1,31 @@
 {{template "head" .}}
-<p>Your last {{.Limit}} approvals. Arguments are never kept once an approval is decided, used or expired; this is the record of what was asked and what you answered. <a href="/approvals">Back to waiting approvals</a></p>
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/approvals">Approvals</a><span class="sep">/</span>History</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Your last {{.Limit}} approvals. Arguments are never kept once an approval is decided, used or expired; this is the record of what was asked and what you answered.</p>
+  </div>
+  <div class="page-actions"><a class="btn" href="/approvals">{{icon "arrow-left"}}Back to waiting approvals</a></div>
+</header>
+<div class="table-wrap">
 <table>
   <thead><tr><th>Requested</th><th>Tool</th><th>Account</th><th>Resource</th><th>Status</th><th>Decided</th><th>Used</th><th>Id</th></tr></thead>
   <tbody>
   {{range .History}}
   <tr>
-    <td>{{fmtTime .CreatedAt}}</td>
+    <td class="nowrap">{{fmtTime .CreatedAt}}</td>
     <td><code>{{.Tool}}</code></td>
     <td>{{if .AccountName}}{{.AccountName}} ({{.AccountLabel}}){{else}}{{.AccountLabel}}{{end}}</td>
-    <td>{{range $k, $v := .ResourceIdentity}}<span>{{$k}}={{$v}}</span> {{end}}</td>
+    <td class="mono">{{range $k, $v := .ResourceIdentity}}<span>{{$k}}={{$v}}</span> {{end}}</td>
     <td><span class="pill {{.Status}}">{{.Status}}</span></td>
-    <td>{{if .DecidedAt}}{{fmtTime .DecidedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
-    <td>{{if .ConsumedAt}}{{fmtTime .ConsumedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
-    <td><code>{{shortID .ID}}</code></td>
+    <td class="nowrap">{{if .DecidedAt}}{{fmtTime .DecidedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+    <td class="nowrap">{{if .ConsumedAt}}{{fmtTime .ConsumedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+    <td class="mono">{{shortID .ID}}</td>
   </tr>
   {{else}}
   <tr><td colspan="8" class="muted">No approvals yet.</td></tr>
   {{end}}
   </tbody>
 </table>
+</div>
 {{template "foot" .}}
