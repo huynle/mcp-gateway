@@ -29,6 +29,24 @@ func TestURLCarriesAContentHash(t *testing.T) {
 	}
 }
 
+// portal.css loads the web fonts by relative URL (/static/fonts/…); each
+// must be embedded, or the page silently falls back to system fonts.
+func TestFontsReferencedByTheStylesheetAreEmbedded(t *testing.T) {
+	b, err := fs.ReadFile(static.FS, "portal.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := regexp.MustCompile(`url\("(fonts/[^"]+)"\)`).FindAllStringSubmatch(string(b), -1)
+	if len(refs) == 0 {
+		t.Fatal("portal.css references no fonts")
+	}
+	for _, m := range refs {
+		if _, err := fs.Stat(static.FS, m[1]); err != nil {
+			t.Errorf("portal.css references %s: %v", m[1], err)
+		}
+	}
+}
+
 func TestURLRejectsUnknownAssets(t *testing.T) {
 	for _, name := range []string{"", "nope.css", "../static.go", "static.go"} {
 		if got, err := static.URL(name); err == nil {

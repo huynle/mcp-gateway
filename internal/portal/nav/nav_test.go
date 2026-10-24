@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -171,7 +172,7 @@ func TestThemeToggleIsAccessibleAndHiddenWithoutJS(t *testing.T) {
 // share a label in the admin's bar.
 func TestAdminServersLinkIsLabelledAllServers(t *testing.T) {
 	body := render(t, nav.Data{SignedIn: true, IsAdmin: true})
-	if !strings.Contains(body, `href="/admin/servers">All servers</a>`) {
+	if !regexp.MustCompile(`href="/admin/servers">(<svg[^>]*>.*?</svg>)?All servers</a>`).MatchString(body) {
 		t.Errorf("admin servers link is not labelled All servers:\n%s", body)
 	}
 	if n := strings.Count(body, ">Servers</a>"); n != 1 {
