@@ -46,7 +46,7 @@ func (m *Manager) precheck(ctx context.Context, tool connectors.Tool, call conne
 	if len(ref.FindWithPaths(call.Args)) > 0 {
 		call.Args = ref.ReplaceArgsWithHandle(call.Args)
 	}
-	_, _, err := m.check(ctx, e.server.ID, upstream, tool.Kind, call)
+	_, _, _, err := m.check(ctx, e.server.ID, upstream, tool.Kind, call)
 	return err
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
+	"github.com/huynle/mcp-gateway/internal/federation/tooldigest"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/netguard"
@@ -246,6 +247,7 @@ type upstream struct {
 	sdk     *sdk.Server
 	mu      sync.Mutex
 	headers []http.Header
+	metas   []sdk.Meta // _meta of each tools/call of create_note
 	block   chan struct{}
 }
 
@@ -257,8 +259,11 @@ func newUpstream(t *testing.T) *upstream {
 		func(_ context.Context, _ *sdk.CallToolRequest, in searchIn) (*sdk.CallToolResult, searchOut, error) {
 			return nil, searchOut{Hits: []string{"hit for " + in.Q}}, nil
 		})
-	sdk.AddTool(s, &sdk.Tool{Name: "create_note"},
-		func(_ context.Context, _ *sdk.CallToolRequest, in createIn) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(s, &sdk.Tool{Name: "create_note", Description: "Create a <note> & more"},
+		func(_ context.Context, req *sdk.CallToolRequest, in createIn) (*sdk.CallToolResult, any, error) {
+			u.mu.Lock()
+			u.metas = append(u.metas, req.Params.GetMeta())
+			u.mu.Unlock()
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "created " + in.Title}}}, nil, nil
 		})
 	sdk.AddTool(s, &sdk.Tool{Name: "slow_write"},
@@ -597,6 +602,29 @@ func TestManagerCallReadPassesThrough(t *testing.T) {
 	last := f.snaps.actors[len(f.snaps.actors)-1]
 	if last.Admin || last.UserID != alice {
 		t.Errorf("Allowed actor = %+v, want the caller", last)
+	}
+}
+
+// Every federated tools/call carries the digest of the approved tool in
+// _meta (what the machine actions server checks).
+func TestManagerCallSendsTheReviewedToolDigest(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.call(t, alice, "notes.create_note", map[string]any{"title": "x"}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	approved, ok := f.snaps.records[srvID].Snapshot.Tool("create_note")
+	if !ok {
+		t.Fatal("create_note not in the snapshot")
+	}
+	want := tooldigest.Digest(approved.Name, approved.Description, approved.InputSchema)
+	f.up.mu.Lock()
+	metas := append([]sdk.Meta(nil), f.up.metas...)
+	f.up.mu.Unlock()
+	if len(metas) != 1 {
+		t.Fatalf("%d calls reached the upstream", len(metas))
+	}
+	if got := metas[0][tooldigest.MetaKey]; got != want {
+		t.Fatalf("_meta %v, want %s = %s", metas[0], tooldigest.MetaKey, want)
 	}
 }
 
