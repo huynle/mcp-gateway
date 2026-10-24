@@ -197,7 +197,9 @@ a.brand:visited { color: var(--fg); }
 .topbar.public { display: flex; justify-content: space-between; padding: .75rem var(--sp-6); }
 .topbar-tools { display: flex; align-items: center; gap: var(--sp-3); }
 .menu-button { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--panel); color: var(--fg); cursor: pointer; }
-.drawer-toggle { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+/* The drawer checkbox exists only on narrow screens (a label still toggles
+   it, but on wide screens it must not be a tab stop). */
+.drawer-toggle { display: none; position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 .drawer-toggle:focus-visible ~ .topbar .menu-button { outline: 2px solid var(--focus); outline-offset: 2px; }
 .drawer-scrim { display: none; }
 
@@ -212,10 +214,12 @@ a.brand:visited { color: var(--fg); }
 @media (max-width: 64rem) {
   body:has(> .sidebar) { display: block; background: var(--bg); }
   .topbar { display: flex; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(18rem, 85vw); transform: translateX(-102%); transition: transform .22s var(--ease); box-shadow: var(--elev-2); }
+  .drawer-toggle { display: block; }
+  /* Closed: off-screen and hidden, so its links are not tab stops. */
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(18rem, 85vw); transform: translateX(-102%); visibility: hidden; transition: transform .22s var(--ease), visibility 0s linear .22s; box-shadow: var(--elev-2); }
   .sidebar-head { display: none; }
   .site-nav { padding-top: var(--sp-4); }
-  .drawer-toggle:checked ~ .sidebar { transform: none; }
+  .drawer-toggle:checked ~ .sidebar { transform: none; visibility: visible; transition: transform .22s var(--ease), visibility 0s; }
   .drawer-toggle:checked ~ .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, #000 40%, transparent); }
   main { padding: var(--sp-5) var(--sp-4) var(--sp-6); }
   .topbar.public { padding: .6rem var(--sp-4); }
