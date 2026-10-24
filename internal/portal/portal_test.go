@@ -450,3 +450,24 @@ func TestLoggedPathsKeepEntryLinkIDsOut(t *testing.T) {
 		}
 	}
 }
+
+// The anonymous sign-in redirect carries the requested path (an approval,
+// a secret entry link) in Location: it must not be cached and must not
+// leak through Referer (task l8gr9mur).
+func TestAnonymousSignInRedirectIsNoStoreNoReferrer(t *testing.T) {
+	h := newHarness(t)
+	h.portal.MountUser("GET /mounted/{id}", h.portal.NotFoundHandler())
+	h.h = h.portal.Handler()
+	for _, path := range []string{"/account", "/mounted/abc123"} {
+		rec := h.do(t, request{method: http.MethodGet, path: path})
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("anonymous GET %s = %d, want 303", path, rec.Code)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("anonymous GET %s: Cache-Control = %q, want no-store", path, got)
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+			t.Errorf("anonymous GET %s: Referrer-Policy = %q, want no-referrer", path, got)
+		}
+	}
+}

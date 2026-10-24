@@ -222,6 +222,9 @@ func (p *Portal) static() http.Handler {
 // the current path as return_to.
 func (p *Portal) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Before the sign-in redirects too: their Location carries the
+		// requested path (an approval, a secret entry link).
+		w.Header().Set("Cache-Control", "no-store")
 		if redirectPending(w, r) {
 			return
 		}
@@ -229,7 +232,6 @@ func (p *Portal) requireUser(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/signin?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
 }
