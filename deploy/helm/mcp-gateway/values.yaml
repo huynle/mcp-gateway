@@ -307,6 +307,13 @@ ingress:
       pathType: Exact
     - path: /support
       pathType: Exact
+    # Installable app (PWA): manifest, root service worker, offline page.
+    - path: /manifest.webmanifest
+      pathType: Exact
+    - path: /sw.js
+      pathType: Exact
+    - path: /offline
+      pathType: Exact
 
 # Default-deny with explicit ingress and egress. Core NetworkPolicy matches
 # Cross-replica tunnel relay (docs/tunnel.md "Multiple replicas"). With

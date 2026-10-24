@@ -112,9 +112,20 @@ func TestPageHeadIsTheSharedShell(t *testing.T) {
 		body := page(t, d)
 		navtest.AssertShell(t, fmt.Sprintf("signed in %v", d.SignedIn), body)
 		htmx, _ := static.URL("htmx.min.js")
+		pwa, _ := static.URL("pwa.js")
+		touch, _ := static.URL("icons/apple-touch-icon.png")
 		for _, want := range []string{
 			`<meta charset="utf-8">`,
-			`<meta name="viewport" content="width=device-width, initial-scale=1">`,
+			`<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`,
+			`<link rel="manifest" href="/manifest.webmanifest">`,
+			`<meta name="theme-color" content="#0e7268" media="(prefers-color-scheme: light)">`,
+			`<meta name="theme-color" content="#0d0f12" media="(prefers-color-scheme: dark)">`,
+			`<link rel="apple-touch-icon" href="` + touch + `">`,
+			`<meta name="apple-mobile-web-app-capable" content="yes">`,
+			`<meta name="mobile-web-app-capable" content="yes">`,
+			`<meta name="apple-mobile-web-app-status-bar-style" content="default">`,
+			`<meta name="apple-mobile-web-app-title" content="Gateway">`,
+			`<script src="` + pwa + `" defer></script>`,
 			`<meta name="referrer" content="no-referrer">`,
 			`<meta name="color-scheme" content="light dark">`,
 			`<script src="` + htmx + `" defer></script>`,

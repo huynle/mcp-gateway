@@ -180,7 +180,9 @@ func (d Data) items(links []Link) []Item {
 // Partial defines the shared page shell every portal page is built on:
 //
 //   - "page.head": the contents of <head> before the <title> (meta tags,
-//     the shared stylesheet, the theme script, htmx). Each layout writes
+//     the shared stylesheet, the theme script, htmx, and the installable-app
+//     tags: the web app manifest, theme colours, the iOS home-screen icon
+//     and pwa.js, which registers the service worker). Each layout writes
 //     <head>{{template "page.head"}}<title>…</title></head>, so every page
 //     loads the same assets by their versioned URLs (package static).
 //     theme.js is render-blocking on purpose: it sets <html data-theme>
@@ -197,13 +199,22 @@ func (d Data) items(links []Link) []Item {
 // and theme.js reveals it: without JavaScript there is no dead control and
 // the page follows the system colour scheme.
 const Partial = `{{define "page.head"}}<meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light dark">
   <script src="{{asset "theme.js"}}"></script>
   <link rel="stylesheet" href="{{asset "portal.css"}}">
   <link rel="icon" type="image/svg+xml" href="{{asset "favicon.svg"}}">
   <script src="{{asset "htmx.min.js"}}" defer></script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e7268" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0f12" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="{{asset "icons/apple-touch-icon.png"}}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Gateway">
+  <script src="{{asset "pwa.js"}}" defer></script>
 {{- end}}
 
 {{define "brand"}}<a class="brand" href="/">{{icon "brand"}}<span class="brand-name">MCP Gateway</span></a>{{end}}

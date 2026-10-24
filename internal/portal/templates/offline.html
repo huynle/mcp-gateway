@@ -1,0 +1,15 @@
+{{define "title"}}Offline{{end}}
+{{define "content"}}
+{{/* The service worker caches this page and shows it in place of any page
+     that fails to load, so it is always rendered anonymously and Retry
+     reloads the address in the bar (href=""), not /offline. */}}
+<div class="auth">
+  <section class="panel">
+    <h1>You're offline</h1>
+    <p class="muted">The gateway cannot be reached from this device right now. Check your connection, then try again.</p>
+    <div class="panel-foot">
+      <a class="btn primary" href="" data-offline-retry>Retry</a>
+    </div>
+  </section>
+</div>
+{{end}}

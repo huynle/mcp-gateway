@@ -118,7 +118,7 @@
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { margin: 0; min-height: 100vh; font: 400 var(--text-md)/1.55 var(--sans); color: var(--fg); background: var(--bg); overflow-wrap: break-word; -webkit-font-smoothing: antialiased; font-feature-settings: "ss02"; }
 ::selection { background: var(--accent-soft); color: var(--fg); }
-main { width: 100%; max-width: var(--content); margin: 0 auto; padding: var(--sp-6) var(--sp-6) var(--sp-7); min-width: 0; }
+main { width: 100%; max-width: var(--content); margin: 0 auto; padding: var(--sp-6) calc(var(--sp-6) + env(safe-area-inset-right, 0px)) var(--sp-7) calc(var(--sp-6) + env(safe-area-inset-left, 0px)); min-width: 0; }
 h1, h2, h3, h4 { line-height: 1.25; color: var(--fg); font-weight: 600; letter-spacing: -.01em; }
 h1 { font-size: var(--text-xl); margin: 0 0 var(--sp-5); letter-spacing: -.02em; }
 h2 { font-size: var(--text-lg); margin: var(--sp-6) 0 var(--sp-3); }
@@ -170,7 +170,11 @@ a.brand:visited { color: var(--fg); }
 .brand .brand-tile { fill: var(--accent); stroke: none; }
 .brand .brand-gate { stroke: var(--accent-fg); stroke-width: 2.2; }
 
-.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); z-index: 30; }
+/* Safe areas: the viewport is viewport-fit=cover, so an installed app
+   (standalone window) draws under the notch and the home indicator. The
+   top bar, the sidebar, the content column and the footer pad themselves
+   by env(safe-area-inset-*), which is 0 on screens without them. */
+.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); background: var(--surface); border-right: 1px solid var(--line); z-index: 30; }
 .sidebar-head { padding: var(--sp-4) var(--sp-4) var(--sp-3); }
 .site-nav { flex: 1; overflow-y: auto; padding: var(--sp-1) var(--sp-3) var(--sp-4); display: grid; align-content: start; gap: var(--sp-3); scrollbar-width: thin; }
 .nav-group { display: grid; gap: 1px; }
@@ -193,8 +197,8 @@ a.brand:visited { color: var(--fg); }
 .sidebar-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 .sidebar-tools form { margin: 0; }
 
-.topbar { display: none; align-items: center; gap: var(--sp-3); padding: .6rem var(--sp-4); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
-.topbar.public { display: flex; justify-content: space-between; padding: .75rem var(--sp-6); }
+.topbar { display: none; align-items: center; gap: var(--sp-3); padding: calc(.6rem + env(safe-area-inset-top, 0px)) calc(var(--sp-4) + env(safe-area-inset-right, 0px)) .6rem calc(var(--sp-4) + env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
+.topbar.public { display: flex; justify-content: space-between; padding: calc(.75rem + env(safe-area-inset-top, 0px)) calc(var(--sp-6) + env(safe-area-inset-right, 0px)) .75rem calc(var(--sp-6) + env(safe-area-inset-left, 0px)); }
 .topbar-tools { display: flex; align-items: center; gap: var(--sp-3); }
 .menu-button { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--panel); color: var(--fg); cursor: pointer; }
 /* The drawer checkbox exists only on narrow screens (a label still toggles
@@ -221,13 +225,13 @@ a.brand:visited { color: var(--fg); }
   .site-nav { padding-top: var(--sp-4); }
   .drawer-toggle:checked ~ .sidebar { transform: none; visibility: visible; transition: transform .22s var(--ease), visibility 0s; }
   .drawer-toggle:checked ~ .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, #000 40%, transparent); }
-  main { padding: var(--sp-5) var(--sp-4) var(--sp-6); }
-  .topbar.public { padding: .6rem var(--sp-4); }
+  main { padding: var(--sp-5) calc(var(--sp-4) + env(safe-area-inset-right, 0px)) var(--sp-6) calc(var(--sp-4) + env(safe-area-inset-left, 0px)); }
+  .topbar.public { padding: calc(.6rem + env(safe-area-inset-top, 0px)) calc(var(--sp-4) + env(safe-area-inset-right, 0px)) .6rem calc(var(--sp-4) + env(safe-area-inset-left, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 
 /* --- footer, public pages ------------------------------------------------- */
-.site-footer { padding: var(--sp-4) var(--sp-6) var(--sp-5); color: var(--muted); font-size: var(--text-sm); }
+.site-footer { padding: var(--sp-4) var(--sp-6) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px)); color: var(--muted); font-size: var(--text-sm); }
 .site-footer nav { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); max-width: var(--content); margin: 0 auto; padding-top: var(--sp-4); border-top: 1px solid var(--line); }
 .site-footer a, .site-footer a:visited { color: var(--muted); text-decoration: none; }
 .site-footer a:hover { color: var(--fg); }
@@ -534,7 +538,7 @@ dl.resource dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellip
   .panel-foot { margin: var(--sp-3) calc(-1 * var(--sp-4)) calc(-1 * var(--sp-3)); padding: var(--sp-3) var(--sp-4); }
   dl:not([class]), dl.kv { grid-template-columns: 1fr; }
   dl:not([class]) > dd, dl.kv > dd { border-top: 0; padding-top: 0; }
-  .site-footer { padding: var(--sp-4); }
+  .site-footer { padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* Utility: push an item to the end of a flex row. */

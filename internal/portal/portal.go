@@ -28,6 +28,7 @@ type Portal struct {
 	resourceCaps ResourceCaps // nil: no resource limits UI
 	lifecycle    Account      // nil: no data export / account deletion
 	legal        Legal        // operator values on the public pages (SetLegal)
+	pwa          *pwa         // web app manifest and service worker (pwa.go)
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -40,7 +41,11 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Portal{svc: svc, log: log, tpl: tpl, legal: DefaultLegal()}
+	app, err := buildPWA()
+	if err != nil {
+		return nil, err
+	}
+	p := &Portal{svc: svc, log: log, tpl: tpl, legal: DefaultLegal(), pwa: app}
 	svc.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, status int, message string) {
 		p.errorPage(w, r, status, "Sign-in failed", message)
 	})
@@ -72,6 +77,9 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET|POST /admin/users/{id}/delete admin: delete the user (SetAccount)
 //	/auth/...                      identity.Service.Handler
 //	GET  /static/...               embedded assets
+//	GET  /manifest.webmanifest     public: web app manifest (pwa.go)
+//	GET  /sw.js                    public: service worker, scope "/"
+//	GET  /offline                  public: the worker's offline page
 func (p *Portal) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, m := range p.mounts {
@@ -134,6 +142,9 @@ func (p *Portal) Handler() http.Handler {
 	// Sign-out is a POST and therefore behind the CSRF check as well.
 	mux.Handle("/auth/", p.csrf(p.svc.Handler()))
 	mux.Handle("GET /static/", p.static())
+	mux.HandleFunc("GET "+manifestPath, p.manifestHandler)
+	mux.HandleFunc("GET "+workerPath, p.workerHandler)
+	mux.HandleFunc("GET "+offlinePath, p.offline)
 	mux.HandleFunc("/", p.notFound)
 	return SecurityHeaders(p.svc.Middleware(withNav(mux)))
 }

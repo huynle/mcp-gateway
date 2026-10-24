@@ -1,9 +1,12 @@
 // Package static holds the portal's browser assets: the shared stylesheet
 // (portal.css), the theme script (theme.js), htmx and the review page's
-// script and styles, and the IBM Plex web fonts portal.css loads from
-// fonts/ (SIL OFL 1.1, licence texts next to them). They are embedded so
-// the portal ships inside the single gateway binary (decision 7datr7x4) and served by the portal under
-// /static/.
+// script and styles, the IBM Plex web fonts portal.css loads from fonts/
+// (SIL OFL 1.1, licence texts next to them), and the installable-app
+// script and icons (pwa.js; icons/*.png, rendered by
+// scripts/render-pwa-icons.py). They are embedded so the portal ships
+// inside the single gateway binary (decision 7datr7x4) and served by the
+// portal under /static/. The service worker source (sw.js) is embedded
+// too, as ServiceWorker, but served by the portal at /sw.js.
 //
 // Templates link assets through URL, which appends a hash of the file's
 // bytes (?v=…): the handler sends a 1-day Cache-Control, and a deploy that
@@ -31,8 +34,16 @@ func init() {
 
 // FS is the embedded asset tree served under /static/.
 //
-//go:embed htmx.min.js review.js review.css portal.css theme.js copy.js favicon.svg fonts/*.woff2
+//go:embed htmx.min.js review.js review.css portal.css theme.js copy.js pwa.js favicon.svg fonts/*.woff2 icons/*.png
 var FS embed.FS
+
+// ServiceWorker is the source of the portal's service worker. It is not in
+// FS: the portal serves it at /sw.js (a worker's scope is its directory, so
+// it must sit at the root for scope "/") after filling its placeholders
+// with the versioned asset URLs (package portal, pwa.go).
+//
+//go:embed sw.js
+var ServiceWorker string
 
 // HashLen is the number of hex digits of the content hash in a URL.
 const HashLen = 12

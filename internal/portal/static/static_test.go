@@ -1,8 +1,11 @@
 package static_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"image"
+	"image/png"
 	"io/fs"
 	"regexp"
 	"strings"
@@ -15,7 +18,8 @@ import (
 // deploy that changes a file changes its URL and browsers skip the 1-day
 // cached copy.
 func TestURLCarriesAContentHash(t *testing.T) {
-	for _, name := range []string{"htmx.min.js", "review.js", "review.css", "portal.css", "theme.js", "copy.js"} {
+	for _, name := range []string{"htmx.min.js", "review.js", "review.css", "portal.css", "theme.js", "copy.js", "pwa.js",
+		"icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png"} {
 		b, err := fs.ReadFile(static.FS, name)
 		if err != nil {
 			t.Fatalf("%s not embedded: %v", name, err)
@@ -77,4 +81,54 @@ func TestFSHoldsOnlyAssets(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// The installable-app icons (rendered by scripts/render-pwa-icons.py) are
+// PNGs of their declared size; the iOS home-screen icon is opaque (iOS
+// shows transparency as black) and so is the maskable one (full bleed).
+func TestAppIcons(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		size   int
+		opaque bool
+	}{
+		{"icons/icon-192.png", 192, false},
+		{"icons/icon-512.png", 512, false},
+		{"icons/icon-maskable-512.png", 512, true},
+		{"icons/apple-touch-icon.png", 180, true},
+	} {
+		b, err := fs.ReadFile(static.FS, c.name)
+		if err != nil {
+			t.Errorf("%s not embedded: %v", c.name, err)
+			continue
+		}
+		img, err := png.Decode(bytes.NewReader(b))
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if img.Bounds() != image.Rect(0, 0, c.size, c.size) {
+			t.Errorf("%s: bounds %v, want %dx%d", c.name, img.Bounds(), c.size, c.size)
+		}
+		if c.opaque {
+			if o, ok := img.(interface{ Opaque() bool }); !ok || !o.Opaque() {
+				t.Errorf("%s has transparent pixels", c.name)
+			}
+		}
+	}
+}
+
+// The service worker source is embedded for the portal's /sw.js handler
+// but is not a /static/ asset (its placeholders are filled per build and
+// it must be served from the root for scope "/").
+func TestServiceWorkerSourceIsEmbeddedButNotServed(t *testing.T) {
+	if len(static.ServiceWorker) == 0 {
+		t.Fatal("ServiceWorker is empty")
+	}
+	if _, err := fs.Stat(static.FS, "sw.js"); err == nil {
+		t.Error("sw.js is in FS (served under /static/)")
+	}
+	if _, err := static.URL("sw.js"); err == nil {
+		t.Error("URL(sw.js) succeeded")
+	}
 }

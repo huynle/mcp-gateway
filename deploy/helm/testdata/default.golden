@@ -577,6 +577,27 @@ spec:
                 name: mcp-gateway
                 port:
                   name: http
+          - path: "/manifest.webmanifest"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/sw.js"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/offline"
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
 ---
 # Source: mcp-gateway/templates/job-migrate.yaml
 # Pre-install / pre-upgrade hook: applies the embedded goose migrations as
