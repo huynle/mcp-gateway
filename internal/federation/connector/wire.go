@@ -15,6 +15,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/client"
+	"github.com/huynle/mcp-gateway/internal/federation/elicit"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/netguard"
@@ -62,6 +63,17 @@ type WireOptions struct {
 	// local to the replica holding their connection. Holders defaults to
 	// tunnel.NewHolderStore(Store) and Metrics to WireOptions.Metrics.
 	TunnelRelay *tunnel.RelayOptions
+	// CredentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED (Options.CredentialLinks):
+	// credential problems answer -32042 with a portal link, and the
+	// Manager's calls refuse a declared per-user header without a value
+	// (auth.ErrUserHeaderMissing). Federation.Auth itself stays lenient,
+	// so the servers portal's refresh is unchanged.
+	CredentialLinks bool
+	// UpstreamElicitation is GATEWAY_UPSTREAM_ELICITATION_ENABLED
+	// (Options.UpstreamElicitation): Wire builds the elicitation service
+	// over Store (Federation.Elicit) and the Manager relays upstream URL
+	// elicitations through it.
+	UpstreamElicitation bool
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -87,6 +99,10 @@ type Federation struct {
 	// GatewayAccounts supplies the anchor account of the gateway.*
 	// management tools (internal/federation/gatewaytools).
 	GatewayAccounts GatewayAccounts
+	// Elicit stores relayed upstream URL elicitations and serves the
+	// /elicit interstitial (elicit.NewPortal); nil without
+	// WireOptions.UpstreamElicitation.
+	Elicit *elicit.Service
 }
 
 // Wire builds the federation. Nothing is loaded yet: call Start (or
@@ -151,10 +167,19 @@ func Wire(o WireOptions) (*Federation, error) {
 	f.Permissions = perms
 	ps := &pgStore{st: o.Store, keys: o.Keys, caps: o.Caps}
 	f.GatewayAccounts = ps
+	var elicitations Elicitations
+	if o.UpstreamElicitation {
+		f.Elicit, err = elicit.New(elicit.NewPostgresStore(o.Store), elicit.Options{Log: o.Log})
+		if err != nil {
+			return nil, fmt.Errorf("federation: elicitations: %w", err)
+		}
+		elicitations = f.Elicit
+	}
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,
-		Credentials: f.Auth, Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
-		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, CallTimeout: o.CallTimeout, OnChange: o.OnChange, Log: o.Log,
+		Credentials: f.Auth.UserHeadersRequired(o.CredentialLinks), Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
+		BaseURL: o.BaseURL, CredentialLinks: o.CredentialLinks, Version: o.Version, Timeout: o.Timeout, CallTimeout: o.CallTimeout, OnChange: o.OnChange, Log: o.Log,
+		UpstreamElicitation: o.UpstreamElicitation, Elicitations: elicitations,
 	})
 	if err != nil {
 		return nil, err

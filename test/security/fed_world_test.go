@@ -29,6 +29,7 @@ import (
 	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/elicit"
 	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
@@ -38,6 +39,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
+	"github.com/huynle/mcp-gateway/internal/secrets"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -48,7 +50,8 @@ func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts o
 	w.t.Helper()
 	wopts := connector.WireOptions{
 		Store: w.st, Keys: keys, Registry: w.reg, BaseURL: baseURL, Version: "security",
-		OnChange: w.policy.Invalidate, Log: log, Timeout: opts.fedTimeout,
+		OnChange: w.policy.Invalidate, Log: log, Timeout: opts.fedTimeout, CredentialLinks: opts.credentialLinks,
+		UpstreamElicitation: opts.upstreamElicitation,
 	}
 	var relayHandler atomic.Value
 	if opts.tunnelRelay {
@@ -149,7 +152,15 @@ func (w *world) mountFederationPages(p *portal.Portal, session func(*http.Reques
 		Store: fedportal.NewStore(w.st), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 		ClientFactory: factory, Hook: hookFunc(func(ctx context.Context, id string) { _ = fed.Manager.ServerChanged(ctx, id) }),
 		Permissions: fed.Permissions, Policy: w.policy, Identity: identityFn, Audit: w.rec, Log: log, BaseURL: baseURL,
+		OriginValidator: elicit.ValidateOrigin,
 	}).Mount(p.MountUser)
+	if fed.Elicit != nil {
+		// The /elicit interstitial, as cmd/gateway's withElicitPages.
+		elicit.NewPortal(fed.Elicit, session, elicit.PortalOptions{
+			Log: log, Audit: w.rec, NotFound: p.NotFoundHandler(),
+			FailureLimiter: secrets.NewAddressLimiter(secrets.EntryFailureBurst, secrets.EntryFailureWindow, nil),
+		}).Mount(p.MountUser)
+	}
 	as := fedadmin.NewStore(w.st)
 	fedadmin.NewAdmin(fedadmin.Deps{
 		Store: as, Roles: as, Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels, ClientFactory: factory,

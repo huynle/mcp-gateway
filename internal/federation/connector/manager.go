@@ -100,6 +100,17 @@ type Options struct {
 	// BaseURL is GATEWAY_BASE_URL; connect hints point at
 	// BaseURL/servers/<id>.
 	BaseURL string
+	// CredentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED: credential
+	// problems the caller can fix answer -32042 with a link under BaseURL
+	// (credlinks.go). Off: every answer is what it was before the flag.
+	CredentialLinks bool
+	// UpstreamElicitation is GATEWAY_UPSTREAM_ELICITATION_ENABLED: upstream
+	// URL elicitations are relayed through Elicitations and the /elicit
+	// interstitial under BaseURL (relay.go). Off, or without Elicitations:
+	// no client declares the capability and every answer is what it was.
+	UpstreamElicitation bool
+	// Elicitations stores relayed elicitations (*elicit.Service).
+	Elicitations Elicitations
 	// Version is reported to upstream servers as the client version.
 	Version string
 	// Timeout bounds each upstream operation (client default when 0).

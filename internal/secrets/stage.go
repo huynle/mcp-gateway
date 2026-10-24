@@ -58,6 +58,9 @@ var refundClasses = map[string]bool{
 	"tool_not_found": true, "server_unavailable": true, "tool_disabled": true, "tool_not_reviewed": true,
 	"tool_changed": true, "args_invalid": true, "snapshot_unavailable": true, "server_not_configured": true,
 	"credentials_unavailable": true, "client_unavailable": true,
+	// A declared per-user header without a value (credential links):
+	// refused before the upstream.
+	"user_header_missing": true,
 }
 
 type secretStage struct {

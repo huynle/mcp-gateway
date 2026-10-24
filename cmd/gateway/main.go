@@ -215,7 +215,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSecretPages(secretSvc), withSignupAudit(rec))
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{rateSvc, capsSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSecretPages(secretSvc), withElicitPages(fed, st, rec), withSignupAudit(rec))
 		if err != nil {
 			return err
 		}
@@ -226,6 +226,7 @@ func run() error {
 		}
 		jobList := append(ledgerJobs(ledgerSvc), authServerJobs(authSvc)...)
 		jobList = append(jobList, secretsJobs(secretSvc)...)
+		jobList = append(jobList, elicitJobs(fed)...)
 		if approvalSvc != nil {
 			jobList = append(jobList, approvalSvc.ExpiryJob(0))
 		}

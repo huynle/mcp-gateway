@@ -17,6 +17,7 @@ import (
 	fedadmin "github.com/huynle/mcp-gateway/internal/federation/admin"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/federation/elicit"
 	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
@@ -55,6 +56,14 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	if metrics != nil {
 		opts.Metrics = metrics.Registry()
 	}
+	// URL elicitation flags (internal/federation/elicit): credential links
+	// and the upstream elicitation relay (elicit.go mounts its pages).
+	ecfg, err := elicit.ConfigFromEnv(getenv)
+	if err != nil {
+		return nil, fmt.Errorf("federation: %w", err)
+	}
+	opts.CredentialLinks = ecfg.CredentialLinks
+	opts.UpstreamElicitation = ecfg.UpstreamElicitation
 	for _, f := range extra {
 		f(&opts)
 	}
@@ -65,7 +74,8 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	fed.Start(ctx)
 	log.Info("user-added MCP servers ready", "server_apps", len(registry.ServerApps()),
 		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath, "tunnel_relay", fed.Tunnels.RelayEnabled(),
-		"call_timeout", cfg.FederationCallTimeout.String())
+		"call_timeout", cfg.FederationCallTimeout.String(),
+		"credential_links", opts.CredentialLinks, "upstream_elicitation", opts.UpstreamElicitation)
 	return fed, nil
 }
 
@@ -192,6 +202,9 @@ func withFederationPages(fed *connector.Federation, st *store.Store, baseURL str
 			Store: fedportal.NewStoreWithCaps(st, fed.Caps), Snapshots: fed.Snapshots, Auth: fed.Auth, Tunnels: fed.Tunnels,
 			ClientFactory: factory, Hook: serverChangedHook{m: fed.Manager, log: log}, Permissions: fed.Permissions,
 			Policy: pol, Identity: identityFn, Audit: rec, Log: log, BaseURL: baseURL,
+			// The relay's own origin rules (IDNs as punycode, no IP hosts),
+			// with the relay on or off.
+			OriginValidator: elicit.ValidateOrigin,
 		}).Mount(mountUser)
 	}
 }

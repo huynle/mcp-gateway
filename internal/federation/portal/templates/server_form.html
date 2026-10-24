@@ -11,6 +11,7 @@
   {{with $.Form.ClientID}}<dt>Static OAuth client</dt><dd><code>{{.}}</code>{{with $.Form.ClientIssuer}} (issuer <code>{{.}}</code>){{end}}</dd>{{end}}
   {{with $.Form.StaticHeaders}}<dt>Static headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
   {{with $.Form.PerUserHeaders}}<dt>Per-user headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
+  {{with $.Form.ElicitationOrigins}}<dt>Allowed elicitation origins</dt><dd><pre>{{.}}</pre></dd>{{end}}
 </dl>
 {{if .CredentialForm}}
 <form method="post" action="/servers/{{$.ServerID}}/edit" class="stack" autocomplete="off">
@@ -113,6 +114,14 @@
     <label>Static headers <span class="muted">(not secret; one “Name: value” per line)</span> <textarea name="static_headers" rows="3">{{.Form.StaticHeaders}}</textarea></label>
     <label>Per-user headers <span class="muted">(each user sets their own value, e.g. X-Brain-Project; one name per line)</span> <textarea name="per_user_headers" rows="3">{{.Form.PerUserHeaders}}</textarea></label>
   </fieldset>
+
+  {{if .Edit}}
+  <fieldset>
+    <legend>Allowed elicitation origins</legend>
+    <p class="muted">Pages this server may send you to, besides its own domain (https://host[:port]). Needed for machine/tunnel servers.</p>
+    <label>Origins <span class="muted">(one per line, up to 20)</span> <textarea name="elicitation_origins" rows="3" autocomplete="off">{{.Form.ElicitationOrigins}}</textarea></label>
+  </fieldset>
+  {{end}}
 
   <p><button class="btn primary" type="submit" name="action" value="{{if .Edit}}save{{else}}create{{end}}">{{if .Edit}}Save{{else}}Add server{{end}}</button>
     <a class="btn" href="{{if .Edit}}/servers/{{.ServerID}}{{else}}/servers{{end}}">Cancel</a></p>

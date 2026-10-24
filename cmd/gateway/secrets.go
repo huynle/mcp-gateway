@@ -121,45 +121,60 @@ func secretsJobs(f *secretsFeature) []jobs.Job {
 
 // serverName is the bound server's name as the owner sees it.
 func (f *secretsFeature) serverName(ctx context.Context, owner, serverID string) (string, error) {
-	var name string
-	err := f.st.WithUser(ctx, owner, func(tx store.Tx) error {
-		s, err := store.GetMCPServer(ctx, tx, serverID)
-		if err != nil {
-			return err
-		}
-		name = s.Name
-		return nil
-	})
-	return name, err
+	return serverNamer(f.st)(ctx, owner, serverID)
 }
 
-// harnessName names the requesting harness: the principal's TokenID is a
+// harnessName names the requesting harness (harnessNamer).
+func (f *secretsFeature) harnessName(ctx context.Context, owner, harnessID string) (string, error) {
+	return harnessNamer(f.st)(ctx, owner, harnessID)
+}
+
+// serverNamer resolves a server id to its name as owner sees it (row-level
+// security applies): the secrets and elicitation pages name servers so.
+func serverNamer(st *store.Store) func(ctx context.Context, owner, serverID string) (string, error) {
+	return func(ctx context.Context, owner, serverID string) (string, error) {
+		var name string
+		err := st.WithUser(ctx, owner, func(tx store.Tx) error {
+			s, err := store.GetMCPServer(ctx, tx, serverID)
+			if err != nil {
+				return err
+			}
+			name = s.Name
+			return nil
+		})
+		return name, err
+	}
+}
+
+// harnessNamer names a harness of owner: the principal's TokenID is a
 // tokens row id for mgw_ tokens and the refresh-token family id for OAuth
 // harnesses, so it is the token's name or the OAuth client's name.
-func (f *secretsFeature) harnessName(ctx context.Context, owner, harnessID string) (string, error) {
-	var name string
-	err := f.st.WithUser(ctx, owner, func(tx store.Tx) error {
-		tok, err := tx.Tokens().Get(ctx, harnessID)
-		switch {
-		case err == nil && tok.UserID == owner:
-			name = tok.Name
-			return nil
-		case err != nil && !errors.Is(err, store.ErrNotFound):
-			return err
-		}
-		families, err := store.ListOAuthHarnesses(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		for _, h := range families {
-			if h.FamilyID == harnessID {
-				name = h.ClientName
+func harnessNamer(st *store.Store) func(ctx context.Context, owner, harnessID string) (string, error) {
+	return func(ctx context.Context, owner, harnessID string) (string, error) {
+		var name string
+		err := st.WithUser(ctx, owner, func(tx store.Tx) error {
+			tok, err := tx.Tokens().Get(ctx, harnessID)
+			switch {
+			case err == nil && tok.UserID == owner:
+				name = tok.Name
 				return nil
+			case err != nil && !errors.Is(err, store.ErrNotFound):
+				return err
 			}
-		}
-		return store.ErrNotFound
-	})
-	return name, err
+			families, err := store.ListOAuthHarnesses(ctx, tx, owner)
+			if err != nil {
+				return err
+			}
+			for _, h := range families {
+				if h.FamilyID == harnessID {
+					name = h.ClientName
+					return nil
+				}
+			}
+			return store.ErrNotFound
+		})
+		return name, err
+	}
 }
 
 // SecretUsed implements secrets.UseHook: audit "secret.used" with the

@@ -13,6 +13,7 @@ require (
 	github.com/slack-go/slack v0.29.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	github.com/zitadel/oidc/v3 v3.51.8
+	golang.org/x/net v0.60.0
 	google.golang.org/api v0.298.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -37,7 +38,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect

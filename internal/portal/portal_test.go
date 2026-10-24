@@ -431,17 +431,22 @@ func TestLoggedPathsKeepEntryLinkIDsOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.MountUser("POST /s/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("mounted")) }))
+	p.MountUser("POST /elicit/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("mounted")) }))
 	h.h = p.Handler()
 	member, _ := h.session(t, memberSub, "Member")
 	const id = "oAUeiozOG65nkEiRZJiPYF78P5LeWHu35LynQjMUD76"
-	rec := h.do(t, request{method: http.MethodPost, path: "/s/" + id, cookie: member, form: url.Values{"action": {"save"}}})
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("POST without CSRF = %d", rec.Code)
-	}
-	if !strings.Contains(logs.String(), "portal.csrf_rejected") || !strings.Contains(logs.String(), "/s/…") {
-		t.Errorf("rejection not logged with the redacted path:\n%s", logs.String())
-	}
-	if strings.Contains(logs.String(), id) {
-		t.Errorf("the log holds the entry link id:\n%s", logs.String())
+	// The /elicit/<id> interstitial of a relayed upstream elicitation too.
+	for _, prefix := range []string{"/s/", "/elicit/"} {
+		logs.Reset()
+		rec := h.do(t, request{method: http.MethodPost, path: prefix + id, cookie: member, form: url.Values{"action": {"save"}}})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("POST %s without CSRF = %d", prefix, rec.Code)
+		}
+		if !strings.Contains(logs.String(), "portal.csrf_rejected") || !strings.Contains(logs.String(), prefix+"…") {
+			t.Errorf("rejection not logged with the redacted path:\n%s", logs.String())
+		}
+		if strings.Contains(logs.String(), id) {
+			t.Errorf("the log holds the link id:\n%s", logs.String())
+		}
 	}
 }

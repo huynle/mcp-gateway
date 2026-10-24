@@ -180,6 +180,15 @@ type options struct {
 	// stage before dispatch, the /s/{id} and /secrets pages and the
 	// disable hook. It needs federation.
 	secrets bool
+	// credentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED
+	// (WireOptions.CredentialLinks): credential problems answer -32042
+	// with a portal link. It needs federation.
+	credentialLinks bool
+	// upstreamElicitation is GATEWAY_UPSTREAM_ELICITATION_ENABLED
+	// (WireOptions.UpstreamElicitation): upstream URL elicitations are
+	// relayed through the /elicit interstitial, mounted like cmd/gateway's
+	// withElicitPages. It needs federation.
+	upstreamElicitation bool
 }
 
 // world is the gateway wired like cmd/gateway, plus the handles the
@@ -340,7 +349,7 @@ func newWorld(t *testing.T, opts options) *world {
 	if opts.federation {
 		w.fed, err = connector.Wire(connector.WireOptions{
 			Store: st, Keys: keys, Registry: reg, BaseURL: baseURL, Version: "e2e", OnChange: w.policy.Invalidate, Log: log,
-			ConnectFinish: connectFinish,
+			ConnectFinish: connectFinish, CredentialLinks: opts.credentialLinks, UpstreamElicitation: opts.upstreamElicitation,
 		})
 		if err != nil {
 			t.Fatal(err)

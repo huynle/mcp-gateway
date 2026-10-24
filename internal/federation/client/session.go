@@ -15,6 +15,7 @@ type Session struct {
 	cancel    context.CancelFunc
 	obs       *observer // the session context's observer (legacy SSE stream)
 	label     string
+	rec       *Recorder // URL-mode elicitations; nil without Options.URLElicitation
 }
 
 // MCP operation names used in errors.

@@ -10,6 +10,7 @@
   <tr><th>Authentication</th><td>{{.AuthKind}} · {{if eq .CredentialMode "shared"}}shared credential{{else}}per user{{end}}{{if .APIKeyPlace}} · sent as {{.APIKeyPlace}}{{end}}{{if .Scopes}} · scopes {{range .Scopes}}<code>{{.}}</code> {{end}}{{end}}</td></tr>
   {{if .StaticHeaders}}<tr><th>Static headers</th><td>{{range .StaticHeaders}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
   {{if .PerUserHeaders}}<tr><th>Per-user headers</th><td>{{range .PerUserHeaders}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
+  {{if .ElicitationOrigins}}<tr><th>Elicitation origins</th><td>{{range .ElicitationOrigins}}<code>{{.}}</code> {{end}}<br><span class="muted">pages besides its own domain this server may send you to</span></td></tr>{{end}}
   </tbody>
 </table>
 {{end}}

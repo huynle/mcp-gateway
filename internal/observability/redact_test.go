@@ -189,6 +189,15 @@ func corpus() []leakCase {
 		{"secret entry link and handle in an error message", func(l *slog.Logger) {
 			l.Error("x", "error", errors.New("Ask the user to open https://gw.example/s/"+secEntryID+" then retry with "+secHandle))
 		}, []string{secEntryID, secHandle}},
+		{"elicitation link path under an innocent key", func(l *slog.Logger) {
+			l.Info("x", "path", "/elicit/"+secEntryID)
+		}, []string{secEntryID}},
+		{"elicitation link as an encoded return_to", func(l *slog.Logger) {
+			l.Info("x", "location", "/signin?return_to=%2Felicit%2F"+secEntryID)
+		}, []string{secEntryID}},
+		{"elicitation link in an error message", func(l *slog.Logger) {
+			l.Error("x", "error", errors.New("open https://gw.example/elicit/"+secEntryID+" to continue"))
+		}, []string{secEntryID}},
 		{"user key under group", func(l *slog.Logger) {
 			l.Info("x", slog.Group("session", "user", secUserUUID))
 		}, []string{secUserUUID}},
@@ -370,7 +379,7 @@ func TestRedactStringHelper(t *testing.T) {
 	if strings.Contains(got, secBearer) || strings.Contains(got, secMGW) {
 		t.Errorf("Redact left secrets: %q", got)
 	}
-	for _, harmless := range []string{"/secrets", "/secrets/0b1c2d3e/revoke", "/servers/abc", "/s/…", "/s/short", "sec_short"} {
+	for _, harmless := range []string{"/secrets", "/secrets/0b1c2d3e/revoke", "/servers/abc", "/s/…", "/s/short", "sec_short", "/elicit/…", "/elicit/short"} {
 		if got := observability.Redact(harmless); got != harmless {
 			t.Errorf("Redact(%q) = %q", harmless, got)
 		}

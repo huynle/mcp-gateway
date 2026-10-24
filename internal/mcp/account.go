@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -21,11 +22,26 @@ import (
 //   - unset and several: account_required, listing the caller's own IDs
 //     and display names (they are the caller's; list_accounts shows the
 //     same);
-//   - none at all: no_account, whatever the argument said.
+//   - none at all: no_account, whatever the argument said; a source
+//     implementing MissingAccounter may answer instead (same class, e.g.
+//     a -32042 with the link where the user connects).
+//
+// A *ToolError from the source is passed through as it is; any other
+// failure is account_lookup_failed (the cause is only logged).
 //
 // Tools marked NoAccount (list_accounts, secrets.request) skip the stage. The chosen
 // account's ID and label go on the CallContext for audit.
 const StageAccount = "account"
+
+// MissingAccounter is the optional interface of an AccountSource that can
+// explain a missing account (the federation's per-user servers, behind
+// GATEWAY_CREDENTIAL_LINKS_ENABLED: a -32042 with the connection link).
+// MissingAccount returns a *ToolError to answer instead of no_account, or
+// nil to keep no_account. It must not reveal anything the caller may not
+// see (a server they cannot use gets nil). Wrapping sources forward it.
+type MissingAccounter interface {
+	MissingAccount(ctx context.Context, userID, app string) error
+}
 
 // AccountStage builds the stage over src. A nil src is a programming
 // error: DefaultPipeline only adds the stage when PipelineDeps.Accounts is
@@ -43,6 +59,10 @@ func AccountStage(src connectors.AccountSource, log *slog.Logger) Stage {
 		}
 		app := cc.Tool.App
 		owned, err := src.ListAccounts(ctx, cc.Principal.UserID, app)
+		var te *ToolError
+		if errors.As(err, &te) {
+			return connectors.Result{}, te
+		}
 		if err != nil {
 			log.Error("account lookup failed", "event", "mcp.account_lookup_failed", "app", app,
 				"error", observability.RedactError(err), observability.RequestIDAttr(ctx))
@@ -51,6 +71,9 @@ func AccountStage(src connectors.AccountSource, log *slog.Logger) Stage {
 		var chosen connectors.Account
 		switch {
 		case len(owned) == 0:
+			if te := missingAccount(ctx, src, cc.Principal.UserID, app, log); te != nil {
+				return connectors.Result{}, te
+			}
 			return connectors.Result{}, NewToolError(CodeNoAccount, "no_account", "no connected account for "+app)
 		case cc.Call.Account != "":
 			found := false
@@ -75,6 +98,26 @@ func AccountStage(src connectors.AccountSource, log *slog.Logger) Stage {
 		cc.AccountScopes = chosen.Scopes
 		return next(ctx)
 	}}
+}
+
+// missingAccount asks src's MissingAccounter hook, if any, for the answer
+// to a call without an account; nil keeps no_account.
+func missingAccount(ctx context.Context, src connectors.AccountSource, userID, app string, log *slog.Logger) *ToolError {
+	ma, ok := src.(MissingAccounter)
+	if !ok {
+		return nil
+	}
+	err := ma.MissingAccount(ctx, userID, app)
+	var te *ToolError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &te):
+		return te
+	}
+	log.Warn("missing account hook failed", "event", "mcp.missing_account_failed", "app", app,
+		"error", observability.RedactError(err), observability.RequestIDAttr(ctx))
+	return nil
 }
 
 // accountRequiredMessage lists the caller's own accounts for app, sorted

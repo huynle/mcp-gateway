@@ -41,6 +41,10 @@ type Store interface {
 	// UpdateServer and DeleteServer are owner-only (ErrNotFound otherwise).
 	UpdateServer(ctx context.Context, userID string, s *store.MCPServer) error
 	DeleteServer(ctx context.Context, userID, serverID string) error
+	// SetElicitationOrigins replaces the server's elicitation origins
+	// (owner-only, ErrNotFound otherwise; store.ErrMCPServerLocked on a
+	// published server). UpdateServer never changes them.
+	SetElicitationOrigins(ctx context.Context, userID, serverID string, origins []string) error
 	// ListConnections: the user's own per-server connections (no secrets
 	// are read by the pages).
 	ListConnections(ctx context.Context, userID string) ([]store.MCPUserConnection, error)
@@ -144,9 +148,12 @@ type Deps struct {
 	// Audit records changes made here that the audit log must show (the
 	// approval-mode edit, mcp_server.approval_modes_changed). Nil: not
 	// recorded (audit.NopRecorder).
-	Audit   audit.Recorder
-	Log     *slog.Logger
-	BaseURL string
+	Audit audit.Recorder
+	// OriginValidator checks and normalises each elicitation origin on the
+	// edit form (elicit.ValidateOrigin). Nil: NormalizeOrigin.
+	OriginValidator OriginValidator
+	Log             *slog.Logger
+	BaseURL         string
 }
 
 // ResourcePolicy is the part of *policy.Service the browse pages use.
