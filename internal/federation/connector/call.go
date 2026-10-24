@@ -62,11 +62,11 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 	}
 	az, err := m.o.Credentials.ForUser(ctx, server, user)
 	if err != nil {
-		return connectors.Result{}, m.credentialError(call.Tool, server, err)
+		return connectors.Result{}, m.credentialError(call.Tool, user, server, err)
 	}
 	hc, ep, err := m.endpoint(ctx, server)
 	if err != nil {
-		return connectors.Result{}, err
+		return connectors.Result{}, m.credentialLink(user, server, errTunnelURL, err)
 	}
 	c, err := client.New(client.Options{
 		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout,
@@ -87,7 +87,7 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 		return err
 	})
 	if err != nil {
-		return connectors.Result{}, m.callError(server, kind, err)
+		return connectors.Result{}, m.callError(user, server, kind, err)
 	}
 	if res == nil {
 		res = &sdk.CallToolResult{}
@@ -173,7 +173,7 @@ func staticHeaders(raw json.RawMessage) map[string]string {
 
 // portalURL is where a user connects or reconnects their account.
 func (m *Manager) portalURL(serverID string) string {
-	return strings.TrimRight(m.o.BaseURL, "/") + "/servers/" + serverID
+	return strings.TrimRight(m.o.BaseURL, "/") + ServerPath(serverID)
 }
 
 // snapshotError maps snapshot.Allowed refusals. Messages never echo
@@ -193,8 +193,14 @@ func (m *Manager) snapshotError(tool, serverID string, err error) error {
 	return mcp.NewToolError(mcp.CodeInternal, "snapshot_unavailable", "the reviewed snapshot could not be checked")
 }
 
-// credentialError maps auth.ForUser failures.
-func (m *Manager) credentialError(tool string, server *store.MCPServer, err error) error {
+// credentialError maps auth.ForUser failures for user's call (with
+// credential links, credentialLink turns them into -32042 answers).
+func (m *Manager) credentialError(tool, user string, server *store.MCPServer, err error) error {
+	return m.credentialLink(user, server, err, m.credentialAnswer(tool, server, err))
+}
+
+// credentialAnswer is credentialError without links.
+func (m *Manager) credentialAnswer(tool string, server *store.MCPServer, err error) error {
 	switch {
 	case errors.Is(err, auth.ErrNotConnected):
 		return mcp.NewToolError(mcp.CodeNoAccount, "auth_required",
@@ -206,6 +212,9 @@ func (m *Manager) credentialError(tool string, server *store.MCPServer, err erro
 			server.Name+": the server's authentication is not set up; ask its owner")
 	case errors.Is(err, store.ErrNotFound):
 		return mcp.ErrToolNotFound(tool)
+	case m.o.CredentialLinks && errors.Is(err, auth.ErrUserHeaderMissing):
+		return mcp.NewToolError(mcp.CodeNoAccount, ClassUserHeaderMissing,
+			fmt.Sprintf("%s needs your values for the %s server's per-user headers: set them on the portal (%s) and retry", tool, server.Name, m.portalURL(server.ID)))
 	}
 	m.log.Error("upstream credentials unavailable", "event", "federation.credentials_failed", "server_id", server.ID,
 		"error", observability.RedactError(err))
@@ -236,14 +245,19 @@ var classText = map[string]string{
 	"upstream_error":       "the call to the server failed",
 }
 
-// callError maps a failed connect/tools/call.
-func (m *Manager) callError(server *store.MCPServer, kind snapshot.Kind, err error) error {
+// callError maps user's failed connect/tools/call (with credential links,
+// credential refusals go through credentialLink).
+func (m *Manager) callError(user string, server *store.MCPServer, kind snapshot.Kind, err error) error {
 	switch {
 	case errors.Is(err, auth.ErrNeedsReconnect):
-		return m.needsReconnect(server)
+		return m.credentialLink(user, server, err, m.needsReconnect(server))
 	case errors.Is(err, auth.ErrSharedCredentialRejected):
-		return mcp.NewToolError(mcp.CodeNoAccount, "shared_credential_rejected",
-			server.Name+": the server rejected the shared credential; ask the server's owner or an admin to update it")
+		return m.credentialLink(user, server, err, mcp.NewToolError(mcp.CodeNoAccount, "shared_credential_rejected",
+			server.Name+": the server rejected the shared credential; ask the server's owner or an admin to update it"))
+	case m.o.CredentialLinks && errors.Is(err, auth.ErrNotConfigured):
+		// A no-auth server answering 401 (auth.ErrNowRequiresAuth): the
+		// owner's to fix. Without the flag it stays upstream_error.
+		return m.credentialLink(user, server, err, m.credentialAnswer("", server, err))
 	}
 	write := kind != snapshot.KindRead
 	var ce *client.Error
@@ -255,8 +269,8 @@ func (m *Manager) callError(server *store.MCPServer, kind snapshot.Kind, err err
 	case errors.As(err, &te) && te.Class == tunnel.ClassOffline:
 		class, unknown = "tunnel_offline", write && inCall
 	case isClient && ce.Class == client.ClassAuthRequired:
-		return mcp.NewToolError(mcp.CodeNoAccount, "auth_required",
-			fmt.Sprintf("%s asked for authentication: connect or reconnect your account on the portal (%s) and retry", server.Name, m.portalURL(server.ID)))
+		return m.credentialLink(user, server, err, mcp.NewToolError(mcp.CodeNoAccount, "auth_required",
+			fmt.Sprintf("%s asked for authentication: connect or reconnect your account on the portal (%s) and retry", server.Name, m.portalURL(server.ID))))
 	case isClient:
 		class = "upstream_" + strings.TrimSuffix(string(ce.Class), "_error")
 		if ce.Class == client.ClassToolError {
