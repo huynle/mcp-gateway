@@ -10,6 +10,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	fedportal "github.com/huynle/mcp-gateway/internal/federation/portal"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
@@ -111,12 +112,9 @@ func (c *Connector) view(ctx context.Context, user string, s *store.MCPServer, c
 }
 
 // connectLinkOf is where the caller connects to s: the OAuth sign-in, or
-// the credential form on the server page.
+// the credential form on the server page (connector.ConnectLink).
 func (c *Connector) connectLinkOf(s *store.MCPServer) string {
-	if s.CredentialMode == store.MCPCredentialPerUser && s.AuthKind == store.MCPAuthOAuth {
-		return c.link(fedportal.ConnectPath(s.ID))
-	}
-	return c.link(fedportal.ConnectionPath(s.ID))
+	return connector.ConnectLink(c.base, s)
 }
 
 // urlHost is the address host, or the tunnel's name for tunnel servers.
