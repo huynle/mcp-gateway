@@ -41,6 +41,7 @@ var icons = map[string]string{
 	"check":       `<path d="M5 12.5l4.5 4.5L19 7.5"/>`,
 	"x":           `<path d="M6 6l12 12M18 6L6 18"/>`,
 	"search":      `<circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/>`,
+	"bell":        `<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>`,
 	"inbox":       `<path d="M3 13l3-8h12l3 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1.5 3h5l1.5-3h5"/>`,
 }
 

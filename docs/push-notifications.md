@@ -12,6 +12,8 @@ Off by default: an operator sets `GATEWAY_WEBPUSH_ENABLED=true` (Helm `gateway.w
 - The notification: **"Approval needed"**, body **`<tool> (<account label>)`** (e.g. `github.create_issue (company)`), one notification per approval (tag `approval-<id>`). Tapping it opens `/approvals`, where the arguments are shown and the decision is made. There are deliberately no Approve / Deny buttons on the notification: deciding without seeing the arguments is what the approvals page exists to prevent.
 - At most **10 devices** per user; an 11th is refused ("You already have 10 devices…", 409). A test notification can be sent once every **30 seconds**.
 
+Finding it: with the feature on, the sidebar has a **Notifications** link (right after My account) to that section, and the **Approvals** page (where the installed app opens) shows a "Get notified on this device" bar with **Turn on** and **Not now** while this browser can take notifications, has not blocked them and is not subscribed. "Not now" hides the bar on that browser for 30 days (localStorage).
+
 ## Privacy of the payload
 
 Push services (Google FCM, Apple, Mozilla, Microsoft) relay the message and see its metadata (size, time, the subscription); the text sits on the device's lock screen. So the payload is exactly `{"title","body","url","tag"}` with the tool name and the account **label** (company / personal) only: **never** the call arguments, the resource identity (repo, channel, file), the connected account's name or any secret. The payload is encrypted end to end to the browser (RFC 8291, aes128gcm); the push service cannot read it.

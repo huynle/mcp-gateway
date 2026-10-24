@@ -124,7 +124,15 @@ type Data struct {
 	DisplayName string
 	// Active is the request path; the matching link is marked current.
 	Active string
+	// Notifications adds NotificationsLink after My account: Web Push is
+	// on, so My account has the "Notifications" section (and the
+	// approvals page offers to turn it on).
+	Notifications bool
 }
+
+// NotificationsLink opens My account's "Notifications" section. Shown
+// only when Data.Notifications is set.
+var NotificationsLink = Link{"/account#notifications", "Notifications", "bell"}
 
 // NavGroups is Groups, plus AdminGroup for admins, for the template;
 // nothing when signed out.
@@ -138,7 +146,11 @@ func (d Data) NavGroups() []GroupItems {
 	}
 	out := make([]GroupItems, len(gs))
 	for i, g := range gs {
-		out[i] = GroupItems{Label: g.Label, Items: d.items(g.Links)}
+		links := g.Links
+		if i == 0 && d.Notifications {
+			links = append(append([]Link(nil), links...), NotificationsLink)
+		}
+		out[i] = GroupItems{Label: g.Label, Items: d.items(links)}
 	}
 	return out
 }
@@ -172,7 +184,7 @@ func (d Data) Initial() string {
 func (d Data) items(links []Link) []Item {
 	out := make([]Item, len(links))
 	for i, l := range links {
-		out[i] = Item{Link: l, Current: d.Active == l.Href || strings.HasPrefix(d.Active, l.Href+"/")}
+		out[i] = Item{Link: l, Current: !strings.Contains(l.Href, "#") && (d.Active == l.Href || strings.HasPrefix(d.Active, l.Href+"/"))}
 	}
 	return out
 }
