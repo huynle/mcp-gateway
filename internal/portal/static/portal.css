@@ -538,3 +538,10 @@ ol.steps > li::before { content: counter(step); position: absolute; left: 0; top
 /* Number inputs in tables and inline forms stay compact. */
 td input[type=number], form.inline input[type=number], .row input[type=number] { width: 8.5rem; }
 .panel .row + .row { margin-top: var(--sp-3); }
+
+/* One-decision panels: headings inside the centred card. */
+.auth > .panel h2 { font-size: var(--text-md); margin: var(--sp-4) 0 var(--sp-2); }
+.auth > .panel .panel-head h1, .auth > .panel .panel-head h2 { margin: 0; }
+
+/* Short codes typed by hand (machine enrollment). */
+input.code-input { font: 500 1.1rem/1.2 var(--mono); letter-spacing: .18em; text-align: center; text-transform: uppercase; max-width: 14rem; }
