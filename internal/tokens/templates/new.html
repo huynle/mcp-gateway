@@ -1,5 +1,13 @@
 {{template "head" .}}
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/tokens">Tokens</a><span class="sep">/</span>New</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">A token lets one harness call the gateway as you. Give it a name you will recognise later and only the access it needs.</p>
+  </div>
+</header>
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+<section class="panel">
 <form method="post" action="/tokens/new" class="stack" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
   <label>Name
@@ -7,18 +15,22 @@
   </label>
   <label>Expires in (days)
     <input type="number" name="expiry_days" value="{{.ExpiryDays}}" min="1" max="{{.MaxExpiryDays}}" required>
-    <span class="muted">At most {{.MaxExpiryDays}} days. The token also stops working if you have not signed in here for 30 days.</span>
+    <span class="hint">At most {{.MaxExpiryDays}} days. The token also stops working if you have not signed in here for 30 days.</span>
   </label>
-  <label class="check">
-    <input type="checkbox" name="read_only"{{if .ReadOnly}} checked{{end}}> Read-only (no tool that writes, whatever your role allows)
-  </label>
-  <label>Limit to apps or tools (optional)
-    <textarea name="allow_list" rows="3" placeholder="github, slack.post_message">{{.AllowList}}</textarea>
-    <span class="muted">Comma- or space-separated. An app name allows all of its tools; <code>app.tool</code> allows exactly that tool. Empty means everything your role allows.</span>
-  </label>
-  <div>
-    <button class="btn primary" type="submit">Create token</button>
+  <fieldset>
+    <legend>Access</legend>
+    <label class="check">
+      <input type="checkbox" name="read_only"{{if .ReadOnly}} checked{{end}}> Read-only (no tool that writes, whatever your role allows)
+    </label>
+    <label>Limit to apps or tools (optional)
+      <textarea name="allow_list" rows="3" placeholder="github, slack.post_message">{{.AllowList}}</textarea>
+      <span class="hint">Comma- or space-separated. An app name allows all of its tools; <code>app.tool</code> allows exactly that tool. Empty means everything your role allows.</span>
+    </label>
+  </fieldset>
+  <div class="form-actions">
+    <button class="btn primary" type="submit">{{icon "plus"}}Create token</button>
     <a class="btn" href="/tokens">Cancel</a>
   </div>
 </form>
+</section>
 {{template "foot" .}}

@@ -1,4 +1,9 @@
 {{template "head" .}}
-<p class="error">{{.Message}}</p>
-<p><a class="btn" href="/">Back</a></p>
+<div class="auth">
+<section class="panel">
+  <h1>{{.Title}}</h1>
+  <p class="error" role="alert">{{.Message}}</p>
+  <div class="panel-foot"><a class="btn" href="/">{{icon "arrow-left"}}Back</a></div>
+</section>
+</div>
 {{template "foot" .}}
