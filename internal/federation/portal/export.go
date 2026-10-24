@@ -1,6 +1,9 @@
 package portal
 
-import "github.com/huynle/mcp-gateway/internal/store"
+import (
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
+	"github.com/huynle/mcp-gateway/internal/store"
+)
 
 // The helpers below are shared with the gateway.* MCP management tools
 // (internal/federation/gatewaytools, Brain task 99b5yzdb), so the tools
@@ -40,18 +43,22 @@ func ValidQueryName(name string) bool { return queryNameRE.MatchString(name) }
 func AbsHTTPSURL(raw string) bool { return absHTTPSURL(raw) }
 
 // Portal paths of a server (relative; prefix GATEWAY_BASE_URL for links).
-func ServerPath(id string) string { return "/servers/" + id }
+// They live in the connector (connector/links.go), which builds the same
+// links for its credential errors and cannot import this package.
+
+// ServerPath is the server page.
+func ServerPath(id string) string { return connector.ServerPath(id) }
 
 // ConnectionPath is the "My connection" section of the server page, where
 // a user enters their API key, bearer token or header values.
-func ConnectionPath(id string) string { return ServerPath(id) + "#connection" }
+func ConnectionPath(id string) string { return connector.ConnectionPath(id) }
 
 // ConnectPath starts (or restarts) the upstream OAuth sign-in.
-func ConnectPath(id string) string { return ServerPath(id) + "/connect" }
+func ConnectPath(id string) string { return connector.ConnectPath(id) }
 
 // ReviewPath is the tool review page.
-func ReviewPath(id string) string { return ServerPath(id) + "/review" }
+func ReviewPath(id string) string { return connector.ReviewPath(id) }
 
 // EditPath is the owner's settings page (shared credential, static
 // OAuth client).
-func EditPath(id string) string { return ServerPath(id) + "/edit" }
+func EditPath(id string) string { return connector.EditPath(id) }

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -21,9 +22,9 @@ import (
 // only, so an answer with one of those codes is mistaken for the SDK's
 // condition (-32003 and -32004 came back to the client as "connection
 // closed" with the *jsonrpc.Error dropped from the chain). errors_test.go
-// guards the block. The one deliberate exception is CodeSecretRequired,
-// which is the SDK's own -32042 used with exactly its meaning (a URL
-// elicitation the harness must complete before retrying).
+// guards the block. The one deliberate exception is the SDK's own -32042
+// (CodeSecretRequired, NewURLElicitationRequired), used with exactly its
+// meaning: a URL elicitation the harness must complete before retrying.
 const (
 	CodeInvalidParams int64 = -32602
 	CodeToolNotFound  int64 = -32602
@@ -177,6 +178,57 @@ func ErrSecretDenied() *ToolError {
 // secret value.
 func NewSecretRequired(message string, data map[string]any) *ToolError {
 	te := NewToolError(CodeSecretRequired, "secret_required", message)
+	te.Data = data
+	return te
+}
+
+// URLElicitation is one entry of a -32042 answer's data.elicitations: a
+// page the user opens in the browser (MCP 2025-11-25 URL mode). It
+// serializes to the spec shape {"mode":"url","elicitationId","url",
+// "message"}. URL and Message are shown to the harness and the user; they
+// must never carry a secret or upstream text.
+type URLElicitation struct {
+	ElicitationID string
+	URL           string
+	Message       string
+}
+
+// MarshalJSON writes the spec shape, mode included, in the spec's key
+// order.
+func (e URLElicitation) MarshalJSON() ([]byte, error) {
+	return json.Marshal(urlElicitationWire{Mode: "url", ElicitationID: e.ElicitationID, URL: e.URL, Message: e.Message})
+}
+
+type urlElicitationWire struct {
+	Mode          string `json:"mode"`
+	ElicitationID string `json:"elicitationId"`
+	URL           string `json:"url"`
+	Message       string `json:"message"`
+}
+
+// NewURLElicitationRequired is a -32042 (the SDK's
+// CodeURLElicitationRequired) answer with an audit class: the user must
+// open a link before a retry can succeed. data.elicitations lists the
+// links in the spec shape, data.url repeats the first for harnesses that
+// read only url, and extra keys are merged in (they never replace
+// elicitations or url). message should repeat the link for harnesses that
+// ignore data. Data holds only maps, slices and strings, so the secrets
+// stage can scrub it like any other error data.
+func NewURLElicitationRequired(class, message string, elicitations []URLElicitation, extra map[string]any) *ToolError {
+	data := make(map[string]any, len(extra)+2)
+	for k, v := range extra {
+		data[k] = v
+	}
+	list := make([]any, 0, len(elicitations))
+	for _, e := range elicitations {
+		list = append(list, map[string]any{"mode": "url", "elicitationId": e.ElicitationID, "url": e.URL, "message": e.Message})
+	}
+	data["elicitations"] = list
+	delete(data, "url")
+	if len(elicitations) > 0 {
+		data["url"] = elicitations[0].URL
+	}
+	te := NewToolError(sdk.CodeURLElicitationRequired, class, message)
 	te.Data = data
 	return te
 }

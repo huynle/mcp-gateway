@@ -45,10 +45,25 @@ var gatewayCodes = map[string]int64{
 
 // sdkCodesUsedOnPurpose are SDK codes the gateway returns with exactly the
 // SDK's meaning, so a harness's SDK handles them as the spec says:
-// "secret required" is a URL elicitation (design correction 1).
+// "secret required" is a URL elicitation (design correction 1), and so are
+// the credential-link answers (the caller can fix the credential at the
+// link) and a relayed upstream URL elicitation (credential links and
+// elicitation relay design). The keys are audit classes; a class may share
+// the code only because it is listed here.
 var sdkCodesUsedOnPurpose = map[string]int64{
 	"secret_required": mcp.CodeSecretRequired,
+	// Plan 1, credential links: the classes do not change, only the code.
+	"no_account":                 sdk.CodeURLElicitationRequired,
+	"auth_required":              sdk.CodeURLElicitationRequired,
+	"needs_reconnect":            sdk.CodeURLElicitationRequired,
+	"server_not_configured":      sdk.CodeURLElicitationRequired,
+	"shared_credential_rejected": sdk.CodeURLElicitationRequired,
+	// Plan 2, the upstream URL elicitation relay.
+	"upstream_elicitation_required": sdk.CodeURLElicitationRequired,
 }
+
+// urlElicitationCode is the only SDK code the gateway uses on purpose.
+const urlElicitationCode = sdk.CodeURLElicitationRequired
 
 func TestGatewayErrorCodesDoNotCollideWithTheSDKsInternalCodes(t *testing.T) {
 	seen := map[int64]string{}
@@ -67,6 +82,11 @@ func TestGatewayErrorCodesDoNotCollideWithTheSDKsInternalCodes(t *testing.T) {
 	for name, code := range sdkCodesUsedOnPurpose {
 		if _, ok := sdkInternalCodes[code]; !ok {
 			t.Errorf("%s = %d is not an SDK code; move it to gatewayCodes", name, code)
+		}
+		// Only the URL elicitation code has a meaning the gateway's
+		// answers match; any other SDK code is an accidental collision.
+		if code != urlElicitationCode {
+			t.Errorf("%s = %d: only %d (URL elicitation) may be used on purpose", name, code, urlElicitationCode)
 		}
 		if other, dup := seen[code]; dup {
 			t.Errorf("%s and %s share code %d", name, other, code)
@@ -186,6 +206,82 @@ func TestSecretRequiredReachesTheSDKClient(t *testing.T) {
 	}
 	if err := json.Unmarshal(je.Data, &data); err != nil || len(data.Elicitations) != 1 || data.Elicitations[0].URL != "https://gw/s/abc" ||
 		data.Elicitations[0].ElicitationID != "e1" || data.URL != "https://gw/s/abc" {
+		t.Errorf("data = %s (%v)", je.Data, err)
+	}
+}
+
+// NewURLElicitationRequired builds the spec's URLElicitationRequiredError:
+// code -32042, data.elicitations[] in the spec shape, data.url the first
+// link (for harnesses that read only url), extra keys merged in but never
+// replacing elicitations or url.
+func TestNewURLElicitationRequired(t *testing.T) {
+	for class := range sdkCodesUsedOnPurpose {
+		if class == "secret_required" {
+			continue // NewSecretRequired
+		}
+		te := mcp.NewURLElicitationRequired(class, "connect at https://gw/servers/s1/connect", []mcp.URLElicitation{
+			{ElicitationID: "gwl_1", URL: "https://gw/servers/s1/connect", Message: "Connect notes"},
+			{ElicitationID: "gwl_2", URL: "https://gw/servers/s1#connection", Message: "Enter your key"},
+		}, map[string]any{"server": "notes", "url": "https://evil", "elicitations": "x"})
+		if te.Code != -32042 || te.Class() != class ||
+			te.Message != "connect at https://gw/servers/s1/connect" || te.Denial() || te.RetryAfter != 0 {
+			t.Errorf("%s: %+v (class %s, denial %v)", class, te, te.Class(), te.Denial())
+		}
+		b, err := json.Marshal(te.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"elicitations":[{"elicitationId":"gwl_1","message":"Connect notes","mode":"url","url":"https://gw/servers/s1/connect"},` +
+			`{"elicitationId":"gwl_2","message":"Enter your key","mode":"url","url":"https://gw/servers/s1#connection"}],` +
+			`"server":"notes","url":"https://gw/servers/s1/connect"}`
+		if string(b) != want {
+			t.Errorf("%s: data = %s\nwant          %s", class, b, want)
+		}
+	}
+}
+
+// Without elicitations the data has an empty list and no url; without
+// extra keys only the two spec keys.
+func TestNewURLElicitationRequiredEmpty(t *testing.T) {
+	te := mcp.NewURLElicitationRequired("no_account", "m", nil, nil)
+	b, _ := json.Marshal(te.Data)
+	if string(b) != `{"elicitations":[]}` {
+		t.Errorf("data = %s", b)
+	}
+	e := mcp.URLElicitation{ElicitationID: "e", URL: "https://u", Message: "m"}
+	if b, _ := json.Marshal(e); string(b) != `{"mode":"url","elicitationId":"e","url":"https://u","message":"m"}` {
+		t.Errorf("URLElicitation JSON = %s", b)
+	}
+}
+
+// The data reaches an SDK client as the spec's ElicitParams, and is made
+// of plain maps and slices (the secrets stage scrubs error data through
+// map[string]any / []any).
+func TestURLElicitationRequiredReachesTheSDKClient(t *testing.T) {
+	built := mcp.NewURLElicitationRequired("needs_reconnect", "reconnect at https://gw/servers/s1/connect",
+		[]mcp.URLElicitation{{ElicitationID: "gwl_1", URL: "https://gw/servers/s1/connect", Message: "Reconnect notes"}}, nil)
+	if _, ok := built.Data["elicitations"].([]any); !ok {
+		t.Errorf("data.elicitations is %T, want []any", built.Data["elicitations"])
+	}
+	tool := stubTool("github", "list_issues", connectors.KindRead)
+	tool.Handler = func(context.Context, connectors.Call) (connectors.Result, error) {
+		return connectors.Result{}, built
+	}
+	srv := httptest.NewServer(newHandler(t, newRegistry(t, tool), nil))
+	t.Cleanup(srv.Close)
+	cs := connect(t, srv.URL, fullToken, "2025-11-25")
+	_, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "github.list_issues", Arguments: map[string]any{}})
+	var je *jsonrpc.Error
+	if !errors.As(err, &je) || je.Code != sdk.CodeURLElicitationRequired || je.Message != "reconnect at https://gw/servers/s1/connect" {
+		t.Fatalf("SDK client got %v, want -32042", err)
+	}
+	var data struct {
+		Elicitations []sdk.ElicitParams `json:"elicitations"`
+		URL          string             `json:"url"`
+	}
+	if err := json.Unmarshal(je.Data, &data); err != nil || len(data.Elicitations) != 1 || data.Elicitations[0].Mode != "url" ||
+		data.Elicitations[0].URL != "https://gw/servers/s1/connect" || data.Elicitations[0].ElicitationID != "gwl_1" ||
+		data.Elicitations[0].Message != "Reconnect notes" || data.URL != "https://gw/servers/s1/connect" {
 		t.Errorf("data = %s (%v)", je.Data, err)
 	}
 }
