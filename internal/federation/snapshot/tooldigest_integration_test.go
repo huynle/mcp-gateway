@@ -55,7 +55,9 @@ actions:
 	}
 	plain := &mcp.Tool{Name: "plain", Description: "line one\nline <two>", InputSchema: plainIn}
 	ps := mcp.NewServer(&mcp.Implementation{Name: "plain", Version: "1"}, nil)
-	ps.AddTool(plain, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) { return &mcp.CallToolResult{}, nil })
+	ps.AddTool(plain, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	})
 	plainSrv := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return ps },
 		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 	t.Cleanup(plainSrv.Close)
