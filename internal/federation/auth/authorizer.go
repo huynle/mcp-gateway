@@ -32,7 +32,9 @@ type Authorizer interface {
 // (per_user) or the server's shared credential (shared), plus the user's
 // values for per-user headers. The caller (the federation connector) has
 // already checked the user may use the server. Errors: ErrNotConnected,
-// ErrNeedsReconnect, ErrNotConfigured, ErrUnsupported.
+// ErrNeedsReconnect, ErrNotConfigured (owner-only causes:
+// ErrSharedMissing, ErrModeInvalid), ErrUnsupported, and, when the
+// service requires per-user headers, ErrUserHeaderMissing.
 func (s *Service) ForUser(ctx context.Context, server *store.MCPServer, userID string) (Authorizer, error) {
 	if server == nil || userID == "" {
 		return nil, fmt.Errorf("%w: no server or user", ErrNotConfigured)
@@ -43,7 +45,7 @@ func (s *Service) ForUser(ctx context.Context, server *store.MCPServer, userID s
 		return noAuth{}, nil
 	case store.MCPAuthOAuth, store.MCPAuthAPIKey, store.MCPAuthBearer, store.MCPAuthHeaders:
 	default:
-		return nil, fmt.Errorf("%w: auth kind %q", ErrNotConfigured, kind)
+		return nil, fmt.Errorf("%w: auth kind %q", ErrModeInvalid, kind)
 	}
 	hc := parseHeaderConfig(server.HeaderConfig)
 	switch server.CredentialMode {
@@ -52,11 +54,14 @@ func (s *Service) ForUser(ctx context.Context, server *store.MCPServer, userID s
 		if err != nil {
 			return nil, err
 		}
-		extra := pick(b.Headers, hc.PerUser)
+		if kind == store.MCPAuthOAuth && b.OAuth == nil {
+			return nil, ErrNotConnected
+		}
+		extra, err := s.userHeaders(b.Headers, hc.PerUser)
+		if err != nil {
+			return nil, err
+		}
 		if kind == store.MCPAuthOAuth {
-			if b.OAuth == nil {
-				return nil, ErrNotConnected
-			}
 			return &oauthAuthorizer{s: s, server: server, userID: userID, tok: b.OAuth, extra: extra}, nil
 		}
 		return s.staticAuthorizer(server, userID, b, extra, false)
@@ -70,13 +75,36 @@ func (s *Service) ForUser(ctx context.Context, server *store.MCPServer, userID s
 		}
 		var extra map[string]string
 		if len(hc.PerUser) > 0 {
-			if ub, err := s.userBundle(ctx, server, userID); err == nil {
-				extra = pick(ub.Headers, hc.PerUser)
+			ub, err := s.userBundle(ctx, server, userID)
+			var values map[string]string
+			switch {
+			case err == nil:
+				values = ub.Headers
+			case s.requireHeaders && !errors.Is(err, ErrNotConnected) && !errors.Is(err, ErrNeedsReconnect):
+				return nil, err
+			}
+			if extra, err = s.userHeaders(values, hc.PerUser); err != nil {
+				return nil, err
 			}
 		}
 		return s.staticAuthorizer(server, userID, b, extra, true)
 	}
-	return nil, fmt.Errorf("%w: credential mode %q", ErrNotConfigured, server.CredentialMode)
+	return nil, fmt.Errorf("%w: credential mode %q", ErrModeInvalid, server.CredentialMode)
+}
+
+// userHeaders picks the user's values of the declared per-user headers.
+// A declared header without a value is left out, or, when the service
+// requires them, refused with ErrUserHeaderMissing.
+func (s *Service) userHeaders(values map[string]string, names []string) (map[string]string, error) {
+	extra := pick(values, names)
+	if s.requireHeaders {
+		for _, n := range names {
+			if _, ok := extra[http.CanonicalHeaderKey(n)]; !ok {
+				return nil, ErrUserHeaderMissing
+			}
+		}
+	}
+	return extra, nil
 }
 
 // userBundle loads and opens userID's active connection to server.
@@ -112,13 +140,13 @@ func (s *Service) sharedBundle(ctx context.Context, server *store.MCPServer) (*s
 	})
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return nil, fmt.Errorf("%w: no shared credential", ErrNotConfigured)
+		return nil, fmt.Errorf("%w: no shared credential", ErrSharedMissing)
 	case err != nil:
 		return nil, fmt.Errorf("auth: load shared credential: %w", err)
 	}
 	var b secretBundle
 	if err := s.open(ctx, aadShared(server), sec.Secret, &b); err != nil {
-		return nil, fmt.Errorf("%w: shared credential unreadable", ErrNotConfigured)
+		return nil, fmt.Errorf("%w: shared credential unreadable", ErrSharedMissing)
 	}
 	return &b, nil
 }
@@ -179,7 +207,7 @@ func (s *Service) staticAuthorizer(server *store.MCPServer, userID string, b *se
 
 func (s *Service) missing(shared bool) error {
 	if shared {
-		return fmt.Errorf("%w: shared credential incomplete", ErrNotConfigured)
+		return fmt.Errorf("%w: shared credential incomplete", ErrSharedMissing)
 	}
 	return ErrNeedsReconnect
 }
@@ -188,7 +216,7 @@ type noAuth struct{}
 
 func (noAuth) Authorize(context.Context, *http.Request) error { return nil }
 func (noAuth) Unauthorized(context.Context) error {
-	return fmt.Errorf("%w: the server now requires authentication", ErrNotConfigured)
+	return fmt.Errorf("%w: the server now requires authentication", ErrNowRequiresAuth)
 }
 
 // staticAuthorizer adds fixed headers (and optionally a query parameter).

@@ -209,3 +209,36 @@ type fakeAnchors struct{}
 func (fakeAnchors) GatewayAccount(_ context.Context, userID string) (string, error) {
 	return "anchor-" + userID, nil
 }
+
+// explainer is a fallback source with the account stage's MissingAccount
+// hook (the federation's accounts behind credential links).
+type explainer struct {
+	*connectors.StaticAccountSource
+	asked []string
+}
+
+func (e *explainer) MissingAccount(_ context.Context, userID, app string) error {
+	e.asked = append(e.asked, userID+"/"+app)
+	return mcp.NewToolError(mcp.CodeNoAccount, "no_account", "connect "+app)
+}
+
+// The gate's accounts forward the hook for other apps (it wraps the
+// federation's accounts) and have nothing to say for the gateway app.
+func TestGateAccountsForwardMissingAccount(t *testing.T) {
+	_, _, gate, _ := newGateWorld(t)
+	fb := &explainer{StaticAccountSource: connectors.NewStaticAccountSource()}
+	ma, ok := gate.Accounts(fb, &fakeAnchors{}).(mcp.MissingAccounter)
+	if !ok {
+		t.Fatal("gate accounts do not implement mcp.MissingAccounter")
+	}
+	if err := ma.MissingAccount(t.Context(), alice, "notes"); err == nil || err.Error() != "connect notes" {
+		t.Errorf("forwarded = %v", err)
+	}
+	if err := ma.MissingAccount(t.Context(), alice, App); err != nil || len(fb.asked) != 1 {
+		t.Errorf("gateway app = %v (asked %v), want nil and not forwarded", err, fb.asked)
+	}
+	plain := gate.Accounts(connectors.NewStaticAccountSource(), &fakeAnchors{}).(mcp.MissingAccounter)
+	if err := plain.MissingAccount(t.Context(), alice, "notes"); err != nil {
+		t.Errorf("fallback without the hook = %v", err)
+	}
+}

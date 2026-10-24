@@ -48,7 +48,17 @@ err = auth.Reauth(ctx, az, func() error { /* connect + call */ })
 
 `Actor.Admin` switches to the bypass role: only set it after checking the user is an admin.
 
-Errors are sentinels safe to show (`ErrNotConnected`, `ErrNeedsReconnect`, `ErrNotConfigured`, `ErrUnsupported`, `ErrNoOAuth`, `ErrPKCEUnsupported`, `ErrNoClient`, `ErrFlowInvalid`, `ErrDenied`, `ErrSharedCredentialRejected`, `ErrInvalidCredential`, `ErrForbidden`, `ErrInvalidServerURL`), `store.ErrNotFound` for a server the user cannot see, or a `*client.Error` from discovery. The handlers answer with the sentinel's text only.
+**Owner-only causes of `ErrNotConfigured`** (credential links, [federation-connector.md](federation-connector.md#credential-links)). Each wraps `ErrNotConfigured` and keeps its text (`errors.Is(err, ErrNotConfigured)` and every message stay as they were); `errors.Is` with the sub-sentinel tells them apart:
+
+| Sentinel | Returned by |
+|---|---|
+| `ErrSharedMissing` | `ForUser`, shared mode: no shared credential, one sealed to another URL, or one without what the auth kind needs |
+| `ErrModeInvalid` | `ForUser`: an unknown auth kind (e.g. `auto`) or credential mode. Shared OAuth stays `ErrUnsupported` |
+| `ErrNowRequiresAuth` | the no-auth Authorizer's `Unauthorized` (`Reauth`): a server added without authentication answered 401 |
+
+**Missing per-user header values.** By default `ForUser` leaves a declared per-user header (`header_config.per_user`) the user has no value for out of the request (as before). With `Options.RequireUserHeaders`, or on the view `(*Service).UserHeadersRequired(true)` (same store, keys and replay guard), it refuses with **`ErrUserHeaderMissing`** instead, in both modes; per-user mode still answers `ErrNotConnected` first when there is no connection. `connector.Wire` gives the Manager the strict view when `WireOptions.CredentialLinks` is set; `Federation.Auth` (the portal's refresh, the admin pages) stays lenient.
+
+Errors are sentinels safe to show (`ErrNotConnected`, `ErrNeedsReconnect`, `ErrNotConfigured` and its owner-only causes `ErrSharedMissing` / `ErrModeInvalid` / `ErrNowRequiresAuth`, `ErrUserHeaderMissing`, `ErrUnsupported`, `ErrNoOAuth`, `ErrPKCEUnsupported`, `ErrNoClient`, `ErrFlowInvalid`, `ErrDenied`, `ErrSharedCredentialRejected`, `ErrInvalidCredential`, `ErrForbidden`, `ErrInvalidServerURL`), `store.ErrNotFound` for a server the user cannot see, or a `*client.Error` from discovery. The handlers answer with the sentinel's text only.
 
 ## Detection
 

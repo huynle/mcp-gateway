@@ -188,3 +188,13 @@ func (a accounts) ListAccounts(ctx context.Context, userID, app string) ([]conne
 	}
 	return []connectors.Account{{ID: id, Label: connectors.LabelCompany, DisplayName: "gateway", App: App}}, nil
 }
+
+// MissingAccount forwards the account stage's hook (mcp.MissingAccounter)
+// to fallback for other apps: the federation's accounts answer a missing
+// connection with a link. A closed gate has nothing to say.
+func (a accounts) MissingAccount(ctx context.Context, userID, app string) error {
+	if ma, ok := a.fallback.(mcp.MissingAccounter); ok && app != App {
+		return ma.MissingAccount(ctx, userID, app)
+	}
+	return nil
+}

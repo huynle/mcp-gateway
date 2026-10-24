@@ -312,6 +312,7 @@ func TestStageRefundsCallsThatNeverReachedTheTarget(t *testing.T) {
 		{"tunnel unavailable", &classed{class: "tunnel_unavailable", msg: "unavailable"}, true},
 		{"gateway refusal", mcp.NewToolError(mcp.CodeDenied, "tool_disabled", "disabled"), true},
 		{"credentials", mcp.NewToolError(mcp.CodeInternal, "credentials_unavailable", "x"), true},
+		{"per-user header missing (credential links)", mcp.NewURLElicitationRequired("user_header_missing", "set them", nil, nil), true},
 		{"tunnel offline mid-write", &classed{class: "tunnel_offline", msg: "offline", unknown: true}, false},
 		{"upstream tool error", &classed{class: "upstream_tool_error", msg: "refused"}, false},
 		{"upstream timeout", &classed{class: "upstream_timeout", msg: "slow"}, false},

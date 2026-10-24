@@ -387,7 +387,7 @@ func promptApproved(snap *snapshot.Snapshot, content *snapshot.ContentReview, pr
 func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, user, label string, notFound error, fn func(*client.Session) error) error {
 	az, err := m.o.Credentials.ForUser(ctx, server, user)
 	if err != nil {
-		err = m.credentialError(label, server, err)
+		err = m.credentialError(label, user, server, err)
 		var te *mcp.ToolError
 		if errors.As(err, &te) && te.Class() == "tool_not_found" {
 			return notFound
@@ -396,7 +396,7 @@ func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, user
 	}
 	hc, ep, err := m.endpoint(ctx, server)
 	if err != nil {
-		return err
+		return m.credentialLink(user, server, errTunnelURL, err)
 	}
 	c, err := client.New(client.Options{
 		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout,
@@ -426,5 +426,5 @@ func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, user
 			"server_id", server.ID, "class", "upstream_refused", "rpc_code", ce.RPCCode)
 		return &upstreamError{class: "upstream_refused", msg: server.Name + ": the server refused the request"}
 	}
-	return m.callError(server, snapshot.KindRead, err)
+	return m.callError(user, server, snapshot.KindRead, err)
 }

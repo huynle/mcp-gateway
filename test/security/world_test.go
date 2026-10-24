@@ -188,6 +188,9 @@ type options struct {
 	// secret stage before dispatch, the /s/{id} and /secrets pages and
 	// the disable hook. It needs federation.
 	secrets bool
+	// credentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED
+	// (WireOptions.CredentialLinks). It needs federation.
+	credentialLinks bool
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the

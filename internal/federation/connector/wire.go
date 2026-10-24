@@ -56,6 +56,12 @@ type WireOptions struct {
 	// local to the replica holding their connection. Holders defaults to
 	// tunnel.NewHolderStore(Store) and Metrics to WireOptions.Metrics.
 	TunnelRelay *tunnel.RelayOptions
+	// CredentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED (Options.CredentialLinks):
+	// credential problems answer -32042 with a portal link, and the
+	// Manager's calls refuse a declared per-user header without a value
+	// (auth.ErrUserHeaderMissing). Federation.Auth itself stays lenient,
+	// so the servers portal's refresh is unchanged.
+	CredentialLinks bool
 }
 
 // Federation is every federation piece wired together over one netguard
@@ -145,8 +151,8 @@ func Wire(o WireOptions) (*Federation, error) {
 	f.GatewayAccounts = ps
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,
-		Credentials: f.Auth, Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
-		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, OnChange: o.OnChange, Log: o.Log,
+		Credentials: f.Auth.UserHeadersRequired(o.CredentialLinks), Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
+		BaseURL: o.BaseURL, CredentialLinks: o.CredentialLinks, Version: o.Version, Timeout: o.Timeout, OnChange: o.OnChange, Log: o.Log,
 	})
 	if err != nil {
 		return nil, err
