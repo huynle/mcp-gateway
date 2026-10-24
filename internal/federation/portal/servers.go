@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/clientinstall"
-
+	"github.com/huynle/mcp-gateway/internal/federation/connector"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/store"
@@ -53,15 +52,10 @@ type connState struct {
 	Needed bool
 }
 
-// needsUserCredential: every user brings their own credential (per-user
-// mode with an auth kind other than none) or values for per-user headers.
-func needsUserCredential(s *store.MCPServer) bool {
-	if len(parseHeaderConfig(s.HeaderConfig).PerUser) > 0 {
-		return true
-	}
-	return s.CredentialMode == store.MCPCredentialPerUser && slices.Contains(
-		[]string{store.MCPAuthOAuth, store.MCPAuthAPIKey, store.MCPAuthBearer, store.MCPAuthHeaders}, s.AuthKind)
-}
+// needsUserCredential: the server takes a credential from each user
+// (connector.NeedsUserCredential, the rule of credential links and the
+// elicitation relay).
+func needsUserCredential(s *store.MCPServer) bool { return connector.NeedsUserCredential(s) }
 
 func connectionState(s *store.MCPServer, conn *store.MCPUserConnection) connState {
 	if !needsUserCredential(s) {

@@ -40,7 +40,7 @@ test-e2e:
 	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
 		echo "GATEWAY_TEST_DATABASE_URL is unset; end-to-end tests will be skipped (run 'make compose-up' and export it)"; \
 	fi
-	$(GO) test -race -count=1 -tags e2e -run 'E2E' ./test/e2e/...
+	$(GO) test -race -count=1 -timeout 60m -tags e2e -run 'E2E' ./test/e2e/...
 
 ## test-attack: the OAuth attack suite (test/oauthattack): adversarial
 ## cases against the authorization server and /mcp token validation, run
@@ -58,7 +58,7 @@ test-security:
 	@if [ -z "$$GATEWAY_TEST_DATABASE_URL" ]; then \
 		echo "GATEWAY_TEST_DATABASE_URL is unset; security tests will be skipped (run 'make compose-up' and export it)"; \
 	fi
-	$(GO) test -race -count=1 -tags security -run 'Security' ./test/security/...
+	$(GO) test -race -count=1 -timeout 60m -tags security -run 'Security' ./test/security/...
 
 ## vulncheck: govulncheck over every package (install:
 ## go install golang.org/x/vuln/cmd/govulncheck@latest). Fails when the

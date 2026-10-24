@@ -129,10 +129,14 @@ func credentialElicitationID(user, serverID, class string) string {
 	return "gwc_" + hex.EncodeToString(sum[:16])
 }
 
-// needsUserCredential: every user brings their own credential (per-user
+// needsUserCredential is NeedsUserCredential.
+func needsUserCredential(s *store.MCPServer) bool { return NeedsUserCredential(s) }
+
+// NeedsUserCredential: every user brings their own credential (per-user
 // mode with an auth kind other than none) or values for per-user headers.
-// The same rule as the servers portal's (internal/federation/portal).
-func needsUserCredential(s *store.MCPServer) bool {
+// Credential links, the elicitation relay and the servers portal
+// (internal/federation/portal) all use this rule.
+func NeedsUserCredential(s *store.MCPServer) bool {
 	if len(perUserHeaders(s.HeaderConfig)) > 0 {
 		return true
 	}
