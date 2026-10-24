@@ -193,6 +193,10 @@
       });
     });
 
+    // Until the browser answers, say so instead of a possibly wrong "Off".
+    setState("Checking…", "none");
+    toggle.disabled = true;
+    test.hidden = true;
     registration.pushManager.getSubscription().then(function (subscription) {
       current = subscription;
       render();
