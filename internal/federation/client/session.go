@@ -84,8 +84,14 @@ func (s *Session) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 
 // CallTool calls a tool.
 func (s *Session) CallTool(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error) {
+	return s.CallToolMeta(ctx, name, args, nil)
+}
+
+// CallToolMeta is CallTool with request _meta entries (nil for none); the
+// SDK adds its own protocol entries next to them.
+func (s *Session) CallToolMeta(ctx context.Context, name string, args map[string]any, meta mcp.Meta) (*mcp.CallToolResult, error) {
 	return do(ctx, s, opCallTool, func(ctx context.Context) (*mcp.CallToolResult, error) {
-		return s.cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		return s.cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args, Meta: meta})
 	})
 }
 

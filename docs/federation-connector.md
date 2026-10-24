@@ -75,6 +75,8 @@ Without an account the account stage answers `no_account` (connect first). The `
 
 The handler: server still active → `snapshot.Allowed` as the caller (in the approved snapshot, enabled, args valid against the pinned schema) → a tool listed as a read that the review now marks a write is refused and the registry reloaded → `auth.ForUser` (per_user: the caller's connection; shared: the server's secret; none) → endpoint (netguard's client, or for `tunnel://` URLs `tunnel.Authorize(server owner, tunnel)` + the tunnel transport; `header_config.static` as headers) → `Connect` + `CallTool` under `auth.Reauth` → the upstream `CallToolResult` passed through whole (content, structuredContent, isError; bounded by the client).
 
+Every `tools/call` carries `_meta["mcp-gateway/tool-digest"]`: the digest of the tool's definition in the **approved** snapshot (`internal/federation/tooldigest.Digest(name, description, inputSchema)`: `sha256:` + hex SHA-256 of the canonical JSON, keys sorted, numbers normalized, so jsonb storage does not change it; `connector/tooldigest.go`). Servers that do not know the key ignore it (the SDK adds its own protocol `_meta` keys next to it). The machine actions server (`internal/machineclient`) refuses a call whose digest is not the one of the definition it serves now, so a tool edited under the same name runs only after its new snapshot is approved.
+
 **Gateway credentials are never forwarded**: the client builds every upstream request from the endpoint and the Authorizer (tests check with a capturing upstream and a tunnel-side capture).
 
 | Class | Kind | Meaning |

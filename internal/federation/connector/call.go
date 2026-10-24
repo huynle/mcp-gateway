@@ -56,7 +56,7 @@ func (m *Manager) handlerFor(serverID string) func(upstream string, kind connect
 // write whose tools/call may have reached the server).
 func (m *Manager) call(ctx context.Context, serverID, upstream string, listed connectors.Kind, call connectors.Call) (connectors.Result, error) {
 	user := call.Principal.UserID
-	server, kind, err := m.check(ctx, serverID, upstream, listed, call)
+	server, tool, kind, err := m.check(ctx, serverID, upstream, listed, call)
 	if err != nil {
 		return connectors.Result{}, err
 	}
@@ -82,7 +82,7 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 			return err
 		}
 		defer func() { _ = s.Close() }()
-		r, err := s.CallTool(ctx, upstream, call.Args)
+		r, err := s.CallToolMeta(ctx, upstream, call.Args, reviewedMeta(tool))
 		res = r
 		return err
 	})
@@ -98,29 +98,30 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 // check is steps 1 and 2 of call, shared with the pre-policy check
 // (precheck.go): the server is still there and active, and the approved
 // snapshot allows the tool with these arguments as the caller. It
-// returns the server and the reviewed kind, or a class-level refusal.
-func (m *Manager) check(ctx context.Context, serverID, upstream string, listed connectors.Kind, call connectors.Call) (*store.MCPServer, snapshot.Kind, error) {
+// returns the server, the approved tool and the reviewed kind, or a
+// class-level refusal.
+func (m *Manager) check(ctx context.Context, serverID, upstream string, listed connectors.Kind, call connectors.Call) (*store.MCPServer, snapshot.Tool, snapshot.Kind, error) {
 	server, err := m.o.Store.GetServer(ctx, serverID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return nil, "", mcp.ErrToolNotFound(call.Tool)
+		return nil, snapshot.Tool{}, "", mcp.ErrToolNotFound(call.Tool)
 	case err != nil:
 		m.log.Error("federated server lookup failed", "event", "federation.server_lookup_failed", "server_id", serverID,
 			"error", observability.RedactError(err))
-		return nil, "", mcp.NewToolError(mcp.CodeInternal, "server_unavailable", "the server could not be looked up")
+		return nil, snapshot.Tool{}, "", mcp.NewToolError(mcp.CodeInternal, "server_unavailable", "the server could not be looked up")
 	case server.Status != store.MCPServerActive:
-		return nil, "", mcp.ErrToolNotFound(call.Tool)
+		return nil, snapshot.Tool{}, "", mcp.ErrToolNotFound(call.Tool)
 	}
-	_, kind, err := m.o.Snapshots.Allowed(ctx, snapshot.Actor{UserID: call.Principal.UserID}, serverID, upstream, call.Args)
+	tool, kind, err := m.o.Snapshots.Allowed(ctx, snapshot.Actor{UserID: call.Principal.UserID}, serverID, upstream, call.Args)
 	if err != nil {
-		return nil, "", m.snapshotError(call.Tool, serverID, err)
+		return nil, snapshot.Tool{}, "", m.snapshotError(call.Tool, serverID, err)
 	}
 	if listed == connectors.KindRead && kind != snapshot.KindRead {
 		_ = m.ServerChanged(ctx, serverID)
-		return nil, "", mcp.NewToolError(mcp.CodeDenied, "tool_changed",
+		return nil, snapshot.Tool{}, "", mcp.NewToolError(mcp.CodeDenied, "tool_changed",
 			call.Tool+" was re-reviewed as a write since it was listed; list the tools again and retry")
 	}
-	return server, kind, nil
+	return server, tool, kind, nil
 }
 
 // endpoint returns the HTTP client and endpoint for server.

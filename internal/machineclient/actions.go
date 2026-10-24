@@ -7,7 +7,12 @@ package machineclient
 //
 // A call carries the declared params and the "secret" argument, whose
 // value the gateway substituted for the agent's {"$secret": "sec_…"}
-// handle. The client validates every param against its pattern before
+// handle, and in _meta (tooldigest.MetaKey) the digest of the definition
+// the gateway approved. A call whose digest is missing or is not the one
+// of the definition served now (the action was edited under the same
+// name since its review) is refused before anything else: the edited
+// command never runs with the secret until a human approves the new
+// snapshot. Otherwise the client validates every param against its pattern before
 // anything runs, starts the fixed argv (never a shell, never the secret
 // in argv) with the minimal stdio environment, hands the secret over in
 // the configured mode, and returns exit code, duration and the capped
@@ -58,6 +63,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/huynle/mcp-gateway/internal/federation/tooldigest"
 	"github.com/huynle/mcp-gateway/internal/secrets/scrub"
 )
 
@@ -118,7 +124,8 @@ func newActionsHandler(actions map[string]*Action, o ActionsOptions) http.Handle
 	cfg := &Config{Actions: actions}
 	for _, name := range cfg.ActionNames() {
 		a := actions[name]
-		srv.AddTool(actionTool(a), r.handler(a))
+		tool := actionTool(a)
+		srv.AddTool(tool, r.handler(a, toolDigest(tool)))
 	}
 	return sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return srv }, &sdk.StreamableHTTPOptions{
 		// Like the gateway's own endpoint and how it talks to tunnel
@@ -158,6 +165,28 @@ func actionTool(a *Action) *sdk.Tool {
 	}
 }
 
+// ActionDigest is the tooldigest of the tool that serves a: what the
+// gateway must send (tooldigest.MetaKey) for a call to run.
+func ActionDigest(a *Action) string { return toolDigest(actionTool(a)) }
+
+func toolDigest(t *sdk.Tool) string {
+	schema, err := json.Marshal(t.InputSchema)
+	if err != nil {
+		return "" // unreachable: the schema is built from strings
+	}
+	return tooldigest.Digest(t.Name, t.Description, schema)
+}
+
+// reviewedDigest reports whether the call carries digest, the digest of
+// the definition served now, as the gateway's approved one. A call
+// without it comes from a gateway that did not check it, or was approved
+// for another definition: the action was edited under the same name
+// since its review.
+func reviewedDigest(req *sdk.CallToolRequest, digest string) bool {
+	got, _ := req.Params.GetMeta()[tooldigest.MetaKey].(string)
+	return digest != "" && got == digest
+}
+
 func actionDescription(a *Action) string {
 	var b strings.Builder
 	if d := strings.TrimSpace(a.Description); d != "" {
@@ -188,8 +217,13 @@ func errorResult(msg string) *sdk.CallToolResult {
 	return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: msg}}}
 }
 
-func (r *actionRunner) handler(a *Action) sdk.ToolHandler {
+func (r *actionRunner) handler(a *Action, digest string) sdk.ToolHandler {
 	return func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+		// First: nothing of an unreviewed definition runs, and its
+		// arguments (the secret) are not even decoded.
+		if !reviewedDigest(req, digest) {
+			return errorResult(fmt.Sprintf("action %s changed since it was reviewed; approve the new version on the Machines page (or the server's review page)", a.Name)), nil
+		}
 		var args map[string]json.RawMessage
 		if raw := req.Params.Arguments; len(raw) > 0 {
 			if err := json.Unmarshal(raw, &args); err != nil {
