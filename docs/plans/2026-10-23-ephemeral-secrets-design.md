@@ -1,6 +1,6 @@
 # Ephemeral secrets: agents use secrets they cannot read
 
-Status: design agreed 2026-10-23 (user, interactive brainstorm). Not implemented.
+Status: design agreed 2026-10-23 (user, interactive brainstorm). Implemented on feature/ephemeral-secrets (2026-10-23); user and operator documentation: [docs/secrets.md](../secrets.md).
 
 ## Problem
 

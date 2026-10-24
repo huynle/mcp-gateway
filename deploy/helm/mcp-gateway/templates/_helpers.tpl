@@ -217,6 +217,8 @@ Job has its own, smaller, set).
 - name: GATEWAY_BOOTSTRAP_ADMINS
   value: {{ join "," $g.bootstrapAdmins | quote }}
 {{- end }}
+- name: GATEWAY_SECRETS_ENABLED
+  value: {{ $g.secrets.enabled | quote }}
 - name: GATEWAY_ENABLE_FAKE_CONNECTOR
   value: {{ $g.enableFakeConnector | quote }}
 {{- if .Values.oidc.providers }}

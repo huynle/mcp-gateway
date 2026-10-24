@@ -115,6 +115,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $B/oauth/revoke -d "token=$RT&c
 
 `/harnesses` in the portal lists the `curl` client with when it connected and was last used; *Disconnect* there does what step 9 does.
 
+## Secrets the agent asks for (`-32042`)
+
+When the gateway runs with ephemeral secrets ([secrets.md](secrets.md)), an agent asks the user for a password with `secrets.request` and gets JSON-RPC error **`-32042`** (URL elicitation required). The message holds the link (`<base>/s/<id>`) and four check words; `error.data` holds the same `url`, the `handle`, the `fingerprint` and `elicitations[]` in the MCP URL-elicitation shape. The gateway never sends `notifications/elicitation/complete`: the agent shows the link, the user enters the secret in the browser, and the agent retries the real call with `{"<arg>": {"$secret": "<handle>"}}`. Harnesses built on the official go-sdk client get `-32042` from `CallTool` as a plain error, without running an elicitation handler, so the harness (or the model reading the error) must show the link. Retrying while the user has not saved the secret yet answers the same `-32042`.
+
 ## Operating notes
 
 - Both `/oauth/*` and `/.well-known/*` are served by the gateway itself; a reverse proxy only needs to forward `GATEWAY_BASE_URL` as-is (the issuer must match what harnesses see, and must be `https` outside local development). The documents, the `iss` parameter and the 401 challenge are built from `GATEWAY_BASE_URL`, never from the request's `Host` / `X-Forwarded-Host`. A wrong method on any of these routes is `405` with `Allow`; `OPTIONS` is the CORS preflight (`Access-Control-Allow-Origin: *`, no credentials, for browser-hosted harnesses).

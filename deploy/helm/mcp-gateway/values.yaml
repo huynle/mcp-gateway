@@ -74,6 +74,12 @@ gateway:
   defaultRole: member
   # "issuer|subject" pairs that receive the admin role on every sign-in.
   bootstrapAdmins: []
+  # Ephemeral secrets (GATEWAY_SECRETS_ENABLED; docs/secrets.md): agents ask
+  # the user for a password with secrets.request and use it through a handle
+  # without reading it. Needs keyProvider (otherwise it stays off with a
+  # warning) and adds the /s/<id> and /secrets pages.
+  secrets:
+    enabled: false
   # Registers the in-process "fake" connector. NEVER in production: it gives
   # every user a make-believe account and tools. Local/test clusters only.
   enableFakeConnector: false
@@ -272,6 +278,10 @@ ingress:
     - path: /activate
       pathType: Prefix
     - path: /pending
+      pathType: Prefix
+    - path: /s
+      pathType: Prefix
+    - path: /secrets
       pathType: Prefix
     - path: /cli
       pathType: Exact

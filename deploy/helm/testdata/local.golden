@@ -230,6 +230,8 @@ spec:
               value: "member"
             - name: GATEWAY_BOOTSTRAP_ADMINS
               value: "http://localhost:15556/dex|CiQwOGE4Njg0Yi1kYjg4LTRiNzMtOTBhOS0zY2QxNjYxZjU0NjYSBWxvY2Fs"
+            - name: GATEWAY_SECRETS_ENABLED
+              value: "false"
             - name: GATEWAY_ENABLE_FAKE_CONNECTOR
               value: "true"
             - name: GATEWAY_OIDC_PROVIDERS

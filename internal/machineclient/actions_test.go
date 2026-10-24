@@ -277,9 +277,19 @@ func TestActionOutputIsCappedAndScrubbedAtTheCut(t *testing.T) {
 	}
 }
 
+// TestActionTimeoutKillsTheProcessGroup runs /bin/sh, which starts a
+// grandchild and prints its pid at once, and checks that the timeout kills
+// the whole group. It does not use the helper process: that is this
+// race-instrumented test binary, whose start under `make test` load can
+// take longer than the timeout, so the timeout fired before the marker
+// was printed (stdout "", the flake). The timed window now only covers a
+// shell start; a missing marker still fails the test.
 func TestActionTimeoutKillsTheProcessGroup(t *testing.T) {
 	r, _ := newTestRunner()
-	a := helperAction(t, "stdin", "sleep")
+	a, err := buildAction("sh-sleep", &rawAction{Run: `/bin/sh -c "sleep 60 & echo child=$!; wait"`, Secret: "stdin"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	a.Timeout = 3 * time.Second
 	start := time.Now()
 	res := run(t, r, a, nil)
@@ -291,7 +301,7 @@ func TestActionTimeoutKillsTheProcessGroup(t *testing.T) {
 	}
 	pid := 0
 	if _, err := fmt.Sscanf(strings.TrimSpace(res.Stdout), "child=%d", &pid); err != nil || pid <= 0 {
-		t.Fatalf("stdout %q", res.Stdout)
+		t.Fatalf("no child pid: %+v", res)
 	}
 	waitFor(t, "the grandchild to die", func() bool { return syscall.Kill(pid, 0) != nil })
 }
