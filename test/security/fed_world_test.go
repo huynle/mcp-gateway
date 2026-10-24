@@ -48,7 +48,7 @@ func (w *world) wireFederation(keys crypto.KeyProvider, log *slog.Logger, opts o
 	w.t.Helper()
 	wopts := connector.WireOptions{
 		Store: w.st, Keys: keys, Registry: w.reg, BaseURL: baseURL, Version: "security",
-		OnChange: w.policy.Invalidate, Log: log, Timeout: opts.fedTimeout,
+		OnChange: w.policy.Invalidate, Log: log, Timeout: opts.fedTimeout, CredentialLinks: opts.credentialLinks,
 	}
 	var relayHandler atomic.Value
 	if opts.tunnelRelay {
