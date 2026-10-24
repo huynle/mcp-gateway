@@ -29,8 +29,9 @@ import (
 //     process behind a tunnel is shared by every user, and the gateway
 //     cannot tell stdio from a proxied HTTP server);
 //   - who: a server with per-user credentials (needsUserCredential: the
-//     upstream knows which user it talks to) relays for anyone; shared,
-//     no-auth and tunnel servers only for their owner, so user B can never
+//     upstream knows which user it talks to; a no-auth server never counts,
+//     as auth.ForUser sends it no per-user headers) relays for anyone;
+//     shared, no-auth and tunnel servers only for their owner, so user B can never
 //     complete an elicitation the upstream meant for one shared identity.
 //     Everyone else gets the answer the gateway gave before the relay;
 //   - when: a -32042 answer always (checked before the unknown-outcome
@@ -81,7 +82,9 @@ func (m *Manager) mayRelay(server *store.MCPServer, user string) bool {
 	if user == server.OwnerUserID {
 		return true
 	}
-	return !tunnel.IsTunnelURL(server.URL) && needsUserCredential(server)
+	// A no-auth server sends no per-user credential (auth.ForUser answers
+	// before per-user headers), so it is never per-user for the relay.
+	return !tunnel.IsTunnelURL(server.URL) && server.AuthKind != store.MCPAuthNone && needsUserCredential(server)
 }
 
 // optIn reports whether the per-call client declares URL elicitation for

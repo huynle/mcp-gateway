@@ -467,3 +467,24 @@ func TestRelayResourceRead(t *testing.T) {
 	wantRelayed(t, err, 1)
 	wantStored(t, st.list(), bob)
 }
+
+// A no-auth server sends no per-user credential (auth.ForUser answers
+// noAuth before per-user headers), so declared per-user headers do not
+// make it per-user for the relay: only its owner relays.
+func TestRelayNoAuthServerWithPerUserHeadersOwnerOnly(t *testing.T) {
+	f, _, st := relayFixture(t, true)
+	s := f.setServer(t, func(s *store.MCPServer) {
+		s.AuthKind = store.MCPAuthNone
+		s.HeaderConfig = json.RawMessage(`{"per_user":["X-Project"]}`)
+	})
+	if f.m.mayRelay(s, bob) || !f.m.mayRelay(s, alice) {
+		t.Errorf("mayRelay bob=%v alice=%v, want owner only", f.m.mayRelay(s, bob), f.m.mayRelay(s, alice))
+	}
+	_, err := f.callAs(t, bob, "notes.required")
+	if got := toolErrClass(err); got != "handler:upstream_tool_error" {
+		t.Errorf("bob: err = %v (%s), want today's upstream_tool_error", err, got)
+	}
+	if got := st.list(); len(got) != 0 {
+		t.Errorf("stored for a non-owner: %+v", got)
+	}
+}
