@@ -77,6 +77,8 @@
         "defaultRole": { "type": "string", "minLength": 1 },
         "bootstrapAdmins": { "type": "array", "items": { "type": "string", "pattern": "^[^|]+\\|.+$" } },
         "secrets": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "credentialLinks": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "upstreamElicitation": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
         "enableFakeConnector": { "type": "boolean" }
       }
     },

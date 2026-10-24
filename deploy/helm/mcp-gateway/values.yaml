@@ -80,6 +80,16 @@ gateway:
   # warning) and adds the /s/<id> and /secrets pages.
   secrets:
     enabled: false
+  # Credential links (GATEWAY_CREDENTIAL_LINKS_ENABLED): a missing or
+  # rejected credential the caller can fix answers -32042 with a link to the
+  # server's connection page instead of a dead-end error.
+  credentialLinks:
+    enabled: false
+  # Upstream URL elicitation relay (GATEWAY_UPSTREAM_ELICITATION_ENABLED):
+  # per-user MCP servers may send the user to their own page through the
+  # gateway's /elicit/<id> confirmation page.
+  upstreamElicitation:
+    enabled: false
   # Registers the in-process "fake" connector. NEVER in production: it gives
   # every user a make-believe account and tools. Local/test clusters only.
   enableFakeConnector: false
@@ -282,6 +292,8 @@ ingress:
     - path: /s
       pathType: Prefix
     - path: /secrets
+      pathType: Prefix
+    - path: /elicit
       pathType: Prefix
     - path: /cli
       pathType: Exact

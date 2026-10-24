@@ -219,6 +219,10 @@ Job has its own, smaller, set).
 {{- end }}
 - name: GATEWAY_SECRETS_ENABLED
   value: {{ $g.secrets.enabled | quote }}
+- name: GATEWAY_CREDENTIAL_LINKS_ENABLED
+  value: {{ $g.credentialLinks.enabled | quote }}
+- name: GATEWAY_UPSTREAM_ELICITATION_ENABLED
+  value: {{ $g.upstreamElicitation.enabled | quote }}
 - name: GATEWAY_ENABLE_FAKE_CONNECTOR
   value: {{ $g.enableFakeConnector | quote }}
 {{- if .Values.oidc.providers }}

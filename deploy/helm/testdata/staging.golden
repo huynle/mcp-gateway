@@ -288,6 +288,10 @@ spec:
               value: "member"
             - name: GATEWAY_SECRETS_ENABLED
               value: "false"
+            - name: GATEWAY_CREDENTIAL_LINKS_ENABLED
+              value: "false"
+            - name: GATEWAY_UPSTREAM_ELICITATION_ENABLED
+              value: "false"
             - name: GATEWAY_ENABLE_FAKE_CONNECTOR
               value: "false"
             - name: GATEWAY_OIDC_PROVIDERS
@@ -554,6 +558,13 @@ spec:
                 port:
                   name: http
           - path: "/secrets"
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-gateway
+                port:
+                  name: http
+          - path: "/elicit"
             pathType: Prefix
             backend:
               service:
