@@ -46,7 +46,34 @@ var (
 	ErrSharedCredentialRejected = errors.New("auth: the server rejected the shared credential")
 	// ErrInvalidCredential means a credential to store is malformed.
 	ErrInvalidCredential = errors.New("auth: invalid credential")
+
+	// ErrSharedMissing (wraps ErrNotConfigured) means the server's shared
+	// credential is missing, unreadable (sealed to another URL) or lacks
+	// what the auth kind needs: only the owner (or an admin) can set it.
+	ErrSharedMissing error = &notConfigured{"shared credential missing"}
+	// ErrModeInvalid (wraps ErrNotConfigured) means the server's auth kind
+	// or credential mode is not one the gateway knows (auth kind auto,
+	// a mode from a newer version): the owner has to choose one.
+	ErrModeInvalid error = &notConfigured{"auth kind or credential mode invalid"}
+	// ErrNowRequiresAuth (wraps ErrNotConfigured) means a server added
+	// without authentication answered 401: the owner has to set up its
+	// authentication.
+	ErrNowRequiresAuth error = &notConfigured{"no-auth server requires authentication"}
+	// ErrUserHeaderMissing means the server declares a per-user header
+	// (header_config.per_user) the user has no value for. Only a service
+	// that requires them (Options.RequireUserHeaders, UserHeadersRequired)
+	// returns it; otherwise the header is left out of the request.
+	ErrUserHeaderMissing = errors.New("auth: a per-user header has no value for this user")
 )
+
+// notConfigured is an owner-only cause of ErrNotConfigured. It wraps
+// ErrNotConfigured and keeps its text, so errors.Is(err,
+// ErrNotConfigured) and every message built from these errors stay what
+// they were; errors.Is with the sub-sentinel tells the cases apart.
+type notConfigured struct{ what string }
+
+func (e *notConfigured) Error() string { return ErrNotConfigured.Error() }
+func (e *notConfigured) Unwrap() error { return ErrNotConfigured }
 
 // Defaults.
 const (
@@ -91,6 +118,10 @@ type Options struct {
 	// Finish renders the end of the callback. Default: a short plain-text
 	// page (success or a safe error message).
 	Finish func(w http.ResponseWriter, r *http.Request, serverID string, err error)
+	// RequireUserHeaders makes ForUser refuse a call when a per-user header
+	// the server declares has no value for the user (ErrUserHeaderMissing)
+	// instead of leaving the header out (GATEWAY_CREDENTIAL_LINKS_ENABLED).
+	RequireUserHeaders bool
 }
 
 // Service holds upstream credentials: OAuth connections per user, shared
@@ -109,6 +140,8 @@ type Service struct {
 	replay ReplayGuard
 	finish func(http.ResponseWriter, *http.Request, string, error)
 	disc   *Discoverer
+	// requireHeaders is Options.RequireUserHeaders.
+	requireHeaders bool
 }
 
 // New builds a Service.
@@ -128,6 +161,7 @@ func New(o Options) (*Service, error) {
 	s := &Service{
 		http: o.HTTPClient, store: o.Store, keys: o.Keys, base: base, name: o.ClientName, log: o.Log,
 		clock: o.Clock, ttl: o.StateTTL, skew: o.RefreshSkew, replay: o.Replay, finish: o.Finish,
+		requireHeaders: o.RequireUserHeaders,
 	}
 	if s.name == "" {
 		s.name = DefaultClientName
@@ -156,6 +190,21 @@ func New(o Options) (*Service, error) {
 	}
 	s.disc = d
 	return s, nil
+}
+
+// UserHeadersRequired returns the service with Options.RequireUserHeaders
+// set to on: s itself when it already is, otherwise a view sharing
+// everything else (store, keys, replay guard). The connector's calls use
+// the strict view behind the credential-links flag; the portal keeps the
+// lenient service, so an owner can still refresh tools without values for
+// every per-user header.
+func (s *Service) UserHeadersRequired(on bool) *Service {
+	if s.requireHeaders == on {
+		return s
+	}
+	v := *s
+	v.requireHeaders = on
+	return &v
 }
 
 // Detect is Discoverer.Detect over the service's HTTP client.
