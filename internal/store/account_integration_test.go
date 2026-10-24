@@ -278,6 +278,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 		"machines":                       `SELECT count(*) FROM machines WHERE owner_user_id = $1`,
 		"enrollment codes":               `SELECT count(*) FROM machine_enrollment_codes WHERE owner_user_id = $1`,
 		"secrets":                        `SELECT count(*) FROM secrets WHERE owner_user_id = $1`,
+		"upstream elicitations":          `SELECT count(*) FROM upstream_elicitations WHERE owner_user_id = $1`,
 		"role assignments":               `SELECT count(*) FROM role_assignments WHERE user_id = $1`,
 		"rate limits":                    `SELECT count(*) FROM gateway_user_rate_limits WHERE user_id = $1`,
 		"resource caps":                  `SELECT count(*) FROM gateway_user_resource_caps WHERE user_id = $1`,
