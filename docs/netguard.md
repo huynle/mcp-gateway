@@ -11,7 +11,8 @@ pm, err := netguard.NewPrometheusMetrics(metrics.Registry()) // blocked_dials_to
 if err != nil { return err }
 guard := netguard.New(netguard.Options{
     AllowList:        allowList,          // nil = nothing allow-listed; production: netguard.NewCachedAllowList over netguard_allow_hosts
-    Timeout:          30 * time.Second,   // default
+    Timeout:          30 * time.Second,   // default; Client's whole-request timeout
+    ResponseHeaderTimeout: 0,             // default = Timeout; the shared Transport's wait for headers
     MaxResponseBytes: 10 << 20,           // default
     Metrics:          pm,
     Log:              log,                // receives host + reason only
@@ -30,7 +31,7 @@ if err := guard.CheckURL(ctx, u); err != nil { /* errors.As(err, &blocked) with 
 | Host literal | canonical IPv4/IPv6 literals are classified (table below); `localhost` / `*.localhost` refused; **non-canonical numeric hosts** (`2130706433`, `0x7f.1`, `017700000001`, `127.1`, `010.8.8.8`, ...) are refused outright, whatever they decode to, because Go treats them as names while browsers/libc treat them as addresses; zoned IPv6 refused; hosts outside `[A-Za-z0-9._-]` refused (use punycode) |
 | Dial | resolve once with the configured resolver; refuse when **any** answer is internal and not allow-listed; dial the checked IP itself (DNS-rebinding safe). TLS SNI and `Host` keep the original name. TCP only. No proxy (environment proxies are ignored) |
 | Redirects (`Client`) | at most `MaxRedirects` (5); never https→http (not even for allow-listed hosts); each hop re-validated and re-dialled through the checks |
-| Response | the `Client` timeout covers the whole request; every body is wrapped in `LimitedBody`, which fails with `ErrResponseTooLarge` past `MaxResponseBytes` (measured after decompression) |
+| Response | the `Client` timeout covers the whole request; the `Transport` waits at most `ResponseHeaderTimeout` (default `Timeout`) for headers, which `connector.Wire` raises to `GATEWAY_FEDERATION_CALL_TIMEOUT` for callers that drop the client timeout and bound each request with its context (the federation client); every body is wrapped in `LimitedBody`, which fails with `ErrResponseTooLarge` past `MaxResponseBytes` (measured after decompression) |
 
 ### Blocked address ranges
 

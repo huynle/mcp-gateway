@@ -86,13 +86,14 @@ The go-sdk (v1.8.0) negotiates the version. It first tries the stateless `server
 
 | Bound | Default | On breach |
 |---|---|---|
-| `Timeout`: each operation (handshake, list incl. all pages, call, read, get) | 30s | `ClassTimeout` |
+| `Timeout`: each operation (handshake, list incl. all pages, read, get) | 30s | `ClassTimeout` |
+| `CallTimeout`: each `tools/call` (`GATEWAY_FEDERATION_CALL_TIMEOUT` in the gateway) | `Timeout` | `ClassTimeout` |
 | `MaxResultBytes`: one JSON response body, or one SSE event | 4 MiB | `ClassTooLarge` |
 | `MaxListItems`: items across all pages of one list | 1000 | `ClassTooLarge`, `Reason "list_items"` |
 | pages per list (servers sending empty pages) | `MaxListItems` | `ClassTooLarge`, `Reason "list_pages"` |
 | repeated cursor | - | `ClassProtocol`, `Reason "cursor_loop"` |
 
-The netguard `http.Client` timeout is replaced by these per-operation deadlines, because a legacy SSE session keeps one GET stream open for its whole life. `Session.Close` cancels every in-flight request of the session. netguard's own `MaxResponseBytes` still applies underneath; set it at least as high as `MaxResultBytes`.
+The netguard `http.Client` timeout is replaced by these per-operation deadlines, because a legacy SSE session keeps one GET stream open for its whole life. A `CallTimeout` above netguard's (or the tunnel's) response header timeout is still cut there by an upstream that answers with one JSON body: raise `netguard.Options.ResponseHeaderTimeout` (and the tunnel's `Limits.ResponseHeaderTimeout`) to match, as `connector.Wire` does. `Session.Close` cancels every in-flight request of the session. netguard's own `MaxResponseBytes` still applies underneath; set it at least as high as `MaxResultBytes`.
 
 ## Errors
 

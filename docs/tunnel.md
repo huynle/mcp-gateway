@@ -136,7 +136,7 @@ Tunnel servers use `svc.HTTPClient(...)` **instead of** netguard's client. Its t
 | `MaxResponseBytes` (non `text/event-stream` bodies) | 10 MiB | `too_large` on read, stream cancelled |
 | `MaxBufferedBytes` (unread bytes per stream, SSE included) | 8 MiB | `too_large`, stream cancelled |
 | `MaxStreams` (concurrent requests per tunnel) | 32 | `busy` |
-| `ResponseHeaderTimeout` | 30s | `timeout` (`Timeout() == true`), cancel sent to the client |
+| `ResponseHeaderTimeout` | 30s (`connector.Wire`: max(30s, `GATEWAY_FEDERATION_CALL_TIMEOUT`); the request context still bounds every other operation at 30s) | `timeout` (`Timeout() == true`), cancel sent to the client |
 | `HeartbeatInterval` | 30s | ping failure drops the connection |
 
 Transport errors are `*tunnel.Error{Class, Reason}`, with these classes: `tunnel_offline` (no live connection on this replica and no usable holder elsewhere, or it dropped mid-request), `not_tunnel`, `too_large`, `timeout`, `busy` and `unreachable` (the client could not finish the response). Messages carry only the class and a short reason, never URLs, headers, bodies or tokens. Through the federation client they surface as its `*client.Error` (`unreachable` or `timeout`), and `errors.As(err, *tunnel.Error)` recovers the tunnel class. The tunnel client answers 502 when the local server is unreachable and 503 when it is busy. These are ordinary HTTP statuses, which the federation client classifies as `unreachable`.
