@@ -14,6 +14,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/auth"
+	"github.com/huynle/mcp-gateway/internal/federation/client"
 	"github.com/huynle/mcp-gateway/internal/federation/snapshot"
 	"github.com/huynle/mcp-gateway/internal/federation/tunnel"
 	"github.com/huynle/mcp-gateway/internal/netguard"
@@ -43,6 +44,11 @@ type WireOptions struct {
 	AllowList netguard.AllowList
 	// Timeout bounds each upstream operation (client default when 0).
 	Timeout time.Duration
+	// CallTimeout bounds tools/call on federated servers only
+	// (GATEWAY_FEDERATION_CALL_TIMEOUT; Timeout when 0). Wire raises
+	// netguard's and the tunnel's response header timeouts to
+	// upstreamHeaderTimeout so they do not cut a long call first.
+	CallTimeout time.Duration
 	// ConnectFinish renders the end of the upstream OAuth connect flow
 	// (auth.Options.Finish); nil keeps the auth package's default.
 	ConnectFinish func(w http.ResponseWriter, r *http.Request, serverID string, err error)
@@ -103,7 +109,8 @@ func Wire(o WireOptions) (*Federation, error) {
 		f.AllowList = netguard.NewCachedAllowList(AllowHostsLoader(o.Store), netguard.CachedAllowListOptions{Log: o.Log})
 		allow = f.AllowList
 	}
-	gopts := netguard.Options{AllowList: allow, Log: o.Log}
+	header := upstreamHeaderTimeout(o.Timeout, o.CallTimeout)
+	gopts := netguard.Options{AllowList: allow, ResponseHeaderTimeout: header, Log: o.Log}
 	if o.Metrics != nil {
 		pm, err := netguard.NewPrometheusMetrics(o.Metrics)
 		if err != nil {
@@ -121,7 +128,8 @@ func Wire(o WireOptions) (*Federation, error) {
 		return nil, fmt.Errorf("federation: auth: %w", err)
 	}
 	f.Snapshots = snapshot.NewService(o.Store)
-	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Machines: tunnel.NewMachineStore(o.Store), Log: o.Log}
+	topts := tunnel.Options{Store: tunnel.NewStoreWithCaps(o.Store, o.Caps), Machines: tunnel.NewMachineStore(o.Store),
+		Limits: tunnel.Limits{ResponseHeaderTimeout: header}, Log: o.Log}
 	if o.TunnelRelay != nil {
 		r := *o.TunnelRelay
 		if r.Holders == nil {
@@ -146,12 +154,26 @@ func Wire(o WireOptions) (*Federation, error) {
 	f.Manager, err = New(Options{
 		Registry: o.Registry, Store: ps, Snapshots: f.Snapshots,
 		Credentials: f.Auth, Tunnels: f.Tunnels, Permissions: perms, HTTPClient: f.Guard.Client(),
-		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, OnChange: o.OnChange, Log: o.Log,
+		BaseURL: o.BaseURL, Version: o.Version, Timeout: o.Timeout, CallTimeout: o.CallTimeout, OnChange: o.OnChange, Log: o.Log,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return f, nil
+}
+
+// upstreamHeaderTimeout is how long netguard's transport and the tunnel
+// (and, through it, the cross-replica relay) wait for an upstream
+// response's headers: the longest per-operation deadline, so a tools/call
+// answered with a single JSON body after minutes is bounded by its own
+// context (CallTimeout) instead of being cut at the 30s default. Every
+// other operation keeps its shorter context deadline, and netguard's
+// Client keeps its whole-request Timeout for OAuth and other plain uses.
+func upstreamHeaderTimeout(timeout, callTimeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		timeout = client.DefaultTimeout
+	}
+	return max(timeout, callTimeout)
 }
 
 // Start loads the servers (a failure is logged: the gateway still serves

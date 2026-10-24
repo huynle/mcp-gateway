@@ -69,7 +69,7 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 		return connectors.Result{}, err
 	}
 	c, err := client.New(client.Options{
-		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout,
+		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout, CallTimeout: m.o.CallTimeout,
 		ClientVersion: m.o.Version, Log: m.log, OnCall: m.o.OnCall,
 	})
 	if err != nil {

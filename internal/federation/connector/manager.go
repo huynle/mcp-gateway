@@ -104,6 +104,11 @@ type Options struct {
 	Version string
 	// Timeout bounds each upstream operation (client default when 0).
 	Timeout time.Duration
+	// CallTimeout bounds tools/call only (Timeout when 0;
+	// GATEWAY_FEDERATION_CALL_TIMEOUT). The HTTPClient's transport must
+	// not cut it first: Wire raises netguard's and the tunnel's response
+	// header timeouts to match (upstreamHeaderTimeout).
+	CallTimeout time.Duration
 	// VisibilityTTL: DefaultVisibilityTTL when 0.
 	VisibilityTTL time.Duration
 	// OnChange runs after every ServerChanged (cmd/gateway invalidates the
