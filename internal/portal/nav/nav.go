@@ -1,23 +1,30 @@
 // Package nav is the portal's shared page shell (Brain tasks cku0a6fa and
-// the ui-theme work): one navigation bar and one <head> for every module
-// that renders portal pages (portal, tokens, approvals, ledger,
-// connections, authserver, policy, audit, federation). A module adds
-// Partial to its template set with Setup (or Add) and its layout renders
+// the ui-theme and ui-redesign work): one sidebar navigation and one <head>
+// for every module that renders portal pages (portal, tokens, approvals,
+// ledger, connections, authserver, policy, audit, secrets, machines,
+// federation). A module adds Partial to its template set with Setup (or
+// Add) and its layout renders
 //
 //	<head>{{template "page.head"}}<title>…</title></head>
-//	<body>{{template "nav" navData}}<main>…</main></body>
+//	<body>{{template "nav" navData}}<main>…</main>{{template "footer"}}</body>
 //
 // so the link set, the stylesheet, the theme script and the theme toggle
 // are defined once and are the same on every page. navtest.AssertShell
 // checks a rendered page against this shell.
 //
+// Signed in, "nav" renders a grouped sidebar (Groups, plus Admin for
+// admins) with the user block, the theme toggle and sign-out at its foot,
+// and a top bar with a menu button that opens the sidebar as a drawer on
+// narrow screens (a checkbox and labels: no script needed). Signed out it
+// renders a slim top bar with the brand and the theme toggle.
+//
 // The data comes from the request context: the portal's session
 // middleware stores it with WithData (from the signed-in principal, so the
 // admin flag is the same server-side check that gates /admin/*), and
 // handlers read it with FromRequest. A request without it renders as
-// anonymous: the brand, the theme toggle and no links. Apart from the
-// asset package (internal/portal/static) this package imports nothing of
-// the gateway, so any module can use it without an import cycle.
+// anonymous. Apart from the asset package (internal/portal/static) this
+// package imports nothing of the gateway, so any module can use it without
+// an import cycle.
 package nav
 
 import (
@@ -30,10 +37,11 @@ import (
 	"github.com/huynle/mcp-gateway/internal/portal/static"
 )
 
-// Link is one entry of the bar.
+// Link is one entry of the sidebar. Icon names an icon of Icon.
 type Link struct {
 	Href  string
 	Label string
+	Icon  string
 }
 
 // Item is a Link as rendered: Current marks the page being shown.
@@ -42,29 +50,65 @@ type Item struct {
 	Current bool
 }
 
-// UserLinks are shown to every signed-in user, in order.
-var UserLinks = []Link{
-	{"/account", "My account"},
-	{"/tokens", "Tokens"},
-	{"/connections", "Connections"},
-	{"/servers", "Servers"},
-	{"/machines", "Machines"},
-	{"/approvals", "Approvals"},
-	{"/secrets", "Secrets"},
-	{"/operations", "Operations"},
-	{"/harnesses", "Harnesses"},
-	{"/activity", "Activity"},
+// Group is a labelled section of the sidebar. An empty Label renders the
+// links without a heading.
+type Group struct {
+	Label string
+	Links []Link
 }
 
-// AdminLinks are added for admins only.
-var AdminLinks = []Link{
-	{"/admin/settings", "Settings"},
-	{"/admin/users", "Users"},
-	{"/admin/roles", "Roles"},
-	{"/admin/servers", "All servers"},
-	{"/admin/machines", "All machines"},
-	{"/admin/audit", "Audit"},
-	{"/admin/vendor-apps", "Vendor apps"},
+// GroupItems is a Group as rendered.
+type GroupItems struct {
+	Label string
+	Items []Item
+}
+
+// Groups are shown to every signed-in user, in order.
+var Groups = []Group{
+	{"", []Link{
+		{"/account", "My account", "account"},
+	}},
+	{"Access", []Link{
+		{"/tokens", "Tokens", "tokens"},
+		{"/harnesses", "Harnesses", "harnesses"},
+		{"/machines", "Machines", "machines"},
+	}},
+	{"Integrations", []Link{
+		{"/connections", "Connections", "connections"},
+		{"/servers", "Servers", "servers"},
+		{"/secrets", "Secrets", "secrets"},
+	}},
+	{"Activity", []Link{
+		{"/approvals", "Approvals", "approvals"},
+		{"/operations", "Operations", "operations"},
+		{"/activity", "Activity", "activity"},
+	}},
+}
+
+// AdminGroup is added for admins only.
+var AdminGroup = Group{"Admin", []Link{
+	{"/admin/settings", "Settings", "settings"},
+	{"/admin/users", "Users", "users"},
+	{"/admin/roles", "Roles", "roles"},
+	{"/admin/servers", "All servers", "allservers"},
+	{"/admin/machines", "All machines", "allmachines"},
+	{"/admin/audit", "Audit", "audit"},
+	{"/admin/vendor-apps", "Vendor apps", "vendorapps"},
+}}
+
+// UserLinks are the links of Groups in order; AdminLinks those of
+// AdminGroup.
+var (
+	UserLinks  = flatten(Groups)
+	AdminLinks = AdminGroup.Links
+)
+
+func flatten(gs []Group) []Link {
+	var out []Link
+	for _, g := range gs {
+		out = append(out, g.Links...)
+	}
+	return out
 }
 
 // Data is what the partial renders.
@@ -72,14 +116,31 @@ type Data struct {
 	// SignedIn shows the links and the sign-out form; without it the bar
 	// is the brand only.
 	SignedIn bool
-	// IsAdmin adds AdminLinks (only together with SignedIn).
+	// IsAdmin adds AdminGroup (only together with SignedIn).
 	IsAdmin bool
 	// CSRFToken is echoed by the sign-out form.
 	CSRFToken string
-	// DisplayName is shown next to the sign-out button when set.
+	// DisplayName is shown in the user block when set.
 	DisplayName string
 	// Active is the request path; the matching link is marked current.
 	Active string
+}
+
+// NavGroups is Groups, plus AdminGroup for admins, for the template;
+// nothing when signed out.
+func (d Data) NavGroups() []GroupItems {
+	if !d.SignedIn {
+		return nil
+	}
+	gs := Groups
+	if d.IsAdmin {
+		gs = append(append([]Group(nil), Groups...), AdminGroup)
+	}
+	out := make([]GroupItems, len(gs))
+	for i, g := range gs {
+		out[i] = GroupItems{Label: g.Label, Items: d.items(g.Links)}
+	}
+	return out
 }
 
 // UserItems is UserLinks for the template, or nothing when signed out.
@@ -99,6 +160,15 @@ func (d Data) AdminItems() []Item {
 	return d.items(AdminLinks)
 }
 
+// Initial is the first letter of DisplayName, upper-cased, for the avatar
+// ("?" without a name).
+func (d Data) Initial() string {
+	for _, r := range strings.TrimSpace(d.DisplayName) {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
+}
+
 func (d Data) items(links []Link) []Item {
 	out := make([]Item, len(links))
 	for i, l := range links {
@@ -116,8 +186,10 @@ func (d Data) items(links []Link) []Item {
 //     theme.js is render-blocking on purpose: it sets <html data-theme>
 //     from localStorage before the first paint, so a stored choice never
 //     flashes the other palette.
-//   - "nav": the page header with the brand, the links, the theme toggle
-//     and the sign-out form.
+//   - "nav": signed in, the drawer toggle, the top bar (narrow screens) and
+//     the sidebar with the brand, the grouped links, the user block, the
+//     theme toggle and the sign-out form; signed out, a top bar with the
+//     brand and the theme toggle.
 //   - "footer": the links to the public Privacy Policy, Terms of Service
 //     and Support pages (package portal); layouts render it after </main>.
 //
@@ -130,40 +202,57 @@ const Partial = `{{define "page.head"}}<meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
   <script src="{{asset "theme.js"}}"></script>
   <link rel="stylesheet" href="{{asset "portal.css"}}">
+  <link rel="icon" type="image/svg+xml" href="{{asset "favicon.svg"}}">
   <script src="{{asset "htmx.min.js"}}" defer></script>
 {{- end}}
 
+{{define "brand"}}<a class="brand" href="/">{{icon "brand"}}<span class="brand-name">MCP Gateway</span></a>{{end}}
+
 {{define "theme.toggle"}}<div class="theme-toggle" role="group" aria-label="Color theme" data-theme-toggle hidden>
-      <button type="button" class="theme-choice" data-theme-choice="light" aria-pressed="false" title="Light theme">Light</button>
-      <button type="button" class="theme-choice" data-theme-choice="system" aria-pressed="true" title="Follow the system setting">System</button>
-      <button type="button" class="theme-choice" data-theme-choice="dark" aria-pressed="false" title="Dark theme">Dark</button>
+      <button type="button" class="theme-choice" data-theme-choice="light" aria-pressed="false" title="Light theme">{{icon "sun"}}<span class="sr-only">Light</span></button>
+      <button type="button" class="theme-choice" data-theme-choice="system" aria-pressed="true" title="Follow the system setting">{{icon "system"}}<span class="sr-only">System</span></button>
+      <button type="button" class="theme-choice" data-theme-choice="dark" aria-pressed="false" title="Dark theme">{{icon "moon"}}<span class="sr-only">Dark</span></button>
     </div>{{end}}
 
-{{define "nav"}}<header class="site-header">
-  <a class="brand" href="/">MCP Gateway</a>
-  {{- if .SignedIn}}
+{{define "nav"}}{{if .SignedIn -}}
+<input type="checkbox" id="nav-drawer" class="drawer-toggle" aria-label="Show navigation" aria-controls="sidebar">
+<header class="topbar">
+  <label for="nav-drawer" class="menu-button" title="Menu">{{icon "menu"}}<span class="sr-only">Menu</span></label>
+  {{template "brand"}}
+</header>
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-head">{{template "brand"}}</div>
   <nav class="site-nav" aria-label="Main">
-    {{- range .UserItems}}
-    <a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>
-    {{- end}}
-    {{- range .AdminItems}}
-    <a class="admin" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>
+    {{- range .NavGroups}}
+    <div class="nav-group">
+      {{- if .Label}}<p class="nav-label">{{.Label}}</p>{{end}}
+      {{- range .Items}}
+      <a class="nav-link" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{icon .Icon}}{{.Label}}</a>
+      {{- end}}
+    </div>
     {{- end}}
   </nav>
-  {{- end}}
-  <div class="who">
-    {{template "theme.toggle"}}
-    {{- if .SignedIn}}
-    {{- if .DisplayName}}
-    <span class="who-name">{{.DisplayName}}</span>
-    {{- end}}
-    <form method="post" action="/auth/signout">
-      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-      <button class="btn" type="submit">Sign out</button>
-    </form>
-    {{- end}}
+  <div class="sidebar-foot">
+    <div class="who">
+      <span class="avatar" aria-hidden="true">{{.Initial}}</span>
+      <span class="who-name">{{if .DisplayName}}{{.DisplayName}}{{else}}Signed in{{end}}</span>
+    </div>
+    <div class="sidebar-tools">
+      {{template "theme.toggle"}}
+      <form method="post" action="/auth/signout" class="signout">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        <button class="btn ghost small" type="submit" title="Sign out">{{icon "signout"}}Sign out</button>
+      </form>
+    </div>
   </div>
-</header>{{end}}
+</aside>
+<label for="nav-drawer" class="drawer-scrim" aria-hidden="true"></label>
+{{- else -}}
+<header class="topbar public">
+  {{template "brand"}}
+  <div class="topbar-tools">{{template "theme.toggle"}}</div>
+</header>
+{{- end}}{{end}}
 
 {{define "footer"}}<footer class="site-footer">
   <nav aria-label="Legal">
@@ -178,10 +267,14 @@ const Partial = `{{define "page.head"}}<meta charset="utf-8">
 // is static.URL("x.css"), the asset's path with its content-hash query.
 const AssetFuncName = "asset"
 
+// IconFuncName is the template function Add registers: {{icon "servers"}}
+// renders that inline SVG icon (see Icon).
+const IconFuncName = "icon"
+
 // Add parses Partial into t's template set (call it before the set is
 // executed) and returns t, so it chains: template.Must(nav.Add(t)).
 func Add(t *template.Template) (*template.Template, error) {
-	if _, err := t.Funcs(template.FuncMap{AssetFuncName: static.URL}).New("nav.partial").Parse(Partial); err != nil {
+	if _, err := t.Funcs(template.FuncMap{AssetFuncName: static.URL, IconFuncName: Icon}).New("nav.partial").Parse(Partial); err != nil {
 		return nil, err
 	}
 	return t, nil
@@ -206,11 +299,12 @@ func FromRequest(r *http.Request) Data {
 // data: {{template "nav" navData}}.
 const FuncName = "navData"
 
-// Funcs is the placeholder FuncMap entry a module adds when it parses its
-// template set (functions must exist at parse time). It renders the
-// anonymous bar; For binds the real data per request.
+// Funcs is the FuncMap a module adds when it parses its template set
+// (functions must exist at parse time): the placeholder navData, which
+// renders the anonymous bar until For binds the real data per request,
+// plus asset and icon so page templates can use them too.
 func Funcs() template.FuncMap {
-	return template.FuncMap{FuncName: func() Data { return Data{} }}
+	return template.FuncMap{FuncName: func() Data { return Data{} }, AssetFuncName: static.URL, IconFuncName: Icon}
 }
 
 // Setup adds the placeholder function and the partial to a module's

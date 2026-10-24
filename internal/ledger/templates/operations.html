@@ -1,21 +1,33 @@
 {{template "head" .}}
-<p>Your last {{.Limit}} writes through the gateway and what became of them. The gateway keeps only identifiers of what a write produced, never its content. A write marked <span class="pill unresolved">unresolved</span> could not be verified: <strong>verify in the app</strong> whether it took effect before trying again.</p>
-<table>
-  <thead><tr><th>Started</th><th>Tool</th><th>Resource</th><th>State</th><th>Result</th><th>Finished</th><th>Id</th></tr></thead>
-  <tbody>
-  {{range .Operations}}
-  <tr>
-    <td>{{fmtTime .CreatedAt}}</td>
-    <td><code>{{.Tool}}</code></td>
-    <td>{{range $k, $v := .ResourceIdentity}}<span>{{$k}}={{$v}}</span> {{end}}</td>
-    <td><span class="pill {{.State}}">{{.State}}</span>{{if .ErrorClass}} <span class="muted">{{.ErrorClass}}</span>{{end}}</td>
-    <td>{{if eq .State "unresolved"}}<span class="notice-inline">verify in the app</span>{{else}}{{range $k, $v := .ResultIDs}}<span>{{$k}}={{if isURL $v}}<a href="{{$v}}" rel="noreferrer">{{$v}}</a>{{else}}{{$v}}{{end}}</span> {{end}}{{end}}</td>
-    <td>{{if .FinishedAt}}{{fmtTime .FinishedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
-    <td><code>{{shortID .ID}}</code></td>
-  </tr>
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Your last {{.Limit}} writes through the gateway and what became of them. The gateway keeps only identifiers of what a write produced, never its content.</p>
+  </div>
+</header>
+<p class="callout warn">A write marked <span class="pill unresolved">unresolved</span> could not be verified: <strong>verify in the app</strong> whether it took effect before trying again.</p>
+<section class="section">
+  {{if .Operations}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Started</th><th>Tool</th><th>Resource</th><th>State</th><th>Result</th><th>Finished</th><th>Id</th></tr></thead>
+    <tbody>
+    {{range .Operations}}
+    <tr>
+      <td class="nowrap">{{fmtTime .CreatedAt}}</td>
+      <td><code>{{.Tool}}</code></td>
+      <td class="mono">{{range $k, $v := .ResourceIdentity}}<span>{{$k}}={{$v}}</span> {{end}}</td>
+      <td><span class="pill {{.State}}">{{.State}}</span>{{if .ErrorClass}} <span class="muted">{{.ErrorClass}}</span>{{end}}</td>
+      <td class="mono">{{if eq .State "unresolved"}}<strong class="notice notice-inline">verify in the app</strong>{{else}}{{range $k, $v := .ResultIDs}}<span>{{$k}}={{if isURL $v}}<a href="{{$v}}" rel="noreferrer">{{$v}}</a>{{else}}{{$v}}{{end}}</span> {{end}}{{end}}</td>
+      <td class="nowrap">{{if .FinishedAt}}{{fmtTime .FinishedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td><code title="{{.ID}}">{{shortID .ID}}</code></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
   {{else}}
-  <tr><td colspan="7" class="muted">No writes yet.</td></tr>
+  <div class="empty">{{icon "operations"}}<strong>No writes yet.</strong><p>When a harness calls a tool that changes something in an app, the write and its outcome show up here.</p></div>
   {{end}}
-  </tbody>
-</table>
+</section>
 {{template "foot" .}}

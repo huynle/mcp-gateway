@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -171,10 +172,82 @@ func TestThemeToggleIsAccessibleAndHiddenWithoutJS(t *testing.T) {
 // share a label in the admin's bar.
 func TestAdminServersLinkIsLabelledAllServers(t *testing.T) {
 	body := render(t, nav.Data{SignedIn: true, IsAdmin: true})
-	if !strings.Contains(body, `href="/admin/servers">All servers</a>`) {
+	if !regexp.MustCompile(`href="/admin/servers">(<svg[^>]*>.*?</svg>)?All servers</a>`).MatchString(body) {
 		t.Errorf("admin servers link is not labelled All servers:\n%s", body)
 	}
 	if n := strings.Count(body, ">Servers</a>"); n != 1 {
 		t.Errorf("%d links labelled Servers, want 1:\n%s", n, body)
+	}
+}
+
+// The sidebar groups its links under headings, in order, and the Admin
+// group exists only for admins.
+func TestSidebarGroupsLinks(t *testing.T) {
+	labels := func(body string) []string {
+		var out []string
+		for _, m := range regexp.MustCompile(`<p class="nav-label">([^<]*)</p>`).FindAllStringSubmatch(body, -1) {
+			out = append(out, m[1])
+		}
+		return out
+	}
+	if got, want := labels(render(t, nav.Data{SignedIn: true})), []string{"Access", "Integrations", "Activity"}; !slices.Equal(got, want) {
+		t.Errorf("member groups = %v, want %v", got, want)
+	}
+	if got, want := labels(render(t, nav.Data{SignedIn: true, IsAdmin: true})), []string{"Access", "Integrations", "Activity", "Admin"}; !slices.Equal(got, want) {
+		t.Errorf("admin groups = %v, want %v", got, want)
+	}
+	if got := labels(render(t, nav.Data{IsAdmin: true})); len(got) != 0 {
+		t.Errorf("anonymous groups = %v, want none", got)
+	}
+}
+
+// Every link carries an icon, and the icon is decorative (the label is the
+// accessible name).
+func TestEveryLinkHasADecorativeIcon(t *testing.T) {
+	body := render(t, nav.Data{SignedIn: true, IsAdmin: true})
+	links := regexp.MustCompile(`<a class="nav-link"[^>]*>(.*?)</a>`).FindAllStringSubmatch(body, -1)
+	if len(links) != len(navtest.Admin) {
+		t.Fatalf("%d nav links, want %d", len(links), len(navtest.Admin))
+	}
+	for _, l := range links {
+		if !strings.HasPrefix(l[1], `<svg class="icon`) || !strings.Contains(l[1], `aria-hidden="true"`) {
+			t.Errorf("link without a decorative icon: %s", l[0])
+		}
+	}
+}
+
+func TestIconRejectsUnknownNames(t *testing.T) {
+	if _, err := nav.Icon("no-such-icon"); err == nil {
+		t.Error("Icon accepted an unknown name")
+	}
+	got, err := nav.Icon("servers")
+	if err != nil || !strings.HasPrefix(string(got), `<svg class="icon icon-servers" viewBox="0 0 24 24" aria-hidden="true"`) {
+		t.Errorf("Icon(servers) = %q, %v", got, err)
+	}
+}
+
+// Narrow screens open the sidebar with a labelled checkbox and a menu
+// button (no script); the signed-out bar has neither.
+func TestDrawerToggle(t *testing.T) {
+	body := render(t, nav.Data{SignedIn: true})
+	for _, want := range []string{
+		`<input type="checkbox" id="nav-drawer" class="drawer-toggle" aria-label="Show navigation" aria-controls="sidebar">`,
+		`<label for="nav-drawer" class="menu-button"`,
+		`<aside class="sidebar" id="sidebar">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("signed-in shell lacks %s", want)
+		}
+	}
+	if anon := render(t, nav.Data{}); strings.Contains(anon, "nav-drawer") || strings.Contains(anon, "sidebar") {
+		t.Errorf("anonymous shell has a drawer:\n%s", anon)
+	}
+}
+
+func TestUserBlockShowsInitial(t *testing.T) {
+	for name, want := range map[string]string{"ada lovelace": "A", "  émile": "É", "": "?"} {
+		if got := (nav.Data{DisplayName: name}).Initial(); got != want {
+			t.Errorf("Initial(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

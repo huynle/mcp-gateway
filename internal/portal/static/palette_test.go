@@ -85,8 +85,8 @@ func TestPalettesDefineTheSameColours(t *testing.T) {
 
 // WCAG 2.1 AA: 4.5:1 for text (body, muted, links, status colours, chips,
 // primary-button label), 3:1 for UI component edges (input borders, the
-// focus ring), on every background text sits on (page, table head / sticky
-// bar surface).
+// focus ring), on every background text sits on (page, panels and inputs,
+// sidebar / table head surface), and status text on its tinted fill.
 func TestPalettesMeetContrast(t *testing.T) {
 	src := css(t)
 	for name, p := range map[string]map[string]string{"light": block(t, src, lightSel), "dark": block(t, src, darkSel)} {
@@ -100,7 +100,7 @@ func TestPalettesMeetContrast(t *testing.T) {
 				t.Errorf("%s: %s %s on %s %s = %.2f:1, want >= %.1f", name, fg, a, bg, b, c, min)
 			}
 		}
-		for _, bg := range []string{"--bg", "--surface"} {
+		for _, bg := range []string{"--bg", "--panel", "--surface"} {
 			for _, fg := range []string{"--fg", "--muted", "--accent", "--danger", "--ok", "--warn"} {
 				check(fg, bg, 4.5)
 			}
@@ -109,6 +109,12 @@ func TestPalettesMeetContrast(t *testing.T) {
 		}
 		check("--accent-fg", "--accent", 4.5)
 		check("--danger-fg", "--danger", 4.5)
+		// Status text on its own tinted fill (callouts, badges, the
+		// current tab/segment).
+		for _, tone := range []string{"accent", "danger", "ok", "warn"} {
+			check("--"+tone, "--"+tone+"-soft", 4.5)
+			check("--fg", "--"+tone+"-soft", 4.5)
+		}
 	}
 }
 

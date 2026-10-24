@@ -1,5 +1,10 @@
 {{template "head" .}}
-<p>Every tool call made with your tokens and connected accounts. The gateway records what was called and on which resource, never the arguments or content.</p>
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Every tool call made with your tokens and connected accounts. The gateway records what was called and on which resource, never the arguments or content.</p>
+  </div>
+</header>
 {{template "filters" .}}
 {{template "rows" .}}
 {{template "foot" .}}

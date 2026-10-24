@@ -1,24 +1,45 @@
 {{template "head" .}}
-<p class="notice">Copy the token now. It is shown only this once; the gateway keeps a hash and cannot show it again. If you lose it, revoke it and create a new one.</p>
-<pre class="token">{{.Raw}}</pre>
-<dl>
-  <dt>Name</dt><dd>{{.Token.Name}}</dd>
-  <dt>Expires</dt><dd>{{fmtTime .Token.ExpiresAt}} UTC</dd>
-  <dt>Scope</dt><dd>{{.Token.Scope.String}}</dd>
-</dl>
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/tokens">Tokens</a><span class="sep">/</span>{{.Token.Name}}</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Copy the token into your harness now, then point the harness at the gateway with one of the snippets below.</p>
+  </div>
+</header>
 
-<h2>Point a harness at the gateway</h2>
-<p>MCP endpoint: <code>{{.Snippets.MCPURL}}</code> (Streamable HTTP). Send the token as <code>Authorization: Bearer …</code>.</p>
+<section class="panel secret-reveal" aria-labelledby="token-heading">
+  <div class="panel-head"><h2 id="token-heading">Your new token</h2><span class="pill active">active</span></div>
+  <p class="callout warn">Copy the token now. It is shown only this once; the gateway keeps a hash and cannot show it again. If you lose it, revoke it and create a new one.</p>
+  <div class="copyable"><pre class="token" id="token-raw">{{.Raw}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="token-raw" hidden>{{icon "copy"}}Copy</button></div>
+  <dl class="kv">
+    <dt>Name</dt><dd>{{.Token.Name}}</dd>
+    <dt>Expires</dt><dd>{{fmtTime .Token.ExpiresAt}} UTC</dd>
+    <dt>Scope</dt><dd>{{.Token.Scope.String}}</dd>
+  </dl>
+</section>
 
-<h2>OpenCode (<code>opencode.json</code>)</h2>
-<pre>{{.Snippets.OpenCode}}</pre>
+<section class="section">
+  <div class="section-head">
+    <div><h2>Point a harness at the gateway</h2><p>MCP endpoint: <code>{{.Snippets.MCPURL}}</code> (Streamable HTTP). Send the token as <code>Authorization: Bearer …</code>.</p></div>
+  </div>
 
-<h2>Claude Code (<code>.mcp.json</code> in the project, or the CLI)</h2>
-<pre>{{.Snippets.ClaudeCode}}</pre>
-<pre>{{.Snippets.ClaudeCodeCLI}}</pre>
+  <section class="panel">
+    <div class="panel-head"><h3>OpenCode (<code>opencode.json</code>)</h3></div>
+    <div class="copyable"><pre id="snippet-opencode">{{.Snippets.OpenCode}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="snippet-opencode" hidden>{{icon "copy"}}Copy</button></div>
+  </section>
 
-<h2>Check it works</h2>
-<pre>{{.Snippets.Curl}}</pre>
+  <section class="panel">
+    <div class="panel-head"><h3>Claude Code (<code>.mcp.json</code> in the project, or the CLI)</h3></div>
+    <div class="copyable"><pre id="snippet-claude">{{.Snippets.ClaudeCode}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="snippet-claude" hidden>{{icon "copy"}}Copy</button></div>
+    <div class="copyable"><pre id="snippet-claude-cli">{{.Snippets.ClaudeCodeCLI}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="snippet-claude-cli" hidden>{{icon "copy"}}Copy</button></div>
+  </section>
 
-<p><a class="btn" href="/tokens">Back to tokens</a></p>
+  <section class="panel">
+    <div class="panel-head"><h3>Check it works</h3></div>
+    <div class="copyable"><pre id="snippet-curl">{{.Snippets.Curl}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="snippet-curl" hidden>{{icon "copy"}}Copy</button></div>
+  </section>
+</section>
+
+<p class="form-actions"><a class="btn" href="/tokens">{{icon "arrow-left"}}Back to tokens</a></p>
+<script src="{{asset "copy.js"}}" defer></script>
 {{template "foot" .}}

@@ -1,18 +1,26 @@
 {{template "head" .}}
-<div class="card narrow">
+<div class="auth">
+<section class="panel consent">
+  <h1>{{.Title}}</h1>
   <p><strong>{{.ClientName}}</strong> wants to use the MCP gateway as you.</p>
+  <h2>It will be able to</h2>
   <ul>
     {{range .Scopes}}<li>{{.}}</li>{{end}}
   </ul>
-  <p class="muted">Tokens will be issued for <code>{{.Resource}}</code> and sent back to <code>{{.RedirectHost}}</code>. Everything the harness does is checked by policy, confirmed where your role requires it, and recorded in your activity. You can disconnect it at any time on the Harnesses page.</p>
-  <p class="muted">By allowing, you let this harness act as you under the <a href="/terms">Terms of Service</a> and the <a href="/privacy">Privacy Policy</a>.</p>
+  <dl class="kv">
+    <dt>Tokens for</dt><dd><code>{{.Resource}}</code></dd>
+    <dt>Sent back to</dt><dd><code>{{.RedirectHost}}</code></dd>
+  </dl>
+  <p class="muted">Everything the harness does is checked by policy, confirmed where your role requires it, and recorded in your activity. You can disconnect it at any time on the Harnesses page.</p>
   <form method="post" action="/oauth/authorize/consent">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     {{range $k, $vs := .Hidden}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
-    <div class="actions">
-      <button class="btn primary" type="submit" name="action" value="approve">Allow</button>
+    <p class="hint">By allowing, you let this harness act as you under the <a href="/terms">Terms of Service</a> and the <a href="/privacy">Privacy Policy</a>.</p>
+    <div class="panel-foot">
+      <button class="btn primary" type="submit" name="action" value="approve">{{icon "check"}}Allow</button>
       <button class="btn" type="submit" name="action" value="deny">Deny</button>
     </div>
   </form>
+</section>
 </div>
 {{template "foot" .}}

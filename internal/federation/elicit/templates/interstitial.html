@@ -1,7 +1,8 @@
 {{template "head" .}}
-<h1>{{.Title}}</h1>
-<p><strong>{{.Server}}</strong> asks you to open one of its own pages, for example to sign in or to approve access. The gateway has not opened or checked that page. Look at the address before you continue.</p>
-<section class="card">
+<div class="auth">
+<section class="panel">
+  <h1>{{.Title}}</h1>
+  <p><strong>{{.Server}}</strong> asks you to open one of its own pages, for example to sign in or to approve access. The gateway has not opened or checked that page. Look at the address before you continue.</p>
   <dl class="args">
     <dt>Server</dt><dd>{{.Server}}</dd>
     <dt>Requested through</dt><dd>{{.Harness}} <span class="muted">(the agent your link was given to; the browser cannot confirm it)</span></dd>
@@ -16,10 +17,11 @@
   <form method="post" action="/elicit/{{.LinkID}}">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <div class="actions">
-      <button class="btn primary" type="submit" name="action" value="continue">Continue</button>
+      <button class="btn primary" type="submit" name="action" value="continue">{{icon "external"}}Continue</button>
       <button class="btn danger" type="submit" name="action" value="cancel">Cancel</button>
     </div>
   </form>
-  <p class="muted">This link works until {{fmtTime .Expires}}. If you did not expect this request, press Cancel.</p>
+  <p class="hint">This link works until {{fmtTime .Expires}}. If you did not expect this request, press Cancel.</p>
 </section>
+</div>
 {{template "foot" .}}

@@ -1,10 +1,36 @@
 {{define "title"}}Resource limits{{end}}{{define "content"}}
-<h1>Resource limits</h1>
-<p class="muted">How many MCP servers, tunnels, connected accounts and pending approvals each user may hold. Persisted values override the ENV defaults and apply at once; a per-user override (on the user's limits page) overrides both. 0 means unlimited. Existing resources above a lowered limit are kept; only new ones are refused.</p>
-<section class="card"><h2>Organization limits</h2>
-<form method="post" action="/admin/settings/resource-caps" class="stack"><input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
-{{range .Data.Rows}}<label>{{.Noun}} per user <input type="number" name="{{.Field}}" min="0" max="100000" value="{{with .Org}}{{.}}{{end}}" placeholder="default {{.Default}}"></label>
-{{end}}<span class="muted">Leave a field blank to use the ENV default shown; 0 is unlimited.</span>
-<p><button class="btn primary" type="submit">Save limits</button></p></form></section>
-<section class="card"><h2>User overrides</h2><table><thead><tr><th>User</th><th>Overrides</th><th></th></tr></thead><tbody>{{range .Data.Users}}<tr><td>{{.Name}}<br><code>{{.ID}}</code></td><td>{{with .Overrides}}<code>{{.}}</code>{{else}}<span class="muted">none</span>{{end}}</td><td><a class="btn small" href="/admin/users/{{.ID}}/limits">Limits</a></td></tr>{{else}}<tr><td colspan="3" class="muted">No users yet.</td></tr>{{end}}</tbody></table></section>
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/settings">Organization settings</a><span class="sep">/</span>Resource limits</p>
+    <h1>Resource limits</h1>
+    <p class="page-desc">How many MCP servers, tunnels, connected accounts and pending approvals each user may hold. Persisted values override the ENV defaults and apply at once; a per-user override (on the user's limits page) overrides both. 0 means unlimited. Existing resources above a lowered limit are kept; only new ones are refused.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-head"><h2>Organization limits</h2></div>
+  <form method="post" action="/admin/settings/resource-caps" class="stack">
+    <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+    {{range .Data.Rows}}<label>{{.Noun}} per user <input type="number" name="{{.Field}}" min="0" max="100000" value="{{with .Org}}{{.}}{{end}}" placeholder="default {{.Default}}"></label>
+    {{end}}<p class="hint">Leave a field blank to use the ENV default shown; 0 is unlimited.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Save limits</button></div>
+  </form>
+</section>
+
+<section class="section">
+  <div class="section-head"><div><h2>User overrides</h2><p>Users with their own limits. Open a user's limits page to change them.</p></div></div>
+  {{if .Data.Users}}
+  <div class="table-wrap">
+  <table><thead><tr><th>User</th><th>Overrides</th><th></th></tr></thead><tbody>
+  {{range .Data.Users}}<tr>
+    <td>{{.Name}}<br><code class="muted">{{.ID}}</code></td>
+    <td>{{with .Overrides}}<code>{{.}}</code>{{else}}<span class="muted">none</span>{{end}}</td>
+    <td class="actions"><a class="btn small" href="/admin/users/{{.ID}}/limits">Limits</a></td>
+  </tr>{{end}}
+  </tbody></table>
+  </div>
+  {{else}}
+  <div class="empty">{{icon "users"}}<strong>No users yet</strong><p>Users appear here after their first sign-in.</p></div>
+  {{end}}
+</section>
 {{end}}

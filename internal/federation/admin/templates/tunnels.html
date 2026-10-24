@@ -1,24 +1,31 @@
 {{template "head" .}}
-{{template "subnav"}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Tunnels connect user-run stdio or private MCP servers to the gateway. "Online" is this replica's view.</p>
+  </div>
+</header>
+{{template "subnav" "tunnels"}}
 {{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
-<p class="muted">Tunnels connect user-run stdio or private MCP servers to the gateway. "Online" is this replica's view.</p>
 {{if .Tunnels}}
+<div class="table-wrap">
 <table>
   <thead><tr><th>Name</th><th>Owner</th><th>State</th><th>Created</th><th>Last seen</th><th></th></tr></thead>
   <tbody>
   {{range .Tunnels}}
   <tr>
-    <td>{{.Name}}</td>
-    <td>{{if .OwnerName}}{{.OwnerName}}{{else}}{{.OwnerUserID}}{{end}}</td>
+    <td><strong>{{.Name}}</strong></td>
+    <td>{{if .OwnerName}}{{.OwnerName}}{{else}}<span class="mono">{{.OwnerUserID}}</span>{{end}}</td>
     <td>{{if .RevokedAt}}<span class="pill revoked">revoked</span>{{else if .Online}}<span class="pill active">online</span>{{else}}<span class="pill none">offline</span>{{end}}</td>
-    <td>{{fmtTime .CreatedAt}}</td>
-    <td>{{with .LastSeenAt}}{{fmtTime .}}{{else}}never{{end}}</td>
-    <td>{{if not .RevokedAt}}<form method="post" action="/admin/tunnels/{{.ID}}/revoke" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger" type="submit">Revoke</button></form>{{end}}</td>
+    <td class="nowrap">{{fmtTime .CreatedAt}}</td>
+    <td class="nowrap">{{with .LastSeenAt}}{{fmtTime .}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td class="actions">{{if not .RevokedAt}}<form method="post" action="/admin/tunnels/{{.ID}}/revoke" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger small" type="submit">Revoke</button></form>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
+</div>
 {{else}}
-<p class="muted">No tunnels.</p>
+<div class="empty">{{icon "machines"}}<strong>No tunnels.</strong><p>When a user creates a tunnel on their Servers page, it appears here.</p></div>
 {{end}}
 {{template "foot" .}}

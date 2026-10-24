@@ -1,5 +1,10 @@
 {{template "head" .}}
-<p>All users' audit events, metadata only. Filter by user ID, tool, decision, outcome or date.</p>
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">All users' audit events, metadata only. Filter by user ID, tool, decision, outcome or date.</p>
+  </div>
+</header>
 {{template "filters" .}}
 {{template "rows" .}}
 {{template "foot" .}}

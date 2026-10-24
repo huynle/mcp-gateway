@@ -1,43 +1,61 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Connect the app accounts your tools should use. Company and personal accounts are kept apart; policy decides what each may do. Tokens are stored encrypted and never shown.</p>
+  </div>
+</header>
 {{if .Notice}}<p class="ok">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<p>Connect the app accounts your tools should use. Company and personal accounts are kept apart; policy decides what each may do. Tokens are stored encrypted and never shown.</p>
 {{$csrf := .Caller.CSRFToken}}
 {{range .Vendors}}
-<section class="vendor">
-  <h2>{{title .Vendor}}</h2>
-  <table>
-    <thead><tr><th>Account</th><th>Label</th><th>Scopes</th><th>Status</th><th>Last refreshed</th><th></th></tr></thead>
-    <tbody>
-    {{range .Connections}}
-    <tr>
-      <td>{{.DisplayName}}</td>
-      <td><span class="pill {{.Label}}">{{.Label}}</span></td>
-      <td><code>{{join .Scopes}}</code>{{if .Unlocks}}<br><span class="muted">{{.Unlocks}}</span>{{end}}{{if .Extends}}<br><span class="muted">{{.Extends}}</span>{{end}}</td>
-      <td>{{if .NeedsReconnect}}<span class="pill needs_reconnect">needs reconnect</span>{{else}}<span class="pill active">{{.Status}}</span>{{end}}</td>
-      <td>{{if .LastRefreshedAt}}{{fmtTime .LastRefreshedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
-      <td class="actions">
+<section class="section vendor">
+  <div class="section-head">
+    <div>
+      <h2>{{title .Vendor}}</h2>
+      <p>{{with len .Connections}}{{.}} account{{if ne . 1}}s{{end}} connected{{else}}Not connected yet{{end}}</p>
+    </div>
+    {{if .Apps}}<div class="btn-row">
+    {{range .Apps}}
+      <a class="btn primary" href="/connect/{{.Vendor}}/start?variant={{.Variant}}">{{icon "plus"}}Connect {{title .Vendor}}{{if eq .Vendor "google"}} ({{if eq .Variant "internal"}}company{{else}}personal{{end}}){{end}} account</a>
+    {{end}}
+    </div>{{end}}
+  </div>
+  {{if .Connections}}
+  <div class="grid grid-2">
+  {{range .Connections}}
+    <section class="panel connection">
+      <div class="panel-head">
+        <h3>{{.DisplayName}}</h3>
+        <div class="btn-row">
+          <span class="pill {{.Label}}">{{.Label}}</span>
+          {{if .NeedsReconnect}}<span class="pill needs_reconnect">needs reconnect</span>{{else}}<span class="pill active">{{.Status}}</span>{{end}}
+        </div>
+      </div>
+      {{if .NeedsReconnect}}<p class="callout warn">The vendor no longer accepts this connection's tokens. Reconnect to keep its tools working.</p>{{end}}
+      <dl class="kv">
+        <dt>Scopes</dt>
+        <dd><code>{{join .Scopes}}</code>{{if .Unlocks}}<p class="hint">{{.Unlocks}}</p>{{end}}{{if .Extends}}<p class="hint">{{.Extends}}</p>{{end}}</dd>
+        <dt>Last refreshed</dt>
+        <dd>{{if .LastRefreshedAt}}<span class="nowrap">{{fmtTime .LastRefreshedAt}} UTC</span>{{else}}<span class="muted">never</span>{{end}}</dd>
+      </dl>
+      <div class="panel-foot">
         {{if .NeedsReconnect}}<a class="btn primary" href="{{.GrantURL}}">Reconnect</a>
         {{else if .GrantURL}}<a class="btn" href="{{.GrantURL}}">Grant more access</a>
         {{end}}
-        <form method="post" action="/connections/{{.ID}}/disconnect" onsubmit="return confirm('Disconnect {{.DisplayName}}? Its tokens are deleted.')">
+        <form class="inline push" method="post" action="/connections/{{.ID}}/disconnect" onsubmit="return confirm('Disconnect {{.DisplayName}}? Its tokens are deleted.')">
           <input type="hidden" name="_csrf" value="{{$csrf}}">
-          <button class="btn danger" type="submit">Disconnect</button>
+          <button class="btn danger" type="submit">{{icon "x"}}Disconnect</button>
         </form>
-      </td>
-    </tr>
-    {{else}}
-    <tr><td colspan="6" class="muted">No {{title .Vendor}} account connected.</td></tr>
-    {{end}}
-    </tbody>
-  </table>
-  <p>
-  {{range .Apps}}
-    <a class="btn primary" href="/connect/{{.Vendor}}/start?variant={{.Variant}}">Connect {{title .Vendor}}{{if eq .Vendor "google"}} ({{if eq .Variant "internal"}}company{{else}}personal{{end}}){{end}} account</a>
+      </div>
+    </section>
   {{end}}
-  </p>
+  </div>
+  {{else}}
+  <div class="empty">{{icon "connections"}}<strong>No {{title .Vendor}} account connected.</strong><p>{{if .Apps}}Connect an account so your tools can act on {{title .Vendor}} as you.{{else}}No {{title .Vendor}} app is enabled right now; ask an admin.{{end}}</p></div>
+  {{end}}
 </section>
 {{else}}
-<p class="notice">No vendor apps are configured yet. An admin registers them under Vendor apps.</p>
+<div class="empty">{{icon "connections"}}<strong>Nothing to connect yet</strong><p>No vendor apps are configured yet. An admin registers them under Vendor apps.</p>{{if .Caller.IsAdmin}}<a class="btn primary" href="/admin/vendor-apps">{{icon "vendorapps"}}Configure vendor apps</a>{{end}}</div>
 {{end}}
 {{template "foot" .}}

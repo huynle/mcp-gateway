@@ -1,4 +1,9 @@
 {{template "head" .}}
-<p>{{.Message}}</p>
-<p><a class="btn" href="/servers">Back to servers</a></p>
+<div class="auth">
+  <section class="panel">
+    <h1>{{.Title}}</h1>
+    <p>{{.Message}}</p>
+    <p class="form-actions"><a class="btn" href="/servers">{{icon "arrow-left"}}Back to servers</a></p>
+  </section>
+</div>
 {{template "foot" .}}

@@ -2,9 +2,14 @@
 {{define "content"}}
 {{with .Data.Legal}}
 <article class="legal">
-<h1>Terms of Service</h1>
+<header class="page-head">
+  <div>
+    <h1>Terms of Service</h1>
+    <p class="page-desc muted">Effective {{.EffectiveDisplay}}.</p>
+  </div>
+  <div class="page-actions"><a class="btn small" href="/privacy">Privacy Policy</a></div>
+</header>
 {{if .Draft}}<p class="notice draft" role="note" data-legal-draft>Draft – pending review. This text has not been reviewed by a lawyer yet and may change before it takes effect.</p>{{end}}
-<p class="muted">Effective {{.EffectiveDisplay}}.</p>
 
 <p>These terms govern your use of the MCP Gateway at this address (the "service"), run by <strong>{{.OperatorDisplay}}</strong> ("we"). By signing in you accept them. The <a href="/privacy">Privacy Policy</a> explains how we handle your data.</p>
 

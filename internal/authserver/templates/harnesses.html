@@ -1,29 +1,48 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Harnesses that signed in with OAuth instead of a generated token. Each one holds a refresh token that is rotated on use and expires 30 days after its last renewal; disconnecting ends it immediately.</p>
+  </div>
+  <div class="page-actions"><a class="btn" href="/tokens">{{icon "tokens"}}Tokens</a></div>
+</header>
 {{if .Revoked}}<p class="ok">Harness disconnected. It has to sign in again before it can use the gateway.</p>{{end}}
-<p>Harnesses that signed in with OAuth instead of a generated token. Each one holds a refresh token that is rotated on use and expires 30 days after its last renewal; disconnecting ends it immediately. MCP endpoint: <code>{{.MCPURL}}</code>.</p>
-<table>
-  <thead><tr><th>Harness</th><th>Connected</th><th>Last used</th><th>Access</th><th>Status</th><th></th></tr></thead>
-  <tbody>
-  {{$csrf := .CSRFToken}}
-  {{range .Harnesses}}
-  <tr>
-    <td>{{.ClientName}}<br><span class="muted"><code>{{.ClientID}}</code></span></td>
-    <td>{{fmtTime .CreatedAt}}</td>
-    <td>{{if .LastUsedAt}}{{fmtTime .LastUsedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
-    <td>{{.Scope}}</td>
-    <td><span class="pill {{.Status}}">{{.Status}}</span></td>
-    <td>
-      {{if eq .Status "active"}}
-      <form class="inline" method="post" action="/harnesses/{{.FamilyID}}/revoke" onsubmit="return confirm('Disconnect this harness? It stops working immediately.')">
-        <input type="hidden" name="_csrf" value="{{$csrf}}">
-        <button class="btn danger" type="submit">Disconnect</button>
-      </form>
-      {{end}}
-    </td>
-  </tr>
+<section class="panel">
+  <div class="panel-head"><h2>MCP endpoint</h2></div>
+  <div class="copyable"><pre id="mcp-url">{{.MCPURL}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="mcp-url" hidden>{{icon "copy"}}Copy</button></div>
+  <p class="hint">Point a harness that supports OAuth at this URL; it brings you to a consent page here to approve it.</p>
+</section>
+<section class="section">
+  <div class="section-head"><div><h2>Signed-in harnesses</h2></div></div>
+  {{if .Harnesses}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Harness</th><th>Connected</th><th>Last used</th><th>Access</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {{$csrf := .CSRFToken}}
+    {{range .Harnesses}}
+    <tr>
+      <td><strong>{{.ClientName}}</strong><br><code class="muted clip" title="{{.ClientID}}">{{.ClientID}}</code></td>
+      <td class="nowrap">{{fmtTime .CreatedAt}}</td>
+      <td class="nowrap">{{if .LastUsedAt}}{{fmtTime .LastUsedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>{{.Scope}}</td>
+      <td><span class="pill {{.Status}}">{{.Status}}</span></td>
+      <td class="actions">
+        {{if eq .Status "active"}}
+        <form class="inline" method="post" action="/harnesses/{{.FamilyID}}/revoke" onsubmit="return confirm('Disconnect this harness? It stops working immediately.')">
+          <input type="hidden" name="_csrf" value="{{$csrf}}">
+          <button class="btn small danger" type="submit">Disconnect</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
   {{else}}
-  <tr><td colspan="6" class="muted">No harnesses connected with OAuth yet. Point a harness at <code>{{.MCPURL}}</code> and it will bring you here to approve it.</td></tr>
+  <div class="empty">{{icon "harnesses"}}<strong>No harnesses connected with OAuth yet.</strong><p>Point a harness at <code>{{.MCPURL}}</code> and it will bring you here to approve it.</p></div>
   {{end}}
-  </tbody>
-</table>
+</section>
+<script src="{{asset "copy.js"}}" defer></script>
 {{template "foot" .}}
