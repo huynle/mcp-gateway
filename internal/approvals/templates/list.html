@@ -6,6 +6,15 @@
   </div>
   <div class="page-actions"><a class="btn" href="/approvals/history">History</a></div>
 </header>
+{{if navData.Notifications}}<div class="callout info push-prompt" data-push-prompt hidden>
+  <p><strong>Get notified on this device</strong> when an approval is waiting. The notification names the tool and the account only.</p>
+  <p class="btn-row">
+    <button type="button" class="btn small primary" data-push-prompt-on>{{icon "bell"}}Turn on</button>
+    <button type="button" class="btn small ghost" data-push-prompt-dismiss>Not now</button>
+    <a href="/account#notifications">Notification settings</a>
+  </p>
+  <p class="muted" data-push-prompt-message aria-live="polite"></p>
+</div>{{end}}
 {{if eq .Decided "approved"}}<p class="ok">Approved. Tell the harness to call the tool again with the approval id, or wait: a call that is still waiting completes on its own.</p>
 {{else if eq .Decided "denied"}}<p class="notice">Denied. The arguments were discarded.</p>
 {{else if eq .Decided "already"}}<p class="notice">That approval had already been decided, used or had expired.</p>{{end}}

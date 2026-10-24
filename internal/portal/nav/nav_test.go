@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -260,5 +261,41 @@ func TestUserBlockShowsInitial(t *testing.T) {
 		if got := (nav.Data{DisplayName: name}).Initial(); got != want {
 			t.Errorf("Initial(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// Data.Notifications adds the Notifications link right after My account,
+// in the first group, with a bell icon; the pinned link sets are
+// unchanged without it.
+func TestNotificationsLink(t *testing.T) {
+	body := render(t, nav.Data{SignedIn: true, Notifications: true, Active: "/account"})
+	links := navtest.Links(body)
+	if len(links) != len(navtest.Member)+1 || links[0] != "/account" || links[1] != "/account#notifications" {
+		t.Errorf("links = %v", links)
+	}
+	if got := navtest.Current(body); got != "/account" {
+		t.Errorf("current = %q, want /account only", got)
+	}
+	if !strings.Contains(body, `<svg class="icon icon-bell"`) {
+		t.Error("Notifications link has no bell icon")
+	}
+	if got := navtest.Links(render(t, nav.Data{SignedIn: true})); !slices.Equal(got, navtest.Member) {
+		t.Errorf("without Notifications: %v", got)
+	}
+}
+
+// pwa.js finds the CSRF token on pages without <body hx-headers> through
+// the sign-out form; keep the selector and the markup in step.
+func TestPWAScriptFindsCSRFInSignOutForm(t *testing.T) {
+	js, err := fs.ReadFile(static.FS, "pwa.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(js), `form[action="/auth/signout"] input[name="_csrf"]`) {
+		t.Fatal("pwa.js no longer reads the token from the sign-out form")
+	}
+	body := render(t, nav.Data{SignedIn: true, CSRFToken: "c-9"})
+	if !regexp.MustCompile(`<form method="post" action="/auth/signout"[^>]*>\s*<input type="hidden" name="_csrf" value="c-9">`).MatchString(body) {
+		t.Errorf("sign-out form no longer carries the token as pwa.js expects:\n%s", body)
 	}
 }

@@ -154,18 +154,20 @@ func (p *Portal) Handler() http.Handler {
 	mux.HandleFunc("GET "+workerPath, p.workerHandler)
 	mux.HandleFunc("GET "+offlinePath, p.offline)
 	mux.HandleFunc("/", p.notFound)
-	return SecurityHeaders(p.svc.Middleware(withNav(mux)))
+	return SecurityHeaders(p.svc.Middleware(withNav(mux, p.push != nil)))
 }
 
 // withNav attaches the shared nav data (package nav) for the signed-in
 // principal, so every page, the portal's and the mounted modules', renders
 // the same bar. The admin flag is Principal.IsAdmin, the check
-// requireAdmin applies to /admin/* (decision 7datr7x4).
-func withNav(next http.Handler) http.Handler {
+// requireAdmin applies to /admin/* (decision 7datr7x4). notifications
+// (Web Push is on) adds the Notifications link and the approvals prompt.
+func withNav(next http.Handler, notifications bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pr := identity.PrincipalFrom(r.Context()); pr != nil {
 			r = r.WithContext(nav.WithData(r.Context(), nav.Data{
 				SignedIn: true, IsAdmin: pr.IsAdmin(), CSRFToken: pr.CSRFToken, DisplayName: pr.DisplayName,
+				Notifications: notifications,
 			}))
 		}
 		next.ServeHTTP(w, r)

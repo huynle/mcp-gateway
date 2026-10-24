@@ -295,3 +295,25 @@ func TestPushTestRoute(t *testing.T) {
 		t.Errorf("rate-limited test = %d Retry-After %q: %s", rec.Code, rec.Header().Get("Retry-After"), body)
 	}
 }
+
+// With Web Push on, every page's sidebar links straight to the
+// Notifications section (after My account); with it off there is no such
+// link. The fragment link is never marked current.
+func TestNotificationsLinkInSidebar(t *testing.T) {
+	h, _ := newHarnessWithPush(t)
+	ck, _ := h.session(t, memberSub, "Member")
+	for _, path := range []string{"/account", "/tokens"} {
+		body := h.do(t, request{method: http.MethodGet, path: path, cookie: ck}).Body.String()
+		if !strings.Contains(body, `<a class="nav-link" href="/account#notifications">`) {
+			t.Errorf("%s: sidebar lacks the Notifications link", path)
+		}
+		if strings.Contains(body, `href="/account#notifications" aria-current`) {
+			t.Errorf("%s: Notifications link marked current", path)
+		}
+	}
+	off := newHarness(t)
+	ck, _ = off.session(t, memberSub, "Member")
+	if body := off.do(t, request{method: http.MethodGet, path: "/account", cookie: ck}).Body.String(); strings.Contains(body, "/account#notifications") {
+		t.Error("Notifications link shown with Web Push off")
+	}
+}

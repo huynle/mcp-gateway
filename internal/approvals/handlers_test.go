@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/approvals"
+	"github.com/huynle/mcp-gateway/internal/portal/nav"
 )
 
 const csrf = "csrf-token-value"
@@ -184,5 +186,31 @@ func TestHistoryPageListsDecisionsWithoutArguments(t *testing.T) {
 	}
 	if strings.Index(body, b.ID[:8]) > strings.Index(body, a.ID[:8]) {
 		t.Error("history is not newest first")
+	}
+}
+
+// The "Get notified on this device" bar is on the approvals page only
+// when the nav data says Web Push is on; it is rendered hidden (pwa.js
+// shows it when this browser can and has not subscribed).
+func TestPushPromptFollowsNavData(t *testing.T) {
+	f := newPages(t)
+	if body := f.get(t, "/approvals").Body.String(); strings.Contains(body, "data-push-prompt") {
+		t.Error("push prompt shown with Web Push off")
+	}
+	req := httptest.NewRequestWithContext(nav.WithData(t.Context(), nav.Data{SignedIn: true, Notifications: true, CSRFToken: "tok-1"}), http.MethodGet, "/approvals", nil)
+	rec := httptest.NewRecorder()
+	f.mux.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	bar := regexp.MustCompile(`<div[^>]*data-push-prompt[^>]*>`).FindString(body)
+	if bar == "" || !strings.Contains(bar, "hidden") {
+		t.Fatalf("push prompt %q missing or not hidden", bar)
+	}
+	// pwa.js reads the CSRF token for its fetch() calls from the sidebar's
+	// sign-out form on module pages like this one (no hx-headers here).
+	for _, want := range []string{"data-push-prompt-on", "data-push-prompt-dismiss", `href="/account#notifications"`, "Get notified on this device",
+		`<form method="post" action="/auth/signout" class="signout">` + "\n" + `        <input type="hidden" name="_csrf" value="tok-1">`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("approvals page lacks %q", want)
+		}
 	}
 }
