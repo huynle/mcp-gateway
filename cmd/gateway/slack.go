@@ -9,6 +9,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/audit"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connections"
+	"github.com/huynle/mcp-gateway/internal/pushnotify"
 	"github.com/huynle/mcp-gateway/internal/slack"
 )
 
@@ -51,11 +52,15 @@ func newSlackInteractions(approvalSvc *approvals.Service, connSvc *connections.S
 }
 
 // notifiers builds the approvals notifier list: the portal always, then
-// every non-nil extra (a typed nil *SlackNotifier is skipped).
+// every non-nil extra (a typed nil *SlackNotifier or *pushnotify.Service
+// is skipped).
 func notifiers(extra ...approvals.Notifier) approvals.MultiNotifier {
 	list := approvals.MultiNotifier{approvals.PortalNotifier{}}
 	for _, n := range extra {
 		if sn, ok := n.(*approvals.SlackNotifier); ok && sn == nil {
+			continue
+		}
+		if ps, ok := n.(*pushnotify.Service); ok && ps == nil {
 			continue
 		}
 		if n != nil {

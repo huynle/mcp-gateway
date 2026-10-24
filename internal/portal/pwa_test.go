@@ -277,6 +277,42 @@ func TestPWAScriptParses(t *testing.T) {
 	nodeCheck(t, "pwa.js", src)
 }
 
+// The "notifications on this device" control in pwa.js: the routes it
+// calls, the CSRF header, the permission prompt from the click, and no
+// HTML injection or inline handlers.
+func TestPWAScriptPushControl(t *testing.T) {
+	b, err := static.FS.ReadFile("pwa.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		"[data-push-control]", "[data-push-state]", "[data-push-toggle]", "[data-push-test]",
+		`"/account/push/key"`, `"/account/push/subscribe"`, `"/account/push/unsubscribe"`, `"/account/push/test"`,
+		`"X-CSRF-Token"`, `getAttribute("hx-headers")`,
+		"Notification.requestPermission(", "pushManager.subscribe(", "userVisibleOnly: true", "applicationServerKey",
+		"PushManager", "subscription.unsubscribe(", `credentials: "same-origin"`,
+		"Not supported on this browser", "Blocked in browser settings", "On for this device",
+		"Turn on for this device", "Turn off for this device",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("pwa.js lacks %s", want)
+		}
+	}
+	for _, bad := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "onclick"} {
+		if strings.Contains(src, bad) {
+			t.Errorf("pwa.js uses %s", bad)
+		}
+	}
+	// The permission prompt must come straight from the click (iOS refuses
+	// it otherwise): requested in the click handler before any await.
+	click := strings.Index(src, `addEventListener("click"`)
+	perm := strings.Index(src, "Notification.requestPermission(")
+	if click < 0 || perm < 0 {
+		t.Fatal("no click handler or permission request")
+	}
+}
+
 // The raw worker is not an asset: /static/sw.js would carry placeholders
 // and the wrong scope.
 func TestWorkerIsNotAStaticAsset(t *testing.T) {

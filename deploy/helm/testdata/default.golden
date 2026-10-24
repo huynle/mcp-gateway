@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
-    mcp-gateway/vendor-api-hosts: "api.github.com,github.com,slack.com,api.slack.com,api.atlassian.com,auth.atlassian.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,gmail.googleapis.com,login.microsoftonline.com,graph.microsoft.com"
+    mcp-gateway/vendor-api-hosts: "api.github.com,github.com,slack.com,api.slack.com,api.atlassian.com,auth.atlassian.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,gmail.googleapis.com,login.microsoftonline.com,graph.microsoft.com,fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.push.apple.com,*.notify.windows.com"
 spec:
   podSelector:
     matchLabels:
@@ -279,6 +279,8 @@ spec:
             - name: GATEWAY_CREDENTIAL_LINKS_ENABLED
               value: "false"
             - name: GATEWAY_UPSTREAM_ELICITATION_ENABLED
+              value: "false"
+            - name: GATEWAY_WEBPUSH_ENABLED
               value: "false"
             - name: GATEWAY_ENABLE_FAKE_CONNECTOR
               value: "false"

@@ -40,6 +40,8 @@ type accountData struct {
 	Lifecycle bool
 	// Install is the CLI install commands (the Command-line tool card).
 	Install []clientinstall.Command
+	// Push is the "Notifications" panel (nil: Web Push is off; SetPush).
+	Push *pushView
 }
 
 type RateSettings interface {
@@ -90,6 +92,14 @@ func (p *Portal) account(w http.ResponseWriter, r *http.Request) {
 		u, _ := p.rateSettings.Limits(ctx, userID, "")
 		v := snap.Users[userID]
 		data.RateLimits = &rateLimitsView{OrgUser: snap.UserDefault, OrgApp: snap.AppDefault, EffectiveUser: u, Admin: v.Admin, Self: v.Self}
+	}
+	if p.push != nil {
+		devices, err := p.push.Devices(r.Context(), identity.PrincipalFrom(r.Context()).UserID)
+		if err != nil {
+			p.serverError(w, r, err)
+			return
+		}
+		data.Push = &pushView{Devices: devices}
 	}
 	if p.resourceCaps != nil {
 		data.Limits = &limitsView{Rows: p.capRows(r.Context(), identity.PrincipalFrom(r.Context()).UserID, true)}

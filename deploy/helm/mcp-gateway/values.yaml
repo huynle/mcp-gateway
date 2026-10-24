@@ -90,6 +90,13 @@ gateway:
   # gateway's /elicit/<id> confirmation page.
   upstreamElicitation:
     enabled: false
+  # Web Push approval notifications (GATEWAY_WEBPUSH_ENABLED;
+  # docs/push-notifications.md): users turn notifications on per device on
+  # My account. Needs keyProvider and an https gateway.baseURL (otherwise
+  # it stays off with a warning), and HTTPS egress to the push services
+  # listed under networkPolicy.egress.vendorAPIs.hosts.
+  webpush:
+    enabled: false
   # Registers the in-process "fake" connector. NEVER in production: it gives
   # every user a make-believe account and tools. Local/test clusters only.
   enableFakeConnector: false
@@ -379,6 +386,13 @@ networkPolicy:
         - gmail.googleapis.com
         - login.microsoftonline.com
         - graph.microsoft.com
+        # Web Push services (gateway.webpush; the gateway only ever posts to
+        # these: internal/webpush allow-list).
+        - fcm.googleapis.com
+        - updates.push.services.mozilla.com
+        - web.push.apple.com
+        - "*.push.apple.com"
+        - "*.notify.windows.com"
       # Resolved CIDRs for the hosts above. Empty = 0.0.0.0/0 except private
       # and link-local ranges.
       cidrs: []

@@ -223,6 +223,8 @@ Job has its own, smaller, set).
   value: {{ $g.credentialLinks.enabled | quote }}
 - name: GATEWAY_UPSTREAM_ELICITATION_ENABLED
   value: {{ $g.upstreamElicitation.enabled | quote }}
+- name: GATEWAY_WEBPUSH_ENABLED
+  value: {{ $g.webpush.enabled | quote }}
 - name: GATEWAY_ENABLE_FAKE_CONNECTOR
   value: {{ $g.enableFakeConnector | quote }}
 {{- if .Values.oidc.providers }}

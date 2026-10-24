@@ -22,7 +22,7 @@ var ExportSections = []string{
 	"profile", "identities", "roles", "connections", "tokens", "harness_grants",
 	"mcp_servers", "mcp_server_connections", "tunnels", "approvals",
 	"ledger_operations", "audit_events", "rate_limits", "resource_caps",
-	"machines", "machine_enrollment_codes",
+	"machines", "machine_enrollment_codes", "push_subscriptions",
 }
 
 // exportQueries: $1 is the user id, $2 the row limit. Every query filters
@@ -74,6 +74,10 @@ var exportQueries = map[string]string{
 		FROM machines WHERE owner_user_id = $1 ORDER BY created_at LIMIT $2`,
 	"machine_enrollment_codes": `SELECT id, label, created_at, expires_at, used_at, machine_id, revoked_at
 		FROM machine_enrollment_codes WHERE owner_user_id = $1 ORDER BY created_at LIMIT $2`,
+	// Display metadata only: the endpoint and its keys are sealed and are
+	// never exported (the endpoint is a capability to push to the device).
+	"push_subscriptions": `SELECT device_label, endpoint_host, created_at, last_success_at
+		FROM push_subscriptions WHERE user_id = $1 ORDER BY created_at LIMIT $2`,
 }
 
 // ExportSection returns up to limit rows of one export section for userID
@@ -211,8 +215,8 @@ type UserDeletion struct {
 //     and snapshots cascade), the user's own connections to any server,
 //     tunnels, enrolled machines (tokens and assertion ids cascade),
 //     machine enrollment codes and decided device requests, ephemeral
-//     secrets and secret requests, upstream URL elicitations, connect flows, OAuth authorization codes, connection
-//     secrets, role assignments, per-user restrictions and rate limits;
+//     secrets and secret requests, upstream URL elicitations, Web Push subscriptions, connect flows, OAuth
+//     authorization codes, connection secrets, role assignments, per-user restrictions and rate limits;
 //   - kept but emptied: tokens and OAuth refresh tokens (revoked, token
 //     names replaced), connections (revoked, external account id and
 //     display name replaced), approvals (payload dropped, open ones
@@ -280,6 +284,7 @@ func DeleteUserData(ctx context.Context, q Querier, userID string, at time.Time)
 		{"machine requests", `DELETE FROM machine_device_requests WHERE decided_by = $1`},
 		{"secrets", `DELETE FROM secrets WHERE owner_user_id = $1`},
 		{"upstream elicitations", `DELETE FROM upstream_elicitations WHERE owner_user_id = $1`},
+		{"push subscriptions", `DELETE FROM push_subscriptions WHERE user_id = $1`},
 	} {
 		if _, err := q.Exec(ctx, stmt.sql, withTime(stmt.sql, userID, at)...); err != nil {
 			return nil, fmt.Errorf("store: delete user %s: %w", stmt.what, err)

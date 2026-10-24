@@ -29,6 +29,7 @@ type Portal struct {
 	lifecycle    Account      // nil: no data export / account deletion
 	legal        Legal        // operator values on the public pages (SetLegal)
 	pwa          *pwa         // web app manifest and service worker (pwa.go)
+	push         Push         // nil: no "Notifications" panel (push.go)
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -63,6 +64,10 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /account                  my account
 //	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
 //	POST /account/rate-limit       my optional lower personal ceiling
+//	GET  /account/push/key         Web Push applicationServerKey (SetPush; push.go)
+//	POST /account/push/subscribe   store this browser's push subscription (SetPush)
+//	POST /account/push/unsubscribe turn off for this browser / remove a device (SetPush)
+//	POST /account/push/test        send a test notification (SetPush)
 //	POST /account/export           download my data (SetAccount)
 //	GET|POST /account/delete       delete my account (SetAccount)
 //	GET  /account/deleted          after the deletion (anonymous)
@@ -125,6 +130,9 @@ func (p *Portal) Handler() http.Handler {
 		mux.Handle("POST /admin/settings/rate-limits/org", p.requireAdmin(p.csrf(http.HandlerFunc(p.setOrgRateLimits))))
 		mux.Handle("POST /admin/settings/rate-limits/app", p.requireAdmin(p.csrf(http.HandlerFunc(p.setAppRateLimit))))
 		mux.Handle("POST /admin/settings/rate-limits/user", p.requireAdmin(p.csrf(http.HandlerFunc(p.setUserRateLimit))))
+	}
+	if p.push != nil {
+		p.mountPush(mux)
 	}
 	if p.lifecycle != nil {
 		p.mountLifecycle(mux)

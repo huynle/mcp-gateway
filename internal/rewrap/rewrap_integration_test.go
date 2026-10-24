@@ -74,7 +74,7 @@ func openPGEnv(t *testing.T) *pgEnv {
 	for _, stmt := range []string{
 		"ALTER ROLE gateway_app LOGIN PASSWORD '" + appPassword + "'",
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + jobsPassword + "'",
-		"TRUNCATE users, vendor_apps, signing_keys, mcp_servers, policy_versions CASCADE",
+		"TRUNCATE users, vendor_apps, signing_keys, webpush_keys, mcp_servers, policy_versions CASCADE",
 	} {
 		if err := execRetrying(ctx, super, stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
@@ -225,8 +225,32 @@ func seedAll(t *testing.T, env *pgEnv, kp crypto.KeyProvider, copies int) *seede
 				link_expires_at, request_hash, handle_hash)
 			VALUES ($1, 'tok', 'pending', $2, 'srv.run', 1, 1, 900, now() + interval '10 minutes',
 				sha256(('req-p-' || $3::text)::bytea), sha256(('sec-p-' || $3::text)::bytea))`, user, server, secret)
+
+		// Web Push (00033): the VAPID key is a singleton, so only the first
+		// copy has one; every copy has a subscription.
+		if i == 0 {
+			key := s.one(`SELECT gen_random_uuid()::text`)
+			e = s.seal(column(t, "webpush_keys"), key)
+			s.exec(`INSERT INTO webpush_keys (id, public_key, private_key_id, private_wrapped_key, private_nonce, private_ciphertext)
+				VALUES ($1, 'BPublic', $2, $3, $4, $5)`, key, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
+		}
+		sub := s.one(`SELECT gen_random_uuid()::text`)
+		e = s.seal(column(t, "push_subscriptions"), sub)
+		s.exec(`INSERT INTO push_subscriptions (id, user_id, endpoint_sha256, sub_key_id, sub_wrapped_key, sub_nonce, sub_ciphertext,
+				endpoint_host, device_label)
+			VALUES ($1::uuid, $2, sha256(('push-' || $1::text)::bytea), $3, $4, $5, $6, 'fcm.googleapis.com', 'Android Chrome')`,
+			sub, user, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
 	}
 	return s
+}
+
+// seeded is how many envelopes seedAll(copies) writes into c: one per
+// copy, except the singleton VAPID key.
+func seeded(c rewrap.Column, copies int) int {
+	if c.Table == "webpush_keys" {
+		return 1
+	}
+	return copies
 }
 
 // load reads a seeded row's envelope back from the database.
@@ -316,7 +340,7 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 	env := openPGEnv(t)
 	ctx := t.Context()
 	oldOnly, both, newOnly := keyFiles(t)
-	seeded := seedAll(t, env, oldOnly, 3)
+	sealedRows := seedAll(t, env, oldOnly, 3)
 
 	// Plan: counts per key ID, nothing changes.
 	plan, err := rewrap.Plan(ctx, env.jobs, both)
@@ -327,11 +351,11 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		t.Fatalf("plan covers %d columns, want %d", len(plan), len(rewrap.Columns))
 	}
 	for _, r := range plan {
-		if r.Envelopes != 3 || r.ByKeyID["old"] != 3 || r.Current != 0 {
+		if n := seeded(r.Column, 3); r.Envelopes != n || r.ByKeyID["old"] != n || r.Current != 0 {
 			t.Errorf("plan %s = %+v; want 3 envelopes under old", r.Column.Table, r)
 		}
 	}
-	for _, r := range seeded.rows {
+	for _, r := range sealedRows.rows {
 		if got := load(t, env.super, r); got.KeyID != "old" {
 			t.Fatalf("plan changed %s: key %q", r.col.Table, got.KeyID)
 		}
@@ -343,11 +367,11 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for table, r := range byTable(reports) {
-		if r.Rewrapped != 3 || r.Failed != 0 || r.Conflicts != 0 {
+		if r.Rewrapped != seeded(r.Column, 3) || r.Failed != 0 || r.Conflicts != 0 {
 			t.Errorf("run %s = %+v; want 3 rewrapped", table, r)
 		}
 	}
-	for _, r := range seeded.rows {
+	for _, r := range sealedRows.rows {
 		got := load(t, env.super, r)
 		if got.KeyID != "new" {
 			t.Errorf("%s %s: key ID %q after rewrap", r.col.Table, r.pk, got.KeyID)
@@ -374,7 +398,7 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for table, r := range byTable(again) {
-		if r.Rewrapped != 0 || r.Current != 3 {
+		if r.Rewrapped != 0 || r.Current != seeded(r.Column, 3) {
 			t.Errorf("second run %s = %+v; want 0 rewrapped, 3 current", table, r)
 		}
 	}
@@ -386,7 +410,7 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		t.Fatalf("verify with the new key: %v", err)
 	}
 	for table, r := range byTable(ok) {
-		if r.Envelopes != 3 || r.Current != 3 || r.Failed != 0 {
+		if n := seeded(r.Column, 3); r.Envelopes != n || r.Current != n || r.Failed != 0 {
 			t.Errorf("verify %s = %+v", table, r)
 		}
 	}
@@ -395,7 +419,7 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		t.Fatalf("verify with the retired key: want ErrVerifyFailed, got %v", err)
 	}
 	for table, r := range byTable(bad) {
-		if r.Failed != 3 {
+		if r.Failed != seeded(r.Column, 3) {
 			t.Errorf("verify with retired key %s = %+v; want 3 failed", table, r)
 		}
 	}
@@ -405,9 +429,9 @@ func TestIntegrationRewrapContinuesPastUnreadableEnvelope(t *testing.T) {
 	env := openPGEnv(t)
 	ctx := t.Context()
 	oldOnly, both, _ := keyFiles(t)
-	seeded := seedAll(t, env, oldOnly, 2)
+	sealedRows := seedAll(t, env, oldOnly, 2)
 	var victim sealedRow
-	for _, r := range seeded.rows {
+	for _, r := range sealedRows.rows {
 		if r.col.Table == "connection_secrets" {
 			victim = r
 			break
@@ -431,7 +455,7 @@ func TestIntegrationRewrapContinuesPastUnreadableEnvelope(t *testing.T) {
 		t.Errorf("error leaks plaintext: %v", err)
 	}
 	for table, r := range byTable(reports) {
-		if table != "connection_secrets" && r.Rewrapped != 2 {
+		if table != "connection_secrets" && r.Rewrapped != seeded(r.Column, 2) {
 			t.Errorf("%s = %+v; other tables must still be rewrapped", table, r)
 		}
 	}
@@ -441,8 +465,8 @@ func TestIntegrationRewrapDoesNotOverwriteConcurrentChange(t *testing.T) {
 	env := openPGEnv(t)
 	ctx := t.Context()
 	oldOnly, both, _ := keyFiles(t)
-	seeded := seedAll(t, env, oldOnly, 1)
-	r := seeded.rows[0]
+	sealedRows := seedAll(t, env, oldOnly, 1)
+	r := sealedRows.rows[0]
 	fresh, err := crypto.Encrypt(ctx, both, r.aad, []byte("written by the gateway meanwhile"))
 	if err != nil {
 		t.Fatal(err)

@@ -62,6 +62,38 @@
 {{end}}{{end}}
 </div>
 
+{{with .Data}}{{with .Push}}
+<section class="section setting" id="notifications">
+  <div class="section-head"><div><h2>Notifications</h2>
+    <p>Get a notification on this device when an approval is waiting. On iPhone, add the app to your Home Screen first (Share → Add to Home Screen).</p></div></div>
+  <div class="panel" data-push-control hidden>
+    <div class="panel-head"><h3>This device</h3><span class="pill none" data-push-state role="status" aria-live="polite">Off</span></div>
+    <p class="muted">The notification names the tool and the account label only; the arguments stay on the approvals page.</p>
+    <p class="form-actions">
+      <button type="button" class="btn small" data-push-toggle>Turn on for this device</button>
+      <button type="button" class="btn small" data-push-test hidden>Send test notification</button>
+    </p>
+    <p class="muted" data-push-message aria-live="polite"></p>
+  </div>
+  <noscript><p class="callout info">Turning notifications on needs JavaScript.</p></noscript>
+  {{if .Devices}}
+  <div class="table-wrap"><table><thead><tr><th>Device</th><th>Push service host</th><th>Added</th><th>Last delivered</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+  {{range .Devices}}<tr>
+    <td>{{.Label}}{{if .FailureCount}} <span class="pill warn" title="Last failure {{with .LastFailureAt}}{{.Format "2006-01-02 15:04"}} UTC{{end}}">{{.FailureCount}} failed</span>{{end}}</td>
+    <td><code>{{.Host}}</code></td>
+    <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+    <td class="nowrap">{{with .LastSuccessAt}}{{.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td class="actions"><form method="post" action="/account/push/unsubscribe">
+      <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <button class="btn small" type="submit">Remove</button>
+    </form></td>
+  </tr>
+  {{end}}</tbody></table></div>
+  {{else}}<p class="muted">No devices get notifications yet.</p>{{end}}
+</section>
+{{end}}{{end}}
+
 {{with .Data}}{{with .Limits}}
 <section class="section setting" id="resource-limits">
   <div class="section-head"><div><h2>Resource limits</h2><p>How many of each you may have on this gateway. To raise a limit, ask an admin.</p></div></div>
@@ -76,7 +108,7 @@
   <div class="section-head"><div><h2>Your data</h2></div></div>
   <div class="panel">
     <div class="panel-head"><h3>Download my data</h3></div>
-    <p class="muted">One JSON file with your profile, roles, app connections, tokens, harness sign-ins, MCP servers, tunnels, approvals, operations, audit events and settings. It never contains tokens, secrets or approval arguments. Once every 10 minutes.</p>
+    <p class="muted">One JSON file with your profile, roles, app connections, tokens, harness sign-ins, MCP servers, tunnels, approvals, operations, audit events, settings and the devices that get notifications. It never contains tokens, secrets or approval arguments. Once every 10 minutes.</p>
     <form method="post" action="/account/export">
       <input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}">
       <p class="form-actions"><button class="btn small" type="submit">Download my data</button></p>

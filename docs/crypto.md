@@ -1,6 +1,6 @@
 # Key provider and envelope encryption
 
-`internal/crypto` protects everything the gateway stores that must never leak in a database dump: app connection tokens, pending approval payloads, vendor app client secrets, the authorization server's signing keys and federated MCP server credentials (the full column inventory is `rewrap.Columns`, see "Re-wrap"). Design: Brain plan `36bakiw8` sections 2, 5 and 6; decisions `p91c25vb` (cloud-neutral, pluggable key provider), `mh7c6z3v` (envelope per record, AAD binds user/connection/app, rotation by re-wrap), `s0p05diu` (approval payloads encrypted) and `a5tgebwa` (Vault transit as the first real provider).
+`internal/crypto` protects everything the gateway stores that must never leak in a database dump: app connection tokens, pending approval payloads, vendor app client secrets, the authorization server's signing keys, federated MCP server credentials, ephemeral secrets and the Web Push key and subscriptions (the full column inventory is `rewrap.Columns`, see "Re-wrap"). Design: Brain plan `36bakiw8` sections 2, 5 and 6; decisions `p91c25vb` (cloud-neutral, pluggable key provider), `mh7c6z3v` (envelope per record, AAD binds user/connection/app, rotation by re-wrap), `s0p05diu` (approval payloads encrypted) and `a5tgebwa` (Vault transit as the first real provider).
 
 ## How a record is encrypted
 
@@ -55,6 +55,8 @@ Encrypted column groups (`rewrap.Columns`; four columns `<prefix>_key_id`, `_wra
 | `mcp_server_user_connections` | `secret` | federated server per-user credentials | no |
 | `mcp_server_oauth_clients` | `secret` | federated server OAuth client secret | yes (public clients) |
 | `secrets` | `value` | ephemeral secret value entered on `/s/<id>` (AAD `{owner, "secret", id, server id}`) | yes (set only while provided; wiped by the expiry job) |
+| `webpush_keys` | `private` | Web Push VAPID private key (AAD `{"webpush_key", id}`; [push-notifications.md](push-notifications.md)) | no |
+| `push_subscriptions` | `sub` | a browser's push subscription: endpoint, p256dh and auth (AAD `{owner, "push_subscription", id}`) | no |
 
 `internal/rewrap` tests fail when a migration adds a `*_wrapped_key` column group the registry does not list (a scan of the embedded migrations, plus an integration check against `information_schema`), so a new encrypted column cannot be left behind at the next rotation. The ledger, audit events, tokens and sessions store no envelopes (tokens and codes are hashed).
 
