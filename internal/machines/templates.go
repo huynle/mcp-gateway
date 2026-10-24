@@ -61,7 +61,7 @@ const portalTemplates = `
   <form method="post" action="/activate" class="stack">
     <input type="hidden" name="_csrf" value="{{.CSRF}}">
     <input type="hidden" name="action" value="lookup">
-    <label>Code <input class="mono" name="code" value="{{.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" required placeholder="BCDF-GHJK">
+    <label>Code <input class="code-input" name="code" value="{{.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" required placeholder="BCDF-GHJK">
       <span class="hint">Eight letters, valid for 10 minutes after <code>mcp-gateway login</code> prints it.</span></label>
     <div class="panel-foot"><button class="btn primary" type="submit">Continue</button></div>
   </form>
