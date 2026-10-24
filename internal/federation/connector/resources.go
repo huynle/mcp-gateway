@@ -232,7 +232,7 @@ func (r resourceProvider) ReadResource(ctx context.Context, p *tokens.Principal,
 		return nil, err
 	}
 	var res *sdk.ReadResourceResult
-	err = r.m.withSession(ctx, server, p.UserID, label, notFound, func(s *client.Session) error {
+	err = r.m.withSession(ctx, server, p, label, notFound, func(s *client.Session) error {
 		var err error
 		res, err = s.ReadResource(ctx, upstream)
 		return err
@@ -275,7 +275,7 @@ func (r resourceProvider) GetPrompt(ctx context.Context, p *tokens.Principal, gw
 		return nil, err
 	}
 	var res *sdk.GetPromptResult
-	err = r.m.withSession(ctx, server, p.UserID, label, notFound, func(s *client.Session) error {
+	err = r.m.withSession(ctx, server, p, label, notFound, func(s *client.Session) error {
 		var err error
 		res, err = s.GetPrompt(ctx, prompt, args)
 		return err
@@ -384,7 +384,8 @@ func promptApproved(snap *snapshot.Snapshot, content *snapshot.ContentReview, pr
 // server_not_configured, shared_credential_rejected), upstream failures
 // ClassedError (tunnel_offline, upstream_*); a read is never an unknown
 // outcome.
-func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, user, label string, notFound error, fn func(*client.Session) error) error {
+func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, p *tokens.Principal, label string, notFound error, fn func(*client.Session) error) error {
+	user := p.UserID
 	az, err := m.o.Credentials.ForUser(ctx, server, user)
 	if err != nil {
 		err = m.credentialError(label, user, server, err)
@@ -401,20 +402,28 @@ func (m *Manager) withSession(ctx context.Context, server *store.MCPServer, user
 	c, err := client.New(client.Options{
 		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout,
 		ClientVersion: m.o.Version, Log: m.log, OnCall: m.o.OnCall,
+		URLElicitation: m.optIn(server, user),
 	})
 	if err != nil {
 		return mcp.NewToolError(mcp.CodeInternal, "client_unavailable", "the upstream client could not be built")
 	}
+	var recorded []client.Elicitation // URL elicitations of the last attempt (relay.go)
 	err = auth.Reauth(ctx, az, func() error {
+		recorded = nil
 		s, err := c.Connect(ctx, ep)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = s.Close() }()
-		return fn(s)
+		err = fn(s)
+		recorded = s.Elicitations()
+		return err
 	})
 	if err == nil {
 		return nil
+	}
+	if rerr, ok := m.relayError(ctx, relayCall{user: user, harness: p.TokenID, server: server}, snapshot.KindRead, err, recorded); ok {
+		return rerr
 	}
 	var ce *client.Error
 	if errors.As(err, &ce) && ce.Class == client.ClassProtocol && (ce.RPCCode != 0 || ce.Status == http.StatusBadRequest) {
