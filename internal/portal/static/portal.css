@@ -302,35 +302,45 @@ a.brand:visited { color: var(--fg); }
 .list > li:first-child { border-top: 0; }
 
 /* --- tables -------------------------------------------------------------- */
-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--text-md); font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: .6rem var(--sp-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
-th { color: var(--muted); font-weight: 500; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .05em; background: color-mix(in srgb, var(--surface) 70%, var(--panel)); white-space: nowrap; }
-tbody tr { transition: background .1s; }
-tbody tr:hover > td { background: color-mix(in srgb, var(--surface) 45%, transparent); }
-tr:last-child > td { border-bottom: 0; }
-tr.wildcard > td { background: color-mix(in srgb, var(--accent-soft) 50%, transparent); font-weight: 500; }
-/* Tables sit in a rounded box; wide ones scroll inside it. */
-main table { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--elev-1); margin: 0 0 var(--sp-4); overflow: hidden; }
-main table th:first-child, main table td:first-child { padding-left: var(--sp-4); }
-main table th:last-child, main table td:last-child { padding-right: var(--sp-4); }
-.table-scroll, .table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); box-shadow: var(--elev-1); margin: 0 0 var(--sp-4); }
-.table-scroll > table, .table-wrap > table { border: 0; border-radius: 0; box-shadow: none; margin: 0; overflow: visible; }
+/* Data tables are plain grids: every cell outlined, square corners, a grey
+   header row, alternate-row shading, compact rows, values as plain text
+   (status = coloured word with a dot, ids/tokens = bare monospace). */
+table { width: 100%; border-collapse: collapse; border-spacing: 0; font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: .3rem .6rem; border: 1px solid var(--line-strong); vertical-align: middle; line-height: 1.45; }
+th { color: var(--fg); font-weight: 600; font-size: var(--text-sm); background: var(--surface); white-space: nowrap; }
+main table { background: var(--panel); margin: 0 0 var(--sp-4); }
+main tbody tr:nth-child(even) > td { background: color-mix(in srgb, var(--surface) 45%, var(--panel)); }
+main tbody tr:hover > td { background: var(--accent-soft); }
+tr.wildcard > td, main tbody tr.wildcard > td { background: color-mix(in srgb, var(--accent-soft) 60%, var(--panel)); font-weight: 500; }
+/* Wide tables scroll inside their own box; the page never overflows. */
+.table-scroll, .table-wrap { overflow-x: auto; max-width: 100%; margin: 0 0 var(--sp-4); }
+.table-scroll > table, .table-wrap > table { margin: 0; }
 .table-scroll table { min-width: 48rem; }
-.table-scroll th { position: sticky; top: 0; }
+.table-scroll th { position: sticky; top: 0; z-index: 1; }
 td.top, .table-scroll td { vertical-align: top; }
 td.num, th.num { text-align: right; }
 .mono, td.mono, th.mono { font-family: var(--mono); font-size: var(--text-sm); }
-th.mono { font-family: var(--sans); font-size: var(--text-xs); }
+th.mono { font-family: var(--sans); }
 .nowrap { white-space: nowrap; }
 /* Long values: one line, ellipsis, full value in the title attribute. */
 .clip { display: block; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ids { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; min-width: 13rem; }
+.ids { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; min-width: 13rem; }
 .ids li { display: flex; gap: .45rem; align-items: baseline; min-width: 0; margin: 0; font-family: var(--mono); font-size: var(--text-xs); }
 .ids .k { color: var(--muted); flex: none; min-width: 4.5rem; }
 .ids .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 10rem; }
 td a strong, td strong a { font-weight: 600; }
-td.actions { white-space: nowrap; text-align: right; }
-td.actions form { display: inline; margin: 0 0 0 .3rem; }
+td.actions { white-space: nowrap; text-align: right; width: 1%; }
+td.actions form { display: inline; margin: 0 0 0 .25rem; }
+/* Values in cells are plain text: no badge fill, no code chip. */
+/* !important: the status-colour rules (.pill.active, …) set a fill with a
+   higher specificity; in a cell only their text colour applies. */
+td :is(.pill, .badge) { background: none !important; border: 0 !important; padding: 0; border-radius: 0; font-size: inherit; font-weight: 500; vertical-align: baseline; }
+td .pill::before { width: .45rem; height: .45rem; }
+td code { background: none; border: 0; padding: 0; font-size: var(--text-sm); }
+/* Row actions are compact so a row stays one line high. */
+td :is(.btn, button:not(.theme-choice)) { min-height: 1.6rem; padding: .1rem .55rem; font-size: var(--text-sm); box-shadow: none; }
+td select { min-height: 1.75rem; padding-top: .15rem; padding-bottom: .15rem; font-size: var(--text-sm); }
+td input:where(:not([type]), [type=text], [type=number]) { min-height: 1.75rem; padding: .15rem .45rem; font-size: var(--text-sm); }
 
 /* --- buttons ------------------------------------------------------------- */
 .btn, button:not(.theme-choice) {
@@ -551,7 +561,7 @@ td input[type=number], form.inline input[type=number], .row input[type=number] {
 input.code-input { font: 500 1.1rem/1.2 var(--mono); letter-spacing: .18em; text-align: center; text-transform: uppercase; max-width: 14rem; }
 
 /* Tables inside a flush panel lose their own frame. */
-.panel.flush > table, .panel.flush > :is(.table-wrap, .table-scroll) { border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+.panel.flush > table, .panel.flush > :is(.table-wrap, .table-scroll) { margin: 0; }
 
 /* Policy decisions as badges. */
 .pill.allow { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
@@ -570,7 +580,9 @@ pre.elicit-url mark { background: var(--accent-soft); color: var(--accent); bord
 :is(h2, h3) > .pill { margin-left: .5rem; font-size: var(--text-xs); }
 
 /* --- fixes after the visual pass ----------------------------------------- */
-/* .panel > :last-child zeroes margins; the foot must stay flush. */
+/* .panel > :last-child zeroes margins; the foot must stay flush, and so
+   must its own last line (e.g. the sign-in hint). */
+.panel-foot > :last-child { margin-bottom: 0; }
 :is(.panel, .card) > .panel-foot:last-child { margin-bottom: calc(-1 * var(--sp-4)); }
 @media (max-width: 40rem) { :is(.panel, .card) > .panel-foot:last-child { margin-bottom: calc(-1 * var(--sp-3)); } }
 /* Filter fields share the row instead of wrapping one by one. */
