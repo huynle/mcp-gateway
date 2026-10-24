@@ -1,41 +1,66 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/vendor-apps">Vendor apps</a><span class="sep">/</span>{{title .App.Vendor}}<span class="sep">/</span>{{.App.Variant}}</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Vendor <strong>{{.App.Vendor}}</strong>, variant <strong>{{.App.Variant}}</strong>. The OAuth client users sign in through when they connect an account.</p>
+  </div>
+  <div class="page-actions">{{if .App.Enabled}}<span class="pill active">enabled</span>{{else}}<span class="pill revoked">disabled</span>{{end}}</div>
+</header>
 {{if .Saved}}<p class="ok">Saved.</p>{{end}}
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<p class="muted">Vendor <strong>{{.App.Vendor}}</strong>, variant <strong>{{.App.Variant}}</strong>. Register this redirect URI at the vendor: <code>{{.RedirectURL}}</code></p>
-<form method="post" action="{{.Path}}" class="stack" autocomplete="off">
+
+<section class="panel">
+  <div class="panel-head"><h2>Redirect URI</h2></div>
+  <p class="muted">Register this redirect URI at the vendor:</p>
+  <div class="copyable"><pre id="redirect-uri">{{.RedirectURL}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="redirect-uri" hidden>{{icon "copy"}}Copy</button></div>
+</section>
+
+<form method="post" action="{{.Path}}" class="stack wide" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <label>Client ID <input type="text" name="client_id" value="{{.App.ClientID}}" required></label>
-  <label>Client secret {{if .App.HasSecret}}<span class="muted">(a secret is stored; leave blank to keep it)</span>{{else}}<span class="muted">(required)</span>{{end}}
-    <input type="password" name="client_secret" value="" autocomplete="new-password"></label>
-  {{range .ExtraSecrets}}
-  <label>{{.Label}} {{if .Stored}}<span class="muted">(stored; leave blank to keep it)</span>{{else}}<span class="muted">({{.Hint}})</span>{{end}}
-    <input type="password" name="{{.Key}}" value="" autocomplete="new-password"></label>
-  {{end}}
-  <label>Authorization URL <input type="text" name="auth_url" value="{{.App.AuthURL}}" required></label>
-  <label>Token URL <input type="text" name="token_url" value="{{.App.TokenURL}}" required></label>
-  <label>User info URL <span class="muted">(what identifies the account)</span> <input type="text" name="userinfo_url" value="{{.App.UserInfoURL}}"></label>
-  <label>Revoke URL <span class="muted">(optional; best-effort on disconnect)</span> <input type="text" name="revoke_url" value="{{.App.RevokeURL}}"></label>
-  <label>Base scopes <span class="muted">(one per line; identity scopes, tools add theirs)</span> <textarea name="scopes" rows="4">{{.ScopesText}}</textarea></label>
-  <label>Extra parameters <span class="muted">(key=value per line: authorization parameters such as access_type=offline, plus company_domains=acme.com, default_label=company|personal, scope_param=user_scope, id_field, name_field, email_field, company_orgs=acme for GitHub; the hints are never sent to the vendor)</span> <textarea name="extra" rows="5">{{.ExtraText}}</textarea></label>
+  <fieldset>
+    <legend>Client credentials</legend>
+    <label>Client ID <input type="text" name="client_id" value="{{.App.ClientID}}" required></label>
+    <label>Client secret <input type="password" name="client_secret" value="" autocomplete="new-password">
+      <span class="hint">{{if .App.HasSecret}}(a secret is stored; leave blank to keep it){{else}}(required){{end}}</span></label>
+    {{range .ExtraSecrets}}
+    <label>{{.Label}} <input type="password" name="{{.Key}}" value="" autocomplete="new-password">
+      <span class="hint">{{if .Stored}}(stored; leave blank to keep it){{else}}({{.Hint}}){{end}}</span></label>
+    {{end}}
+  </fieldset>
+  <fieldset>
+    <legend>Endpoints</legend>
+    <label>Authorization URL <input type="text" name="auth_url" value="{{.App.AuthURL}}" required></label>
+    <label>Token URL <input type="text" name="token_url" value="{{.App.TokenURL}}" required></label>
+    <label>User info URL <input type="text" name="userinfo_url" value="{{.App.UserInfoURL}}"><span class="hint">What identifies the account.</span></label>
+    <label>Revoke URL <input type="text" name="revoke_url" value="{{.App.RevokeURL}}"><span class="hint">Optional; best-effort on disconnect.</span></label>
+  </fieldset>
+  <fieldset>
+    <legend>Scopes and parameters</legend>
+    <label>Base scopes <textarea name="scopes" rows="4">{{.ScopesText}}</textarea><span class="hint">One per line; identity scopes, tools add theirs.</span></label>
+    <label>Extra parameters <textarea name="extra" rows="5">{{.ExtraText}}</textarea><span class="hint">key=value per line: authorization parameters such as <code>access_type=offline</code>, plus <code>company_domains=acme.com</code>, <code>default_label=company|personal</code>, <code>scope_param=user_scope</code>, <code>id_field</code>, <code>name_field</code>, <code>email_field</code>, <code>company_orgs=acme</code> for GitHub; the hints are never sent to the vendor.</span></label>
+  </fieldset>
   <label class="check"><input type="checkbox" name="enabled" value="1" {{if .App.Enabled}}checked{{end}}> Enabled (users can connect)</label>
-  <p><button class="btn primary" type="submit">Save</button> <a class="btn" href="/admin/vendor-apps">Back</a></p>
+  <div class="form-actions"><button class="btn primary" type="submit">Save</button> <a class="btn" href="/admin/vendor-apps">Back</a></div>
 </form>
 {{if .Approvals}}
 <link rel="stylesheet" href="{{asset "review.css"}}">
-<section class="approval-modes" id="approvals">
-  <h2>Tool approvals</h2>
+<section class="section approval-modes" id="approvals">
+  <div class="section-head"><div><h2>Tool approvals</h2>
+    <p>Organization-wide, for every user of this vendor's apps. <strong>Ask</strong>: every call of the tool needs the user's approval first. <strong>Auto</strong> (the default): the tool runs as the user's roles say. A role's Confirm or Deny still applies, as do user restrictions and token limits; read tools always run without asking.</p></div></div>
   {{if .ApprovalsSaved}}<p class="ok">Approval modes saved.</p>{{end}}
   {{if .ApprovalsError}}<p class="error">{{.ApprovalsError}}</p>{{end}}
-  <p class="muted">Organization-wide, for every user of this vendor's apps. <strong>Ask</strong>: every call of the tool needs the user's approval first. <strong>Auto</strong> (the default): the tool runs as the user's roles say. A role's Confirm or Deny still applies, as do user restrictions and token limits; read tools always run without asking.</p>
   {{range .Approvals}}
-  <form method="post" action="{{$.ApprovalsAction}}" class="approval-form">
+  <form method="post" action="{{$.ApprovalsAction}}" class="panel approval-form">
     <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
     <input type="hidden" name="app" value="{{.App}}">
-    <h3><code>{{.App}}</code></h3>
-    <p class="approval-stats">{{len .Writes}} write tool{{if ne (len .Writes) 1}}s{{end}} · <span class="mode-auto">{{.Auto}} auto</span> · <span class="mode-ask">{{.Ask}} ask</span></p>
+    <div class="panel-head">
+      <h3><code>{{.App}}</code></h3>
+      <p class="approval-stats muted">{{len .Writes}} write tool{{if ne (len .Writes) 1}}s{{end}} · <span class="mode-auto">{{.Auto}} auto</span> · <span class="mode-ask">{{.Ask}} ask</span></p>
+    </div>
     <p class="approval-bulk">
-      <button class="btn" type="submit" name="all" value="auto">Run all without asking</button>
-      <button class="btn" type="submit" name="all" value="ask">Ask for all</button>
+      <button class="btn small" type="submit" name="all" value="auto">Run all without asking</button>
+      <button class="btn small" type="submit" name="all" value="ask">Ask for all</button>
     </p>
     <ul class="approval-list">
     {{range .Writes}}
@@ -45,9 +70,10 @@
       </li>
     {{end}}
     </ul>
-    <p><button class="btn primary" type="submit">Save approval modes</button></p>
+    <div class="panel-foot"><button class="btn primary" type="submit">Save approval modes</button></div>
   </form>
   {{end}}
 </section>
 {{end}}
+<script src="{{asset "copy.js"}}" defer></script>
 {{template "foot" .}}

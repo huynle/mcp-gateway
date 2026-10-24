@@ -1,26 +1,39 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/roles">Roles</a><span class="sep">/</span>Default role</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">The role every new user receives on first sign-in (in approval mode: when an admin approves them). Without a choice here the configured <code>GATEWAY_DEFAULT_ROLE</code> applies.</p>
+  </div>
+</header>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 {{if .Saved}}<p class="ok">Default role saved.</p>{{end}}
 {{if .BaselineSaved}}<p class="ok">Public member baseline applied to the <a href="/admin/roles/member">member</a> role.</p>{{end}}
-<p class="muted">The role every new user receives on first sign-in (in approval mode: when an admin approves them). Without a choice here the configured <code>GATEWAY_DEFAULT_ROLE</code> applies.</p>
-<form method="post" action="/admin/settings/default-role" class="stack">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <label>Default role
-    <select name="default_role">
-      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Current}} selected{{end}}>{{.Name}}{{if .Description}} — {{.Description}}{{end}}</option>{{end}}
-    </select>
-  </label>
-  <div>
-    <button class="btn primary" type="submit">Save</button>
-    <a class="btn" href="/admin/roles">Back to roles</a>
-  </div>
-</form>
-<section class="card" id="member-baseline">
-  <h2>Public member baseline</h2>
-  <p>For a public gateway: lets every holder of the <code>member</code> role use the built-in apps with their own connected accounts and add their own MCP servers. It adds{{range .BaselineApps}} <code>{{.}}.*</code>{{else}} (no built-in apps are registered){{end}} as <em>allow</em> to <code>member</code> (creating it when missing), keeps every rule already there (a deny or confirm still wins) and turns on <em>May add MCP servers</em>. Vendor apps' Ask approvals still apply. It does not make <code>member</code> the default role.</p>
-  <form method="post" action="/admin/settings/default-role/member-baseline">
+
+<section class="panel narrow" id="default-role">
+  <div class="panel-head"><h2>Default role</h2>{{if .Current}}<span class="pill default">{{.Current}}</span>{{end}}</div>
+  <form method="post" action="/admin/settings/default-role" class="stack">
     <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-    <button class="btn" type="submit">Apply public member baseline</button>
+    <label>Default role
+      <select name="default_role">
+        {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Current}} selected{{end}}>{{.Name}}{{if .Description}} — {{.Description}}{{end}}</option>{{end}}
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Save</button>
+      <a class="btn" href="/admin/roles">Back to roles</a>
+    </div>
   </form>
+</section>
+
+<section class="panel narrow" id="member-baseline">
+  <div class="panel-head"><h2>Public member baseline</h2></div>
+  <p class="muted">For a public gateway: lets every holder of the <code>member</code> role use the built-in apps with their own connected accounts and add their own MCP servers. It adds{{range .BaselineApps}} <code>{{.}}.*</code>{{else}} (no built-in apps are registered){{end}} as <em>allow</em> to <code>member</code> (creating it when missing), keeps every rule already there (a deny or confirm still wins) and turns on <em>May add MCP servers</em>. Vendor apps' Ask approvals still apply. It does not make <code>member</code> the default role.</p>
+  <div class="panel-foot">
+    <form method="post" action="/admin/settings/default-role/member-baseline">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      <button class="btn" type="submit">Apply public member baseline</button>
+    </form>
+  </div>
 </section>
 {{template "foot" .}}

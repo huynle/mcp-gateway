@@ -1,77 +1,105 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/roles">Roles</a><span class="sep">/</span>{{if .New}}New role{{else}}<span class="mono">{{.Name}}</span>{{end}}</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">{{if .New}}Name the role, then pick what it may do with each app's tools.{{else}}What holders of this role may do with each app's tools. Changes apply as soon as you save.{{end}}</p>
+  </div>
+</header>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <form method="post" action="{{.Action}}" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <div class="stack">
-    {{if .New}}
-    <label>Name
-      <input type="text" name="name" value="{{.Name}}" required pattern="[a-z0-9_-]+" placeholder="engineer">
-      <span class="muted">Lower-case letters, digits, <code>_</code> and <code>-</code>. Cannot be changed later.</span>
-    </label>
-    {{else}}
-    <p>Name: <strong>{{.Name}}</strong></p>
-    {{end}}
-    <label>Description
-      <input type="text" name="description" value="{{.Role.Description}}" maxlength="200">
-    </label>
-    <label class="check"><input type="checkbox" name="may_add_servers" value="on"{{if .Role.MayAddServers}} checked{{end}}> May add MCP servers</label>
-    <span class="muted">Holders may add their own MCP servers on the Servers page and, when they switch it on in My account, through the gateway.* tools. Admins always may. It grants no tools; servers start private.</span>
-  </div>
 
-  <h2>Tools</h2>
-  <p class="muted">Pick an outcome per tool, or for every tool of an app with the <code>*</code> row. A tool row overrides the <code>*</code> row. <em>Allow</em> runs the call; <em>confirm</em> asks the user to approve each call first; <em>deny</em> refuses it; <em>hidden</em> keeps the tool out of the list (a blank keeps whatever other roles say). User-added MCP servers also list <code>resources/read</code> (list and read their resources and resource templates) and <code>prompts/get</code> (list and get their prompts): only <em>allow</em> grants them (there is no approval for reads of resources or prompts, so <em>confirm</em> refuses them like <em>deny</em>). Their owner keeps access unless a role denies it.</p>
-  {{range .Apps}}
-  <section class="grid-app">
-    <header>
-      <h3>{{.Name}}</h3>
-      <label class="inline-label">
-        <span class="muted">Personal accounts</span>
-        <select name="personal.{{.Name}}">
-          {{$cur := .Personal}}{{range allowances}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
-        </select>
-      </label>
-    </header>
+  <section class="section">
+    <div class="section-head"><div><h2>Role</h2></div></div>
+    <div class="panel">
+      <div class="stack">
+        {{if .New}}
+        <label>Name
+          <input type="text" name="name" value="{{.Name}}" required pattern="[a-z0-9_-]+" placeholder="engineer">
+          <span class="hint">Lower-case letters, digits, <code>_</code> and <code>-</code>. Cannot be changed later.</span>
+        </label>
+        {{else}}
+        <p>Name: <strong class="mono">{{.Name}}</strong></p>
+        {{end}}
+        <label>Description
+          <input type="text" name="description" value="{{.Role.Description}}" maxlength="200">
+        </label>
+        <div>
+          <label class="check"><input type="checkbox" name="may_add_servers" value="on"{{if .Role.MayAddServers}} checked{{end}}> May add MCP servers</label>
+          <span class="hint">Holders may add their own MCP servers on the Servers page and, when they switch it on in My account, through the gateway.* tools. Admins always may. It grants no tools; servers start private.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div><h2>Tools</h2>
+      <p>Pick an outcome per tool, or for every tool of an app with the <code>*</code> row. A tool row overrides the <code>*</code> row. <em>Allow</em> runs the call; <em>confirm</em> asks the user to approve each call first; <em>deny</em> refuses it; <em>hidden</em> keeps the tool out of the list (a blank keeps whatever other roles say). User-added MCP servers also list <code>resources/read</code> (list and read their resources and resource templates) and <code>prompts/get</code> (list and get their prompts): only <em>allow</em> grants them (there is no approval for reads of resources or prompts, so <em>confirm</em> refuses them like <em>deny</em>). Their owner keeps access unless a role denies it.</p>
+    </div></div>
+    {{range .Apps}}
+    <section class="grid-app">
+      <header>
+        <h3 class="mono">{{.Name}}</h3>
+        <label class="inline-label">
+          <span class="hint">Personal accounts</span>
+          <select name="personal.{{.Name}}">
+            {{$cur := .Personal}}{{range allowances}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+      </header>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Kind</th><th>Outcome</th></tr></thead>
+        <tbody>
+        {{range .Tools}}
+          <tr{{if .Wildcard}} class="wildcard"{{end}}>
+            <td class="mono">{{.Name}}{{if .Unknown}} <span class="pill warn">not registered</span>{{end}}</td>
+            <td class="muted">{{if .Wildcard}}every tool, resource and prompt of the app{{else if .Access}}{{if eq .Short "resources/read"}}list and read its resources{{else}}list and get its prompts{{end}}{{else}}{{.Kind}}{{end}}</td>
+            <td>
+              <select name="outcome.{{.Name}}" aria-label="Outcome for {{.Name}}">
+                <option value=""{{if not .Outcome}} selected{{end}}>—</option>
+                {{$cur := .Outcome}}{{range outcomes}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+    </section>
+    {{else}}
+    <div class="empty">{{icon "servers"}}<strong>No apps registered</strong><p>Apps and their tools appear here once a connector or MCP server is registered.</p></div>
+    {{end}}
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div><h2>Conditional rules</h2>
+      <p>A rule that applies only when a resource-identity value matches (the repo, channel, org, site… the connector reports for the call). <em>prefix</em> matches the start of the value; <em>glob</em> uses <code>*</code> as a wildcard. A conditional rule overrides the tool's outcome above only when it matches; leave the app blank to drop a row.</p>
+    </div></div>
+    <div class="table-scroll">
     <table>
-      <thead><tr><th>Tool</th><th>Kind</th><th>Outcome</th></tr></thead>
+      <thead><tr><th class="num">#</th><th>App</th><th>Tool (or <code>*</code>)</th><th>Outcome</th><th>Key</th><th>Match</th><th>Value</th></tr></thead>
       <tbody>
-      {{range .Tools}}
-        <tr{{if .Wildcard}} class="wildcard"{{end}}>
-          <td>{{.Name}}{{if .Unknown}} <span class="pill">not registered</span>{{end}}</td>
-          <td class="muted">{{if .Wildcard}}every tool, resource and prompt of the app{{else if .Access}}{{if eq .Short "resources/read"}}list and read its resources{{else}}list and get its prompts{{end}}{{else}}{{.Kind}}{{end}}</td>
-          <td>
-            <select name="outcome.{{.Name}}">
-              <option value=""{{if not .Outcome}} selected{{end}}>—</option>
-              {{$cur := .Outcome}}{{range outcomes}}<option value="{{.}}"{{if eq . $cur}} selected{{end}}>{{.}}</option>{{end}}
-            </select>
-          </td>
+      {{range $i, $c := .Conds}}{{$n := inc $i}}
+        <tr>
+          <td class="muted num">{{$n}}</td>
+          <td><input type="text" name="cond.{{$n}}.app" value="{{$c.App}}" size="10" pattern="[a-z0-9_-]*" aria-label="Rule {{$n}} app"></td>
+          <td><input type="text" name="cond.{{$n}}.tool" value="{{$c.Tool}}" size="16" pattern="[a-z0-9_*/-]*" aria-label="Rule {{$n}} tool"></td>
+          <td><select name="cond.{{$n}}.outcome" aria-label="Rule {{$n}} outcome">{{range outcomes}}<option value="{{.}}"{{if eq . $c.Outcome}} selected{{end}}>{{.}}</option>{{end}}</select></td>
+          <td><input type="text" name="cond.{{$n}}.key" value="{{$c.Key}}" size="10" pattern="[a-z0-9_-]*" aria-label="Rule {{$n}} key"></td>
+          <td><select name="cond.{{$n}}.op" aria-label="Rule {{$n}} match">{{range ops}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{.}}</option>{{end}}</select></td>
+          <td><input type="text" name="cond.{{$n}}.value" value="{{$c.Value}}" size="24" aria-label="Rule {{$n}} value"></td>
         </tr>
       {{end}}
       </tbody>
     </table>
+    </div>
   </section>
-  {{end}}
 
-  <h2>Conditional rules</h2>
-  <p class="muted">A rule that applies only when a resource-identity value matches (the repo, channel, org, site… the connector reports for the call). <em>prefix</em> matches the start of the value; <em>glob</em> uses <code>*</code> as a wildcard. A conditional rule overrides the tool's outcome above only when it matches; leave the app blank to drop a row.</p>
-  <table>
-    <thead><tr><th>#</th><th>App</th><th>Tool (or <code>*</code>)</th><th>Outcome</th><th>Key</th><th>Match</th><th>Value</th></tr></thead>
-    <tbody>
-    {{range $i, $c := .Conds}}{{$n := inc $i}}
-      <tr>
-        <td class="muted">{{$n}}</td>
-        <td><input type="text" name="cond.{{$n}}.app" value="{{$c.App}}" size="10" pattern="[a-z0-9_-]*"></td>
-        <td><input type="text" name="cond.{{$n}}.tool" value="{{$c.Tool}}" size="16" pattern="[a-z0-9_*/-]*"></td>
-        <td><select name="cond.{{$n}}.outcome">{{range outcomes}}<option value="{{.}}"{{if eq . $c.Outcome}} selected{{end}}>{{.}}</option>{{end}}</select></td>
-        <td><input type="text" name="cond.{{$n}}.key" value="{{$c.Key}}" size="10" pattern="[a-z0-9_-]*"></td>
-        <td><select name="cond.{{$n}}.op">{{range ops}}<option value="{{.}}"{{if eq . $c.Op}} selected{{end}}>{{.}}</option>{{end}}</select></td>
-        <td><input type="text" name="cond.{{$n}}.value" value="{{$c.Value}}" size="24"></td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  <p>
+  <div class="form-actions">
     <button class="btn primary" type="submit">{{if .New}}Create role{{else}}Save role{{end}}</button>
     <a class="btn" href="/admin/roles">Cancel</a>
-  </p>
+  </div>
 </form>
 {{template "foot" .}}

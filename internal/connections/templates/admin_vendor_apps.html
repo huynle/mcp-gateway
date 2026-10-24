@@ -1,28 +1,44 @@
 {{template "head" .}}
-<p>One registered OAuth app per vendor (Google has two: the internal Workspace client for company accounts and the external app for personal ones). Client secrets are stored encrypted and never displayed. See docs/vendor-apps.md for the registration runbook.</p>
-<table>
-  <thead><tr><th>Vendor</th><th>Variant</th><th>Client ID</th><th>Status</th><th>Updated</th><th></th></tr></thead>
-  <tbody>
-  {{range .Rows}}
-  <tr>
-    <td>{{title .Vendor}}</td>
-    <td>{{.Variant}}</td>
-    <td>{{if .Configured}}<code>{{.ClientID}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-    <td>{{if not .Configured}}<span class="pill">not configured</span>{{else if .Enabled}}<span class="pill active">enabled</span>{{else}}<span class="pill revoked">disabled</span>{{end}}</td>
-    <td>{{if .Configured}}{{fmtTime .UpdatedAt}}{{end}}</td>
-    <td><a class="btn" href="{{.Path}}">{{if .Configured}}Edit{{else}}Configure{{end}}</a></td>
-  </tr>
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">One registered OAuth app per vendor (Google has two: the internal Workspace client for company accounts and the external app for personal ones). Client secrets are stored encrypted and never displayed. See <code>docs/vendor-apps.md</code> for the registration runbook.</p>
+  </div>
+</header>
+<section class="section">
+  <div class="section-head"><div><h2>OAuth apps</h2><p>Users can connect an account once its app is configured and enabled.</p></div></div>
+  {{if .Rows}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Vendor</th><th>Variant</th><th>Client ID</th><th>Status</th><th>Updated (UTC)</th><th></th></tr></thead>
+    <tbody>
+    {{range .Rows}}
+    <tr>
+      <td><strong>{{title .Vendor}}</strong></td>
+      <td><span class="mono">{{.Variant}}</span></td>
+      <td>{{if .Configured}}<span class="mono clip" title="{{.ClientID}}">{{.ClientID}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if not .Configured}}<span class="pill">not configured</span>{{else if .Enabled}}<span class="pill active">enabled</span>{{else}}<span class="pill revoked">disabled</span>{{end}}</td>
+      <td class="nowrap">{{if .Configured}}{{fmtTime .UpdatedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td class="actions"><a class="btn small" href="{{.Path}}">{{if .Configured}}Edit{{else}}Configure{{end}}</a></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">{{icon "vendorapps"}}<strong>No vendors registered</strong><p>Vendors appear here once the gateway is built with their connectors.</p></div>
   {{end}}
-  </tbody>
-</table>
+</section>
 {{if .SystemRows}}
-<details class="system-apps">
+<details class="panel system-apps">
   <summary><strong>System apps</strong> <span class="muted">({{len .SystemRows}} read-only)</span></summary>
   <p class="muted">Internal bookkeeping used by the gateway. These apps are protected: they cannot be enabled, edited or connected by users.</p>
+  <div class="table-wrap">
   <table>
     <thead><tr><th>System app</th><th>Purpose</th><th>Status</th></tr></thead>
     <tbody>{{range .SystemRows}}<tr><td>{{.Name}}</td><td>{{.Purpose}}</td><td><span class="pill">{{.Status}}</span></td></tr>{{end}}</tbody>
   </table>
+  </div>
 </details>
 {{end}}
 {{template "foot" .}}

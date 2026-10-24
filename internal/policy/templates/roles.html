@@ -1,28 +1,41 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Roles grant tools. Users get every tool their roles grant; deny wins over confirm wins over allow; a hidden tool does not exist for the user. The admin role is only a name: it grants no tools by itself and never bypasses policy. New users receive the <a href="/admin/settings/default-role">default role</a>.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="/admin/settings/default-role">{{icon "settings"}}Default role</a>
+    <a class="btn primary" href="/admin/roles/new">{{icon "plus"}}New role</a>
+  </div>
+</header>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<p class="muted">Roles grant tools. Users get every tool their roles grant; deny wins over confirm wins over allow; a hidden tool does not exist for the user. The admin role is only a name: it grants no tools by itself and never bypasses policy. New users receive the <a href="/admin/settings/default-role">default role</a>.</p>
-<p><a class="btn primary" href="/admin/roles/new">New role</a></p>
-{{if not .Roles}}
-<p class="muted">No roles yet.</p>
-{{else}}
-<table>
-  <thead><tr><th>Name</th><th>Description</th><th>Rules</th><th></th></tr></thead>
-  <tbody>
-  {{range .Roles}}
-    <tr>
-      <td><a href="/admin/roles/{{.Name}}">{{.Name}}</a> {{if .IsDefault}}<span class="pill default">default</span>{{end}} {{if .MayAddServers}}<span class="pill">may add servers</span>{{end}}</td>
-      <td>{{.Description}}</td>
-      <td>{{.Rules}}</td>
-      <td>
-        <form class="inline" method="post" action="/admin/roles/{{.Name}}/delete" onsubmit="return confirm('Delete role {{.Name}}?')">
-          <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
-          <button class="btn danger" type="submit">Delete</button>
-        </form>
-      </td>
-    </tr>
+<section class="section">
+  {{if not .Roles}}
+  <div class="empty">{{icon "roles"}}<strong>No roles yet.</strong><p>A role bundles tool rules (allow, confirm, deny or hidden) per app. Create one, then assign it to users.</p><a class="btn primary" href="/admin/roles/new">{{icon "plus"}}New role</a></div>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Name</th><th>Description</th><th class="num">Rules</th><th></th></tr></thead>
+    <tbody>
+    {{range .Roles}}
+      <tr>
+        <td class="nowrap"><a href="/admin/roles/{{.Name}}"><strong class="mono">{{.Name}}</strong></a> {{if .IsDefault}}<span class="pill default">default</span>{{end}} {{if .MayAddServers}}<span class="pill accent">may add servers</span>{{end}}</td>
+        <td>{{if .Description}}{{.Description}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{.Rules}}</td>
+        <td class="actions">
+          <a class="btn small" href="/admin/roles/{{.Name}}">Edit</a>
+          <form class="inline" method="post" action="/admin/roles/{{.Name}}/delete" onsubmit="return confirm('Delete role {{.Name}}?')">
+            <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
+            <button class="btn small danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
   {{end}}
-  </tbody>
-</table>
-{{end}}
-{{if .Version}}<p class="muted">Policy version <code>{{.Version}}</code></p>{{end}}
+  {{if .Version}}<p class="muted">Policy version <code>{{.Version}}</code></p>{{end}}
+</section>
 {{template "foot" .}}
