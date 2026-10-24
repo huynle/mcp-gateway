@@ -66,7 +66,7 @@ type Authorizer interface {
 
 ### URL elicitation (opt-in)
 
-`Options.URLElicitation: true` (default false) makes every connection of that `Client` take part in MCP 2025-11-25 URL-mode elicitation, for the upstream URL elicitation relay (`GATEWAY_UPSTREAM_ELICITATION_ENABLED`, design `docs/plans/2026-10-23-credential-links-and-elicitation-relay-design.md`, plan 2). Only the connector's tool and resource calls set it; the portal/discovery client factory never does.
+`Options.URLElicitation: true` (default false) makes every connection of that `Client` take part in MCP 2025-11-25 URL-mode elicitation, for the upstream URL elicitation relay (`GATEWAY_UPSTREAM_ELICITATION_ENABLED`, design `docs/plans/2026-10-23-credential-links-and-elicitation-relay-design.md`, plan 2). Only the connector's tool and resource calls set it (`Manager.optIn`: calls that may relay, never through a tunnel); the portal/discovery client factory never does. The relay itself is described in [elicitation.md](elicitation.md).
 
 - **Capability:** `elicitation: {"url": {}}` only, set explicitly (an explicit value overrides the go-sdk's inference, which would add `form`). Nothing else is declared.
 - **Mid-call requests** (`elicitation/create`, and multi round-trip input requests on 2026-07-28, which reach the same handler):

@@ -1,6 +1,7 @@
 # Credential links and upstream URL elicitation relay
 
-Status: design agreed 2026-10-23 (user, interactive), validated against feature/ephemeral-secrets @ bee0ece.
+Status: implemented 2026-10-23 (C1–C5 on feature/credential-elicitation; see [elicitation.md](../elicitation.md)). Design agreed 2026-10-23 (user, interactive), validated against feature/ephemeral-secrets @ bee0ece.
+Deviation: no-auth servers relay for their owner only even with declared per-user headers (auth.ForUser sends them none).
 Follows [ephemeral secrets](2026-10-23-ephemeral-secrets-design.md). Both features are behind flags and use the
 MCP 2025-11-25 `URLElicitationRequiredError` (`-32042`, `data.elicitations[] = {mode:"url", elicitationId, url,
 message}`), the same shape `secrets.request` already returns.
