@@ -127,7 +127,24 @@ type Config struct {
 	// RelaySecret is the HMAC key shared by every replica
 	// (GATEWAY_RELAY_SECRET), at least MinRelaySecretBytes. Never logged.
 	RelaySecret string `yaml:"relay_secret"`
+
+	// FederationCallTimeout bounds one tools/call on a user-added
+	// (federated) MCP server, end to end through netguard, the tunnel and
+	// the cross-replica relay (GATEWAY_FEDERATION_CALL_TIMEOUT, default
+	// 30s, at most MaxFederationCallTimeout). Discovery, list, initialize,
+	// resources, prompts and OAuth keep the federation client's 30s
+	// default. A slow upstream holds the caller's /mcp request and its
+	// connection for up to this long.
+	FederationCallTimeout time.Duration `yaml:"federation_call_timeout"`
 }
+
+// Federation tools/call timeout bounds (GATEWAY_FEDERATION_CALL_TIMEOUT).
+// The default is the federation client's per-operation default; the
+// maximum keeps a typo ("15h") from pinning requests for hours.
+const (
+	DefaultFederationCallTimeout = 30 * time.Second
+	MaxFederationCallTimeout     = 15 * time.Minute
+)
 
 // MinRelaySecretBytes is the minimum length of GATEWAY_RELAY_SECRET
 // (tunnel.MinRelaySecretBytes).
@@ -204,6 +221,7 @@ func Default() Config {
 		DefaultRole:            "member",
 		SignupPerIPPerHour:     10,
 		SignupGlobalPerHour:    100,
+		FederationCallTimeout:  DefaultFederationCallTimeout,
 	}
 }
 
@@ -272,6 +290,13 @@ func applyEnv(getenv func(string) string, cfg *Config) error {
 	}
 	if v := getenv(EnvPrefix + "RELAY_SECRET"); v != "" {
 		cfg.RelaySecret = v
+	}
+	if v := getenv(EnvPrefix + "FEDERATION_CALL_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("%sFEDERATION_CALL_TIMEOUT: %w", EnvPrefix, err)
+		}
+		cfg.FederationCallTimeout = d
 	}
 	return applyIdentityEnv(getenv, cfg)
 }
@@ -474,6 +499,9 @@ func (c Config) validate() error {
 	errs = append(errs, c.validateDatabase()...)
 	errs = append(errs, c.validateIdentity()...)
 	errs = append(errs, c.validateRelay()...)
+	if c.FederationCallTimeout <= 0 || c.FederationCallTimeout > MaxFederationCallTimeout {
+		errs = append(errs, fmt.Errorf("federation_call_timeout must be positive and at most %v, got %v", MaxFederationCallTimeout, c.FederationCallTimeout))
+	}
 	return errors.Join(errs...)
 }
 
