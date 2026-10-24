@@ -1,0 +1,25 @@
+{{template "head" .}}
+<h1>{{.Title}}</h1>
+<p><strong>{{.Server}}</strong> asks you to open one of its own pages, for example to sign in or to approve access. The gateway has not opened or checked that page. Look at the address before you continue.</p>
+<section class="card">
+  <dl class="args">
+    <dt>Server</dt><dd>{{.Server}}</dd>
+    <dt>Requested through</dt><dd>{{.Harness}} <span class="muted">(the agent your link was given to; the browser cannot confirm it)</span></dd>
+    <dt>Site</dt><dd><code>{{.HostPrefix}}<mark>{{.Registrable}}</mark></code>{{with .Other}}<br><span class="muted">registrable domain <code><mark>{{.}}</mark></code></span>{{end}}</dd>
+    <dt>Full address</dt><dd><pre class="elicit-url"><code>{{.URL}}</code></pre></dd>
+  </dl>
+  {{if .Punycode}}<p class="error" role="alert">This address contains international (IDN, punycode <code>xn--</code>) characters, which can imitate the name of another site. Continue only if you expected exactly this domain.</p>{{end}}
+  {{with .Message}}
+  <h2>Message from {{$.Server}} (not verified)</h2>
+  <pre class="upstream-message">{{.}}</pre>
+  {{end}}
+  <form method="post" action="/elicit/{{.LinkID}}">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <div class="actions">
+      <button class="btn primary" type="submit" name="action" value="continue">Continue</button>
+      <button class="btn danger" type="submit" name="action" value="cancel">Cancel</button>
+    </div>
+  </form>
+  <p class="muted">This link works until {{fmtTime .Expires}}. If you did not expect this request, press Cancel.</p>
+</section>
+{{template "foot" .}}

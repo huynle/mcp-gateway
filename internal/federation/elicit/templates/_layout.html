@@ -1,0 +1,17 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+  {{template "page.head"}}
+  <title>{{.Title}} · MCP Gateway</title>
+</head>
+<body>
+{{template "nav" navData}}
+<main>
+{{end}}
+
+{{define "foot"}}
+</main>
+{{template "footer"}}
+</body>
+</html>
+{{end}}
