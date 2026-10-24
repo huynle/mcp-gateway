@@ -82,10 +82,27 @@ The handler: server still active → `snapshot.Allowed` as the caller (in the ap
 | `tool_not_found` | JSON-RPC (same as unknown tool) | server gone, disabled, or not visible to the caller |
 | `args_invalid` | JSON-RPC `-32602`, audited as a denial | arguments do not match the pinned schema (never echoed); refused by the precheck before any approval, and again at dispatch |
 | `tool_disabled`, `tool_not_reviewed`, `tool_changed` | JSON-RPC `-32030`, audited as denials | the review does not allow the call (`tool_changed`: re-reviewed as a write since listed; list again) |
-| `auth_required`, `needs_reconnect` | JSON-RPC `-32031` | connect / reconnect on the portal: the message carries `<BASE_URL>/servers/<id>` |
-| `server_not_configured`, `shared_credential_rejected` | JSON-RPC `-32031` | ask the server's owner |
+| `auth_required`, `needs_reconnect` | JSON-RPC `-32031` (with credential links: `-32042`, below) | connect / reconnect on the portal: the message carries `<BASE_URL>/servers/<id>` |
+| `user_header_missing` | JSON-RPC `-32042` (only with credential links) | a declared per-user header has no value for the caller (`auth.ErrUserHeaderMissing`); refused before the upstream |
+| `server_not_configured`, `shared_credential_rejected` | JSON-RPC `-32031` (the owner, with credential links: `-32042`) | ask the server's owner |
 | `tunnel_offline`, `tunnel_unavailable` | tool error (isError) | start `mcp-gateway-tunnel` / the tunnel is revoked or not the owner's |
 | `upstream_unreachable`, `upstream_timeout`, `upstream_protocol`, `upstream_too_large`, `upstream_forbidden`, `upstream_blocked`, `upstream_tool_error`, `upstream_error` | tool error (isError) | class-level; never upstream text or URLs |
+
+### Credential links
+
+`GATEWAY_CREDENTIAL_LINKS_ENABLED` (default off; `WireOptions.CredentialLinks`, `Options.CredentialLinks`; read by `cmd/gateway/federation.go` through `elicit.ConfigFromEnv`; design: [plan 1](plans/2026-10-23-credential-links-and-elicitation-relay-design.md)) turns credential answers the caller can act on into `-32042` (`mcp.NewURLElicitationRequired`, `connector/credlinks.go`). **The class never changes**, so audit rows, ledger operations and the secrets stage's refund list (which gains `user_header_missing`) behave as before. **Off, every answer is byte for byte what it was** (`TestCredentialLinksOffIsUnchanged`, `TestSecurityFedCredentialLinksOwnerOnly`).
+
+| Class | Cause | Who gets the link | Link |
+|---|---|---|---|
+| `no_account` | per-user server (auth kind other than none) without the caller's connection; the account stage asks `Accounts(...).MissingAccount` (`mcp.MissingAccounter`) | anyone who may use the server | `ConnectLink`: `/servers/<id>/connect` (per-user OAuth) or `/servers/<id>#connection` |
+| `auth_required` | `auth.ErrNotConnected`, or the upstream refusing authentication (`client.ClassAuthRequired`) | the caller, on a server that takes a credential or header values from each user; otherwise the owner (edit link) | `ConnectLink` |
+| `needs_reconnect` | `auth.ErrNeedsReconnect` (ForUser, or a 401 after refresh) | as above | `ConnectLink` |
+| `user_header_missing` | `auth.ErrUserHeaderMissing`: the Manager's credentials are `Federation.Auth.UserHeadersRequired(true)` (the portal's stay lenient) | the caller | `/servers/<id>#connection` |
+| `server_not_configured` | `auth.ErrSharedMissing`, `ErrModeInvalid`, `ErrUnsupported`, `ErrNotConfigured`, `ErrNowRequiresAuth` (a no-auth server answering 401: with the flag no longer `upstream_error`), an invalid tunnel URL | **the owner only** (`server.OwnerUserID`) | `EditLink`: `/servers/<id>/edit` |
+| `shared_credential_rejected` | the upstream rejected the shared credential | **the owner only** | `EditLink` |
+| `credentials_unavailable`, `tunnel_*`, `upstream_*` | everything else | nobody: unchanged | - |
+
+The answer: message `<server>: connect your account at <url>, then retry` (reconnect / per-user headers / for the owner `<reason>; as the server's owner, fix it at <url>, then retry`), `data.url`, `data.server` = the server name, `data.elicitations = [{mode: "url", elicitationId: "gwc_" + sha256(user, server, class)[:16 bytes hex], url, message: "Connect <server>" / "Set up <server>"}]`. Everyone but the owner gets today's `-32031` text for owner-only cases, so the edit page and the cause never leak. A server the caller cannot see gets the plain `no_account`. The same mapping applies to `resources/read` and `prompts/get` (`withSession`). The `gateway.*` account wrapper forwards the hook.
 
 Upstream failures implement `mcp.ClassedError`, so the audit row and a failed ledger operation record the class. A **write** that fails *inside* `tools/call` with a timeout, an unreachable server, a protocol error, an oversize answer or a tunnel dropping mid-call is an **unknown outcome** (`connectors.ErrOutcomeUnknown`) and the message tells the user to check before retrying. A tool that ran and reported an error (`isError: true`) is passed through as a result; the ledger records the write as succeeded, because the call completed.
 
@@ -116,7 +133,7 @@ A gateway resource URI is `mcpgw://<server>/` followed by the upstream URI **ver
 | Answer | When |
 |---|---|
 | `-32602` `Resource not found` (`data.uri`) / `unknown prompt "<name>"` | not a gateway URI, no such server, a server the caller may not use, not permitted by policy, disabled server, not in the approved snapshot, or disabled by the review. The same bytes for hidden and unknown. |
-| `-32031` `auth_required`, `needs_reconnect`, `server_not_configured`, `shared_credential_rejected` | as for tools (the message carries `<BASE_URL>/servers/<id>`) |
+| `-32031` `auth_required`, `needs_reconnect`, `server_not_configured`, `shared_credential_rejected` | as for tools (the message carries `<BASE_URL>/servers/<id>`); with credential links `-32042` exactly as for tools (and `user_header_missing`) |
 | `-32029` `rate_limited` | the per-user / per-app limiter of tool calls, app = the server |
 | `-32036` (`mcp.CodeUpstream`) with a class-level message | `tunnel_offline`, `tunnel_unavailable`, `upstream_unreachable` / `timeout` / `protocol` / `too_large` / `forbidden` / `blocked`, `upstream_refused` (the upstream answered with a JSON-RPC error; its text is never relayed) |
 
@@ -147,6 +164,7 @@ netguard uses `netguard.CachedAllowList` over `netguard_allow_hosts` (30 s TTL, 
 ## Tests
 
 - `go test -race ./internal/federation/connector/ ./internal/mcp/`: the precheck (`TestManagerPrecheck`: schema-invalid, disabled, unreviewed, changed, hidden and disabled-server calls refused without the upstream; `TestManagerDispatchStillChecksAfterPrecheck`; `TestPrecheckRunsBeforePolicyAndConfirm`: no confirm hook for a refused call, audited deny/denied/args_invalid).
+- Credential links: `go test -race ./internal/federation/connector/ ./internal/mcp/ ./internal/federation/auth/` (`TestCredentialLinks*`: flag off byte for byte, user-fixable rows for owner and non-owner, owner-only rows, elicitation ids, the account hook, resources/prompts; `TestAccountStageMissingAccountHook`; `TestUserHeaderMissing`, `TestForUserOwnerOnlyErrorsAreSubSentinels`, `TestNoAuthServerAnswering401IsNowRequiresAuth`); `make test-e2e`: `TestE2ECredentialLinks` (no connection → `-32042` `#connection`, set the key, retry runs; a declared per-user header without a value → `-32042` `user_header_missing`, nothing upstream, set it, retry runs); `make test-security`: `TestSecurityFedCredentialLinksOwnerOnly` (a non-owner's answer on a shared server without its credential is the flag-off bytes; only the owner gets the edit link), `TestSecurityFedCredentialLinksPerUser` (per-user links, distinct elicitation ids, no edit link); `make test-integration`: `TestIntegrationFederationCredentialLinksFlag`.
 - `make test-security`: `TestSecurityFedApprovalModes` (Ask still confirms; Auto runs and is ledgered; a forged mode for a read tool is ignored; a read-only token, a role deny and a role without a grant stay refused; the owner of a published server cannot change modes through the page (403) or the service (RLS); the approval POST is in the portal IDOR and admin-route sweeps).
 - `make test-security`: `TestSecurityFedSnapshotBypass` (schema-invalid writes: `-32602`, no approval row, no ledger operation, no approval notification, five audited `args_invalid` denials; a valid write asks for an approval; a review change after the approval refuses the retry before the upstream).
 - `go test -race ./internal/federation/connector/`: names, sanitizing, tool building, load/reload, visibility and decider, accounts, the call path against an in-process go-sdk upstream through the real netguard (header capture, pinned-schema refusal, disabled/changed tools, credential errors, upstream isError, slow write = unknown outcome, unreachable, tunnel transport, offline and forbidden tunnels), reserved names.
