@@ -52,7 +52,7 @@ func TestCallTimeoutDefaultsToTimeout(t *testing.T) {
 			c := newTestClient(t, func(o *Options) { o.Timeout = shortTimeout })
 			s := connect(t, c, Endpoint{URL: ts + path, Transport: tr})
 			_, err := s.CallTool(ctxT(t), "slow", map[string]any{"text": "hi"})
-			wantClass(t, err, ClassTimeout)
+			_ = wantClass(t, err, ClassTimeout)
 		})
 	}
 }
@@ -80,7 +80,7 @@ func TestCallTimeoutStillBoundsToolCall(t *testing.T) {
 	s := connect(t, c, Endpoint{URL: ts + path, Transport: TransportStreamableHTTP})
 	start := time.Now()
 	_, err := s.CallTool(ctxT(t), "slow", map[string]any{"text": "hi"})
-	wantClass(t, err, ClassTimeout)
+	_ = wantClass(t, err, ClassTimeout)
 	if d := time.Since(start); d < slowDelay || d > 2*slowDelay+slowDelay/2 {
 		t.Errorf("call failed after %v, want about CallTimeout (%v)", d, slowDelay)
 	}
@@ -91,7 +91,7 @@ func TestCallTimeoutDoesNotExtendList(t *testing.T) {
 	c := newTestClient(t, func(o *Options) { o.Timeout = shortTimeout; o.CallTimeout = longCall })
 	s := connect(t, c, Endpoint{URL: ts + path, Transport: TransportStreamableHTTP})
 	_, err := s.ListTools(ctxT(t))
-	wantClass(t, err, ClassTimeout)
+	_ = wantClass(t, err, ClassTimeout)
 }
 
 // slowEndpoint serves s over tr and returns the base URL and path.
