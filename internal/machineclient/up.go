@@ -208,7 +208,12 @@ type generation struct {
 	targets     map[string]Target
 	names       []string        // served server names, sorted
 	needsReview map[string]bool // by server name
-	stdio       []*stdioSupervisor
+	// always: servers refreshed once per generation whatever their
+	// review state (the actions server, whose definition comes from this
+	// config), and whether that refresh is done.
+	always    map[string]bool
+	refreshed map[string]bool
+	stdio     []*stdioSupervisor
 }
 
 func (g *generation) stop() {
@@ -302,7 +307,7 @@ func (u *upRunner) register(ctx context.Context, cfg *Config) (*generation, erro
 		return nil, err
 	}
 
-	gen := &generation{targets: map[string]Target{}, needsReview: map[string]bool{}}
+	gen := &generation{targets: map[string]Target{}, needsReview: map[string]bool{}, always: map[string]bool{}, refreshed: map[string]bool{}}
 	for _, r := range regs {
 		name := r.srv.Name
 		if u.o.RegisterOnly {
@@ -325,6 +330,12 @@ func (u *upRunner) register(ctx context.Context, cfg *Config) (*generation, erro
 		gen.names = append(gen.names, name)
 		// New, or no approved tools yet (unknown counts as none).
 		gen.needsReview[name] = r.res.Created || approved[name] == 0
+		// The actions server is refreshed on every start and reload, so
+		// that an action edited under the same name becomes a pending
+		// review. A refresh never approves: calls keep being checked
+		// against the approved snapshot (and refused by the digest check
+		// of the actions server) until a human approves it.
+		gen.always[name] = r.srv.actions != nil
 	}
 	if !u.o.RegisterOnly && len(gen.targets) == 0 {
 		gen.stop()
@@ -430,12 +441,18 @@ func (u *upRunner) serve(ctx context.Context, gen *generation) (*Config, error) 
 }
 
 // refreshNew snapshots the tools of servers that need a review (once per
-// process) and prints their review links.
+// process), and of the actions server once per generation, and prints
+// their review links.
 func (u *upRunner) refreshNew(ctx context.Context, gen *generation) {
 	u.refreshMu.Lock()
 	defer u.refreshMu.Unlock()
 	for _, name := range gen.names {
-		if !gen.needsReview[name] || u.refreshed[name] {
+		switch {
+		case gen.always[name]:
+			if gen.refreshed[name] {
+				continue
+			}
+		case !gen.needsReview[name] || u.refreshed[name]:
 			continue
 		}
 		res, err := u.refreshOne(ctx, name)
@@ -445,8 +462,11 @@ func (u *upRunner) refreshNew(ctx context.Context, gen *generation) {
 			}
 			continue
 		}
-		u.refreshed[name] = true
+		u.refreshed[name], gen.refreshed[name] = true, true
 		if res.Added+res.Changed+res.Removed == 0 {
+			if !gen.needsReview[name] {
+				continue // the routine check of a reviewed actions server
+			}
 			u.say("server %q: no tool changes; review at %s", name, res.ReviewURL)
 			continue
 		}
