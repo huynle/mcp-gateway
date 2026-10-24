@@ -545,3 +545,12 @@ td input[type=number], form.inline input[type=number], .row input[type=number] {
 
 /* Short codes typed by hand (machine enrollment). */
 input.code-input { font: 500 1.1rem/1.2 var(--mono); letter-spacing: .18em; text-align: center; text-transform: uppercase; max-width: 14rem; }
+
+/* Tables inside a flush panel lose their own frame. */
+.panel.flush > table, .panel.flush > :is(.table-wrap, .table-scroll) { border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+
+/* Policy decisions as badges. */
+.pill.allow { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.pill.deny { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+.pill.confirm { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.pill.hidden { color: var(--muted); }
