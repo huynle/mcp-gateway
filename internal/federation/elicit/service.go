@@ -38,10 +38,10 @@ const (
 
 // Errors.
 var (
-	// ErrInvalid: a malformed request (owner or server not a uuid, a URL
+	// ErrInvalidRequest: a malformed request (owner or server not a uuid, a URL
 	// that is not absolute https without userinfo and control characters,
 	// a field over its limit).
-	ErrInvalid = errors.New("elicit: invalid elicitation")
+	ErrInvalidRequest = errors.New("elicit: invalid elicitation")
 	// ErrLimited: the owner already has MaxLivePerOwner live elicitations.
 	ErrLimited = errors.New("elicit: too many open elicitations")
 	// ErrNotFound: no live elicitation of this user behind the link
@@ -111,13 +111,13 @@ func (s *Service) SetClock(now func() time.Time) { s.now = now }
 // interstitial is <base>/elicit/<link id>) with the record. The URL must
 // already have passed the relay's origin rules (ValidateOrigin and the
 // server's elicitation origins); Create only re-checks its shape. message
-// is cleaned and cut to MaxMessageLen characters. ErrInvalid for a
+// is cleaned and cut to MaxMessageLen characters. ErrInvalidRequest for a
 // malformed request, ErrLimited beyond MaxLivePerOwner live rows.
 func (s *Service) Create(ctx context.Context, owner, harnessID, serverID, rawURL, upstreamID, message string) (string, Elicitation, error) {
 	switch {
 	case !isUUID(owner), !isUUID(serverID), len(harnessID) > MaxHarnessIDLen, len(upstreamID) > MaxUpstreamIDLen,
 		hasCTL(harnessID), hasCTL(upstreamID), !validURL(rawURL):
-		return "", Elicitation{}, ErrInvalid
+		return "", Elicitation{}, ErrInvalidRequest
 	}
 	link, err := newLinkID()
 	if err != nil {

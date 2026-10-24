@@ -123,8 +123,8 @@ func TestCreateValidates(t *testing.T) {
 		"harness too long": {alice, strings.Repeat("h", 201), server, upURL, upID},
 		"id too long":      {alice, harness, server, upURL, strings.Repeat("i", 201)},
 	} {
-		if _, _, err := f.svc.Create(ctx, c.owner, c.harness, c.server, c.url, c.upID, ""); !errors.Is(err, elicit.ErrInvalid) {
-			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		if _, _, err := f.svc.Create(ctx, c.owner, c.harness, c.server, c.url, c.upID, ""); !errors.Is(err, elicit.ErrInvalidRequest) {
+			t.Errorf("%s: err = %v, want ErrInvalidRequest", name, err)
 		}
 	}
 	if n := len(f.mem.all()); n != 0 {
