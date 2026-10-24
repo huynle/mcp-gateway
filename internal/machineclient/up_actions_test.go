@@ -71,6 +71,60 @@ func TestUpRegistersTheActionsServer(t *testing.T) {
 	}
 }
 
+// The actions server's snapshot is refreshed on every start and every
+// reload, even when it has approved tools: an action edited under the
+// same name then shows up as a pending review (and its calls are refused
+// by the digest check until it is approved).
+func TestUpRefreshesTheActionsServerOnEveryStart(t *testing.T) {
+	h := newUpHarness(t, upActionsConfig)
+	refreshes := func() []string {
+		h.g.mu.Lock()
+		defer h.g.mu.Unlock()
+		return append([]string(nil), h.g.refreshes...)
+	}
+	countOf := func(name string) int {
+		n := 0
+		for _, r := range refreshes() {
+			if r == name {
+				n++
+			}
+		}
+		return n
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := h.start(ctx)
+	h.waitActive()
+	waitFor(t, "first refreshes", func() bool { return countOf("a") == 1 && countOf("m-actions") == 1 })
+	cancel()
+	if err := waitErr(t, errc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both have approved tools now: only the actions server is refreshed.
+	h.g.mu.Lock()
+	h.g.servers["a"].approved, h.g.servers["m-actions"].approved = 2, 1
+	h.g.refreshes = nil
+	h.g.mu.Unlock()
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	errc = h.start(ctx)
+	h.waitActive()
+	waitFor(t, "the actions server's refresh on start", func() bool { return countOf("m-actions") == 1 })
+
+	// A reload (the action edited under the same name) refreshes it again.
+	h.writeConfig(strings.Replace(upActionsConfig, "exit 0", "exit 1", 1))
+	h.reload <- struct{}{}
+	h.waitActive()
+	waitFor(t, "the actions server's refresh on reload", func() bool { return countOf("m-actions") == 2 })
+	cancel()
+	if err := waitErr(t, errc); err != nil {
+		t.Fatal(err)
+	}
+	if n := countOf("a"); n != 0 {
+		t.Fatalf("server a (approved) refreshed %d times: %v", n, refreshes())
+	}
+}
+
 func TestUpServesActionsWithoutServers(t *testing.T) {
 	h := newUpHarness(t, "actions:\n  hello:\n    run: sh -c 'exit 0'\n    secret: fd\n")
 	ctx, cancel := context.WithCancel(context.Background())

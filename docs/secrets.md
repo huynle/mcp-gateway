@@ -201,7 +201,9 @@ other machine server. Configuration, delivery modes and their limits: [machines-
 ```
 
 The agent requests `{"tool": "<machine>-actions.<action>", "arg": "secret"}` and calls the action with
-`{"secret": {"$secret": "sec_…"}, …params}`. If the machine is offline the call fails with the tunnel error and the use
+`{"secret": {"$secret": "sec_…"}, …params}`. Before ①, the actions server checks the call's
+`_meta["mcp-gateway/tool-digest"]` against the definition it serves: an action edited under the same name since its
+review is refused and nothing runs ([machines-cli.md](machines-cli.md#actions)). If the machine is offline the call fails with the tunnel error and the use
 is refunded. `TestIntegrationSecretThroughMachineAction` (`cmd/gateway`) runs this path through a real tunnel.
 
 ## Policy
@@ -310,6 +312,7 @@ The Ingress must route `/s` and `/secrets` (the chart's default `ingress.paths` 
 | Leak through logs, audit, ledger, approvals | Plaintext only inside the secret stage; handle-form arguments restored before audit; audit holds record id and label; the redacting logger masks handles and entry ids |
 | Clickjacking or CSRF on the entry page | `X-Frame-Options: DENY`, CSP, CSRF token on every POST, owner check |
 | Agent reads the secret through a shell on the machine | Only fixed actions receive secrets, never in argv; the harness's own shell tool never receives one |
+| Agent with local file access edits an approved action's command in `config.yaml` (same name) | The gateway sends the approved tool's digest in `_meta["mcp-gateway/tool-digest"]`; the actions server refuses a call whose digest is not the one of the definition it serves, before reading the secret or starting anything; `up` refreshes the actions server on every start and reload, so the edit waits as a pending review until a human approves it |
 | Gateway compromise | Envelope encryption under the key provider, as for stored credentials; short TTLs; the expiry job wipes |
 
 ## Known limitations
@@ -327,7 +330,10 @@ The Ingress must route `/s` and `/secrets` (the chart's default `ingress.paths` 
   harness must show the link (from the message or `error.data.url`).
 - **Transformed echoes.** A target that prints the secret in an encoding the scrubber does not know (or a machine
   action that runs a script the agent can edit) defeats "unreadable". Bind secrets only to tools and actions whose
-  behaviour you control.
+  behaviour you control. The digest check covers the action's definition (its command line), not the files that
+  command reads or runs.
+- **Refused after an edit.** A call refused because the action changed since its review reached the machine, so its
+  secret use is spent, not refunded; request a new secret after approving the new version.
 - **Entry page wording for actions.** Requests made through `secrets.request` carry the argument `secret` for machine
   actions, so the entry page shows them as server `<machine>-actions`, tool `<action>`, argument `secret`.
 
@@ -336,6 +342,6 @@ The Ingress must route `/s` and `/secrets` (the chart's default `ingress.paths` 
 | Gate | Covers |
 |---|---|
 | `make test` | `internal/secrets`: request limits and defaults, hashes only, lookup and provide (single use, length bounds, envelope), consume mismatches as one error, pending / denied / revoked / expired, refund caps, expiry, disable hook (`service_test.go`); the tool's validation, `-32042` shape, machine-action binding, limits (`tools_test.go`); the stage's substitution, scrubbing of results and errors, identical unavailable answers, refunds, two handles, the pipeline position (`stage_test.go`); the pages, fingerprint parity, uniform 404, CSRF, anonymous callers, revoke (`portal_test.go`); the per-address limiter (`limiter_test.go`); `ref/` and `scrub/` with fuzz tests. Also `internal/policy` (secrets layer), `internal/federation/connector` (precheck with refs, `SecretTarget`), `internal/mcp` (error codes, `-32042` reaching an SDK client), `internal/machineclient` (actions config, delivery modes, nothing in argv or env, scrubbed and capped output, timeouts, the actions server in `up`), `internal/observability` (handles and entry ids redacted), `cmd/gateway` (the feature stays off unless enabled and possible). |
-| `make test-integration` | `internal/store/secrets_integration_test.go`: lifecycle and row-level security, request counts, single use under concurrent consumers, expiry wipes ciphertext, revoke on disable; `internal/secrets` over PostgreSQL (limits under concurrency); `cmd/gateway` `TestIntegrationSecretThroughMachineAction` (a secret delivered to a machine action through a real tunnel); `cmd/migrate` rewrap drill with a secrets envelope. |
+| `make test-integration` | `internal/store/secrets_integration_test.go`: lifecycle and row-level security, request counts, single use under concurrent consumers, expiry wipes ciphertext, revoke on disable; `internal/secrets` over PostgreSQL (limits under concurrency); `cmd/gateway` `TestIntegrationSecretThroughMachineAction` (a secret delivered to a machine action through a real tunnel; after the action is edited under its name and the machine reconnects, the next call is refused, nothing runs and a pending review exists); `internal/federation/snapshot` `TestIntegrationApprovedToolDigestMatchesTheServer` (the digest of the stored, approved tool equals the server's); `cmd/migrate` rewrap drill with a secrets envelope. |
 | `make test-e2e` | `test/e2e/secrets_test.go`: request → `-32042` → entry page → retry with the handle → the fake upstream gets the plaintext and the agent's result is scrubbed; the deny path; go-sdk clients get `-32042` at once. |
 | `make test-security` | `test/security/secrets_test.go`: handles bound to owner, harness and target; entry page hardening (sign-in, CSRF, framing, guessing, uniform 404); read-only tokens cannot request; approval payloads hold only the handle, and a sweep of logs, audit, ledger and database finds no plaintext. |
