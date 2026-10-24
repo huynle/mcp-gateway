@@ -51,12 +51,16 @@ func (s *Session) Instructions() string { return s.init().Instructions }
 // Capabilities are the server's capabilities.
 func (s *Session) Capabilities() *mcp.ServerCapabilities { return s.init().Capabilities }
 
-// do runs f under the client's Timeout with a fresh observer and
-// classifies its error.
+// do runs f under the client's Timeout (CallTimeout for tools/call) with
+// a fresh observer and classifies its error.
 func do[R any](ctx context.Context, s *Session, op string, f func(context.Context) (R, error)) (R, error) {
 	start := time.Now()
 	obs := &observer{}
-	ctx, cancel := context.WithTimeout(withObserver(withoutSDKValues(ctx), obs), s.c.timeout)
+	timeout := s.c.timeout
+	if op == opCallTool {
+		timeout = s.c.callTO
+	}
+	ctx, cancel := context.WithTimeout(withObserver(withoutSDKValues(ctx), obs), timeout)
 	defer cancel()
 	r, err := f(ctx)
 	if err != nil {

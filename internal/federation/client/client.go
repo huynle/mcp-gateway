@@ -35,9 +35,14 @@ const (
 
 // Options configure a Client.
 type Options struct {
-	HTTPClient     *http.Client
-	Authorizer     Authorizer
-	Timeout        time.Duration
+	HTTPClient *http.Client
+	Authorizer Authorizer
+	// Timeout bounds each operation (handshake, list, read, get; default
+	// DefaultTimeout).
+	Timeout time.Duration
+	// CallTimeout bounds tools/call only (default: Timeout), for upstream
+	// tools that legitimately run for minutes.
+	CallTimeout    time.Duration
 	MaxResultBytes int64
 	MaxListItems   int
 	ClientName     string
@@ -51,6 +56,7 @@ type Client struct {
 	hc      *http.Client
 	auth    Authorizer
 	timeout time.Duration
+	callTO  time.Duration
 	maxBody int64
 	maxList int
 	onCall  func(CallInfo)
@@ -69,6 +75,10 @@ func New(o Options) (*Client, error) {
 	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log, onCall: o.OnCall}
 	if c.timeout <= 0 {
 		c.timeout = DefaultTimeout
+	}
+	c.callTO = o.CallTimeout
+	if c.callTO <= 0 {
+		c.callTO = c.timeout
 	}
 	c.maxBody = o.MaxResultBytes
 	if c.maxBody <= 0 {

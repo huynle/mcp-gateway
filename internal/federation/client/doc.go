@@ -11,8 +11,9 @@
 // because the legacy HTTP+SSE transport keeps one GET stream open for the
 // whole session, which a whole-request timeout would kill. Instead, every
 // operation (the handshake and each list/call/read/get) runs under its own
-// context deadline of Options.Timeout, and Session.Close cancels every
-// request of the session.
+// context deadline of Options.Timeout (tools/call: Options.CallTimeout,
+// which defaults to Timeout), and Session.Close cancels every request of
+// the session.
 //
 // Requests are built by the MCP SDK from scratch, so nothing from an
 // inbound gateway request (its Authorization header, cookies) can reach
