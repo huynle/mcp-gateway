@@ -23,6 +23,8 @@ import (
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/huynle/mcp-gateway/internal/federation/tooldigest"
 )
 
 const testSecret = "correct horse battery staple"
@@ -400,7 +402,7 @@ func TestActionsServerCallsTheAction(t *testing.T) {
 	cs := connectActions(t, map[string]*Action{a.Name: a, b.Name: b}, log)
 	ctx := context.Background()
 
-	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: a.Name, Arguments: map[string]any{SecretArg: testSecret}})
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: a.Name, Arguments: map[string]any{SecretArg: testSecret}, Meta: reviewed(a)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +419,7 @@ func TestActionsServerCallsTheAction(t *testing.T) {
 		t.Fatalf("structured %s (%v)", sb, err)
 	}
 
-	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: b.Name, Arguments: map[string]any{"host": "db-1", SecretArg: testSecret}})
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: b.Name, Arguments: map[string]any{"host": "db-1", SecretArg: testSecret}, Meta: reviewed(b)})
 	if err != nil || res.IsError {
 		t.Fatalf("%v %+v", err, res)
 	}
@@ -432,7 +434,7 @@ func TestActionsServerCallsTheAction(t *testing.T) {
 		{"host": "db-1", SecretArg: map[string]any{"$secret": "sec_abc"}},
 		{"host": 7, SecretArg: testSecret},
 	} {
-		res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: b.Name, Arguments: args})
+		res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: b.Name, Arguments: args, Meta: reviewed(b)})
 		if err != nil || !res.IsError {
 			t.Fatalf("args %v: %v %+v", args, err, res)
 		}
@@ -443,5 +445,83 @@ func TestActionsServerCallsTheAction(t *testing.T) {
 	}
 	if n := len(log.all()); n != before {
 		t.Fatalf("%d commands started by refused calls", n-before)
+	}
+}
+
+// reviewed is the _meta the gateway sends with a call of a's approved,
+// unchanged definition.
+func reviewed(a *Action) sdk.Meta {
+	return sdk.Meta{tooldigest.MetaKey: ActionDigest(a)}
+}
+
+func TestActionDigestIsTheListedToolsDigest(t *testing.T) {
+	a := helperAction(t, "stdin", "report", "{host}")
+	cs := connectActions(t, map[string]*Action{a.Name: a}, &startLog{})
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil || len(res.Tools) != 1 {
+		t.Fatalf("%v %v", res, err)
+	}
+	tl := res.Tools[0]
+	schema, err := json.Marshal(tl.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tooldigest.Digest(tl.Name, tl.Description, schema); got != ActionDigest(a) {
+		t.Fatalf("listed tool digest %s, ActionDigest %s", got, ActionDigest(a))
+	}
+}
+
+// The actions server runs only the definition the gateway approved: a
+// call without the reviewed digest, or with another definition's, is
+// refused before anything starts or the secret is looked at.
+func TestActionsServerRunsOnlyTheReviewedDefinition(t *testing.T) {
+	log := &startLog{}
+	a := helperAction(t, "stdin", "report", "{host}")
+	cs := connectActions(t, map[string]*Action{a.Name: a}, log)
+	ctx := context.Background()
+	args := map[string]any{"host": "db-1", SecretArg: testSecret}
+
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: a.Name, Arguments: args, Meta: reviewed(a)})
+	if err != nil || res.IsError {
+		t.Fatalf("reviewed call: %v %+v", err, res)
+	}
+	if n := len(log.all()); n != 1 {
+		t.Fatalf("%d starts for the reviewed call", n)
+	}
+
+	edited := *a
+	edited.Description = "now does something else"
+	for name, meta := range map[string]sdk.Meta{
+		"missing":     nil,
+		"other keys":  {"progressToken": "x"},
+		"not text":    {tooldigest.MetaKey: 7},
+		"empty":       {tooldigest.MetaKey: ""},
+		"other tool":  reviewed(&edited),
+		"bogus value": {tooldigest.MetaKey: tooldigest.Prefix + strings.Repeat("0", 64)},
+	} {
+		res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: a.Name, Arguments: args, Meta: meta})
+		if err != nil || !res.IsError {
+			t.Fatalf("%s digest: %v %+v", name, err, res)
+		}
+		wire, _ := json.Marshal(res)
+		want := "action " + a.Name + " changed since it was reviewed; approve the new version"
+		if !strings.Contains(string(wire), want) {
+			t.Errorf("%s digest: refusal %s, want %q", name, wire, want)
+		}
+		if strings.Contains(string(wire), testSecret) {
+			t.Fatalf("%s digest: the refusal leaks the secret: %s", name, wire)
+		}
+	}
+	// Refused even when the secret argument is missing or malformed: the
+	// digest is checked first.
+	res, err = cs.CallTool(ctx, &sdk.CallToolParams{Name: a.Name, Arguments: map[string]any{"host": "db-1"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("no secret, no digest: %v %+v", err, res)
+	}
+	if wire, _ := json.Marshal(res); !strings.Contains(string(wire), "changed since it was reviewed") {
+		t.Errorf("no secret, no digest: %s", wire)
+	}
+	if n := len(log.all()); n != 1 {
+		t.Fatalf("%d commands started by refused calls", n-1)
 	}
 }
