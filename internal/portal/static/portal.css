@@ -564,3 +564,19 @@ pre.elicit-url mark { background: var(--accent-soft); color: var(--accent); bord
 .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0; padding: 0; list-style: none; }
 .chips > li { margin: 0; }
 :is(h2, h3) > .pill { margin-left: .5rem; font-size: var(--text-xs); }
+
+/* --- fixes after the visual pass ----------------------------------------- */
+/* .panel > :last-child zeroes margins; the foot must stay flush. */
+:is(.panel, .card) > .panel-foot:last-child { margin-bottom: calc(-1 * var(--sp-4)); }
+@media (max-width: 40rem) { :is(.panel, .card) > .panel-foot:last-child { margin-bottom: calc(-1 * var(--sp-3)); } }
+/* Filter fields share the row instead of wrapping one by one. */
+form.filters > label:not(.check) { flex: 1 1 8.5rem; min-width: 0; }
+form.filters > label:not(.check) > :is(input, select) { width: 100%; }
+form.filters > label.check { flex: none; align-self: center; text-transform: none; letter-spacing: 0; font-size: var(--text-sm); color: var(--fg); }
+form.filters > :is(button, .btn, a) { flex: none; }
+tr.tunnel-run details { margin: 0; }
+/* Absolutely positioned bits (.sr-only labels) inside a scrolling table
+   must not widen the page. */
+main table, .table-wrap, .table-scroll { position: relative; }
+/* Labels are one-column grids: a long <select> option must not widen them. */
+label { grid-template-columns: minmax(0, 1fr); min-width: 0; }

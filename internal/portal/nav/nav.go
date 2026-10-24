@@ -202,6 +202,7 @@ const Partial = `{{define "page.head"}}<meta charset="utf-8">
   <meta name="color-scheme" content="light dark">
   <script src="{{asset "theme.js"}}"></script>
   <link rel="stylesheet" href="{{asset "portal.css"}}">
+  <link rel="icon" type="image/svg+xml" href="{{asset "favicon.svg"}}">
   <script src="{{asset "htmx.min.js"}}" defer></script>
 {{- end}}
 
