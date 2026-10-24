@@ -318,8 +318,8 @@ func service(ctx context.Context, args []string, getenv func(string) string, std
 		if err != nil {
 			return fail(stderr, cmd, err)
 		}
-		if len(cfg.Servers) == 0 {
-			return fail(stderr, cmd, fmt.Errorf("no servers in %s", cfgPath))
+		if len(cfg.Servers) == 0 && len(cfg.Actions) == 0 {
+			return fail(stderr, cmd, fmt.Errorf("no servers in %s (add them under `servers`, or commands under `actions`)", cfgPath))
 		}
 		return exitFor(stderr, cmd, machineclient.ServiceInstall(ctx, o))
 	case "uninstall":

@@ -109,6 +109,16 @@ Stdio servers started this way see only a minimal environment (`PATH`, `HOME`, `
 
 **Machines** (`/machines`) shows your machines and their servers. **Revoke** cuts one off at once. For a headless host create a one-time **enrollment code** there and run `mcp-gateway login --enroll-code mge_…`.
 
+## 3c. Giving your agent a password
+
+When the gateway has ephemeral secrets turned on, an agent that needs a password (a server's API key, `sudo` on your machine, an SSH passphrase) asks for it with `secrets.request` and shows you a link and four check words, for example `oak-river-mint-amber`. Then:
+
+1. **Only ever type a secret at `<your gateway>/s/…`.** Never paste it into the chat, and never type it on a page someone sent you.
+2. Open the link (sign in if asked). The page shows which agent asked, the label, exactly which server, tool and argument the secret is for, how long it stays usable and how many times. **Check that the words match what your agent shows.** If they differ, or you did not expect the request, press **Deny**.
+3. Type the secret and press **Save**, then tell the agent to go on. The agent can use the secret for that one tool, for the time and number of uses shown, but never sees it; the gateway removes it from the results.
+
+**Secrets** (`/secrets`) lists your pending and live secrets; **Revoke** ends one at once. Links expire after 10 minutes. For commands on your own machine, the secret goes only to the fixed commands you listed under `actions:` in the machine's config ([machines-cli.md](machines-cli.md#actions)). Details: [secrets.md](secrets.md).
+
 ## 4. Approvals: when a tool call waits for you
 
 Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:
@@ -127,7 +137,7 @@ Only you can approve your own calls (another person's Slack account pressing the
 
 Admins see the same **metadata for everyone** on `/admin/audit`; they do not see more than that.
 
-**Never recorded, anywhere**: the arguments you send, the results, message or file contents, your tokens, the vendor's tokens. The one exception is the pending approval's arguments, kept encrypted for the 15 minutes it lives and deleted when it is approved-and-used, denied or expired. Logs are redacted before they are written. The write ledger (`/operations`) keeps only the identifiers of what a write produced (issue number, message timestamp, file id, URL).
+**Never recorded, anywhere**: the arguments you send, the results, message or file contents, your tokens, the vendor's tokens. The one exception is the pending approval's arguments, kept encrypted for the 15 minutes it lives and deleted when it is approved-and-used, denied or expired. Secrets you enter on `/s/…` pages are kept encrypted only until they expire, are used up or revoked; audit shows their label, never the value. Logs are redacted before they are written. The write ledger (`/operations`) keeps only the identifiers of what a write produced (issue number, message timestamp, file id, URL).
 
 `/operations` lists your last 50 writes with their state. **succeeded** / **failed** are final; **unknown** means the vendor did not confirm and the gateway is checking (a duplicate call meanwhile answers *pending verification*); **unresolved** means it could not find out — *verify in the app* before retrying; the next identical call is a new write.
 
@@ -152,6 +162,9 @@ JSON-RPC error codes the harness surfaces (the message says what to do; `error.d
 | `-32032 approval required` (`error.data.approval_id`, `portal_url`, `expires_at`) | the call waits for you | approve on `/approvals` or in Slack, then retry with `approval_id` |
 | `-32033 pending verification` (`error.data.operation_id`) | the same write is already running or being verified | wait a minute, check `/operations`; do not fire it again |
 | `-32034 authentication required` | a call reached the pipeline without a principal (fail-closed guard; you should only ever see the HTTP `401`) | as for `401`; report it if it persists |
+| `-32042` with a link `<gateway>/s/…` and check words | the agent asked you for a secret | check the words, enter it on that page (section 3c), then let the agent retry |
+| `-32037 secret unavailable` | the secret expired, was used up or revoked, or is not for this tool | let the agent ask again (a new link) |
+| `-32030 secret request denied` | you pressed Deny on the secret page | nothing; the agent asks again only if you want |
 | `-32035 scope_required` (`error.data.missing_scopes`, `portal_url`) | the connected account has not granted a scope the tool needs | `/connections` → *Grant more access* on that account, approve at the vendor, retry |
 | tool result with `isError: true` | the vendor refused or failed (class only: `reconnect_required`, `not_found`, `forbidden`, `invalid_argument`, `vendor_error`) | `reconnect_required` → *Reconnect* on `/connections`; `forbidden` → the app is not installed on that org/repo/site; otherwise fix the arguments or retry later |
 | status **needs reconnect** on `/connections` | the vendor no longer accepts the stored refresh token | *Reconnect* |

@@ -39,6 +39,10 @@ type Config struct {
 	Machine string
 	// Servers by name.
 	Servers map[string]*Server
+	// Actions by name: fixed commands that receive an ephemeral secret,
+	// served as one tool each by the in-process server
+	// "<machine>-actions" (actions.go).
+	Actions map[string]*Action
 }
 
 // Server is one local MCP server from the config.
@@ -58,6 +62,9 @@ type Server struct {
 	Cwd string
 	// InheritEnv names variables copied from the CLI's environment.
 	InheritEnv []string
+
+	// actions is set on the in-process actions server only (up.go).
+	actions map[string]*Action
 }
 
 // rawConfig and rawServer mirror the YAML; unknown keys are rejected.
@@ -65,6 +72,7 @@ type rawConfig struct {
 	Gateway string                `yaml:"gateway"`
 	Machine string                `yaml:"machine"`
 	Servers map[string]*rawServer `yaml:"servers"`
+	Actions map[string]*rawAction `yaml:"actions"`
 }
 
 type rawServer struct {
@@ -135,7 +143,7 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, errors.New("the config must be one YAML document")
 	}
-	c := &Config{Machine: raw.Machine, Servers: map[string]*Server{}}
+	c := &Config{Machine: raw.Machine, Servers: map[string]*Server{}, Actions: map[string]*Action{}}
 	if raw.Gateway != "" {
 		gw, err := GatewayURL(raw.Gateway)
 		if err != nil {
@@ -154,6 +162,18 @@ func ParseConfig(data []byte) (*Config, error) {
 			return nil, fmt.Errorf("server %q: %w", name, err)
 		}
 		c.Servers[name] = s
+	}
+	for name, ra := range raw.Actions {
+		a, err := buildAction(name, ra)
+		if err != nil {
+			return nil, fmt.Errorf("action %q: %w", name, err)
+		}
+		c.Actions[name] = a
+	}
+	if c.Machine != "" {
+		if _, err := c.ActionsServerName(c.Machine); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }

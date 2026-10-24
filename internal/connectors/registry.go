@@ -149,7 +149,8 @@ type Tool struct {
 	// Bounds caps page size and result size.
 	Bounds Bounds
 	// NoAccount marks a tool that runs without a connected account; the
-	// account stage skips it. Only "<app>.list_accounts" sets it.
+	// account stage skips it. "<app>.list_accounts" and the built-in
+	// secrets.request (internal/secrets) set it.
 	NoAccount bool
 	// Handler runs the call. Nil in a Connector's Tools (RegisterConnector
 	// binds it to Connector.Call); required by Registry.Register.

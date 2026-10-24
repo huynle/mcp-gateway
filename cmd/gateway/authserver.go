@@ -71,7 +71,7 @@ func withOAuthRoutes(authSvc *authserver.Service) muxExtra {
 // pages behind the portal's signed-in check and registers the disable
 // hook that revokes a user's refresh tokens with their sessions.
 func withHarnessPages(authSvc *authserver.Service) portalExtra {
-	return func(idSvc *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), _ *slog.Logger) {
+	return func(idSvc *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), _ *slog.Logger, _ http.Handler) {
 		if authSvc == nil {
 			return
 		}

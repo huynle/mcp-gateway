@@ -44,6 +44,9 @@ func Status(ctx context.Context, o StatusOptions) error {
 		fail(err)
 	} else {
 		say(o.Out, "config:   %s: %d servers (%s)\n", o.ConfigPath, len(cfg.Servers), strings.Join(cfg.ServerNames(), ", "))
+		if len(cfg.Actions) > 0 {
+			say(o.Out, "          %d actions (%s)\n", len(cfg.Actions), strings.Join(cfg.ActionNames(), ", "))
+		}
 	}
 
 	st, err := LoadState(o.StateDir)
@@ -53,6 +56,12 @@ func Status(ctx context.Context, o StatusOptions) error {
 		return first
 	}
 	say(o.Out, "machine:  %q (%s) on %s\n", st.Name, st.MachineID, st.Gateway)
+	if cfg != nil {
+		if _, err := cfg.ActionsServerName(st.Name); err != nil {
+			say(o.Out, "          %v\n", err)
+			fail(err)
+		}
+	}
 	if cfg != nil && cfg.Gateway != "" && cfg.Gateway != st.Gateway {
 		err := fmt.Errorf("the config names gateway %s but this machine is logged in to %s", cfg.Gateway, st.Gateway)
 		say(o.Out, "          %v\n", err)
@@ -88,8 +97,8 @@ func Status(ctx context.Context, o StatusOptions) error {
 		say(o.Out, "  %-20s %s, %d approved tools; review at %s\n", s.Name, s.Status, s.ApprovedTools, s.ReviewURL)
 	}
 	if cfg != nil {
-		for _, name := range cfg.ServerNames() {
-			if !registered[name] {
+		for _, srv := range servedServers(cfg, st.Name) {
+			if name := srv.Name; !registered[name] {
 				say(o.Out, "  %-20s not registered (run `mcp-gateway up`)\n", name)
 			}
 		}

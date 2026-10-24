@@ -59,6 +59,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/permissions"
 	"github.com/huynle/mcp-gateway/internal/policy"
 	"github.com/huynle/mcp-gateway/internal/portal"
+	"github.com/huynle/mcp-gateway/internal/secrets"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/store/migrations"
 	"github.com/huynle/mcp-gateway/internal/tokens"
@@ -182,6 +183,11 @@ type options struct {
 	// tunnelRelay turns on the cross-replica tunnel relay with its own
 	// internal listener (world.relay) and secret relaySecret.
 	tunnelRelay bool
+	// secrets wires ephemeral secrets as cmd/gateway does with
+	// GATEWAY_SECRETS_ENABLED (secrets_test.go): the secrets app, the
+	// secret stage before dispatch, the /s/{id} and /secrets pages and
+	// the disable hook. It needs federation.
+	secrets bool
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the
@@ -199,20 +205,21 @@ type world struct {
 	approval *approvals.Service
 	// notified counts approval notifications (what the Slack DM notifier
 	// would send).
-	notified *countingNotifier
-	ledger   *ledger.Service
-	auth     *authserver.Service
-	fake     *fake.Connector
-	github   *stubGitHub
-	slack    *stubSlack
-	reg      *connectors.Registry
-	limiter  *mcp.TokenBucketLimiter
-	srv      *httptest.Server
-	fed      *connector.Federation // nil unless options.federation
-	relay    *httptest.Server      // the relay listener; nil unless options.tunnelRelay
-	gw       *gatewaytools.Tools   // nil unless options.federation
-	machines *machines.Service     // nil unless options.federation
-	perms    *permissions.Service
+	notified  *countingNotifier
+	ledger    *ledger.Service
+	auth      *authserver.Service
+	fake      *fake.Connector
+	github    *stubGitHub
+	slack     *stubSlack
+	reg       *connectors.Registry
+	limiter   *mcp.TokenBucketLimiter
+	srv       *httptest.Server
+	fed       *connector.Federation // nil unless options.federation
+	relay     *httptest.Server      // the relay listener; nil unless options.tunnelRelay
+	gw        *gatewaytools.Tools   // nil unless options.federation
+	machines  *machines.Service     // nil unless options.federation
+	secretSvc *secrets.Service      // nil unless options.secrets
+	perms     *permissions.Service
 
 	admin, alice, bob    user
 	aliceAcc             string // alice's company fake account (connections row)
@@ -362,6 +369,9 @@ func newWorld(t *testing.T, opts options) *world {
 	if opts.federation {
 		decider, accounts = w.wireFederation(keys, log, opts)
 	}
+	if opts.secrets {
+		w.wireSecrets(keys, decider, log)
+	}
 
 	lcfg := ledger.DefaultConfig()
 	lcfg.BaseURL = baseURL
@@ -414,6 +424,11 @@ func newWorld(t *testing.T, opts options) *world {
 		if err := pipeline.Insert(mcp.Before, mcp.StagePolicy, mcp.PrecheckStage(w.fed.Manager.Precheck(), log)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if w.secretSvc != nil {
+		// The secret stage immediately before dispatch (cmd/gateway's
+		// withSecretStage).
+		w.insertSecretStage(pipeline, log)
 	}
 	mopts := mcp.Options{
 		Registry: w.reg, Pipeline: pipeline, Visibility: visibility, Authenticator: authserver.Composite(w.tokens, w.auth.Authenticator()),
@@ -477,6 +492,9 @@ func newWorld(t *testing.T, opts options) *world {
 	w.idSvc.OnDisable(w.auth.DisableHook())
 	if w.fed != nil {
 		w.mountFederationPages(p, session, log)
+	}
+	if w.secretSvc != nil {
+		w.mountSecretPages(p, session, log)
 	}
 
 	mux := http.NewServeMux()

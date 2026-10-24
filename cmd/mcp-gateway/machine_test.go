@@ -264,3 +264,25 @@ func TestServiceCommands(t *testing.T) {
 		t.Fatal("service without an action must be a usage error")
 	}
 }
+
+func TestServiceInstallAcceptsActionsOnly(t *testing.T) {
+	g := newCLIGateway(t)
+	env := cliEnv(t)
+	oldGOOS, oldExec, oldExe := goos, serviceExec, executable
+	t.Cleanup(func() { goos, serviceExec, executable = oldGOOS, oldExec, oldExe })
+	goos = "linux"
+	executable = func() (string, error) { return "/usr/local/bin/mcp-gateway", nil }
+	serviceExec = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+	loginCLI(t, g, env)
+
+	// Neither servers nor actions: the service could only crash-loop.
+	writeCLIConfig(t, env, "servers: {}\n")
+	if code, _, errOut := runEnv(env, "service", "install"); code != 1 || !strings.Contains(errOut, "no servers") {
+		t.Fatalf("empty config: %d %s", code, errOut)
+	}
+	// Actions alone are something to serve.
+	writeCLIConfig(t, env, "actions:\n  hello:\n    run: /bin/sh -c true\n    secret: stdin\n")
+	if code, out, errOut := runEnv(env, "service", "install"); code != 0 {
+		t.Fatalf("actions-only install: %d\n%s\n%s", code, out, errOut)
+	}
+}

@@ -2,6 +2,9 @@
 /bin/
 /dist/
 /gateway
+/cmd/gateway/gateway
+/cmd/mcp-gateway/mcp-gateway
+/cmd/migrate/migrate
 
 # Test and coverage output
 *.test

@@ -126,8 +126,10 @@ Machine login is not supported on Windows yet (owner and mode checks fail closed
    reset after a minute of uptime); meanwhile its tunnel answers 503.
 4. Runs the `Connector` (one WebSocket, `GET /machine/v1/connect`) with the map tunnel id → target. After the first
    connection it refreshes (`POST …/refresh`) every server that was just created or has no approved tools, once per
-   process (retrying `409 offline` twice, 2 s apart, then on the next connection), and prints
-   `server "x": N tools found …; review and approve them at <review_url>`.
+   process, and the actions server `<machine>-actions` on every start and every reload (retrying `409 offline`
+   twice, 2 s apart, then on the next connection), and prints
+   `server "x": N tools found …; review and approve them at <review_url>` (nothing for an unchanged, already reviewed
+   actions server). A refresh only stores a pending snapshot; it never approves.
 5. When the connection ends it reconnects with backoff (1 s doubling to 1 min, ±20 % jitter, reset after a
    successful connection); a connection that failed before the handshake gets a fresh access token. A revoked
    machine (close 4003 / `403 revoked` / `invalid_grant`) or a replaced connection (close 4001: another `up` of the
@@ -146,9 +148,102 @@ forwarder), so the adapter only routes requests by tunnel id. It returns on the 
 reconnecting and the status lines) and maps close code 4003 to `ErrRevoked` and 4001 to `ErrReplaced`.
 `cmd/gateway`'s `TestIntegrationMachineCLIEndToEnd` runs the real `Login` + `Up` against a real gateway.
 
+## Actions
+
+`actions:` in `config.yaml` are fixed commands on this machine that receive an **ephemeral secret** the user entered on
+the gateway ([secrets.md](secrets.md)), so an agent can run `sudo`, `ssh` or `psql` with a password it never sees. The
+agent chooses *which* action runs and fills the declared params; the config decides *what* runs and how the secret is
+handed over. Never through argv, never through a shell.
+
+```yaml
+actions:
+  apt-upgrade:                                   # tool name: 1-63 of [a-z0-9_-], starting with a letter or digit
+    run: sudo -A apt-get upgrade -y              # sudo -A asks the askpass helper
+    secret: askpass
+    timeout: 10m                                 # 1s-30m, default 2m
+    description: Upgrade the packages on this box   # optional, up to 500 characters
+  prod-uptime:
+    run: ssh prod uptime                         # OpenSSH >= 8.4 (SSH_ASKPASS_REQUIRE)
+    secret: askpass
+  sudo-restart-nginx:
+    run: sudo -S -p "" systemctl restart nginx   # sudo -S reads the password from stdin
+    secret: stdin
+  decrypt-notes:
+    run: gpg --batch --pinentry-mode loopback --passphrase-fd 3 -d /home/huy/notes.gpg
+    secret: fd
+  report:
+    run: psql -h {host} -U report -f /home/huy/q/report.sql
+    secret: env:PGPASSWORD                       # weakest mode, see below
+    params:
+      host: '[a-z0-9.-]+'                        # the agent may only fill declared, pattern-checked params
+```
+
+Rules (checked when the config is loaded; unknown keys are errors, as everywhere in the file):
+
+- `run` is split into words like `stdio:` (quotes and backslashes, **no expansion**: `~`, `$VAR` and globs are literal,
+  so use absolute paths). The program must be an absolute path or a name found on `PATH` at load time; it is resolved
+  to an absolute path then and cannot contain a placeholder.
+- `{name}` in a later word is a param placeholder; `{{` and `}}` are literal braces. Every declared param must be used
+  in `run`, and every placeholder must be declared. Param names are 1-32 of `[a-z0-9_]` starting with a letter;
+  `secret` is reserved. A pattern is anchored (`^(?:…)$`). A call must give every declared param and nothing else,
+  each matching its pattern, or nothing runs.
+- `secret` is one of `stdin`, `fd`, `askpass` or `env:NAME` (`NAME` of `[A-Z0-9_]`, not starting with a digit).
+- An empty secret, a NUL byte, and a line break with `stdin` or `askpass` are refused before anything runs.
+
+| `secret:` | Delivery | Limits |
+|---|---|---|
+| `stdin` | the secret and `\n` on stdin (a pipe), then EOF | for programs that read a password from stdin (`sudo -S`, `passwd --stdin`, …) |
+| `fd` | the secret on file descriptor 3 (a pipe), then EOF | for `--passphrase-fd 3`-style options. Not on Windows |
+| `askpass` | `SUDO_ASKPASS` and `SSH_ASKPASS` point at a one-shot helper in a private 0700 temporary directory; it prints the secret from a FIFO **once** (the FIFO is removed at the first read). `SSH_ASKPASS_REQUIRE=force`, and `DISPLAY=:0` when unset | `sudo` uses it only with **`-A`**; OpenSSH honours `SSH_ASKPASS_REQUIRE` from **8.4** on; a second prompt (a wrong password, a second host) gets nothing. Until the first read a process of the same user could open the FIFO. Not on Windows |
+| `env:NAME` | `NAME=<secret>` in the command's environment only | **weakest**: everything the command starts can read it, and on Linux so can same-user processes through `/proc/<pid>/environ`. The tool description says so |
+
+How an action runs: the minimal environment of stdio servers ([above](#clean-environment-for-stdio-servers)) plus the
+delivery variables; a new session (`setsid`: no controlling terminal, so nothing can prompt on your terminal); the whole
+process group is killed at the timeout or when the call is cancelled (Windows kills the process only). The result is
+`{exit_code, duration_ms, timed_out, stdout, stderr, stdout_truncated, stderr_truncated}`, each stream capped at
+64 KiB and **scrubbed of the secret** (raw, base64, URL, JSON and hex forms; the gateway scrubs again). A non-zero exit
+or a timeout is an error result (`isError`). The `[]byte` copies of the secret are zeroed after the run; Go strings
+cannot be.
+
+**Serving.** `up` serves all actions as one in-process MCP server named **`<machine>-actions`**, registered like an
+`http` server (it appears in `status`, `--register-only` and the review links). Each action is one tool named after
+it: the description holds the fixed command (`Runs (fixed command, no shell): …`), the delivery mode and the timeout;
+the input schema is the declared params (with their patterns) plus the required `secret` argument. The name must fit
+the server-name limit of 63 characters, so a machine with actions needs a name of at most 55 characters; a configured
+server called `<machine>-actions` is an error. A config with only `actions:` and no `servers:` is valid (`up` and
+`service install` accept it). Older CLIs refuse a config with `actions:`.
+
+**Review.** The actions server's tools are disabled until you approve them on the review link `up` prints, like any
+server's: the review shows each action's command. `up` refreshes the actions server's snapshot on every start and
+every reload (`SIGHUP`), so an added or changed action appears as a pending review; approve it on the Machines page
+or the server's review page (until then a new action is refused by the gateway).
+
+**Only the reviewed definition runs.** With every federated `tools/call` the gateway sends the digest of the tool's
+**approved** definition in `_meta["mcp-gateway/tool-digest"]` (`internal/federation/tooldigest`: `sha256:` and the
+hex SHA-256 of the canonical JSON `{"description","inputSchema","name"}`, keys sorted, no whitespace, numbers in one
+form per value). The actions server computes the same digest from the tool it lists and **refuses a call whose digest
+is missing or different** before it decodes the arguments, reads the secret or starts anything:
+`action <name> changed since it was reviewed; approve the new version on the Machines page (or the server's review
+page)` (an `isError` result). So an action edited under the same name (`run`, `secret`, `params`, `timeout`,
+`description`) cannot run its new command with a secret until a human approves the new snapshot; the approved
+snapshot stays in force meanwhile. There is no switch to turn the check off. A secret spent on a refused call is not
+refunded (the call reached the machine): request a new one after the approval. Renaming an action makes a new tool
+that needs approval; the old name stops working.
+
+**Using one.** The agent asks for a secret bound to the action and calls it with the handle:
+
+```json
+{"name": "secrets.request", "arguments": {"label": "sudo password on devbox", "tool": "devbox-actions.apt-upgrade", "arg": "secret"}}
+{"name": "devbox-actions.apt-upgrade", "arguments": {"secret": {"$secret": "sec_…"}}}
+```
+
+A secret bound to one action cannot reach another, nor the harness's own shell tool. Not covered: an action whose
+command prints the secret in a form the scrubber does not know, or that runs a script the agent can edit. Point actions
+at programs and files the agent cannot write.
+
 ## Background service
 
-`mcp-gateway service install` first checks that the machine is logged in and the config has servers, then:
+`mcp-gateway service install` first checks that the machine is logged in and the config has servers or actions, then:
 
 - **macOS**: writes `~/Library/LaunchAgents/com.huynle.mcp-gateway.plist` (`ProgramArguments` = this executable,
   `up --config <absolute path>`; `RunAtLoad`, `KeepAlive`, `ThrottleInterval` 10 s; stdout and stderr to
@@ -174,3 +269,10 @@ Each flow also checks that no device code, enrollment code, access token or asse
 (captured at debug level) or an error. Opt-in, against the real login keychain:
 `MCP_GATEWAY_TEST_KEYCHAIN=1 go test -run TestKeychainReal ./internal/machineclient/`. On macOS the rendered plist is
 checked with `plutil -lint`.
+
+Actions: `actions_config_test.go` (parsing, placeholders, patterns, timeouts, program resolution, the actions server
+name), `actions_test.go` (Unix; every delivery mode against a helper process that reports hashes, the secret never in
+the helper's argv or environment, bad params never run, scrubbed and capped output, the process group killed at the
+timeout, one tool per action over MCP) and `up_actions_test.go` (registration as `<machine>-actions`, actions-only
+configs, name collisions, `--register-only`, `status`). `cmd/gateway`'s `TestIntegrationSecretThroughMachineAction`
+delivers a secret to an action through a real gateway and tunnel.

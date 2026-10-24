@@ -211,6 +211,20 @@ func seedAll(t *testing.T, env *pgEnv, kp crypto.KeyProvider, copies int) *seede
 			VALUES ($1, $2, 'static', 'cid', $3, $4, $5, $6)`, server, user, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
 		public := s.one(`INSERT INTO mcp_servers (name, url, owner_user_id) VALUES ($1, 'https://mcp2.example.test', $2) RETURNING id::text`, fmt.Sprintf("pub-%d", i), user)
 		s.exec(`INSERT INTO mcp_server_oauth_clients (server_id, owner_user_id, method, client_id) VALUES ($1, $2, 'dcr', 'public')`, public, user)
+
+		secret := s.one(`SELECT gen_random_uuid()::text`)
+		e = s.seal(column(t, "secrets"), secret)
+		s.exec(`INSERT INTO secrets (id, owner_user_id, harness_id, label, server_id, tool, uses_total, uses_left, ttl_seconds,
+				link_expires_at, expires_at, provided_at, request_hash, handle_hash, state,
+				value_key_id, value_wrapped_key, value_nonce, value_ciphertext)
+			VALUES ($1::uuid, $2, 'tok', 'sudo', $3, 'srv.run', 1, 1, 900, now() + interval '10 minutes', now() + interval '15 minutes', now(),
+				sha256(('req-' || $1::text)::bytea), sha256(('sec-' || $1::text)::bytea), 'provided', $4, $5, $6, $7)`,
+			secret, user, server, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
+		// A pending request holds no envelope and is skipped.
+		s.exec(`INSERT INTO secrets (owner_user_id, harness_id, label, server_id, tool, uses_total, uses_left, ttl_seconds,
+				link_expires_at, request_hash, handle_hash)
+			VALUES ($1, 'tok', 'pending', $2, 'srv.run', 1, 1, 900, now() + interval '10 minutes',
+				sha256(('req-p-' || $3::text)::bytea), sha256(('sec-p-' || $3::text)::bytea))`, user, server, secret)
 	}
 	return s
 }
@@ -347,11 +361,11 @@ func TestIntegrationRewrapMovesEveryEnvelopeAndIsIdempotent(t *testing.T) {
 		}
 	}
 	var nulls int
-	if err := env.super.QueryRow(ctx, `SELECT (SELECT count(*) FROM approvals WHERE payload_key_id IS NULL) + (SELECT count(*) FROM mcp_server_oauth_clients WHERE secret_key_id IS NULL)`).Scan(&nulls); err != nil {
+	if err := env.super.QueryRow(ctx, `SELECT (SELECT count(*) FROM approvals WHERE payload_key_id IS NULL) + (SELECT count(*) FROM mcp_server_oauth_clients WHERE secret_key_id IS NULL) + (SELECT count(*) FROM secrets WHERE value_key_id IS NULL)`).Scan(&nulls); err != nil {
 		t.Fatal(err)
 	}
-	if nulls != 6 {
-		t.Errorf("rows without an envelope = %d, want 6 untouched", nulls)
+	if nulls != 9 {
+		t.Errorf("rows without an envelope = %d, want 9 untouched", nulls)
 	}
 
 	// Idempotent: a second run finds nothing to do.

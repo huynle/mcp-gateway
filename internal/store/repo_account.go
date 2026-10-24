@@ -210,7 +210,8 @@ type UserDeletion struct {
 //     (role links, shared secret, OAuth client, other users' connections
 //     and snapshots cascade), the user's own connections to any server,
 //     tunnels, enrolled machines (tokens and assertion ids cascade),
-//     machine enrollment codes and decided device requests, connect flows, OAuth authorization codes, connection
+//     machine enrollment codes and decided device requests, ephemeral
+//     secrets and secret requests, connect flows, OAuth authorization codes, connection
 //     secrets, role assignments, per-user restrictions and rate limits;
 //   - kept but emptied: tokens and OAuth refresh tokens (revoked, token
 //     names replaced), connections (revoked, external account id and
@@ -277,6 +278,7 @@ func DeleteUserData(ctx context.Context, q Querier, userID string, at time.Time)
 		{"resource caps", `DELETE FROM gateway_user_resource_caps WHERE user_id = $1`},
 		{"enrollment codes", `DELETE FROM machine_enrollment_codes WHERE owner_user_id = $1`},
 		{"machine requests", `DELETE FROM machine_device_requests WHERE decided_by = $1`},
+		{"secrets", `DELETE FROM secrets WHERE owner_user_id = $1`},
 	} {
 		if _, err := q.Exec(ctx, stmt.sql, withTime(stmt.sql, userID, at)...); err != nil {
 			return nil, fmt.Errorf("store: delete user %s: %w", stmt.what, err)

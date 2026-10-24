@@ -5,6 +5,7 @@ import (
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/mcp"
+	"github.com/huynle/mcp-gateway/internal/secrets/ref"
 )
 
 // Precheck returns the check the /mcp pipeline runs before policy
@@ -19,6 +20,13 @@ import (
 // (its auth_required answer carries the connect link). Built-in tools
 // pass through untouched. The call keeps its own check: the review may
 // change between an approval and its retry.
+//
+// Ephemeral secret references ({"$secret": "sec_..."}) are validated as
+// their handle string (design correction 2): the precheck sees a copy of
+// the arguments with each ref replaced by its handle, so a ref passes
+// where the schema expects a string. The secret stage substitutes the
+// plaintext right before dispatch, where the call's own check validates
+// the real value.
 func (m *Manager) Precheck() mcp.Prechecker {
 	return mcp.PrecheckerFunc(m.precheck)
 }
@@ -35,6 +43,26 @@ func (m *Manager) precheck(ctx context.Context, tool connectors.Tool, call conne
 	if !ok {
 		return mcp.ErrToolNotFound(call.Tool)
 	}
-	_, _, err := m.check(ctx, e.server.ID, upstream, tool.Kind, call)
+	if len(ref.FindWithPaths(call.Args)) > 0 {
+		call.Args = ref.ReplaceArgsWithHandle(call.Args)
+	}
+	_, _, _, err := m.check(ctx, e.server.ID, upstream, tool.Kind, call)
 	return err
+}
+
+// SecretTarget resolves the registered tool app.tool of a loaded server to
+// what an ephemeral secret binds to: the server's id and the tool's
+// upstream name (stable across a server rename and the registry's name
+// sanitising). Built-in apps and unknown tools have none. It implements
+// secrets.Targets.
+func (m *Manager) SecretTarget(app, tool string) (serverID, upstream string, ok bool) {
+	e, found := m.entry(app)
+	if !found {
+		return "", "", false
+	}
+	up, found := e.upstream[tool]
+	if !found {
+		return "", "", false
+	}
+	return e.server.ID, up, true
 }
