@@ -71,26 +71,36 @@ func (m *Manager) call(ctx context.Context, serverID, upstream string, listed co
 	c, err := client.New(client.Options{
 		HTTPClient: hc, Authorizer: az, Timeout: m.o.Timeout,
 		ClientVersion: m.o.Version, Log: m.log, OnCall: m.o.OnCall,
+		URLElicitation: m.optIn(server, user),
 	})
 	if err != nil {
 		return connectors.Result{}, mcp.NewToolError(mcp.CodeInternal, "client_unavailable", "the upstream client could not be built")
 	}
 	var res *sdk.CallToolResult
+	var recorded []client.Elicitation // URL elicitations of the last attempt (relay.go)
 	err = auth.Reauth(ctx, az, func() error {
+		recorded = nil
 		s, err := c.Connect(ctx, ep)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = s.Close() }()
 		r, err := s.CallToolMeta(ctx, upstream, call.Args, reviewedMeta(tool))
-		res = r
+		res, recorded = r, s.Elicitations()
 		return err
 	})
+	rc := relayCall{user: user, harness: call.Principal.TokenID, server: server}
 	if err != nil {
+		if rerr, ok := m.relayError(ctx, rc, kind, err, recorded); ok {
+			return connectors.Result{}, rerr
+		}
 		return connectors.Result{}, m.callError(user, server, kind, err)
 	}
 	if res == nil {
 		res = &sdk.CallToolResult{}
+	}
+	if rerr, ok := m.relayResult(ctx, rc, res.IsError, recorded); ok {
+		return connectors.Result{}, rerr
 	}
 	return connectors.Result{Content: res}, nil
 }
@@ -260,18 +270,36 @@ func (m *Manager) callError(user string, server *store.MCPServer, kind snapshot.
 		// owner's to fix. Without the flag it stays upstream_error.
 		return m.credentialLink(user, server, err, m.credentialAnswer("", server, err))
 	}
+	var ce *client.Error
+	if errors.As(err, &ce) && ce.Class == client.ClassAuthRequired {
+		return m.credentialLink(user, server, err, mcp.NewToolError(mcp.CodeNoAccount, "auth_required",
+			fmt.Sprintf("%s asked for authentication: connect or reconnect your account on the portal (%s) and retry", server.Name, m.portalURL(server.ID))))
+	}
+	class, unknown := classify(kind, err)
+	text := classText[class]
+	m.log.Warn("federated call failed", "event", "federation.call_failed", "server", server.Name, "server_id", server.ID,
+		"class", class, "outcome_unknown", unknown, "error", observability.RedactError(err))
+	msg := server.Name + ": " + text
+	if unknown {
+		msg += "; the write may or may not have happened, check before retrying"
+	}
+	return &upstreamError{class: class, msg: msg, unknown: unknown}
+}
+
+// classify maps an upstream failure of a call of kind to its class (a
+// key of classText) and whether a write's outcome is unknown: the write
+// may have reached the server (a timeout, an unreachable server, a
+// protocol failure or an oversized answer of tools/call itself).
+func classify(kind snapshot.Kind, err error) (class string, unknown bool) {
 	write := kind != snapshot.KindRead
 	var ce *client.Error
 	isClient := errors.As(err, &ce)
 	inCall := isClient && ce.Op == "tools/call"
-	class, unknown := "upstream_error", false
+	class = "upstream_error"
 	var te *tunnel.Error
 	switch {
 	case errors.As(err, &te) && te.Class == tunnel.ClassOffline:
 		class, unknown = "tunnel_offline", write && inCall
-	case isClient && ce.Class == client.ClassAuthRequired:
-		return m.credentialLink(user, server, err, mcp.NewToolError(mcp.CodeNoAccount, "auth_required",
-			fmt.Sprintf("%s asked for authentication: connect or reconnect your account on the portal (%s) and retry", server.Name, m.portalURL(server.ID))))
 	case isClient:
 		class = "upstream_" + strings.TrimSuffix(string(ce.Class), "_error")
 		if ce.Class == client.ClassToolError {
@@ -281,17 +309,10 @@ func (m *Manager) callError(user string, server *store.MCPServer, kind snapshot.
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		class, unknown = "upstream_timeout", write
 	}
-	text, ok := classText[class]
-	if !ok {
-		class, text = "upstream_error", classText["upstream_error"]
+	if _, ok := classText[class]; !ok {
+		class = "upstream_error"
 	}
-	m.log.Warn("federated call failed", "event", "federation.call_failed", "server", server.Name, "server_id", server.ID,
-		"class", class, "outcome_unknown", unknown, "error", observability.RedactError(err))
-	msg := server.Name + ": " + text
-	if unknown {
-		msg += "; the write may or may not have happened, check before retrying"
-	}
-	return &upstreamError{class: class, msg: msg, unknown: unknown}
+	return class, unknown
 }
 
 // upstreamError is a class-level handler error: shown to the model as a

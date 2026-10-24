@@ -191,6 +191,11 @@ type options struct {
 	// credentialLinks is GATEWAY_CREDENTIAL_LINKS_ENABLED
 	// (WireOptions.CredentialLinks). It needs federation.
 	credentialLinks bool
+	// upstreamElicitation is GATEWAY_UPSTREAM_ELICITATION_ENABLED
+	// (WireOptions.UpstreamElicitation): upstream URL elicitations are
+	// relayed through the /elicit interstitial, mounted like cmd/gateway's
+	// withElicitPages. It needs federation.
+	upstreamElicitation bool
 }
 
 // world is the gateway wired like cmd/gateway plus the handles the

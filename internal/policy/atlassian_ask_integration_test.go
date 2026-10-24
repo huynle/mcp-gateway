@@ -32,8 +32,8 @@ func TestIntegrationAtlassianNewWritesDefaultToAsk(t *testing.T) {
 	if err := migrations.DownTo(ctx, u.String(), 24); err != nil {
 		t.Fatalf("down to 24: %v", err)
 	}
-	if snap, err := policy.NewPostgresStore(st).Load(ctx); err != nil || appAsk(snap.Apps, "jira") != nil || appAsk(snap.Apps, "confluence") != nil {
-		t.Fatalf("after Down: jira %v confluence %v, %v; want none", appAsk(snap.Apps, "jira"), appAsk(snap.Apps, "confluence"), err)
+	if n := vendorAskRows(t, st, "jira", "confluence"); n != 0 {
+		t.Fatalf("after Down: %d jira/confluence Ask rows; want none", n)
 	}
 	if err := migrations.Up(ctx, u.String()); err != nil {
 		t.Fatalf("up: %v", err)

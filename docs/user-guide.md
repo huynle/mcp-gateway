@@ -119,6 +119,16 @@ When the gateway has ephemeral secrets turned on, an agent that needs a password
 
 **Secrets** (`/secrets`) lists your pending and live secrets; **Revoke** ends one at once. Links expire after 10 minutes. For commands on your own machine, the secret goes only to the fixed commands you listed under `actions:` in the machine's config ([machines-cli.md](machines-cli.md#actions)). Details: [secrets.md](secrets.md).
 
+## 3d. A server asks you to open a page
+
+Some MCP servers need more than sign-in (a second API key, a consent screen) and ask for it on their own web page. When the gateway relays such a request, your agent shows a link `<your gateway>/elicit/…` saying "*<server> asks you to open a page*". Then:
+
+1. Open the link (sign in if asked). Only you can open it; it expires after 10 minutes.
+2. The page shows which server and agent asked, the **full address** you would go to, with its domain highlighted, and the server's own message. **Check the domain is the service you expect.** A warning appears for look-alike (punycode) names.
+3. Press **Continue** to go to the server's page and finish there, or **Cancel**. Then tell your agent to retry.
+
+The gateway only forwards pages on the server's own domain or on origins the server's owner allowed (server settings → *Allowed elicitation origins*). Otherwise the agent gets *"asked you to open a page that is not allowed"*; if it is your server, add the page's origin there. Details: [elicitation.md](elicitation.md).
+
 ## 4. Approvals: when a tool call waits for you
 
 Some tools (writes, or anything your role marks *confirm*, or every write on a personal account when the role says so, or a write tool an admin set to *Ask* under Settings → Vendor apps, or a server write set to *Ask*) need your explicit OK per call. What happens:
@@ -163,6 +173,8 @@ JSON-RPC error codes the harness surfaces (the message says what to do; `error.d
 | `-32033 pending verification` (`error.data.operation_id`) | the same write is already running or being verified | wait a minute, check `/operations`; do not fire it again |
 | `-32034 authentication required` | a call reached the pipeline without a principal (fail-closed guard; you should only ever see the HTTP `401`) | as for `401`; report it if it persists |
 | `-32042` with a link `<gateway>/s/…` and check words | the agent asked you for a secret | check the words, enter it on that page (section 3c), then let the agent retry |
+| `-32042` with a link `<gateway>/servers/…` | (credential links) you need to connect, reconnect or fill in your values for that server | open the link, fix it, then retry |
+| `-32042` with a link `<gateway>/elicit/…` | the server asks you to open its own page | check the address on the gateway's page, Continue, finish there, retry (section 3d) |
 | `-32037 secret unavailable` | the secret expired, was used up or revoked, or is not for this tool | let the agent ask again (a new link) |
 | `-32030 secret request denied` | you pressed Deny on the secret page | nothing; the agent asks again only if you want |
 | `-32035 scope_required` (`error.data.missing_scopes`, `portal_url`) | the connected account has not granted a scope the tool needs | `/connections` → *Grant more access* on that account, approve at the vendor, retry |

@@ -315,6 +315,11 @@ func TestStageRefundsCallsThatNeverReachedTheTarget(t *testing.T) {
 		{"per-user header missing (credential links)", mcp.NewURLElicitationRequired("user_header_missing", "set them", nil, nil), true},
 		{"tunnel offline mid-write", &classed{class: "tunnel_offline", msg: "offline", unknown: true}, false},
 		{"upstream tool error", &classed{class: "upstream_tool_error", msg: "refused"}, false},
+		// The upstream received the call and asked for a page (relayed,
+		// refused or over the limit): the value may have been delivered.
+		{"relayed upstream elicitation", relayedElicitation(), false},
+		{"refused upstream elicitation", &classed{class: "upstream_elicitation_refused", msg: "not allowed"}, false},
+		{"upstream elicitations limited", mcp.NewToolError(mcp.CodeRateLimited, "upstream_elicitations_limited", "too many"), false},
 		{"upstream timeout", &classed{class: "upstream_timeout", msg: "slow"}, false},
 		{"plain error", errors.New("boom"), false},
 		{"success", nil, false},
@@ -339,6 +344,38 @@ func TestStageRefundsCallsThatNeverReachedTheTarget(t *testing.T) {
 				t.Errorf("hook uses = %d with refund %v", got, tc.refund)
 			}
 		})
+	}
+}
+
+// relayedElicitation is the connector's relayed upstream URL elicitation
+// (connector/relay.go): the gateway's own link, id and message.
+func relayedElicitation() *mcp.ToolError {
+	return mcp.NewURLElicitationRequired("upstream_elicitation_required",
+		"notes asks you to open a page: https://gw.example/elicit/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg — then retry",
+		[]mcp.URLElicitation{{ElicitationID: "gwe_0123456789abcdefghijABCDEFGHIJ0123456789a",
+			URL: "https://gw.example/elicit/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefg", Message: "notes asks you to open a page"}},
+		map[string]any{"server": "notes"})
+}
+
+// A call with a secret whose upstream answers with a URL elicitation: the
+// relayed -32042 reaches the harness intact (code, class, message, data)
+// and the use is kept.
+func TestStageRelayedElicitationPassesIntact(t *testing.T) {
+	f := newStageFixture(t)
+	r := f.provided(t, alice, 0, 2)
+	want := relayedElicitation()
+	_, ran, _, err := f.run(callContext(harness, "vault", "login", refArgs(r.Handle)), func(context.Context, map[string]any) (connectors.Result, error) {
+		return connectors.Result{}, relayedElicitation()
+	})
+	var te *mcp.ToolError
+	if !ran || !errors.As(err, &te) {
+		t.Fatalf("err = %v (ran %v), want the relayed -32042", err, ran)
+	}
+	if wire(te) != wire(want) || te.Code != -32042 {
+		t.Errorf("relayed answer changed:\n got %s\nwant %s", wire(te), wire(want))
+	}
+	if n := f.usesLeft(t, r.Secret.ID); n != 1 {
+		t.Errorf("uses left = %d, want 1 (not refunded: the upstream received the call)", n)
 	}
 }
 

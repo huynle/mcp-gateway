@@ -76,10 +76,14 @@ func (p *Portal) csrf(next http.Handler) http.Handler {
 }
 
 // logPath is the request path as logged: the id of a secret entry link
-// (/s/<id>, internal/secrets) opens that page, so it stays out of logs.
+// (/s/<id>, internal/secrets) or of an upstream elicitation interstitial
+// (/elicit/<id>, internal/federation/elicit) opens that page, so it stays
+// out of logs.
 func logPath(r *http.Request) string {
-	if strings.HasPrefix(r.URL.Path, "/s/") {
-		return "/s/…"
+	for _, prefix := range []string{"/s/", "/elicit/"} {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return prefix + "…"
+		}
 	}
 	return r.URL.Path
 }
