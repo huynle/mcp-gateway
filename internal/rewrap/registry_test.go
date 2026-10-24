@@ -105,9 +105,11 @@ func TestRegistryKnownInventory(t *testing.T) {
 		"mcp_server_oauth_clients.secret (pk server_id, nullable)",
 		"mcp_server_shared_secrets.secret (pk server_id)",
 		"mcp_server_user_connections.secret (pk id)",
+		"push_subscriptions.sub (pk id)",
 		"secrets.value (pk id, nullable)",
 		"signing_keys.private (pk id)",
 		"vendor_apps.secret (pk id)",
+		"webpush_keys.private (pk id)",
 	}
 	var got []string
 	for _, c := range rewrap.Columns {

@@ -236,6 +236,8 @@ spec:
               value: "false"
             - name: GATEWAY_UPSTREAM_ELICITATION_ENABLED
               value: "false"
+            - name: GATEWAY_WEBPUSH_ENABLED
+              value: "false"
             - name: GATEWAY_ENABLE_FAKE_CONNECTOR
               value: "true"
             - name: GATEWAY_OIDC_PROVIDERS

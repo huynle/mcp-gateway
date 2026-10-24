@@ -98,3 +98,11 @@ and/or `clear: [resource, …]`). Both setters always require approval.
 
 Storage: migration 00028 (`gateway_resource_caps`, singleton;
 `gateway_user_resource_caps`, row-level security, `gateway_app` read only).
+
+## Notifications (Web Push)
+
+Not a persisted setting: `GATEWAY_WEBPUSH_ENABLED` (default `false`; Helm
+`gateway.webpush.enabled`) turns the feature on, and each user then turns
+notifications on per device under **My account → Notifications** (at most 10
+devices per user, a constant). The VAPID key is created on first use and kept
+in the database. See [push-notifications.md](push-notifications.md).

@@ -5,6 +5,7 @@ package store_test
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -121,9 +122,12 @@ func TestIntegrationAccountExportSections(t *testing.T) {
 	env.reset(t)
 	st := env.open(t)
 	f := newAccountFixture(t, env, st)
+	newPushSubscription(t, st, f.alice, "https://fcm.googleapis.com/fcm/send/alice-export")
+	newPushSubscription(t, st, f.bob, "https://fcm.googleapis.com/fcm/send/bob-export")
 
 	want := map[string]int{
-		"profile": 1, "identities": 1, "roles": 0, "connections": 1, "tokens": 1, "harness_grants": 0,
+		"push_subscriptions": 1,
+		"profile":            1, "identities": 1, "roles": 0, "connections": 1, "tokens": 1, "harness_grants": 0,
 		"mcp_servers": 1, "mcp_server_connections": 0, "tunnels": 1, "approvals": 1, "ledger_operations": 0,
 		"audit_events": 3, "rate_limits": 1, "resource_caps": 1, "machines": 1, "machine_enrollment_codes": 1,
 	}
@@ -147,6 +151,18 @@ func TestIntegrationAccountExportSections(t *testing.T) {
 					t.Errorf("section %s leaks bob: %s=%v", section, k, v)
 				}
 			}
+		}
+	}
+	// Push subscriptions: display metadata only, never the endpoint or keys.
+	push, _ := exportAs(t, st, f.alice, "push_subscriptions", 100)
+	if len(push) == 1 {
+		keys := []string{}
+		for k := range push[0] {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if strings.Join(keys, ",") != "created_at,device_label,endpoint_host,last_success_at" {
+			t.Errorf("push subscription export columns = %v", keys)
 		}
 	}
 	srv, _ := exportAs(t, st, f.alice, "mcp_servers", 100)
@@ -225,6 +241,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 	// Secrets bound to a server alice does not own (the cascade from her
 	// private servers must not be what removes them).
 	provideSecret(t, st, newPendingSecret(t, st, f.alice, pub.ID, "acct-provided", 1))
+	newPushSubscription(t, st, f.alice, "https://fcm.googleapis.com/fcm/send/alice-delete")
 	newPendingSecret(t, st, f.alice, pub.ID, "acct-pending", 1)
 	bobSecret := newPendingSecret(t, st, f.bob, pub.ID, "acct-bob", 1)
 
@@ -279,6 +296,7 @@ func TestIntegrationAccountDeleteUserData(t *testing.T) {
 		"enrollment codes":               `SELECT count(*) FROM machine_enrollment_codes WHERE owner_user_id = $1`,
 		"secrets":                        `SELECT count(*) FROM secrets WHERE owner_user_id = $1`,
 		"upstream elicitations":          `SELECT count(*) FROM upstream_elicitations WHERE owner_user_id = $1`,
+		"push subscriptions":             `SELECT count(*) FROM push_subscriptions WHERE user_id = $1`,
 		"role assignments":               `SELECT count(*) FROM role_assignments WHERE user_id = $1`,
 		"rate limits":                    `SELECT count(*) FROM gateway_user_rate_limits WHERE user_id = $1`,
 		"resource caps":                  `SELECT count(*) FROM gateway_user_resource_caps WHERE user_id = $1`,

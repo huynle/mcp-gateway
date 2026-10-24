@@ -80,7 +80,7 @@ func openCmdEnv(t *testing.T) *cmdEnv {
 	for _, stmt := range []string{
 		"ALTER ROLE gateway_app LOGIN PASSWORD '" + appPassword + "'",
 		"ALTER ROLE gateway_jobs LOGIN PASSWORD '" + jobsPassword + "'",
-		"TRUNCATE users, vendor_apps, signing_keys, mcp_servers, policy_versions, audit_events CASCADE",
+		"TRUNCATE users, vendor_apps, signing_keys, webpush_keys, mcp_servers, policy_versions, audit_events CASCADE",
 	} {
 		if err := execRetrying(ctx, env.super, stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
@@ -220,6 +220,17 @@ func TestIntegrationRewrapFileToVault(t *testing.T) {
 		VALUES ($1::uuid, $2, 'tok', 'sudo', $3, 'docs.run', 1, 1, 900, now() + interval '10 minutes', now() + interval '15 minutes', now(),
 			sha256(('req-' || $1::text)::bytea), sha256(('sec-' || $1::text)::bytea), 'provided', $4, $5, $6, $7)`,
 		secret, alice, server, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
+	// The VAPID key and a push subscription (internal/pushnotify).
+	vapid := env.one(t, `SELECT gen_random_uuid()::text`)
+	e = seal(crypto.AAD{Kind: "webpush_keys", RecordID: vapid})
+	env.exec(t, `INSERT INTO webpush_keys (id, public_key, private_key_id, private_wrapped_key, private_nonce, private_ciphertext)
+		VALUES ($1, 'BPublic', $2, $3, $4, $5)`, vapid, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
+	sub := env.one(t, `SELECT gen_random_uuid()::text`)
+	e = seal(crypto.AAD{UserID: alice, Kind: "push_subscriptions", RecordID: sub})
+	env.exec(t, `INSERT INTO push_subscriptions (id, user_id, endpoint_sha256, sub_key_id, sub_wrapped_key, sub_nonce, sub_ciphertext,
+			endpoint_host, device_label)
+		VALUES ($1::uuid, $2, sha256(('push-' || $1::text)::bytea), $3, $4, $5, $6, 'fcm.googleapis.com', 'Android Chrome')`,
+		sub, alice, e.KeyID, e.WrappedDataKey, e.Nonce, e.Ciphertext)
 
 	// Every registered table now holds file-key envelopes only.
 	countWhere := func(cond string) int {

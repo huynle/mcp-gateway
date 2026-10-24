@@ -28,7 +28,7 @@ The layout does **not** render the `<h1>`: each page opens with its own page hea
 
 Parse the template set with `nav.Setup(template.New(""))` (it registers `navData`, `asset`, `icon` and the partials) and render with `nav.Execute`. Modules that build their FuncMap themselves add `nav.Funcs()` (or at least `nav.AssetFuncName: static.URL, nav.IconFuncName: nav.Icon`) before parsing.
 
-- `page.head`: meta tags, `theme.js` (render-blocking, so a stored theme is applied before the first paint), `portal.css`, `htmx.min.js` (deferred).
+- `page.head`: meta tags (viewport with `viewport-fit=cover`), `theme.js` (render-blocking, so a stored theme is applied before the first paint), `portal.css`, `htmx.min.js` (deferred), and the installable-app tags: the manifest link, `theme-color` (light/dark), the iOS home-screen tags and `pwa.js` (deferred). See "Installable app (PWA)".
 - `nav`, signed in: a hidden checkbox (`#nav-drawer`), a top bar with a menu button (narrow screens only) and the **sidebar**: brand, `<nav class="site-nav">` with the link groups (`nav.Groups`: My account; Access: Tokens, Harnesses, Machines; Integrations: Connections, Servers, Secrets; Activity: Approvals, Operations, Activity; plus `nav.AdminGroup` for admins), and at its foot the user block, the theme toggle and sign-out. Below 64rem the sidebar is an off-canvas drawer opened by the menu button (CSS only). Signed out: a slim top bar with the brand and the theme toggle.
 - `footer`: Privacy Policy, Terms of Service, Support, Install CLI. Every layout renders it after `</main>`.
 - No `<style>` blocks or `style=` attributes in templates, no inline event handlers beyond the existing `onsubmit` confirms (CSP). Rules go into `portal.css`; page-specific sheets (`review.css`) sit next to it.
@@ -118,3 +118,36 @@ The gateway is a public service, so a few pages answer anonymous visitors with `
 - Caching: anonymous copies `Cache-Control: public, max-age=300`, signed-in copies `no-store` (the nav carries the CSRF token), always `Vary: Cookie`. The usual hardening headers and CSP apply.
 - The sign-in page and the OAuth consent page reference the terms and privacy policy next to the decision.
 - Tests: `internal/portal/legal_test.go` (routes, headers, config values, escaping, placeholders, draft marker on/off, sign-in and footer links), `internal/authserver/shell_test.go` (consent links).
+
+## Installable app (PWA)
+
+The portal can be installed as an app (home screen / dock) so approvals are one tap away, and is ready for Web Push (decision 0pzhidap). Everything is same-origin, so the CSP is unchanged (`default-src 'self'` covers the manifest and the worker).
+
+| Route | What | Caching |
+|---|---|---|
+| `GET /manifest.webmanifest` | `application/manifest+json`, built from a Go struct (`internal/portal/pwa.go`): name "MCP Gateway", short name "Gateway", `id` and `scope` `/`, `start_url` `/approvals`, `display: standalone`, background `#f6f7f9`, theme `#0e7268`; icons 192 and 512 (`any`) and 512 `maskable`, by their versioned `/static/…?v=` URLs | `public, max-age=3600` |
+| `GET /sw.js` | the service worker, at the root so its scope is `/`. Source: `internal/portal/static/sw.js` (embedded as `static.ServiceWorker`, **not** served under `/static/`); at start-up the portal fills its three placeholders (`"__CACHE_VERSION__"`, `["__PRECACHE_URLS__"]`, `"__ICON_URL__"`) with JSON values, so the served bytes are fixed per build | `no-cache` (browsers revalidate on every update check) |
+| `GET /offline` | `offline.html` on the shared shell: "You're offline" with a Retry link (`href=""`: reloads the address in the bar, since the worker shows this page in place of the page that failed) | `public, max-age=300` |
+
+All three are public (no sign-in) and carry the usual hardening headers. `/offline` is **always rendered anonymously** (no user nav, no CSRF token), even for a signed-in request, because the worker caches it. The chart's ingress routes the three paths (`deploy/helm/mcp-gateway/values.yaml`).
+
+Service worker rules (`sw.js`):
+
+- **install**: precache, in the cache `mcp-gateway-static-<version>`, only the static assets by their versioned URLs (`portal.css`, `theme.js`, `htmx.min.js`, `copy.js`, `pwa.js`, `favicon.svg`, every `fonts/*.woff2` and `icons/*.png`) and `/offline` (fetched with `credentials: "omit"`). The version is the first 12 hex digits of a SHA-256 over the worker source, the URL list, `nav.Partial` and the offline page's templates, so any change to them installs a fresh cache. Then `skipWaiting()`.
+- **activate**: delete the other `mcp-gateway-*` caches, `clients.claim()`.
+- **fetch**: non-GET requests are not intercepted. Navigations are **network only**; on a network error the cached `/offline` page. Same-origin `GET /static/…` is cache first (a miss is fetched and stored when it is a plain 200). Anything else (htmx requests, `/mcp`, other origins) is not intercepted. Page HTML, signed in or not, is never stored.
+- **push**: `event.data.json()` as `{title, body, url, tag}` → `showNotification(title, {body, tag, renotify: true, icon, badge, data: {url}})` (`renotify` only with a tag: browsers reject it without one). A missing or invalid payload shows "MCP Gateway" / "Something needs your attention" for `/approvals`.
+- **notificationclick**: closes the notification and opens `data.url` only if it is a same-origin path (`/…`, not `//…`); anything else opens `/approvals`. An open window showing that URL is focused; otherwise an open portal window is focused and navigated; otherwise a new window opens.
+
+`pwa.js` registers `/sw.js` with `{scope: "/"}` when `"serviceWorker" in navigator` and the page is a secure context (HTTPS or localhost). Its `onRegistered(registration)` drives My account's **Notifications** control (Web Push; [push-notifications.md](push-notifications.md)): the `[data-push-control]` panel is rendered `hidden` (like the theme toggle) and revealed by the script with its state in `[data-push-state]` (*Not supported on this browser* / *Blocked in browser settings* / *Off* / *On for this device*), `[data-push-toggle]` (turn on: `Notification.requestPermission()` straight from the click, as iOS requires, then `GET /account/push/key`, `pushManager.subscribe({userVisibleOnly: true, applicationServerKey})`, `POST /account/push/subscribe`; turn off: `subscription.unsubscribe()` and `POST /account/push/unsubscribe`), `[data-push-test]` (`POST /account/push/test`) and `[data-push-message]`. `fetch()` sends the CSRF token in `X-CSRF-Token`, read from `<body hx-headers>`; text is set with `textContent` only. Without a service worker, Push API or secure context the panel shows *Not supported on this browser*. The device table under it (Remove buttons) is plain HTML forms and works without JavaScript.
+
+**Icons** live in `internal/portal/static/icons/`: `icon-192.png`, `icon-512.png` (the favicon's rounded square, transparent corners), `icon-maskable-512.png` (full-bleed teal, the arch inside the 80% safe zone) and `apple-touch-icon.png` (180×180, opaque; iOS rounds it and shows transparency as black). They are rendered from the brand mark (`favicon.svg`) by `python3 scripts/render-pwa-icons.py` (Playwright + Chromium, Pillow; deterministic: a re-run without SVG changes leaves the files byte-identical). Commit the PNGs; the binary embeds them.
+
+**Safe areas**: the viewport is `viewport-fit=cover`, so an installed app draws under the notch and the home indicator. `portal.css` pads the top bar (top, left, right), the sidebar/drawer (top, bottom), `main` (left, right) and the footer (bottom) by `env(safe-area-inset-*)`, which is 0 elsewhere.
+
+**Installing**:
+
+- Android (Chrome, Edge, Samsung Internet): open the gateway over HTTPS, then the browser menu → *Install app* (or the install prompt in the address bar). Desktop Chrome/Edge: the install icon in the address bar.
+- iOS / iPadOS (Safari 16.4+): Share → *Add to Home Screen*. Web Push on iOS works only from the installed app.
+
+Tests: `internal/portal/pwa_test.go` (manifest fields and icon sizes, worker headers, precache URLs all resolve, no navigation caching, `node --check` of the served worker and `pwa.js` when node is installed, the offline page is anonymous and on the shell, hardening headers), `internal/portal/static/static_test.go` (icons embedded, sizes, opacity; the worker source is not a `/static/` asset), `internal/portal/nav/nav_test.go` (the head tags).

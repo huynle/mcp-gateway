@@ -28,6 +28,8 @@ type Portal struct {
 	resourceCaps ResourceCaps // nil: no resource limits UI
 	lifecycle    Account      // nil: no data export / account deletion
 	legal        Legal        // operator values on the public pages (SetLegal)
+	pwa          *pwa         // web app manifest and service worker (pwa.go)
+	push         Push         // nil: no "Notifications" panel (push.go)
 }
 
 // New builds the portal over the identity service. It installs the portal's
@@ -40,7 +42,11 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Portal{svc: svc, log: log, tpl: tpl, legal: DefaultLegal()}
+	app, err := buildPWA()
+	if err != nil {
+		return nil, err
+	}
+	p := &Portal{svc: svc, log: log, tpl: tpl, legal: DefaultLegal(), pwa: app}
 	svc.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, status int, message string) {
 		p.errorPage(w, r, status, "Sign-in failed", message)
 	})
@@ -58,6 +64,10 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET  /account                  my account
 //	POST /account/gateway-tools    my "Gateway management tools" switch (SetGatewayTools)
 //	POST /account/rate-limit       my optional lower personal ceiling
+//	GET  /account/push/key         Web Push applicationServerKey (SetPush; push.go)
+//	POST /account/push/subscribe   store this browser's push subscription (SetPush)
+//	POST /account/push/unsubscribe turn off for this browser / remove a device (SetPush)
+//	POST /account/push/test        send a test notification (SetPush)
 //	POST /account/export           download my data (SetAccount)
 //	GET|POST /account/delete       delete my account (SetAccount)
 //	GET  /account/deleted          after the deletion (anonymous)
@@ -72,6 +82,9 @@ func New(svc *identity.Service, log *slog.Logger) (*Portal, error) {
 //	GET|POST /admin/users/{id}/delete admin: delete the user (SetAccount)
 //	/auth/...                      identity.Service.Handler
 //	GET  /static/...               embedded assets
+//	GET  /manifest.webmanifest     public: web app manifest (pwa.go)
+//	GET  /sw.js                    public: service worker, scope "/"
+//	GET  /offline                  public: the worker's offline page
 func (p *Portal) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, m := range p.mounts {
@@ -118,6 +131,9 @@ func (p *Portal) Handler() http.Handler {
 		mux.Handle("POST /admin/settings/rate-limits/app", p.requireAdmin(p.csrf(http.HandlerFunc(p.setAppRateLimit))))
 		mux.Handle("POST /admin/settings/rate-limits/user", p.requireAdmin(p.csrf(http.HandlerFunc(p.setUserRateLimit))))
 	}
+	if p.push != nil {
+		p.mountPush(mux)
+	}
 	if p.lifecycle != nil {
 		p.mountLifecycle(mux)
 	}
@@ -134,6 +150,9 @@ func (p *Portal) Handler() http.Handler {
 	// Sign-out is a POST and therefore behind the CSRF check as well.
 	mux.Handle("/auth/", p.csrf(p.svc.Handler()))
 	mux.Handle("GET /static/", p.static())
+	mux.HandleFunc("GET "+manifestPath, p.manifestHandler)
+	mux.HandleFunc("GET "+workerPath, p.workerHandler)
+	mux.HandleFunc("GET "+offlinePath, p.offline)
 	mux.HandleFunc("/", p.notFound)
 	return SecurityHeaders(p.svc.Middleware(withNav(mux)))
 }
