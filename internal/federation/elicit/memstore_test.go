@@ -41,7 +41,9 @@ func (m *memStore) Bypass(_ context.Context, fn func(elicit.Tx) error) error {
 	return fn(memTx{m: m})
 }
 
-func (t memTx) visible(e *store.UpstreamElicitation) bool { return t.owner == "" || e.OwnerUserID == t.owner }
+func (t memTx) visible(e *store.UpstreamElicitation) bool {
+	return t.owner == "" || e.OwnerUserID == t.owner
+}
 
 func (t memTx) Lock(context.Context, string) error { return nil }
 
