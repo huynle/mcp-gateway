@@ -45,6 +45,9 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	opts := connector.WireOptions{
 		Store: st, Keys: keys, Registry: registry, BaseURL: cfg.BaseURL, Version: version, Log: log,
 		ConnectFinish: connectFinish(log), Permissions: perms, TunnelRelay: tunnelRelayOptions(cfg),
+		// tools/call only; discovery, lists, resources, prompts and OAuth
+		// keep the client's 30s default (GATEWAY_FEDERATION_CALL_TIMEOUT).
+		CallTimeout: cfg.FederationCallTimeout,
 	}
 	if policySvc != nil {
 		opts.OnChange = policySvc.Invalidate
@@ -61,7 +64,8 @@ func newFederation(ctx context.Context, cfg config.Config, st *store.Store, keys
 	}
 	fed.Start(ctx)
 	log.Info("user-added MCP servers ready", "server_apps", len(registry.ServerApps()),
-		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath, "tunnel_relay", fed.Tunnels.RelayEnabled())
+		"tunnel_path", tunnel.ConnectPath, "callback_path", auth.CallbackPath, "tunnel_relay", fed.Tunnels.RelayEnabled(),
+		"call_timeout", cfg.FederationCallTimeout.String())
 	return fed, nil
 }
 

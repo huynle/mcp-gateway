@@ -45,6 +45,13 @@ func newLedger(cfg config.Config, st ledger.Store, registry *connectors.Registry
 	}
 	log.Info("ledger ready", "idempotency_window", lcfg.IdempotencyWindow, "stale_after", lcfg.StaleAfter,
 		"max_reconcile_attempts", lcfg.MaxReconcileAttempts, "max_reconcile_age", lcfg.MaxReconcileAge, "approvals", approvalSvc != nil)
+	if cfg.FederationCallTimeout >= lcfg.StaleAfter {
+		// A federated write still running past StaleAfter is swept to
+		// unknown mid-call; Finish still records its real outcome, but the
+		// row reads "unknown" (and may be reconciled) until then.
+		log.Warn("GATEWAY_FEDERATION_CALL_TIMEOUT is not below GATEWAY_LEDGER_STALE_AFTER: long federated writes are marked unknown while still running; raise GATEWAY_LEDGER_STALE_AFTER",
+			"event", "ledger.stale_after_short", "federation_call_timeout", cfg.FederationCallTimeout.String(), "stale_after", lcfg.StaleAfter.String())
+	}
 	return svc, nil
 }
 
