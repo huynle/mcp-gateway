@@ -7,13 +7,20 @@
 <body>
 {{template "nav" navData}}
 <main>
-<h1>{{.Title}}</h1>
 {{end}}
 
 {{define "foot"}}
 </main>
+{{template "footer"}}
 </body>
 </html>
 {{end}}
 
-{{define "subnav"}}<p class="subnav"><a href="/admin/servers">All servers</a> · <a href="/admin/servers/reviews">Review queue</a> · <a href="/admin/tunnels">Tunnels</a> · <a href="/admin/network/allow-hosts">Network allow-list</a></p>{{end}}
+{{/* subnav: the admin servers area's tabs; the argument names the current one
+     ("servers", "reviews", "tunnels", "allow-hosts"). */}}
+{{define "subnav"}}<nav class="tabs" aria-label="MCP server administration">
+  <a href="/admin/servers"{{if eq . "servers"}} aria-current="page"{{end}}>All servers</a>
+  <a href="/admin/servers/reviews"{{if eq . "reviews"}} aria-current="page"{{end}}>Review queue</a>
+  <a href="/admin/tunnels"{{if eq . "tunnels"}} aria-current="page"{{end}}>Tunnels</a>
+  <a href="/admin/network/allow-hosts"{{if eq . "allow-hosts"}} aria-current="page"{{end}}>Network allow-list</a>
+</nav>{{end}}

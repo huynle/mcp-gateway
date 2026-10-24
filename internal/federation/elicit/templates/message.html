@@ -1,7 +1,11 @@
 {{template "head" .}}
-<h1>{{.Title}}</h1>
-<div class="error">
-  <p>{{.Message}}</p>
-  <p><a class="btn" href="/">Back</a></p>
+<div class="auth">
+<section class="panel">
+  <h1>{{.Title}}</h1>
+  <div class="error" role="alert">
+    <p>{{.Message}}</p>
+  </div>
+  <p class="form-actions"><a class="btn" href="/">{{icon "arrow-left"}}Back</a></p>
+</section>
 </div>
 {{template "foot" .}}

@@ -1,5 +1,9 @@
 {{template "head" .}}
-<h1>{{.Title}}</h1>
-<p class="ok">{{.Message}}</p>
-<p><a class="btn" href="/">Home</a></p>
+<div class="auth">
+<section class="panel">
+  <h1>{{.Title}}</h1>
+  <p class="ok" role="status">{{.Message}}</p>
+  <p class="form-actions"><a class="btn" href="/">Home</a></p>
+</section>
+</div>
 {{template "foot" .}}

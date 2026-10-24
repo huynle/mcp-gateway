@@ -1,37 +1,47 @@
 {{template "head" .}}
-{{template "subnav"}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    {{if .Queue}}<p class="page-desc">Servers whose newest snapshot is not the approved one. New and changed tools stay disabled until reviewed.</p>
+    {{else}}<p class="page-desc">Every MCP server users added to this gateway: who owns it, who it is published to and whether it needs a review.</p>{{end}}
+  </div>
+</header>
+{{template "subnav" (or (and .Queue "reviews") "servers")}}
 {{if not .Queue}}
-<form method="get" action="/admin/servers" class="actions">
-  <label class="check">Status
+<form method="get" action="/admin/servers" class="filters">
+  <label>Status
     <select name="status">
       <option value=""{{if not .Status}} selected{{end}}>any</option>
       {{range .Statuses}}<option value="{{.}}"{{if eq . $.Status}} selected{{end}}>{{.}}</option>{{end}}
     </select>
   </label>
   <label class="check"><input type="checkbox" name="pending" value="1"{{if .Pending}} checked{{end}}> pending review only</label>
-  <button class="btn" type="submit">Filter</button>
+  <button class="btn small" type="submit">{{icon "search"}}Filter</button>
+  {{if or .Status .Pending}}<a class="btn small ghost" href="/admin/servers">Clear</a>{{end}}
 </form>
-{{else}}
-<p class="muted">Servers whose newest snapshot is not the approved one. New and changed tools stay disabled until reviewed.</p>
 {{end}}
 {{if .Servers}}
+<div class="table-scroll">
 <table>
-  <thead><tr><th>Name</th><th>Owner</th><th>Host</th><th>Audience</th><th>Credentials</th><th>Users</th><th>Status</th></tr></thead>
+  <thead><tr><th>Name</th><th>Owner</th><th>Host</th><th>Audience</th><th>Credentials</th><th class="num">Users</th><th>Status</th></tr></thead>
   <tbody>
   {{range .Servers}}
   <tr>
-    <td><a href="/admin/servers/{{.ID}}">{{.Name}}</a>{{if .ReReview}} <a class="badge" href="/admin/servers/{{.ID}}/review">re-review required</a>{{else if .Pending}} <a class="badge" href="/admin/servers/{{.ID}}/review">pending review</a>{{end}}</td>
+    <td><a href="/admin/servers/{{.ID}}"><strong>{{.Name}}</strong></a>{{if .ReReview}} <a class="badge" href="/admin/servers/{{.ID}}/review">re-review required</a>{{else if .Pending}} <a class="badge" href="/admin/servers/{{.ID}}/review">pending review</a>{{end}}</td>
     <td>{{.Owner}}</td>
     <td><code>{{.Host}}</code></td>
-    <td>{{.Audience}}{{if .Roles}}: {{join .Roles ", "}}{{end}}</td>
+    <td>{{if eq .Audience "published"}}<span class="pill published">{{.Audience}}</span>{{else}}<span class="pill none">{{.Audience}}</span>{{end}}{{if .Roles}} <span class="muted">{{join .Roles ", "}}</span>{{end}}</td>
     <td>{{.CredentialMode}} · {{.AuthKind}}{{if .Shared}} · <span class="pill company">shared credential set</span>{{end}}</td>
-    <td>{{.Connections}}</td>
+    <td class="num">{{.Connections}}</td>
     <td><span class="pill {{.Status}}">{{.Status}}</span>{{if .LastError}} <span class="muted">{{.LastError}}</span>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
+</div>
+{{else if .Queue}}
+<div class="empty">{{icon "check"}}<strong>Nothing waiting for review.</strong><p>When a server's newest snapshot differs from the approved one, it shows up here.</p></div>
 {{else}}
-<p class="muted">No servers{{if or .Status .Pending}} match the filter{{end}}.</p>
+<div class="empty">{{icon "allservers"}}<strong>No servers{{if or .Status .Pending}} match the filter{{end}}.</strong><p>{{if or .Status .Pending}}Change or clear the filter.{{else}}Servers users add on their Servers page appear here.{{end}}</p></div>
 {{end}}
 {{template "foot" .}}

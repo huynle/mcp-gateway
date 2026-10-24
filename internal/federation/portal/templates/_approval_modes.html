@@ -5,13 +5,13 @@
 <section class="approval-modes" id="approval">
   <p class="approval-stats">{{.Counts.Enabled}} tools · <span class="mode-auto">{{.Counts.Auto}} run without asking</span> · <span class="mode-ask">{{.Counts.Ask}} ask</span></p>
   {{if .Writes}}
-  <p class="approval-warning" role="note">Tools set to <strong>Auto</strong> make changes on the server without a confirmation. Read tools always run without asking. Role denies, user restrictions and token limits still apply.</p>
+  <p class="callout warn approval-warning" role="note">Tools set to <strong>Auto</strong> make changes on the server without a confirmation. Read tools always run without asking. Role denies, user restrictions and token limits still apply.</p>
   {{if .Action}}<form method="post" action="{{.Action}}" class="approval-form">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <input type="hidden" name="version" value="{{.Version}}">
-    <p class="approval-bulk">
-      <button class="btn" type="submit" name="all" value="auto" onclick="return confirm('Run every enabled write tool of this server without asking? Changes happen without a confirmation.')">Run all without asking</button>
-      <button class="btn" type="submit" name="all" value="ask">Ask for all</button>
+    <p class="approval-bulk btn-row">
+      <button class="btn small" type="submit" name="all" value="auto" onclick="return confirm('Run every enabled write tool of this server without asking? Changes happen without a confirmation.')">Run all without asking</button>
+      <button class="btn small" type="submit" name="all" value="ask">Ask for all</button>
     </p>
   {{end}}
   <details class="approval-details"{{if .Action}} open{{end}}><summary>Write tools ({{len .Writes}})</summary>
@@ -26,9 +26,9 @@
   {{end}}
   </ul>
   </details>
-  {{if .Action}}<p><button class="btn primary" type="submit">Save approval modes</button></p>
+  {{if .Action}}<p class="form-actions"><button class="btn primary" type="submit">Save approval modes</button></p>
   </form>{{end}}
   {{end}}
-  {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+  {{if .Note}}<p class="hint">{{.Note}}</p>{{end}}
 </section>
 {{end}}

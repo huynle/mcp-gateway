@@ -1,59 +1,79 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/servers">Servers</a><span class="sep">/</span><a href="/servers/{{.Server.ID}}">{{.Server.Name}}</a><span class="sep">/</span>Resources and prompts</p>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">From the reviewed snapshot of <strong>{{.Server.Name}}</strong>. Names, URIs and descriptions are the server's own text. Reading a resource or getting a prompt contacts the server with your credential.</p>
+  </div>
+  <div class="page-actions"><a class="btn" href="/servers/{{.Server.ID}}">{{icon "arrow-left"}}Back to {{.Server.Name}}</a></div>
+</header>
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
-<p class="muted">From the reviewed snapshot of <strong>{{.Server.Name}}</strong>. Names, URIs and descriptions are the server's own text. Reading a resource or getting a prompt contacts the server with your credential.</p>
 {{if not .HasSnapshot}}
-<p>No reviewed snapshot yet. Review the server's tools first.</p>
+<div class="empty">{{icon "servers"}}<strong>No reviewed snapshot yet.</strong><p>Review the server's tools first.</p><a class="btn" href="/servers/{{.Server.ID}}/review">Review tools</a></div>
 {{else}}
 {{if .ReadURI}}
-<h2>Preview of <code>{{.ReadURI}}</code></h2>
-{{template "preview" .Preview}}
+<section class="panel" id="preview">
+  <div class="panel-head"><h2>Preview of <code>{{.ReadURI}}</code></h2></div>
+  {{template "preview" .Preview}}
+</section>
 {{end}}
 
-<h2>Resources</h2>
-{{if .Resources}}
-<table>
-  <thead><tr><th>URI</th><th>Name</th><th>Type</th><th></th></tr></thead>
-  <tbody>
-  {{range .Resources}}
-  <tr>
-    <td><code>{{.URI}}</code>{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td>
-    <td>{{.Name}}{{if .Title}} · {{.Title}}{{end}}</td>
-    <td class="muted">{{.MIMEType}}</td>
-    <td><form method="post" action="/servers/{{$.Server.ID}}/resources/read" class="inline">
-      <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><input type="hidden" name="uri" value="{{.RawURI}}">
-      <button class="btn" type="submit">Read</button></form></td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p class="muted">No resources.</p>{{end}}
+<section class="section" id="resources">
+  <div class="section-head"><div><h2>Resources</h2></div>{{if .Resources}}<span class="pill plain">{{len .Resources}}</span>{{end}}</div>
+  {{if .Resources}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>URI</th><th>Name</th><th>Type</th><th></th></tr></thead>
+    <tbody>
+    {{range .Resources}}
+    <tr>
+      <td><code>{{.URI}}</code>{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td>
+      <td>{{.Name}}{{if .Title}} · {{.Title}}{{end}}</td>
+      <td class="muted mono">{{.MIMEType}}</td>
+      <td class="actions"><form method="post" action="/servers/{{$.Server.ID}}/resources/read" class="inline">
+        <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><input type="hidden" name="uri" value="{{.RawURI}}">
+        <button class="btn small" type="submit">Read</button></form></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}<p class="empty">No resources.</p>{{end}}
+</section>
 
-<h2>Resource templates</h2>
-{{if .Templates}}
-<table>
-  <thead><tr><th>URI template</th><th>Name</th><th>Type</th></tr></thead>
-  <tbody>
-  {{range .Templates}}
-  <tr><td><code>{{.URITemplate}}</code>{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td><td>{{.Name}}{{if .Title}} · {{.Title}}{{end}}</td><td class="muted">{{.MIMEType}}</td></tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p class="muted">No resource templates.</p>{{end}}
+<section class="section" id="templates">
+  <div class="section-head"><div><h2>Resource templates</h2></div>{{if .Templates}}<span class="pill plain">{{len .Templates}}</span>{{end}}</div>
+  {{if .Templates}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>URI template</th><th>Name</th><th>Type</th></tr></thead>
+    <tbody>
+    {{range .Templates}}
+    <tr><td><code>{{.URITemplate}}</code>{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td><td>{{.Name}}{{if .Title}} · {{.Title}}{{end}}</td><td class="muted mono">{{.MIMEType}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}<p class="empty">No resource templates.</p>{{end}}
+</section>
 
-<h2>Prompts</h2>
-{{if .Prompts}}
-<table>
-  <thead><tr><th>Prompt</th><th>Arguments</th></tr></thead>
-  <tbody>
-  {{range .Prompts}}
-  <tr>
-    <td><a href="/servers/{{$.Server.ID}}/prompts/{{.Path}}"><code>{{.Name}}</code></a>{{if .Title}} · {{.Title}}{{end}}{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td>
-    <td>{{range .Args}}<code>{{.Name}}</code>{{if .Required}} <span class="muted">(required)</span>{{end}}{{if .Description}} <span class="muted">{{.Description}}</span>{{end}}<br>{{else}}<span class="muted">none</span>{{end}}</td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p class="muted">No prompts.</p>{{end}}
+<section class="section" id="prompts">
+  <div class="section-head"><div><h2>Prompts</h2></div>{{if .Prompts}}<span class="pill plain">{{len .Prompts}}</span>{{end}}</div>
+  {{if .Prompts}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Prompt</th><th>Arguments</th></tr></thead>
+    <tbody>
+    {{range .Prompts}}
+    <tr>
+      <td><a href="/servers/{{$.Server.ID}}/prompts/{{.Path}}"><code>{{.Name}}</code></a>{{if .Title}} · {{.Title}}{{end}}{{if .Description}}<div class="desc muted">{{.Description}}</div>{{end}}</td>
+      <td>{{range .Args}}<code>{{.Name}}</code>{{if .Required}} <span class="muted">(required)</span>{{end}}{{if .Description}} <span class="muted">{{.Description}}</span>{{end}}<br>{{else}}<span class="muted">none</span>{{end}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}<p class="empty">No prompts.</p>{{end}}
+</section>
 {{end}}
-<p><a href="/servers/{{.Server.ID}}">Back to {{.Server.Name}}</a></p>
 {{template "foot" .}}

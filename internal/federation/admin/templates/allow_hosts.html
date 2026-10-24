@@ -1,9 +1,18 @@
 {{template "head" .}}
-{{template "subnav"}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">Hosts and networks user-added servers may reach despite the gateway's network protection.</p>
+  </div>
+</header>
+{{template "subnav" "allow-hosts"}}
 {{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 <p class="notice"><strong>Warning:</strong> the gateway refuses to connect user-added servers (and their OAuth endpoints) to loopback, private, link-local, CGNAT and cloud-metadata addresses. Every entry here lifts that protection for the host or network: <strong>any user who adds a server can then make the gateway reach those internal networks</strong>. Add only what must be reachable, as narrowly as possible.</p>
+<section class="section">
+  <div class="section-head"><div><h2>Allowed hosts and networks</h2></div></div>
 {{if .Hosts}}
+<div class="table-wrap">
 <table>
   <thead><tr><th>Host or network</th><th>Note</th><th>Added</th><th></th></tr></thead>
   <tbody>
@@ -11,20 +20,26 @@
   <tr>
     <td><code>{{.Pattern}}</code></td>
     <td>{{.Note}}</td>
-    <td>{{fmtTime .CreatedAt}}</td>
-    <td><form method="post" action="/admin/network/allow-hosts/{{.ID}}/delete" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger" type="submit">Remove</button></form></td>
+    <td class="nowrap">{{fmtTime .CreatedAt}}</td>
+    <td class="actions"><form method="post" action="/admin/network/allow-hosts/{{.ID}}/delete" class="inline"><input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><button class="btn danger small" type="submit">Remove</button></form></td>
   </tr>
   {{end}}
   </tbody>
 </table>
+</div>
 {{else}}
-<p class="muted">The allow-list is empty: only public addresses are reachable.</p>
+<div class="empty">{{icon "check"}}<strong>The allow-list is empty: only public addresses are reachable.</strong><p>Add an entry below only when a server must reach an internal host or network.</p></div>
 {{end}}
-<h2>Add an entry</h2>
-<form method="post" action="/admin/network/allow-hosts" class="stack">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <label>Host name, IP address or CIDR prefix <input type="text" name="pattern" value="{{.Pattern}}" placeholder="mcp.corp.internal or 10.20.0.0/16"></label>
-  <label>Note (why it is needed) <input type="text" name="note" value="{{.Note}}" maxlength="256"></label>
-  <p><button class="btn primary" type="submit">Add</button></p>
-</form>
+</section>
+<section class="section">
+  <div class="section-head"><div><h2>Add an entry</h2></div></div>
+  <section class="panel narrow">
+  <form method="post" action="/admin/network/allow-hosts" class="stack">
+    <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+    <label>Host name, IP address or CIDR prefix <input type="text" name="pattern" value="{{.Pattern}}" placeholder="mcp.corp.internal or 10.20.0.0/16"><span class="hint">As narrow as possible: one host rather than a network.</span></label>
+    <label>Note <input type="text" name="note" value="{{.Note}}" maxlength="256"><span class="hint">Why it is needed.</span></label>
+    <p class="form-actions"><button class="btn primary" type="submit">{{icon "plus"}}Add</button></p>
+  </form>
+  </section>
+</section>
 {{template "foot" .}}

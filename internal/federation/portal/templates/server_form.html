@@ -1,18 +1,30 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/servers">Servers</a><span class="sep">/</span>{{if .Edit}}<a href="/servers/{{.ServerID}}">{{.Form.Name}}</a><span class="sep">/</span>Edit{{else}}Add server{{end}}</p>
+    <h1>{{.Title}}</h1>
+    {{if .Locked}}<p class="page-desc">An admin reviewed this server’s address and sign-in settings for everyone it is shared with.</p>
+    {{else if .Edit}}<p class="page-desc">Change the address, authentication and headers of this server. Its name is the tool prefix and cannot change.</p>
+    {{else}}<p class="page-desc">The server starts private: only you can see and use it. An admin can publish it to roles later. Its tools stay disabled until you review them.</p>{{end}}
+  </div>
+</header>
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 {{with .Locked}}
 <p class="notice" role="status">{{if ne $.Error .Note}}{{.Note}} {{end}}Its address and sign-in settings were reviewed by an admin for everyone it is shared with, so they are shown read-only.</p>
-<dl class="stack">
-  <dt>Name</dt><dd><strong>{{$.Form.Name}}</strong></dd>
-  <dt>Address</dt><dd><code>{{.Address}}</code></dd>
-  <dt>Authentication</dt><dd>{{.AuthKind}}{{if eq $.Form.CredentialMode "shared"}}, one shared credential for everyone{{else}}, per user{{end}}</dd>
-  {{with $.Form.APIKeyName}}<dt>API key placement</dt><dd>{{if eq $.Form.APIKeyIn "query"}}query parameter{{else}}header{{end}} <code>{{.}}</code></dd>{{end}}
-  {{with $.Form.Scopes}}<dt>OAuth scopes</dt><dd><code>{{.}}</code></dd>{{end}}
-  {{with $.Form.ClientID}}<dt>Static OAuth client</dt><dd><code>{{.}}</code>{{with $.Form.ClientIssuer}} (issuer <code>{{.}}</code>){{end}}</dd>{{end}}
-  {{with $.Form.StaticHeaders}}<dt>Static headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
-  {{with $.Form.PerUserHeaders}}<dt>Per-user headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
-  {{with $.Form.ElicitationOrigins}}<dt>Allowed elicitation origins</dt><dd><pre>{{.}}</pre></dd>{{end}}
-</dl>
+<section class="panel narrow">
+  <div class="panel-head"><h2>Reviewed settings</h2><span class="pill company">read-only</span></div>
+  <dl class="kv">
+    <dt>Name</dt><dd><strong>{{$.Form.Name}}</strong></dd>
+    <dt>Address</dt><dd><code>{{.Address}}</code></dd>
+    <dt>Authentication</dt><dd>{{.AuthKind}}{{if eq $.Form.CredentialMode "shared"}}, one shared credential for everyone{{else}}, per user{{end}}</dd>
+    {{with $.Form.APIKeyName}}<dt>API key placement</dt><dd>{{if eq $.Form.APIKeyIn "query"}}query parameter{{else}}header{{end}} <code>{{.}}</code></dd>{{end}}
+    {{with $.Form.Scopes}}<dt>OAuth scopes</dt><dd><code>{{.}}</code></dd>{{end}}
+    {{with $.Form.ClientID}}<dt>Static OAuth client</dt><dd><code>{{.}}</code>{{with $.Form.ClientIssuer}} (issuer <code>{{.}}</code>){{end}}</dd>{{end}}
+    {{with $.Form.StaticHeaders}}<dt>Static headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
+    {{with $.Form.PerUserHeaders}}<dt>Per-user headers</dt><dd><pre>{{.}}</pre></dd>{{end}}
+    {{with $.Form.ElicitationOrigins}}<dt>Allowed elicitation origins</dt><dd><pre>{{.}}</pre></dd>{{end}}
+  </dl>
+</section>
 {{if .CredentialForm}}
 <form method="post" action="/servers/{{$.ServerID}}/edit" class="stack" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}">
@@ -22,27 +34,28 @@
     <label class="check"><input type="radio" name="credential_mode" value="shared"{{if eq $.Form.CredentialMode "shared"}} checked{{end}}> Shared: one credential set here, used for everyone</label>
   </fieldset>
   <fieldset>
-    <legend>Shared credential <span class="muted">(shared mode only; write-only: it is never shown again)</span></legend>
-    {{if $.Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with $.Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the field blank to keep it.</p>{{end}}
+    <legend>Shared credential</legend>
+    <p class="hint">Shared mode only; write-only: it is never shown again.</p>
+    {{if $.Info.SharedSecret}}<p class="callout info">Stored: a secret is stored{{with $.Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the field blank to keep it.</p>{{end}}
     {{if eq $.Form.AuthKind "api_key"}}<label>Shared API key <input type="password" name="shared_api_key" value="" autocomplete="new-password"></label>{{end}}
     {{if eq $.Form.AuthKind "bearer"}}<label>Shared bearer token <input type="password" name="shared_bearer" value="" autocomplete="new-password"></label>{{end}}
-    {{if eq $.Form.AuthKind "headers"}}<label>Shared headers <span class="muted">(one “Name: value” per line)</span> <textarea name="shared_headers" rows="3" autocomplete="off"></textarea></label>{{end}}
+    {{if eq $.Form.AuthKind "headers"}}<label>Shared headers <textarea name="shared_headers" rows="3" autocomplete="off"></textarea><span class="hint">One “Name: value” per line.</span></label>{{end}}
   </fieldset>
-  <p><button class="btn primary" type="submit" name="action" value="save">Save</button>
+  <p class="form-actions"><button class="btn primary" type="submit" name="action" value="save">Save</button>
     <a class="btn" href="/servers/{{$.ServerID}}">Cancel</a></p>
 </form>
 {{else}}
-<p><a class="btn" href="/servers/{{$.ServerID}}">Back</a></p>
+<p class="form-actions"><a class="btn" href="/servers/{{$.ServerID}}">{{icon "arrow-left"}}Back</a></p>
 {{end}}
 {{else}}
-{{if not .Edit}}<p class="muted">The server starts private: only you can see and use it. An admin can publish it to roles later. Its tools stay disabled until you review them.</p>{{end}}
 <form method="post" action="{{if .Edit}}/servers/{{.ServerID}}/edit{{else}}/servers/new{{end}}" class="stack" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
   {{if .Edit}}
-  <p>Name <strong>{{.Form.Name}}</strong> <span class="muted">(the tool prefix; it cannot change)</span></p>
+  <p>Name <strong>{{.Form.Name}}</strong> <span class="hint">(the tool prefix; it cannot change)</span></p>
   {{else}}
-  <label>Name <span class="muted">(tool prefix: 1–63 lowercase letters, digits, '-' or '_'; tools appear as <code>name.tool</code>)</span>
-    <input type="text" name="name" value="{{.Form.Name}}" required maxlength="63" pattern="[a-z0-9_\-]{1,63}"></label>
+  <label>Name
+    <input type="text" name="name" value="{{.Form.Name}}" required maxlength="63" pattern="[a-z0-9_\-]{1,63}">
+    <span class="hint">The tool prefix: 1–63 lowercase letters, digits, '-' or '_'; tools appear as <code>name.tool</code>.</span></label>
   {{end}}
 
   <fieldset>
@@ -54,13 +67,13 @@
     <label>Tunnel <select name="tunnel_id">
       {{range .Tunnels}}<option value="{{.ID}}"{{if eq .ID $.Form.TunnelID}} selected{{end}}>{{.Name}} · {{slice .ID 0 8}}{{if .Online}} (online){{else}} (offline){{end}}</option>{{end}}
     </select></label>
-    <label>Path on the tunnel <span class="muted">(optional, e.g. /mcp)</span> <input type="text" name="tunnel_path" value="{{.Form.TunnelPath}}" maxlength="512"></label>
-    {{else}}<p class="muted">No tunnels yet: create one on the <a href="/servers#tunnels">servers page</a>.</p>{{end}}
+    <label>Path on the tunnel <input type="text" name="tunnel_path" value="{{.Form.TunnelPath}}" maxlength="512"><span class="hint">Optional, e.g. /mcp.</span></label>
+    {{else}}<p class="hint">No tunnels yet: create one on the <a href="/servers#tunnels">servers page</a>.</p>{{end}}
   </fieldset>
 
   {{if not .Edit}}
-  <p><button class="btn" type="submit" name="action" value="detect" formnovalidate>Detect authentication</button>
-    <span class="muted">Contacts the URL from the gateway (through its network policy) and pre-selects what the server offers.</span></p>
+  <p class="form-actions"><button class="btn" type="submit" name="action" value="detect" formnovalidate>{{icon "search"}}Detect authentication</button>
+    <span class="hint">Contacts the URL from the gateway (through its network policy) and pre-selects what the server offers.</span></p>
   {{end}}
   {{with .Detect}}
   <div class="{{if .Error}}error{{else}}notice{{end}}" role="status">
@@ -78,52 +91,60 @@
     {{range .Kinds}}
     <label class="check"><input type="radio" name="auth_kind" value="{{.Value}}"{{if .Checked}} checked{{end}}> {{.Label}}{{if and $.Detect .Offered}} <span class="pill active">detected</span>{{end}}</label>
     {{end}}
-    <p class="muted">Credentials</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Credentials</legend>
     <label class="check"><input type="radio" name="credential_mode" value="per_user"{{if ne .Form.CredentialMode "shared"}} checked{{end}}> Per user: everyone connects their own account or key</label>
     <label class="check"><input type="radio" name="credential_mode" value="shared"{{if eq .Form.CredentialMode "shared"}} checked{{end}}> Shared: one credential set here, used for everyone (not for OAuth)</label>
   </fieldset>
 
   <fieldset>
-    <legend>API key placement <span class="muted">(API key only; default header X-API-Key)</span></legend>
-    <label>Send in <select name="api_key_in">
-      <option value="header"{{if ne .Form.APIKeyIn "query"}} selected{{end}}>a header</option>
-      <option value="query"{{if eq .Form.APIKeyIn "query"}} selected{{end}}>a query parameter</option>
-    </select></label>
-    <label>Header or parameter name <input type="text" name="api_key_name" value="{{.Form.APIKeyName}}" maxlength="256"></label>
+    <legend>API key placement</legend>
+    <p class="hint">API key only; default header X-API-Key.</p>
+    <div class="row">
+      <label>Send in <select name="api_key_in">
+        <option value="header"{{if ne .Form.APIKeyIn "query"}} selected{{end}}>a header</option>
+        <option value="query"{{if eq .Form.APIKeyIn "query"}} selected{{end}}>a query parameter</option>
+      </select></label>
+      <label>Header or parameter name <input type="text" name="api_key_name" value="{{.Form.APIKeyName}}" maxlength="256"></label>
+    </div>
   </fieldset>
 
   <fieldset>
-    <legend>Shared credential <span class="muted">(shared mode only; write-only: it is never shown again)</span></legend>
-    {{if .Info.SharedSecret}}<p class="muted">Stored: a secret is stored{{with .Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the fields blank to keep it.</p>{{end}}
+    <legend>Shared credential</legend>
+    <p class="hint">Shared mode only; write-only: it is never shown again.</p>
+    {{if .Info.SharedSecret}}<p class="callout info">Stored: a secret is stored{{with .Info.SharedKeys}} ({{join . ", "}}){{end}}. Leave the fields blank to keep it.</p>{{end}}
     <label>Shared API key <input type="password" name="shared_api_key" value="" autocomplete="new-password"></label>
     <label>Shared bearer token <input type="password" name="shared_bearer" value="" autocomplete="new-password"></label>
-    <label>Shared headers <span class="muted">(one “Name: value” per line)</span> <textarea name="shared_headers" rows="3" autocomplete="off"></textarea></label>
+    <label>Shared headers <textarea name="shared_headers" rows="3" autocomplete="off"></textarea><span class="hint">One “Name: value” per line.</span></label>
   </fieldset>
 
   <fieldset>
-    <legend>OAuth <span class="muted">(OAuth only)</span></legend>
-    <label>Scopes <span class="muted">(optional, space-separated; default: what the server advertises)</span> <input type="text" name="scopes" value="{{.Form.Scopes}}"></label>
-    <p class="muted">Static client, only if the authorization server supports neither client metadata documents nor dynamic registration:</p>
+    <legend>OAuth</legend>
+    <p class="hint">OAuth only.</p>
+    <label>Scopes <input type="text" name="scopes" value="{{.Form.Scopes}}"><span class="hint">Optional, space-separated; default: what the server advertises.</span></label>
+    <p class="hint">Static client, only if the authorization server supports neither client metadata documents nor dynamic registration:</p>
     <label>Client ID <input type="text" name="client_id" value="{{.Form.ClientID}}"></label>
-    <label>Client secret {{if .Info.StaticClient}}<span class="muted">(leave blank to keep the stored one)</span>{{end}} <input type="password" name="client_secret" value="" autocomplete="new-password"></label>
-    <label>Issuer <span class="muted">(optional)</span> <input type="url" name="client_issuer" value="{{.Form.ClientIssuer}}"></label>
+    <label>Client secret <input type="password" name="client_secret" value="" autocomplete="new-password">{{if .Info.StaticClient}}<span class="hint">Leave blank to keep the stored one.</span>{{end}}</label>
+    <label>Issuer <input type="url" name="client_issuer" value="{{.Form.ClientIssuer}}"><span class="hint">Optional.</span></label>
   </fieldset>
 
   <fieldset>
     <legend>Extra headers</legend>
-    <label>Static headers <span class="muted">(not secret; one “Name: value” per line)</span> <textarea name="static_headers" rows="3">{{.Form.StaticHeaders}}</textarea></label>
-    <label>Per-user headers <span class="muted">(each user sets their own value, e.g. X-Brain-Project; one name per line)</span> <textarea name="per_user_headers" rows="3">{{.Form.PerUserHeaders}}</textarea></label>
+    <label>Static headers <textarea name="static_headers" rows="3">{{.Form.StaticHeaders}}</textarea><span class="hint">Not secret; one “Name: value” per line.</span></label>
+    <label>Per-user headers <textarea name="per_user_headers" rows="3">{{.Form.PerUserHeaders}}</textarea><span class="hint">Each user sets their own value, e.g. X-Brain-Project; one name per line.</span></label>
   </fieldset>
 
   {{if .Edit}}
   <fieldset>
     <legend>Allowed elicitation origins</legend>
-    <p class="muted">Pages this server may send you to, besides its own domain (https://host[:port]). Needed for machine/tunnel servers.</p>
-    <label>Origins <span class="muted">(one per line, up to 20)</span> <textarea name="elicitation_origins" rows="3" autocomplete="off">{{.Form.ElicitationOrigins}}</textarea></label>
+    <p class="hint">Pages this server may send you to, besides its own domain (https://host[:port]). Needed for machine/tunnel servers.</p>
+    <label>Origins <textarea name="elicitation_origins" rows="3" autocomplete="off">{{.Form.ElicitationOrigins}}</textarea><span class="hint">One per line, up to 20.</span></label>
   </fieldset>
   {{end}}
 
-  <p><button class="btn primary" type="submit" name="action" value="{{if .Edit}}save{{else}}create{{end}}">{{if .Edit}}Save{{else}}Add server{{end}}</button>
+  <p class="form-actions"><button class="btn primary" type="submit" name="action" value="{{if .Edit}}save{{else}}create{{end}}">{{if .Edit}}Save{{else}}{{icon "plus"}}Add server{{end}}</button>
     <a class="btn" href="{{if .Edit}}/servers/{{.ServerID}}{{else}}/servers{{end}}">Cancel</a></p>
 </form>
 {{end}}

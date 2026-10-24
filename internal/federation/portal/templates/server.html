@@ -1,77 +1,117 @@
 {{template "head" .}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/servers">Servers</a><span class="sep">/</span>{{.Server.Name}}</p>
+    <h1>{{.Title}} <span class="pill {{.Server.Status}}">{{.Server.Status}}</span></h1>
+    <p class="page-desc">Tools appear in your harnesses as <code>{{.Server.Name}}.&lt;tool&gt;</code> once a reviewer enabled them.</p>
+  </div>
+  <div class="page-actions">
+    {{if .PendingReview}}<a class="badge" href="/servers/{{.Server.ID}}/review">pending review</a>{{end}}
+    <a class="btn" href="/servers/{{.Server.ID}}/resources">Resources and prompts</a>
+    <a class="btn{{if .PendingReview}} primary{{end}}" href="/servers/{{.Server.ID}}/review">Review tools</a>
+    {{if .Server.Owner}}<form method="get" action="/servers/{{.Server.ID}}/edit" class="inline"><button class="btn" type="submit">Edit</button></form>{{end}}
+  </div>
+</header>
 {{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+
+<div class="grid grid-2">
 {{with .Server}}
-<table>
-  <tbody>
-  <tr><th>Address</th><td><code>{{.URL}}</code></td></tr>
-  <tr><th>Status</th><td><span class="pill {{.Status}}">{{.Status}}</span>{{if .ErrorClass}} <span class="muted">last error: {{.ErrorClass}}</span>{{end}}</td></tr>
-  <tr><th>Visibility</th><td>{{if .Published}}<span class="pill company">published</span> to roles by an admin{{else}}<span class="pill none">private</span> (only the owner){{end}}{{if .Owner}} · you own it{{end}}</td></tr>
-  <tr><th>Authentication</th><td>{{.AuthKind}} · {{if eq .CredentialMode "shared"}}shared credential{{else}}per user{{end}}{{if .APIKeyPlace}} · sent as {{.APIKeyPlace}}{{end}}{{if .Scopes}} · scopes {{range .Scopes}}<code>{{.}}</code> {{end}}{{end}}</td></tr>
-  {{if .StaticHeaders}}<tr><th>Static headers</th><td>{{range .StaticHeaders}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
-  {{if .PerUserHeaders}}<tr><th>Per-user headers</th><td>{{range .PerUserHeaders}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
-  {{if .ElicitationOrigins}}<tr><th>Elicitation origins</th><td>{{range .ElicitationOrigins}}<code>{{.}}</code> {{end}}<br><span class="muted">pages besides its own domain this server may send you to</span></td></tr>{{end}}
-  </tbody>
-</table>
+<section class="panel" aria-labelledby="server-details">
+  <div class="panel-head"><h2 id="server-details">Details</h2>{{if .Published}}<span class="pill company">published</span>{{else}}<span class="pill none">private</span>{{end}}</div>
+  <dl class="kv">
+    <dt>Address</dt><dd><code>{{.URL}}</code></dd>
+    <dt>Status</dt><dd><span class="pill {{.Status}}">{{.Status}}</span>{{if .ErrorClass}} <span class="muted">last error: {{.ErrorClass}}</span>{{end}}</dd>
+    <dt>Visibility</dt><dd>{{if .Published}}<span class="pill company">published</span> to roles by an admin{{else}}<span class="pill none">private</span> (only the owner){{end}}{{if .Owner}} · you own it{{end}}</dd>
+    <dt>Authentication</dt><dd>{{.AuthKind}} · {{if eq .CredentialMode "shared"}}shared credential{{else}}per user{{end}}{{if .APIKeyPlace}} · sent as {{.APIKeyPlace}}{{end}}{{if .Scopes}} · scopes {{range .Scopes}}<code>{{.}}</code> {{end}}{{end}}</dd>
+    {{if .StaticHeaders}}<dt>Static headers</dt><dd>{{range .StaticHeaders}}<code>{{.}}</code> {{end}}</dd>{{end}}
+    {{if .PerUserHeaders}}<dt>Per-user headers</dt><dd>{{range .PerUserHeaders}}<code>{{.}}</code> {{end}}</dd>{{end}}
+    {{if .ElicitationOrigins}}<dt>Elicitation origins</dt><dd>{{range .ElicitationOrigins}}<code>{{.}}</code> {{end}}<br><span class="hint">pages besides its own domain this server may send you to</span></dd>{{end}}
+  </dl>
+</section>
 {{end}}
+
+<section class="panel" id="connection" aria-labelledby="connection-title">
+  <div class="panel-head"><h2 id="connection-title">My connection</h2><span class="pill {{.Conn.Class}}">{{.Conn.Label}}</span></div>
+  {{if .OAuth}}
+  <p class="btn-row"><a class="btn primary" href="/servers/{{.Server.ID}}/connect">{{if .Connected}}Reconnect{{else}}Connect{{end}}</a>
+    <span class="hint">Signs you in at the server's authorization server.</span></p>
+  {{end}}
+  {{if or .CredentialField .Server.PerUserHeaders}}
+  <form method="post" action="/servers/{{.Server.ID}}/credential" class="stack" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+    {{if eq .CredentialField "api_key"}}<label>My API key <input type="password" name="api_key" value="" autocomplete="new-password" required></label>{{end}}
+    {{if eq .CredentialField "bearer"}}<label>My bearer token <input type="password" name="bearer" value="" autocomplete="new-password" required></label>{{end}}
+    {{if eq .CredentialField "headers"}}<label>My headers <textarea name="headers" rows="3" required></textarea><span class="hint">One “Name: value” per line.</span></label>{{end}}
+    {{range .Server.PerUserHeaders}}<label>{{.}} <input type="text" name="header:{{.}}" value=""></label>{{end}}
+    <p class="form-actions"><button class="btn primary" type="submit">{{if .Connected}}Replace{{else}}Save{{end}}</button>
+      <span class="hint">Stored encrypted; never shown again.</span></p>
+  </form>
+  {{end}}
+  {{if not (or .OAuth .CredentialField .Server.PerUserHeaders)}}<p class="muted">Nothing to set up: the gateway connects for you.</p>{{end}}
+  {{if .Connected}}
+  <div class="panel-foot">
+    <form method="post" action="/servers/{{.Server.ID}}/disconnect" class="inline" onsubmit="return confirm('Delete your credential for this server?')">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      <button class="btn danger small" type="submit">Disconnect</button>
+    </form>
+    <span class="hint">Deletes your stored credential for this server.</span>
+  </div>
+  {{end}}
+</section>
+</div>
 
 {{if .Server.Owner}}
-<h2>Stored credentials</h2>
-<p class="muted">Write-only: values are never shown again.</p>
-<ul>
-  {{if eq .Server.CredentialMode "shared"}}<li>Shared credential: {{if .Info.SharedSecret}}a secret is stored{{with .Info.SharedKeys}} ({{join . ", "}}){{end}}{{else}}<strong>none stored</strong>: nobody can use the server until you set one{{end}}.</li>{{end}}
-  {{if eq .Server.AuthKind "oauth"}}<li>OAuth client: {{if .Info.StaticClient}}static client <code>{{.Info.StaticClientID}}</code>{{else}}registered automatically (client metadata document or dynamic registration){{end}}.</li>{{end}}
-</ul>
+<section class="panel" aria-labelledby="stored-credentials">
+  <div class="panel-head"><h2 id="stored-credentials">Stored credentials</h2><span class="hint">Write-only: values are never shown again.</span></div>
+  <ul class="list">
+    {{if eq .Server.CredentialMode "shared"}}<li><span>Shared credential: {{if .Info.SharedSecret}}a secret is stored{{with .Info.SharedKeys}} ({{join . ", "}}){{end}}{{else}}<strong>none stored</strong>: nobody can use the server until you set one{{end}}.</span></li>{{end}}
+    {{if eq .Server.AuthKind "oauth"}}<li><span>OAuth client: {{if .Info.StaticClient}}static client <code>{{.Info.StaticClientID}}</code>{{else}}registered automatically (client metadata document or dynamic registration){{end}}.</span></li>{{end}}
+    {{if not (or (eq .Server.CredentialMode "shared") (eq .Server.AuthKind "oauth"))}}<li><span class="muted">No server-wide credential: each user connects their own.</span></li>{{end}}
+  </ul>
+</section>
 {{end}}
 
-<h2 id="connection">My connection</h2>
-<p><span class="pill {{.Conn.Class}}">{{.Conn.Label}}</span></p>
-{{if .OAuth}}
-<p><a class="btn primary" href="/servers/{{.Server.ID}}/connect">{{if .Connected}}Reconnect{{else}}Connect{{end}}</a>
-  <span class="muted">Signs you in at the server's authorization server.</span></p>
-{{end}}
-{{if or .CredentialField .Server.PerUserHeaders}}
-<form method="post" action="/servers/{{.Server.ID}}/credential" class="stack" autocomplete="off">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  {{if eq .CredentialField "api_key"}}<label>My API key <input type="password" name="api_key" value="" autocomplete="new-password" required></label>{{end}}
-  {{if eq .CredentialField "bearer"}}<label>My bearer token <input type="password" name="bearer" value="" autocomplete="new-password" required></label>{{end}}
-  {{if eq .CredentialField "headers"}}<label>My headers <span class="muted">(one “Name: value” per line)</span> <textarea name="headers" rows="3" required></textarea></label>{{end}}
-  {{range .Server.PerUserHeaders}}<label>{{.}} <input type="text" name="header:{{.}}" value=""></label>{{end}}
-  <p><button class="btn primary" type="submit">{{if .Connected}}Replace{{else}}Save{{end}}</button>
-    <span class="muted">Stored encrypted; never shown again.</span></p>
-</form>
-{{end}}
-{{if .Connected}}
-<form method="post" action="/servers/{{.Server.ID}}/disconnect" class="inline" onsubmit="return confirm('Delete your credential for this server?')">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <button class="btn danger" type="submit">Disconnect</button>
-</form>
-{{end}}
+<section class="section" id="tools">
+  <div class="section-head">
+    <div><h2>Tools</h2>
+    {{with .Current}}<p>Approved snapshot version {{.Version}}: {{.Enabled}} of {{.Tools}} tools enabled, {{.Resources}} resources and templates, {{.Prompts}} prompts.</p>
+    {{else}}<p>No reviewed snapshot yet: no tools of this server are available.</p>{{end}}</div>
+    <div class="btn-row">
+      {{if .Server.Owner}}<form method="post" action="/servers/{{.Server.ID}}/refresh" class="inline">
+        <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+        <button class="btn" type="submit" title="Lists the server's tools, resources and prompts again with your credential; changes need review.">Refresh</button>
+      </form>{{end}}
+      <a class="btn" href="/servers/{{.Server.ID}}/review">Review tools</a>
+    </div>
+  </div>
+  {{with .Current}}
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Version</div><div class="stat-value">{{.Version}}</div></div>
+    <div class="stat"><div class="stat-label">Tools enabled</div><div class="stat-value">{{.Enabled}}<span class="muted"> / {{.Tools}}</span></div></div>
+    <div class="stat"><div class="stat-label">Resources and templates</div><div class="stat-value">{{.Resources}}</div></div>
+    <div class="stat"><div class="stat-label">Prompts</div><div class="stat-value">{{.Prompts}}</div></div>
+  </div>
+  {{else}}
+  <div class="empty">{{icon "servers"}}<strong>No reviewed snapshot yet</strong><p>{{if .Server.Owner}}Refresh to discover the server's tools, then review which ones to enable.{{else}}The tools become available once the server's tools are reviewed.{{end}}</p></div>
+  {{end}}
+  {{if .Server.Owner}}<p class="hint">Refresh lists the server's tools, resources and prompts again with your credential; changes need review.</p>{{end}}
+  {{with .Approval}}
+  <div class="panel">
+    <div class="panel-head"><h3>Approval before running</h3></div>
+    {{template "approval-modes" .}}
+  </div>
+  {{end}}
+</section>
 
-<h2>Tools</h2>
-{{with .Current}}
-<p>Approved snapshot version {{.Version}}: {{.Enabled}} of {{.Tools}} tools enabled, {{.Resources}} resources and templates, {{.Prompts}} prompts.</p>
-{{else}}<p class="muted">No reviewed snapshot yet: no tools of this server are available.</p>{{end}}
-{{with .Approval}}<h3>Approval before running</h3>
-{{template "approval-modes" .}}{{end}}
-<p>
-  {{if .PendingReview}}<a class="badge" href="/servers/{{.Server.ID}}/review">pending review</a>{{end}}
-  <a class="btn" href="/servers/{{.Server.ID}}/review">Review tools</a>
-  <a class="btn" href="/servers/{{.Server.ID}}/resources">Resources and prompts</a>
-</p>
 {{if .Server.Owner}}
-<form method="post" action="/servers/{{.Server.ID}}/refresh" class="inline">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <button class="btn" type="submit">Refresh</button>
-  <span class="muted">Lists the server's tools, resources and prompts again with your credential; changes need review.</span>
-</form>
-
-<h2>Manage</h2>
-<form method="get" action="/servers/{{.Server.ID}}/edit" class="inline"><button class="btn" type="submit">Edit</button></form>
-<form method="post" action="/servers/{{.Server.ID}}/delete" class="inline" onsubmit="return confirm('Delete this server? Everyone loses its tools and their connections to it.')">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <button class="btn danger" type="submit">Delete</button>
-</form>
+<section class="danger-zone">
+  <h3>Delete server</h3>
+  <p class="muted">Everyone loses its tools and their connections to it. Its snapshots and stored credentials are deleted.</p>
+  <form method="post" action="/servers/{{.Server.ID}}/delete" class="inline" onsubmit="return confirm('Delete this server? Everyone loses its tools and their connections to it.')">
+    <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+    <button class="btn danger" type="submit">Delete</button>
+  </form>
+</section>
 {{end}}
-<p><a href="/servers">Back to servers</a></p>
 {{template "foot" .}}

@@ -554,3 +554,13 @@ input.code-input { font: 500 1.1rem/1.2 var(--mono); letter-spacing: .18em; text
 .pill.deny { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
 .pill.confirm { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
 .pill.hidden { color: var(--muted); }
+
+/* Text quoted from an upstream server: untrusted, shown verbatim. */
+pre.upstream-message, pre.elicit-url { white-space: pre-wrap; overflow-wrap: anywhere; border-left: 3px solid var(--warn); background: var(--warn-soft); }
+pre.elicit-url mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 .1rem; }
+.stack-item + .stack-item { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+
+/* A row of small code tokens (headers, scopes, origins). */
+.chips { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.chips > li { margin: 0; }
+:is(h2, h3) > .pill { margin-left: .5rem; font-size: var(--text-xs); }

@@ -1,97 +1,141 @@
 {{template "head" .}}
-{{template "subnav"}}
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/servers">All servers</a><span class="sep">/</span>{{.Server.Name}}</p>
+    <h1>{{.Title}} <span class="pill {{.Server.Status}}">{{.Server.Status}}</span></h1>
+    <p class="page-desc">Owned by {{.Server.Owner}}. Tools appear as <code>{{.Server.Name}}.&lt;tool&gt;</code>.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn{{if or .Server.Pending .Server.ReReview}} primary{{end}}" href="/admin/servers/{{.Server.ID}}/review">Review tools</a>
+  </div>
+</header>
+{{template "subnav" "servers"}}
 {{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
-{{with .Server}}
-<table>
-  <tbody>
-    <tr><th>Name</th><td><code>{{.Name}}</code> <span class="muted">(tools appear as <code>{{.Name}}.&lt;tool&gt;</code>)</span></td></tr>
-    <tr><th>Owner</th><td>{{.Owner}}</td></tr>
-    <tr><th>Address</th><td><code>{{.URL}}</code></td></tr>
-    <tr><th>Audience</th><td>{{.Audience}}{{if .Roles}}: {{join .Roles ", "}}{{end}}</td></tr>
-    <tr><th>Credentials</th><td>{{.CredentialMode}} · {{.AuthKind}}</td></tr>
-    <tr><th>Shared credential</th><td>{{if .Shared}}A shared credential is stored (never shown again).{{else}}none{{end}}</td></tr>
-    <tr><th>User connections</th><td>{{.Connections}}</td></tr>
-    <tr><th>Status</th><td><span class="pill {{.Status}}">{{.Status}}</span>{{if .LastError}} <span class="muted">last error: {{.LastError}}</span>{{end}}</td></tr>
-    <tr><th>Snapshot</th><td>{{if .Approved}}version {{.Approved}} approved{{else}}nothing approved{{end}}{{if .Pending}} · <a class="badge" href="/admin/servers/{{.ID}}/review">version {{.Latest}} pending review</a>{{else}} · <a href="/admin/servers/{{.ID}}/review">review</a>{{end}}</td></tr>
-  </tbody>
-</table>
-{{end}}
 {{if .Server.ReReview}}
 <div class="notice" role="status">
   <p><strong>Re-review required.</strong> This server is published but has no approved snapshot, so its tools, resources and prompts are not offered to anyone. Refresh it (below) to discover what its address serves now, then <a href="/admin/servers/{{.Server.ID}}/review">review and approve it</a>.</p>
 </div>
 {{end}}
-{{with .Approval}}<h2>Approval before running</h2>
-<p class="muted">Ask or Auto per write tool. For a published server this is the default for the roles whose rules allow the tool: a role <em>allow</em> plus <strong>Auto</strong> runs without asking, plus <strong>Ask</strong> needs an approval; a role <em>confirm</em> always asks and a role <em>deny</em> always wins. The owner gets the same modes.</p>
-{{template "approval-modes" .}}{{end}}
 {{if eq .Server.CredentialMode "shared"}}<p class="notice">This server uses a <strong>shared credential</strong>: every user it is published to acts with the same upstream account.</p>{{end}}
 
-<h2>Publish</h2>
-<p class="muted">Publishing shares the server with holders of the chosen roles. For them its tools, resources and prompts stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code>, single tools, <code>{{.Server.Name}}.resources/read</code> and <code>{{.Server.Name}}.prompts/get</code>). The owner keeps access (reads allowed, writes as set under Approval before running) unless a role denies it.</p>
-<form method="post" action="/admin/servers/{{.Server.ID}}/publish" class="stack">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  {{range .Roles}}<label class="check"><input type="checkbox" name="roles" value="{{.ID}}"{{if .Checked}} checked{{end}}> {{.Name}}</label>{{else}}<p class="muted">No roles yet.</p>{{end}}
-  <p><button class="btn primary" type="submit">Publish to the selected roles</button></p>
-</form>
-{{if eq .Server.Audience "published"}}
-<form method="post" action="/admin/servers/{{.Server.ID}}/unpublish">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <button class="btn" type="submit">Unpublish (private to its owner)</button>
-</form>
+{{with .Server}}
+<section class="panel" aria-labelledby="server-details">
+  <div class="panel-head"><h2 id="server-details">Details</h2>{{if eq .Audience "published"}}<span class="pill published">published</span>{{else}}<span class="pill none">{{.Audience}}</span>{{end}}</div>
+  <dl class="kv">
+    <dt>Name</dt><dd><code>{{.Name}}</code> <span class="muted">(tools appear as <code>{{.Name}}.&lt;tool&gt;</code>)</span></dd>
+    <dt>Owner</dt><dd>{{.Owner}}</dd>
+    <dt>Address</dt><dd><code>{{.URL}}</code></dd>
+    <dt>Audience</dt><dd>{{.Audience}}{{if .Roles}}: {{join .Roles ", "}}{{end}}</dd>
+    <dt>Credentials</dt><dd>{{.CredentialMode}} · {{.AuthKind}}</dd>
+    <dt>Shared credential</dt><dd>{{if .Shared}}A shared credential is stored (never shown again).{{else}}<span class="muted">none</span>{{end}}</dd>
+    <dt>User connections</dt><dd>{{.Connections}}</dd>
+    <dt>Status</dt><dd><span class="pill {{.Status}}">{{.Status}}</span>{{if .LastError}} <span class="muted">last error: {{.LastError}}</span>{{end}}</dd>
+    <dt>Snapshot</dt><dd>{{if .Approved}}version {{.Approved}} approved{{else}}nothing approved{{end}}{{if .Pending}} · <a class="badge" href="/admin/servers/{{.ID}}/review">version {{.Latest}} pending review</a>{{else}} · <a href="/admin/servers/{{.ID}}/review">review</a>{{end}}</dd>
+  </dl>
+</section>
 {{end}}
 
-{{if .SharedForm}}
-<h2>Shared credential</h2>
-<p class="muted">Write-only: the stored value is never shown. Saving replaces it.</p>
-<form method="post" action="/admin/servers/{{.Server.ID}}/shared-credential" class="stack" autocomplete="off">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  {{if eq .Server.AuthKind "api_key"}}<label>API key <input type="password" name="api_key" autocomplete="new-password"></label>{{end}}
-  {{if eq .Server.AuthKind "bearer"}}<label>Bearer token <input type="password" name="bearer" autocomplete="new-password"></label>{{end}}
-  {{if eq .Server.AuthKind "headers"}}<label>Headers (one “Name: value” per line) <textarea name="headers" rows="4" autocomplete="off"></textarea></label>{{end}}
-  <p><button class="btn primary" type="submit">Save shared credential</button></p>
-</form>
+{{with .Approval}}
+<section class="section" id="approval-modes">
+  <div class="section-head"><div><h2>Approval before running</h2>
+  <p>Ask or Auto per write tool. For a published server this is the default for the roles whose rules allow the tool: a role <em>allow</em> plus <strong>Auto</strong> runs without asking, plus <strong>Ask</strong> needs an approval; a role <em>confirm</em> always asks and a role <em>deny</em> always wins. The owner gets the same modes.</p></div></div>
+  <div class="panel">{{template "approval-modes" .}}</div>
+</section>
 {{end}}
 
-{{if .StaticForm}}
-<h2>Static OAuth client</h2>
-<p class="muted">{{if .StaticClientID}}Current client ID: <code>{{.StaticClientID}}</code>. {{end}}The client secret is write-only; leave it blank for a public client.</p>
-<form method="post" action="/admin/servers/{{.Server.ID}}/static-client" class="stack" autocomplete="off">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <label>Client ID <input type="text" name="client_id" value="{{.StaticClientID}}"></label>
-  <label>Client secret <input type="password" name="client_secret" autocomplete="new-password"></label>
-  <label>Issuer (https, optional) <input type="url" name="issuer"></label>
-  <p><button class="btn primary" type="submit">Save OAuth client</button></p>
-</form>
+<section class="section" id="publish">
+  <div class="section-head"><div><h2>Publish</h2>
+  <p>Publishing shares the server with holders of the chosen roles. For them its tools, resources and prompts stay hidden until a role allows them in the <a href="/admin/roles">role editor</a> (<code>{{.Server.Name}}.*</code>, single tools, <code>{{.Server.Name}}.resources/read</code> and <code>{{.Server.Name}}.prompts/get</code>). The owner keeps access (reads allowed, writes as set under Approval before running) unless a role denies it.</p></div></div>
+  <div class="panel">
+    <form method="post" action="/admin/servers/{{.Server.ID}}/publish" class="stack">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      <fieldset>
+        <legend>Roles</legend>
+        {{range .Roles}}<label class="check"><input type="checkbox" name="roles" value="{{.ID}}"{{if .Checked}} checked{{end}}> {{.Name}}</label>{{else}}<p class="muted">No roles yet.</p>{{end}}
+      </fieldset>
+      <p class="form-actions"><button class="btn primary" type="submit">Publish to the selected roles</button></p>
+    </form>
+    {{if eq .Server.Audience "published"}}
+    <div class="panel-foot">
+      <form method="post" action="/admin/servers/{{.Server.ID}}/unpublish" class="inline">
+        <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+        <button class="btn" type="submit">Unpublish (private to its owner)</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+</section>
+
+{{if or .SharedForm .StaticForm}}
+<section class="section" id="credentials">
+  <div class="section-head"><div><h2>Credentials</h2><p>Write-only: stored values are never shown.</p></div></div>
+  <div class="grid grid-2">
+  {{if .SharedForm}}
+  <section class="panel">
+    <div class="panel-head"><h3>Shared credential</h3>{{if .Server.Shared}}<span class="pill active">stored</span>{{else}}<span class="pill none">none</span>{{end}}</div>
+    <p class="muted">Write-only: the stored value is never shown. Saving replaces it.</p>
+    <form method="post" action="/admin/servers/{{.Server.ID}}/shared-credential" class="stack" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      {{if eq .Server.AuthKind "api_key"}}<label>API key <input type="password" name="api_key" autocomplete="new-password"></label>{{end}}
+      {{if eq .Server.AuthKind "bearer"}}<label>Bearer token <input type="password" name="bearer" autocomplete="new-password"></label>{{end}}
+      {{if eq .Server.AuthKind "headers"}}<label>Headers <textarea name="headers" rows="4" autocomplete="off"></textarea><span class="hint">One “Name: value” per line.</span></label>{{end}}
+      <p class="form-actions"><button class="btn primary" type="submit">Save shared credential</button></p>
+    </form>
+  </section>
+  {{end}}
+  {{if .StaticForm}}
+  <section class="panel">
+    <div class="panel-head"><h3>Static OAuth client</h3>{{if .StaticClientID}}<span class="pill active">set</span>{{end}}</div>
+    <p class="muted">{{if .StaticClientID}}Current client ID: <code>{{.StaticClientID}}</code>. {{end}}The client secret is write-only; leave it blank for a public client.</p>
+    <form method="post" action="/admin/servers/{{.Server.ID}}/static-client" class="stack" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      <label>Client ID <input type="text" name="client_id" value="{{.StaticClientID}}"></label>
+      <label>Client secret <input type="password" name="client_secret" autocomplete="new-password"></label>
+      <label>Issuer <input type="url" name="issuer"><span class="hint">https, optional.</span></label>
+      <p class="form-actions"><button class="btn primary" type="submit">Save OAuth client</button></p>
+    </form>
+  </section>
+  {{end}}
+  </div>
+</section>
 {{end}}
 
-<h2>Address</h2>
-<p class="muted">{{if eq .Server.Audience "published"}}The server is published: only admins change its address and sign-in settings. A new address withdraws the approved tools until you refresh and review the server again.{{else}}The owner can change a private server's settings on the servers page.{{end}} Stored credentials are sealed to the address: after a change users reconnect, and a shared credential or static OAuth client must be set again.</p>
-<form method="post" action="/admin/servers/{{.Server.ID}}/address" class="stack" autocomplete="off">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <label>New https URL <input type="url" name="url" value="" placeholder="https://example.com/mcp" maxlength="2048" required></label>
-  <p><button class="btn" type="submit">Change address</button></p>
-</form>
+<section class="section" id="address">
+  <div class="section-head"><div><h2>Address</h2>
+  <p>{{if eq .Server.Audience "published"}}The server is published: only admins change its address and sign-in settings. A new address withdraws the approved tools until you refresh and review the server again.{{else}}The owner can change a private server's settings on the servers page.{{end}} Stored credentials are sealed to the address: after a change users reconnect, and a shared credential or static OAuth client must be set again.</p></div></div>
+  <div class="panel">
+    <form method="post" action="/admin/servers/{{.Server.ID}}/address" class="stack" autocomplete="off">
+      <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+      <label>New https URL <input type="url" name="url" value="" placeholder="https://example.com/mcp" maxlength="2048" required><span class="hint">Current: <code>{{.Server.URL}}</code></span></label>
+      <p class="form-actions"><button class="btn" type="submit">Change address</button></p>
+    </form>
+  </div>
+</section>
 
-<h2>Discovery</h2>
-<form method="post" action="/admin/servers/{{.Server.ID}}/refresh">
-  <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
-  <p class="muted">Refresh rediscovers the server's tools with the shared credential, or with the owner's own connection, and opens the review.</p>
-  <button class="btn" type="submit">Refresh</button>
-</form>
+<section class="section" id="discovery">
+  <div class="section-head"><div><h2>Discovery</h2>
+  <p>Refresh rediscovers the server's tools with the shared credential, or with the owner's own connection, and opens the review.</p></div>
+  <form method="post" action="/admin/servers/{{.Server.ID}}/refresh" class="inline">
+    <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
+    <button class="btn" type="submit">Refresh</button>
+  </form></div>
+</section>
 
-<div class="danger-zone">
-  <h2>Status</h2>
+<section class="danger-zone">
+  <h3>Status</h3>
   {{if eq .Server.Status "disabled"}}
+  <p class="muted">The server is disabled: its tools are withdrawn for everyone.</p>
   <form method="post" action="/admin/servers/{{.Server.ID}}/enable"><input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}"><button class="btn" type="submit">Enable</button></form>
   {{else}}
-  <form method="post" action="/admin/servers/{{.Server.ID}}/disable"><input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}"><button class="btn danger" type="submit">Disable</button> <span class="muted">Its tools are withdrawn for everyone until enabled again.</span></form>
+  <form method="post" action="/admin/servers/{{.Server.ID}}/disable" class="actions"><input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}"><button class="btn danger" type="submit">Disable</button> <span class="muted">Its tools are withdrawn for everyone until enabled again.</span></form>
   {{end}}
-  <h2>Delete</h2>
+  <hr>
+  <h3>Delete</h3>
   <form method="post" action="/admin/servers/{{.Server.ID}}/delete" class="stack">
     <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
     <label>Type <code>{{.Server.Name}}</code> to delete the server, its snapshots, credentials and every user's connection <input type="text" name="confirm" autocomplete="off"></label>
-    <p><button class="btn danger" type="submit">Delete server</button></p>
+    <p class="form-actions"><button class="btn danger" type="submit">Delete server</button></p>
   </form>
-</div>
+</section>
 {{template "foot" .}}

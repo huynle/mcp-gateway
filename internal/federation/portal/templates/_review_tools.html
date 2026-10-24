@@ -3,23 +3,28 @@
      html/template escapes it. Field names use the tool's index, never its upstream name. */}}
 {{define "review-tools"}}
 <link rel="stylesheet" href="{{asset "review.css"}}">
-<section class="review-summary">
-  <div class="review-head"><strong>{{.ServerName}}</strong> <span class="muted">version {{.Version}}</span></div>
-  <p class="review-status">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools, resources and prompts stay disabled until you enable them.{{end}}</p>
+<section class="panel review-summary">
+  <div class="panel-head review-head">
+    <h2><code>{{.ServerName}}</code></h2>
+    {{if .UpToDate}}<span class="pill approved">version {{.Version}} · approved</span>{{else}}<span class="pill review">version {{.Version}} · waiting for review</span>{{end}}
+  </div>
+  <p class="review-status muted">{{if .UpToDate}}Version {{.Version}} is the approved snapshot. You can change the decisions.{{else}}Version {{.Version}} is waiting for review{{if .From}} (approved: version {{.From}}){{else}} (nothing approved yet){{end}}. New and changed tools, resources and prompts stay disabled until you enable them.{{end}}</p>
   <p class="review-stats"><span class="stat"><b>{{.Counts.Total}}</b> total</span><span class="stat"><b>{{.Counts.Enabled}}</b> enabled</span><span class="stat added"><b>{{.Counts.New}}</b> new</span><span class="stat changed"><b>{{.Counts.Changed}}</b> changed</span><span class="stat removed"><b>{{.Counts.Removed}}</b> removed</span></p>
-  {{if .Removed}}<p class="removed">Removed tools: {{range .Removed}}<code>{{.}}</code> {{end}}</p>{{end}}
-  {{if not .Resources.Empty}}<p>Resources: {{range .Resources.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Resources.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Resources.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
-  {{if not .Templates.Empty}}<p>Resource templates: {{range .Templates.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Templates.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Templates.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
-  {{if not .Prompts.Empty}}<p>Prompts: {{range .Prompts.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Prompts.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Prompts.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</p>{{end}}
+  {{if or .Removed (not .Resources.Empty) (not .Templates.Empty) (not .Prompts.Empty)}}<dl class="kv review-diff">
+  {{if .Removed}}<dt>Removed tools</dt><dd class="removed">{{range .Removed}}<code>{{.}}</code> {{end}}</dd>{{end}}
+  {{if not .Resources.Empty}}<dt>Resources</dt><dd>{{range .Resources.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Resources.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Resources.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</dd>{{end}}
+  {{if not .Templates.Empty}}<dt>Resource templates</dt><dd>{{range .Templates.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Templates.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Templates.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</dd>{{end}}
+  {{if not .Prompts.Empty}}<dt>Prompts</dt><dd>{{range .Prompts.Added}}<span class="added">+<code>{{.}}</code></span> {{end}}{{range .Prompts.Removed}}<span class="removed">−<code>{{.}}</code></span> {{end}}{{range .Prompts.Changed}}<span class="changed">~<code>{{.}}</code></span> {{end}}</dd>{{end}}
+  </dl>{{end}}
 </section>
 {{if .Action}}<form method="post" action="{{.Action}}" class="review-form" data-review>
   <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
   <input type="hidden" name="version" value="{{.Version}}">
   <div class="review-bar">
     <span class="review-select" data-js hidden>
-      <button class="btn small" type="button" data-select="all">Select all</button>
-      <button class="btn small" type="button" data-select="none">Select none</button>
-      {{if .HasReads}}<button class="btn small" type="button" data-select="read">Select read-only</button>{{end}}
+      <button class="btn small ghost" type="button" data-select="all">Select all</button>
+      <button class="btn small ghost" type="button" data-select="none">Select none</button>
+      {{if .HasReads}}<button class="btn small ghost" type="button" data-select="read">Select read-only</button>{{end}}
     </span>
     <input type="search" class="review-filter" data-review-filter data-js hidden placeholder="Filter tools" aria-label="Filter tools">
     <span class="review-count muted" data-review-count aria-live="polite">{{.Selected}} of {{.Selectable}} selected</span>
@@ -91,9 +96,10 @@
 </div>
 {{if .Action}}
   <div class="review-foot">
-    <p class="muted">Tools without a read-only annotation count as writes. A write set to <strong>Ask</strong> needs an approval on each call; a write set to <strong>Auto</strong> runs without a confirmation (role denies and token limits still apply). New and changed tools start as Ask. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
+    <p class="hint">Tools without a read-only annotation count as writes. A write set to <strong>Ask</strong> needs an approval on each call; a write set to <strong>Auto</strong> runs without a confirmation (role denies and token limits still apply). New and changed tools start as Ask. Only enabled resources, resource templates and prompts are listed and served. Tools, resources and prompts that are new or changed on a refresh start disabled.</p>
     {{if .HasReads}}<label class="check"><input type="checkbox" name="enable_reads" value="1"> Also enable all read tools no reviewer has decided on</label>{{end}}
-    <details class="danger-zone"><summary>Approve an empty tool set</summary><p class="muted">Use this only when you intentionally want this snapshot reviewed while every tool, resource and prompt remains disabled.</p><button class="btn danger" type="submit" name="action" value="approve_none">Approve with none enabled</button></details>
+    <details class="danger-zone"><summary>Approve an empty tool set</summary>
+      <p class="muted">Use this only when you intentionally want this snapshot reviewed while every tool, resource and prompt remains disabled.</p><button class="btn danger" type="submit" name="action" value="approve_none">Approve with none enabled</button></details>
   </div>
 </form>
 <script src="{{asset "review.js"}}" defer></script>

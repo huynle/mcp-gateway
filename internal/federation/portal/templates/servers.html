@@ -1,47 +1,65 @@
 {{template "head" .}}
-{{if .Notice}}<p class="ok">{{.Notice}}</p>{{end}}
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<p class="muted">MCP servers you added, and servers an admin published to you. Their tools appear in your harnesses as <code>&lt;server&gt;.&lt;tool&gt;</code> once a reviewer enabled them.</p>
-{{if .CanAdd}}<p><a class="btn primary" href="/servers/new">Add server</a></p>
-{{else}}<p class="muted">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers. Servers you already added keep working.</p>{{end}}
+<header class="page-head">
+  <div>
+    <h1>{{.Title}}</h1>
+    <p class="page-desc">MCP servers you added, and servers an admin published to you. Their tools appear in your harnesses as <code>&lt;server&gt;.&lt;tool&gt;</code> once a reviewer enabled them.</p>
+  </div>
+  {{if .CanAdd}}<div class="page-actions"><a class="btn primary" href="/servers/new">{{icon "plus"}}Add server</a></div>{{end}}
+</header>
+{{if .Notice}}<p class="ok" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if not .CanAdd}}<p class="callout warn">Adding MCP servers needs permission. Ask an admin for a role that may add MCP servers. Servers you already added keep working.</p>{{end}}
 
 {{define "serverRows"}}
+<div class="table-wrap">
 <table>
   <thead><tr><th>Name</th><th>Address</th><th>Status</th><th>Auth</th><th>My connection</th><th></th></tr></thead>
   <tbody>
   {{range .}}
   <tr>
-    <td><a href="/servers/{{.ID}}"><strong>{{.Name}}</strong></a>{{if .Published}} <span class="pill company">published</span>{{else}} <span class="pill none">private</span>{{end}}</td>
-    <td class="muted">{{.URL}}</td>
+    <td class="nowrap"><a href="/servers/{{.ID}}"><strong>{{.Name}}</strong></a>{{if .Published}} <span class="pill company">published</span>{{else}} <span class="pill none">private</span>{{end}}</td>
+    <td class="mono muted"><span class="clip" title="{{.URL}}">{{.URL}}</span></td>
     <td><span class="pill {{.Status}}">{{.Status}}</span>{{if .ErrorClass}} <span class="muted">({{.ErrorClass}})</span>{{end}}</td>
     <td>{{.AuthKind}}{{if eq .CredentialMode "shared"}} <span class="muted">(shared)</span>{{end}}</td>
     <td><span class="pill {{.Conn.Class}}">{{.Conn.Label}}</span></td>
-    <td>{{if .PendingReview}}<a class="badge" href="/servers/{{.ID}}/review">pending review</a>{{end}}</td>
+    <td class="actions">{{if .PendingReview}}<a class="badge" href="/servers/{{.ID}}/review">pending review</a>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
+</div>
 {{end}}
 
-<h2>My servers</h2>
-{{if .Mine}}{{template "serverRows" .Mine}}{{else}}<p class="muted">You have not added a server yet.</p>{{end}}
+<section class="section" id="mine">
+  <div class="section-head"><div><h2>My servers</h2><p>Servers you added. They start private: only you can see and use them.</p></div></div>
+  {{if .Mine}}{{template "serverRows" .Mine}}{{else}}
+  <div class="empty">{{icon "servers"}}<strong>You have not added a server yet.</strong><p>Add a remote MCP server by its https address, or connect one running on your computer through a tunnel. Its tools stay disabled until you review them.</p>{{if .CanAdd}}<a class="btn" href="/servers/new">{{icon "plus"}}Add a server</a>{{end}}</div>
+  {{end}}
+</section>
 
-<h2>Published to me</h2>
-{{if .Shared}}{{template "serverRows" .Shared}}{{else}}<p class="muted">No server is published to your roles.</p>{{end}}
+<section class="section" id="shared">
+  <div class="section-head"><div><h2>Published to me</h2><p>Servers an admin shared with one of your roles.</p></div></div>
+  {{if .Shared}}{{template "serverRows" .Shared}}{{else}}
+  <div class="empty">{{icon "allservers"}}<strong>No server is published to your roles.</strong><p>When an admin publishes a server to a role you hold, it appears here.</p></div>
+  {{end}}
+</section>
 
-<h2 id="tunnels">Tunnels</h2>
-<p class="muted">A tunnel connects a stdio MCP server, or one on a private network, to the gateway. You run <code>mcp-gateway tunnel</code> next to the server; it connects out to the gateway, which never starts programs or dials into your network. Use the address <code>tunnel://&lt;tunnel id&gt;</code> when you add the server.</p>
+<section class="section" id="tunnels">
+  <div class="section-head">
+    <div><h2>Tunnels</h2>
+    <p>A tunnel connects a stdio MCP server, or one on a private network, to the gateway. You run <code>mcp-gateway tunnel</code> next to the server; it connects out to the gateway, which never starts programs or dials into your network. Use the address <code>tunnel://&lt;tunnel id&gt;</code> when you add the server.</p></div>
+  </div>
 {{with .NewTunnel}}
-<div class="ok">
+<div class="ok" role="status">
   <p><strong>Tunnel “{{.Name}}” created.</strong> Copy its token now: it is shown only once.</p>
-  <div class="copyable"><pre class="token" id="tunnel-token">{{.Token}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-token" hidden>Copy</button></div>
+  <div class="copyable"><pre class="token" id="tunnel-token">{{.Token}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-token" hidden>{{icon "copy"}}Copy</button></div>
   <p>Run this next to your stdio server (replace <code>&lt;your server command&gt;</code>):</p>
-  <div class="copyable"><pre id="tunnel-new-stdio">{{.StdioCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-stdio" hidden>Copy</button></div>
+  <div class="copyable"><pre id="tunnel-new-stdio">{{.StdioCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-stdio" hidden>{{icon "copy"}}Copy</button></div>
   <p>Or, for an MCP server on your private network:</p>
-  <div class="copyable"><pre id="tunnel-new-http">{{.HTTPCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-http" hidden>Copy</button></div>
+  <div class="copyable"><pre id="tunnel-new-http">{{.HTTPCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-http" hidden>{{icon "copy"}}Copy</button></div>
   <p class="muted">The token goes in the environment so it stays out of the process list. The <code>mcp-gateway-tunnel</code> alias takes the same flags, and <code>--token</code> works too: <code>{{.Command}}</code></p>
   <p>Server address, for <em>Add server</em>:</p>
-  <div class="copyable"><pre id="tunnel-new-address">tunnel://{{.ID}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-address" hidden>Copy</button></div>
+  <div class="copyable"><pre id="tunnel-new-address">tunnel://{{.ID}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-new-address" hidden>{{icon "copy"}}Copy</button></div>
 </div>
 {{end}}
 {{with .Install}}
@@ -49,43 +67,48 @@
   <summary>Install the <code>mcp-gateway</code> CLI</summary>
   <div class="install-tabs" role="group" aria-label="Install the mcp-gateway CLI">
   {{range $i, $c := .}}<input type="radio" name="tunnel-install-tab" id="tunnel-install-tab-{{$i}}"{{if eq $i 0}} checked{{end}}><label for="tunnel-install-tab-{{$i}}">{{$c.Tab}}</label>
-  <div class="install-panel"><p class="muted">{{$c.Label}}</p><div class="copyable"><pre id="tunnel-install-{{$i}}">{{$c.Command}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-install-{{$i}}" hidden>Copy</button></div></div>
+  <div class="install-panel"><p class="muted">{{$c.Label}}</p><div class="copyable"><pre id="tunnel-install-{{$i}}">{{$c.Command}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-install-{{$i}}" hidden>{{icon "copy"}}Copy</button></div></div>
   {{end}}</div>
   <p class="muted">Or download an archive for your platform from <a href="https://github.com/huynle/mcp-gateway/releases/latest">GitHub Releases</a> (checksums.txt and build provenance attestations included). Then run <code>mcp-gateway tunnel --help</code>.</p>
 </details>
 {{end}}
 {{if .Tunnels}}
+<div class="table-wrap">
 <table>
   <thead><tr><th>Name</th><th>ID</th><th>State</th><th>Created</th><th>Last seen</th><th></th></tr></thead>
   <tbody>
   {{range .Tunnels}}
   <tr>
-    <td>{{.Name}}</td>
-    <td><code>{{.ID}}</code></td>
+    <td><strong>{{.Name}}</strong></td>
+    <td class="mono"><code>{{.ID}}</code></td>
     <td>{{if .Online}}<span class="pill active">online</span>{{else}}<span class="pill none">offline</span>{{end}}</td>
-    <td>{{fmtTime .CreatedAt}}</td>
-    <td>{{with .LastSeenAt}}{{fmtTime .}}{{else}}<span class="muted">never</span>{{end}}</td>
+    <td class="nowrap">{{fmtTime .CreatedAt}}</td>
+    <td class="nowrap">{{with .LastSeenAt}}{{fmtTime .}}{{else}}<span class="muted">never</span>{{end}}</td>
     <td class="actions"><form method="post" action="/servers/tunnels/revoke" onsubmit="return confirm('Revoke this tunnel? Servers using it stop working.')">
       <input type="hidden" name="_csrf" value="{{$.Caller.CSRFToken}}"><input type="hidden" name="id" value="{{.ID}}">
-      <button class="btn danger" type="submit">Revoke</button></form></td>
+      <button class="btn danger small" type="submit">Revoke</button></form></td>
   </tr>
   <tr class="tunnel-run"><td colspan="6"><details>
     <summary>Run “{{.Name}}”</summary>
     <p>Stdio server (the token is the one shown when the tunnel was created; if you lost it, revoke and create a new tunnel):</p>
-    <div class="copyable"><pre id="tunnel-stdio-{{.ID}}">{{.StdioCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-stdio-{{.ID}}" hidden>Copy</button></div>
+    <div class="copyable"><pre id="tunnel-stdio-{{.ID}}">{{.StdioCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-stdio-{{.ID}}" hidden>{{icon "copy"}}Copy</button></div>
     <p>Private HTTP server:</p>
-    <div class="copyable"><pre id="tunnel-http-{{.ID}}">{{.HTTPCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-http-{{.ID}}" hidden>Copy</button></div>
+    <div class="copyable"><pre id="tunnel-http-{{.ID}}">{{.HTTPCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-http-{{.ID}}" hidden>{{icon "copy"}}Copy</button></div>
     <p>Server address:</p>
-    <div class="copyable"><pre id="tunnel-address-{{.ID}}">tunnel://{{.ID}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-address-{{.ID}}" hidden>Copy</button></div>
+    <div class="copyable"><pre id="tunnel-address-{{.ID}}">tunnel://{{.ID}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="tunnel-address-{{.ID}}" hidden>{{icon "copy"}}Copy</button></div>
   </details></td></tr>
   {{end}}
   </tbody>
 </table>
-{{else}}<p class="muted">No tunnels.</p>{{end}}
-{{if .Install}}<script src="{{asset "copy.js"}}" defer></script>{{end}}
+</div>
+{{else}}
+<div class="empty">{{icon "machines"}}<strong>No tunnels.</strong><p>Create a tunnel below, then run <code>mcp-gateway tunnel</code> next to your stdio or private server.</p></div>
+{{end}}
+<script src="{{asset "copy.js"}}" defer></script>
 <form method="post" action="/servers/tunnels" class="actions">
   <input type="hidden" name="_csrf" value="{{.Caller.CSRFToken}}">
   <input type="text" name="name" placeholder="laptop" required maxlength="100" aria-label="Tunnel name">
-  <button class="btn" type="submit">Create tunnel</button>
+  <button class="btn" type="submit">{{icon "plus"}}Create tunnel</button>
 </form>
+</section>
 {{template "foot" .}}
