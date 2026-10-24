@@ -70,6 +70,12 @@ type Options struct {
 	Dial DialFunc
 	// Timeout bounds a whole request through Client (dial, headers, body).
 	Timeout time.Duration
+	// ResponseHeaderTimeout bounds the wait for a response's headers on
+	// the shared Transport (default: Timeout). Raise it only for callers
+	// that drop Client's whole-request Timeout and bound each request with
+	// its context instead (the federation client's tools/call, which may
+	// legitimately wait minutes for a JSON answer); Client keeps Timeout.
+	ResponseHeaderTimeout time.Duration
 	// MaxResponseBytes caps every response body read through the guard;
 	// reading past it fails with ErrResponseTooLarge.
 	MaxResponseBytes int64
@@ -89,6 +95,7 @@ type Guard struct {
 	resolver  Resolver
 	dial      DialFunc
 	timeout   time.Duration
+	headerTO  time.Duration
 	maxBody   int64
 	allowHTTP bool
 	metrics   Metrics
@@ -105,6 +112,7 @@ func New(o Options) *Guard {
 		resolver:  o.Resolver,
 		dial:      o.Dial,
 		timeout:   o.Timeout,
+		headerTO:  o.ResponseHeaderTimeout,
 		maxBody:   o.MaxResponseBytes,
 		allowHTTP: o.AllowHTTP,
 		metrics:   o.Metrics,
@@ -120,6 +128,9 @@ func New(o Options) *Guard {
 	if g.timeout <= 0 {
 		g.timeout = DefaultTimeout
 	}
+	if g.headerTO <= 0 {
+		g.headerTO = g.timeout
+	}
 	if g.maxBody <= 0 {
 		g.maxBody = DefaultMaxResponseBytes
 	}
@@ -134,7 +145,7 @@ func New(o Options) *Guard {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: g.timeout,
+		ResponseHeaderTimeout: g.headerTO,
 	}
 	g.rt = &guardTransport{g: g, base: g.base}
 	return g
