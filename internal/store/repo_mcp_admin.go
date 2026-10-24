@@ -41,14 +41,15 @@ const adminMCPServerSelect = `
 		v.auth_config, v.header_config, v.status, v.last_error_class, v.created_at, v.updated_at,
 		coalesce(u.display_name, ''), v.has_shared_credential, v.published_role_ids::text[], v.user_connection_count,
 		coalesce((SELECT max(sn.version) FROM mcp_server_snapshots sn WHERE sn.server_id = v.id), 0),
-		coalesce((SELECT sn.version FROM mcp_server_snapshots sn WHERE sn.server_id = v.id AND sn.status = 'approved'), 0)
+		coalesce((SELECT sn.version FROM mcp_server_snapshots sn WHERE sn.server_id = v.id AND sn.status = 'approved'), 0),
+		v.elicitation_origins
 	FROM admin_mcp_servers v LEFT JOIN users u ON u.id = v.owner_user_id`
 
 func scanAdminMCPServer(row interface{ Scan(dest ...any) error }, s *AdminMCPServer) error {
 	return row.Scan(&s.ID, &s.Name, &s.URL, &s.Transport, &s.OwnerUserID, &s.Audience, &s.CredentialMode, &s.AuthKind,
 		&s.AuthConfig, &s.HeaderConfig, &s.Status, &s.LastErrorClass, &s.CreatedAt, &s.UpdatedAt,
 		&s.OwnerDisplayName, &s.HasSharedCredential, &s.PublishedRoleIDs, &s.UserConnectionCount,
-		&s.LatestSnapshotVersion, &s.ApprovedSnapshotVersion)
+		&s.LatestSnapshotVersion, &s.ApprovedSnapshotVersion, &s.ElicitationOrigins)
 }
 
 // ListAdminMCPServers returns every server by name (WithJobs).

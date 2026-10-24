@@ -87,6 +87,12 @@ type MCPServer struct {
 	Status               string
 	LastErrorClass       *string
 	CreatedAt, UpdatedAt time.Time
+	// ElicitationOrigins are the exact https://host[:port] origins, besides
+	// the server's own registrable domain, its URL elicitations may point
+	// to (migration 00032; never nil when read). Written only by
+	// SetMCPServerElicitationOrigins: CreateMCPServer and UpdateMCPServer
+	// ignore it.
+	ElicitationOrigins []string
 }
 
 // MCPServerSharedSecret is a server's shared credential (credential mode

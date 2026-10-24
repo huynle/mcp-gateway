@@ -65,7 +65,11 @@ type serverForm struct {
 	PerUserHeaders string
 	ClientID       string
 	ClientIssuer   string
+	// ElicitationOrigins is the origins textarea (edit form only).
+	ElicitationOrigins string
 
+	// originsPosted: the form carried the origins field (absent: keep).
+	originsPosted bool
 	sharedAPIKey  string
 	sharedBearer  string
 	sharedHeaders string
@@ -79,6 +83,7 @@ func parseServerForm(r *http.Request) serverForm {
 		AuthKind: v("auth_kind"), CredentialMode: v("credential_mode"), APIKeyIn: v("api_key_in"), APIKeyName: v("api_key_name"),
 		Scopes: v("scopes"), StaticHeaders: r.PostForm.Get("static_headers"), PerUserHeaders: r.PostForm.Get("per_user_headers"),
 		ClientID: v("client_id"), ClientIssuer: v("client_issuer"),
+		ElicitationOrigins: r.PostForm.Get("elicitation_origins"), originsPosted: r.PostForm.Has("elicitation_origins"),
 		sharedAPIKey: v("shared_api_key"), sharedBearer: v("shared_bearer"), sharedHeaders: r.PostForm.Get("shared_headers"),
 		clientSecret: v("client_secret"),
 	}
@@ -111,6 +116,7 @@ func formFromServer(s *store.MCPServer, info CredentialInfo) serverForm {
 	}
 	f.StaticHeaders = strings.Join(lines, "\n")
 	f.PerUserHeaders = strings.Join(hc.PerUser, "\n")
+	f.ElicitationOrigins = strings.Join(s.ElicitationOrigins, "\n")
 	return f
 }
 
@@ -128,6 +134,7 @@ type validated struct {
 	headerConfig json.RawMessage
 	shared       *auth.Credential // nil: keep / none
 	client       bool             // set the static OAuth client
+	origins      []string         // nil: keep the stored elicitation origins
 }
 
 var allKinds = []string{store.MCPAuthOAuth, store.MCPAuthAPIKey, store.MCPAuthBearer, store.MCPAuthHeaders, store.MCPAuthNone}
@@ -219,6 +226,16 @@ func (p *Portal) validate(ctx context.Context, c caller, f *serverForm, prev *st
 				store.MCPAuthBearer:  "Enter the shared bearer token.",
 				store.MCPAuthHeaders: "Enter at least one shared header.",
 			}[f.AuthKind])
+		}
+	}
+
+	if prev != nil && f.originsPosted {
+		valid := p.d.OriginValidator
+		if valid == nil {
+			valid = NormalizeOrigin
+		}
+		if out.origins, err = parseOrigins(f.ElicitationOrigins, valid); err != nil {
+			return nil, err
 		}
 	}
 
@@ -710,7 +727,10 @@ func (p *Portal) save(w http.ResponseWriter, r *http.Request, c caller, s *store
 	if err == nil {
 		next := *s
 		next.URL, next.CredentialMode, next.AuthKind, next.AuthConfig, next.HeaderConfig = v.url, f.CredentialMode, f.AuthKind, v.authConfig, v.headerConfig
-		if err = p.d.Store.UpdateServer(ctx, c.UserID, &next); err == nil {
+		if err = p.d.Store.UpdateServer(ctx, c.UserID, &next); err == nil && v.origins != nil && !slices.Equal(v.origins, s.ElicitationOrigins) {
+			err = p.d.Store.SetElicitationOrigins(ctx, c.UserID, s.ID, v.origins)
+		}
+		if err == nil {
 			err = p.storeCredentials(ctx, c, s.ID, &f, v)
 		}
 	}

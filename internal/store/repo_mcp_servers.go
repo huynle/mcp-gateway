@@ -26,11 +26,11 @@ import (
 var ErrNoRoles = errors.New("store: publish needs at least one role")
 
 const mcpServerColumns = `s.id, s.name, s.url, s.transport, s.owner_user_id, s.audience, s.credential_mode, s.auth_kind,
-	s.auth_config, s.header_config, s.status, s.last_error_class, s.created_at, s.updated_at`
+	s.auth_config, s.header_config, s.status, s.last_error_class, s.created_at, s.updated_at, s.elicitation_origins`
 
 func scanMCPServer(row interface{ Scan(dest ...any) error }, s *MCPServer) error {
 	return row.Scan(&s.ID, &s.Name, &s.URL, &s.Transport, &s.OwnerUserID, &s.Audience, &s.CredentialMode, &s.AuthKind,
-		&s.AuthConfig, &s.HeaderConfig, &s.Status, &s.LastErrorClass, &s.CreatedAt, &s.UpdatedAt)
+		&s.AuthConfig, &s.HeaderConfig, &s.Status, &s.LastErrorClass, &s.CreatedAt, &s.UpdatedAt, &s.ElicitationOrigins)
 }
 
 func queryMCPServers(ctx context.Context, q Querier, op, sql string, args ...any) ([]MCPServer, error) {
@@ -116,7 +116,8 @@ func ListAllMCPServers(ctx context.Context, q Querier) ([]MCPServer, error) {
 
 // UpdateMCPServer rewrites a server's editable settings (name, URL,
 // transport, credential mode, auth kind, auth and header config). Owner,
-// audience and status have their own functions. ErrNotFound when the row
+// audience, status and elicitation origins
+// (SetMCPServerElicitationOrigins) have their own functions. ErrNotFound when the row
 // does not exist or the caller may not change it; ErrMCPServerLocked when
 // the server is published and the request path (gateway_app) changes its
 // address or sign-in settings (migration 00017). On the admin path such a

@@ -79,6 +79,9 @@ var valuePatterns = []struct {
 	// is what a harness uses the secret with.
 	{regexp.MustCompile(`(/s/|%2[Ff]s%2[Ff])[A-Za-z0-9]{20,100}`), "$1" + Redacted},
 	{regexp.MustCompile(`\bsec_[A-Za-z0-9]{20,100}`), Redacted},
+	// Upstream URL elicitations (internal/federation/elicit): the id of an
+	// interstitial link (/elicit/<id>) opens that page, plain or encoded.
+	{regexp.MustCompile(`(/elicit/|%2[Ff]elicit%2[Ff])[A-Za-z0-9]{20,100}`), "$1" + Redacted},
 	// URL query parameters.
 	{regexp.MustCompile(`(?i)([?&](?:code|state|token|access_token|refresh_token|id_token|client_secret|secret|api_key|apikey|key|password|signature|sig)=)[^&\s"']+`), "$1" + Redacted},
 	// key=value and key: value in free text (vendor error strings).

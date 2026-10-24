@@ -43,6 +43,10 @@ type fakeStore struct {
 	deleted   []string
 	// updateErr, when set, is UpdateServer's answer.
 	updateErr error
+	// originsErr, when set, is SetElicitationOrigins' answer; origins
+	// counts its successful calls.
+	originsErr   error
+	originsCalls int
 }
 
 func newFakeStore() *fakeStore {
@@ -134,8 +138,27 @@ func (f *fakeStore) UpdateServer(_ context.Context, userID string, s *store.MCPS
 		return f.updateErr
 	}
 	c := *s
-	c.OwnerUserID, c.Audience, c.Status = o.OwnerUserID, o.Audience, o.Status
+	// Like store.UpdateMCPServer: the origins have their own writer.
+	c.OwnerUserID, c.Audience, c.Status, c.ElicitationOrigins = o.OwnerUserID, o.Audience, o.Status, o.ElicitationOrigins
 	f.servers[s.ID] = &c
+	return nil
+}
+
+func (f *fakeStore) SetElicitationOrigins(_ context.Context, userID, serverID string, origins []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	o, ok := f.servers[serverID]
+	if !ok || o.OwnerUserID != userID {
+		return store.ErrNotFound
+	}
+	if f.originsErr != nil {
+		return f.originsErr
+	}
+	if o.Audience == store.MCPAudiencePublished && !slices.Equal(o.ElicitationOrigins, origins) {
+		return store.ErrMCPServerLocked
+	}
+	f.originsCalls++
+	o.ElicitationOrigins = slices.Clone(origins)
 	return nil
 }
 
@@ -552,10 +575,16 @@ func (f *fakeAudit) Record(_ context.Context, ev audit.Event) error {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith is newEnv with a hook to adjust the Deps.
+func newEnvWith(t *testing.T, adjust func(*Deps)) *env {
+	t.Helper()
 	e := &env{t: t, st: newFakeStore(), snap: newFakeSnapshots(), auth: &fakeAuth{}, fac: &fakeFactory{sess: &fakeSession{}}, hook: &fakeHook{},
 		perm: &fakePerms{denied: map[string]bool{}}, pol: &fakePolicy{denied: map[string]bool{}}, aud: &fakeAudit{}}
 	e.tun = &fakeTunnels{st: e.st, online: map[string]bool{}}
-	p := NewPortal(Deps{
+	d := Deps{
 		Store: e.st, Snapshots: e.snap, Auth: e.auth, Tunnels: e.tun, ClientFactory: e.fac, Hook: e.hook, Permissions: e.perm, Policy: e.pol, Audit: e.aud,
 		Identity: func(r *http.Request) (string, string, bool) {
 			u := r.Header.Get("X-Test-User")
@@ -566,7 +595,11 @@ func newEnv(t *testing.T) *env {
 		},
 		BaseURL: base,
 		Log:     slog.New(slog.DiscardHandler),
-	})
+	}
+	if adjust != nil {
+		adjust(&d)
+	}
+	p := NewPortal(d)
 	e.mux = http.NewServeMux()
 	p.Mount(func(pattern string, h http.Handler) { e.mux.Handle(pattern, h) })
 	return e
