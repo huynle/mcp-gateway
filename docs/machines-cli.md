@@ -126,8 +126,10 @@ Machine login is not supported on Windows yet (owner and mode checks fail closed
    reset after a minute of uptime); meanwhile its tunnel answers 503.
 4. Runs the `Connector` (one WebSocket, `GET /machine/v1/connect`) with the map tunnel id → target. After the first
    connection it refreshes (`POST …/refresh`) every server that was just created or has no approved tools, once per
-   process (retrying `409 offline` twice, 2 s apart, then on the next connection), and prints
-   `server "x": N tools found …; review and approve them at <review_url>`.
+   process, and the actions server `<machine>-actions` on every start and every reload (retrying `409 offline`
+   twice, 2 s apart, then on the next connection), and prints
+   `server "x": N tools found …; review and approve them at <review_url>` (nothing for an unchanged, already reviewed
+   actions server). A refresh only stores a pending snapshot; it never approves.
 5. When the connection ends it reconnects with backoff (1 s doubling to 1 min, ±20 % jitter, reset after a
    successful connection); a connection that failed before the handshake gets a fresh access token. A revoked
    machine (close 4003 / `403 revoked` / `invalid_grant`) or a replaced connection (close 4001: another `up` of the
@@ -212,12 +214,21 @@ server called `<machine>-actions` is an error. A config with only `actions:` and
 `service install` accept it). Older CLIs refuse a config with `actions:`.
 
 **Review.** The actions server's tools are disabled until you approve them on the review link `up` prints, like any
-server's: the review shows each action's command. `up` refreshes the snapshot only for a server that was just created
-or has no approved tool. After adding an action press **Refresh** on the server page and approve the new tool (until
-then it is refused). **After changing an existing action** (`run`, `secret`, `params`, `timeout`), rename it: the
-gateway checks calls against the reviewed snapshot, not against what the machine serves now, so a changed action
-under an already approved name can run its new command without a new review. A renamed action is a new tool that
-needs approval, and the old name stops working.
+server's: the review shows each action's command. `up` refreshes the actions server's snapshot on every start and
+every reload (`SIGHUP`), so an added or changed action appears as a pending review; approve it on the Machines page
+or the server's review page (until then a new action is refused by the gateway).
+
+**Only the reviewed definition runs.** With every federated `tools/call` the gateway sends the digest of the tool's
+**approved** definition in `_meta["mcp-gateway/tool-digest"]` (`internal/federation/tooldigest`: `sha256:` and the
+hex SHA-256 of the canonical JSON `{"description","inputSchema","name"}`, keys sorted, no whitespace, numbers in one
+form per value). The actions server computes the same digest from the tool it lists and **refuses a call whose digest
+is missing or different** before it decodes the arguments, reads the secret or starts anything:
+`action <name> changed since it was reviewed; approve the new version on the Machines page (or the server's review
+page)` (an `isError` result). So an action edited under the same name (`run`, `secret`, `params`, `timeout`,
+`description`) cannot run its new command with a secret until a human approves the new snapshot; the approved
+snapshot stays in force meanwhile. There is no switch to turn the check off. A secret spent on a refused call is not
+refunded (the call reached the machine): request a new one after the approval. Renaming an action makes a new tool
+that needs approval; the old name stops working.
 
 **Using one.** The agent asks for a secret bound to the action and calls it with the handle:
 
