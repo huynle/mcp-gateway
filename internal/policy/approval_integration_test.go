@@ -205,8 +205,10 @@ func TestIntegrationSlackNewWritesDefaultToAsk(t *testing.T) {
 	if err := migrations.DownTo(ctx, u.String(), 19); err != nil {
 		t.Fatalf("down to 19: %v", err)
 	}
-	if snap, err := policy.NewPostgresStore(st).Load(ctx); err != nil || appAsk(snap.Apps, "slack") != nil {
-		t.Fatalf("after Down: slack Ask = %v, %v; want none", appAsk(snap.Apps, "slack"), err)
+	// The table itself, not policy Load: the store reads columns of
+	// later migrations (mcp_servers) that do not exist at version 19.
+	if n := vendorAskRows(t, st, "slack"); n != 0 {
+		t.Fatalf("after Down: %d slack Ask rows; want none", n)
 	}
 	if err := migrations.Up(ctx, u.String()); err != nil {
 		t.Fatalf("up: %v", err)
@@ -265,4 +267,18 @@ func TestIntegrationSlackNewWritesDefaultToAsk(t *testing.T) {
 			t.Errorf("%s = %v, %v; want %v", tc.tool.Name, d.Outcome, err, tc.want)
 		}
 	}
+}
+
+// vendorAskRows counts the Ask rows of apps in vendor_tool_approvals
+// (bypass scope), readable at any schema version since 00019.
+func vendorAskRows(t *testing.T, st *store.Store, apps ...string) int {
+	t.Helper()
+	var n int
+	err := st.WithJobs(t.Context(), func(tx store.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT count(*) FROM vendor_tool_approvals WHERE app = ANY($1)`, apps).Scan(&n)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
