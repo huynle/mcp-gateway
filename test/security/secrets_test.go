@@ -270,6 +270,15 @@ func TestSecuritySecretEntryPageHardening(t *testing.T) {
 		h.Get("Cache-Control") != "no-store" || h.Get("Referrer-Policy") != "no-referrer" {
 		t.Errorf("entry page headers = %v", h)
 	}
+	// Anonymous: the sign-in redirect carries the link in return_to, so it
+	// is uncached and sends no Referer either (task l8gr9mur).
+	for _, p := range []string{path, "/secrets"} {
+		status, h, _ = w.get(user{}, p)
+		if status != http.StatusSeeOther || !strings.HasPrefix(h.Get("Location"), "/signin?return_to=") ||
+			h.Get("Cache-Control") != "no-store" || h.Get("Referrer-Policy") != "no-referrer" {
+			t.Errorf("anonymous GET %s = %d, headers %v", p, status, h)
+		}
+	}
 
 	failures := 0
 	status, _, unknownPage := w.get(w.bob, "/no-such-page")
