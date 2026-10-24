@@ -226,3 +226,31 @@ func TestIntegrationPortalStoreVisibility(t *testing.T) {
 		t.Errorf("owner delete: %v", err)
 	}
 }
+
+func TestIntegrationPortalStoreElicitationOrigins(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	ps := portal.NewStore(st)
+	owner, reader := newUser(t, st, "owner"), newUser(t, st, "reader")
+	s := &store.MCPServer{Name: "originsrv", URL: "https://o.example/mcp", AuthKind: store.MCPAuthNone}
+	if err := ps.CreateServer(ctx, owner, s); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	origins := []string{"https://auth.example.net"}
+	if err := ps.SetElicitationOrigins(ctx, owner, s.ID, origins); err != nil {
+		t.Fatalf("owner set: %v", err)
+	}
+	if got, err := ps.GetServer(ctx, owner, s.ID); err != nil || strings.Join(got.ElicitationOrigins, ",") != origins[0] {
+		t.Errorf("origins = %v, %v", got, err)
+	}
+	publish(t, st, s.ID, reader)
+	if err := ps.SetElicitationOrigins(ctx, reader, s.ID, nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("reader set = %v, want ErrNotFound", err)
+	}
+	if err := ps.SetElicitationOrigins(ctx, owner, s.ID, []string{"https://other.example.net"}); !errors.Is(err, store.ErrMCPServerLocked) {
+		t.Errorf("owner set on a published server = %v, want ErrMCPServerLocked", err)
+	}
+	if got, err := ps.GetServer(ctx, reader, s.ID); err != nil || strings.Join(got.ElicitationOrigins, ",") != origins[0] {
+		t.Errorf("reader sees origins = %v, %v", got, err)
+	}
+}

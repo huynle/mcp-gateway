@@ -27,6 +27,8 @@ type serverView struct {
 	Scopes         []string
 	StaticHeaders  []string // names only
 	PerUserHeaders []string
+	// ElicitationOrigins are shown to everyone who sees the server.
+	ElicitationOrigins []string
 }
 
 func (p *Portal) view(ctx context.Context, c caller, s *store.MCPServer) serverView {
@@ -66,6 +68,7 @@ func (p *Portal) view(ctx context.Context, c caller, s *store.MCPServer) serverV
 	}
 	slices.Sort(v.StaticHeaders)
 	v.PerUserHeaders = hc.PerUser
+	v.ElicitationOrigins = s.ElicitationOrigins
 	return v
 }
 

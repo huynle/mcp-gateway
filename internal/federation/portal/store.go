@@ -95,6 +95,12 @@ func (p *pgStore) UpdateServer(ctx context.Context, userID string, s *store.MCPS
 	return p.ownerOnly(ctx, userID, s.ID, func(tx store.Tx) error { return store.UpdateMCPServer(ctx, tx, s) })
 }
 
+func (p *pgStore) SetElicitationOrigins(ctx context.Context, userID, serverID string, origins []string) error {
+	return p.ownerOnly(ctx, userID, serverID, func(tx store.Tx) error {
+		return store.SetMCPServerElicitationOrigins(ctx, tx, serverID, origins)
+	})
+}
+
 func (p *pgStore) DeleteServer(ctx context.Context, userID, serverID string) error {
 	return p.ownerOnly(ctx, userID, serverID, func(tx store.Tx) error { return store.DeleteMCPServer(ctx, tx, serverID) })
 }

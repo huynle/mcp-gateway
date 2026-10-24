@@ -12,7 +12,8 @@ import (
 // and sign-in settings; everyone it is published to sends their arguments
 // there. So the owner may not change the address (URL or tunnel), the
 // authentication kind, the auth config (scopes, API key placement), the
-// extra headers or the static OAuth client while the server is published:
+// extra headers, the static OAuth client or the elicitation origins
+// (origins.go) while the server is published:
 // the edit form shows them read-only and a POST that changes any of them
 // is refused with lockedMessage (422). The database refuses the same
 // columns on the request path (migration 00017). The owner may still
@@ -47,6 +48,7 @@ var lockedFields = []lockedField{
 	{"client_id", func(f *serverForm) string { return f.ClientID }},
 	{"client_issuer", func(f *serverForm) string { return f.ClientIssuer }},
 	{"client_secret", func(*serverForm) string { return "" }},
+	{"elicitation_origins", func(f *serverForm) string { return f.ElicitationOrigins }},
 }
 
 // normalizeField compares form values line by line, ignoring surrounding
