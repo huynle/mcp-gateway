@@ -44,6 +44,13 @@ type Options struct {
 	ClientVersion  string
 	Log            *slog.Logger
 	OnCall         func(CallInfo)
+	// URLElicitation declares the MCP URL-mode elicitation capability
+	// (only {"url":{}}, never form) on every connection, records URL
+	// requests in the Session (Session.Elicitations) and answers them
+	// "cancel"; form requests get -32602. Only callers relaying
+	// elicitations to the user set it (the connector's tool and resource
+	// calls, never discovery or the portal).
+	URLElicitation bool
 }
 
 // Client connects to remote MCP servers.
@@ -56,6 +63,7 @@ type Client struct {
 	onCall  func(CallInfo)
 	impl    *mcp.Implementation
 	log     *slog.Logger
+	elicit  bool
 }
 
 // New builds a Client.
@@ -66,7 +74,7 @@ func New(o Options) (*Client, error) {
 	if o.HTTPClient.Transport == nil {
 		return nil, errors.New("federation client: Options.HTTPClient has no Transport (use netguard.Guard.Client())")
 	}
-	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log, onCall: o.OnCall}
+	c := &Client{hc: o.HTTPClient, auth: o.Authorizer, timeout: o.Timeout, log: o.Log, onCall: o.OnCall, elicit: o.URLElicitation}
 	if c.timeout <= 0 {
 		c.timeout = DefaultTimeout
 	}
@@ -151,11 +159,22 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Sess
 		inner = &mcp.StreamableClientTransport{Endpoint: v.u.String(), HTTPClient: &hc,
 			DisableStandaloneSSE: true, MaxRetries: -1, MaxEventSize: int(c.maxBody) + sseSlack}
 	}
-	// No client capabilities: the gateway serves no roots, sampling or
-	// elicitation to upstreams (an empty, non-nil Capabilities turns off
-	// the go-sdk's default roots capability; sampling and elicitation are
-	// only declared when a handler is set, and none is).
-	cl := mcp.NewClient(c.impl, &mcp.ClientOptions{Logger: c.log, Capabilities: &mcp.ClientCapabilities{}})
+	// No client capabilities by default: the gateway serves no roots,
+	// sampling or elicitation to upstreams (an empty, non-nil Capabilities
+	// turns off the go-sdk's default roots capability; sampling and
+	// elicitation are only declared when a handler is set). With
+	// URLElicitation, elicitation is declared explicitly as {"url":{}}: an
+	// explicit value overrides the SDK's inference, which would add form.
+	opts := &mcp.ClientOptions{Logger: c.log, Capabilities: &mcp.ClientCapabilities{}}
+	var rec *Recorder
+	if c.elicit {
+		rec = &Recorder{}
+		opts.Capabilities.Elicitation = &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}
+		opts.ElicitationHandler = rec.handle
+		// ElicitationCompleteHandler stays nil: completion notifications
+		// are ignored (the harness retries).
+	}
+	cl := mcp.NewClient(c.impl, opts)
 	cs, err := cl.Connect(hctx, &detached{inner: inner, ctx: sessCtx}, nil)
 	if err != nil {
 		stop()
@@ -167,7 +186,7 @@ func (c *Client) connect(ctx context.Context, v *validated, tr Transport) (*Sess
 		sessCancel()
 		return nil, classify(hctx, opConnect, context.DeadlineExceeded, hsObs, sessObs)
 	}
-	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel, obs: sessObs, label: v.label}, nil
+	return &Session{c: c, cs: cs, transport: tr, cancel: sessCancel, obs: sessObs, label: v.label, rec: rec}, nil
 }
 
 // detached connects the inner transport with the session context instead
