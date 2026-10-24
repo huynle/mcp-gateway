@@ -52,5 +52,5 @@ func Icon(name string) (template.HTML, error) {
 	if !ok {
 		return "", fmt.Errorf("nav: no icon %q", name)
 	}
-	return template.HTML(`<svg class="icon icon-` + name + `" viewBox="0 0 24 24" aria-hidden="true" focusable="false">` + body + `</svg>`), nil //nolint:gosec // constant markup from this file
+	return template.HTML(`<svg class="icon icon-` + name + `" viewBox="0 0 24 24" aria-hidden="true" focusable="false">` + body + `</svg>`), nil
 }
