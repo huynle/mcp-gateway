@@ -213,7 +213,7 @@ func (f *fixture) callAs(t *testing.T, user, name string) (connectors.Result, er
 // wantRelayed checks a relayed -32042: the gateway's link, its own id
 // and message, n entries; nothing upstream-controlled in the marshalled
 // error or its text.
-func wantRelayed(t *testing.T, err error, n int) *mcp.ToolError {
+func wantRelayed(t *testing.T, err error, n int) {
 	t.Helper()
 	te := asToolError(t, err)
 	if te.Code != sdk.CodeURLElicitationRequired || te.Class() != ClassUpstreamElicitationRequired {
@@ -241,7 +241,6 @@ func wantRelayed(t *testing.T, err error, n int) *mcp.ToolError {
 		t.Errorf("message = %q", te.Message)
 	}
 	noUpstreamText(t, err)
-	return te
 }
 
 // noUpstreamText fails when err (marshalled, with its text) carries
