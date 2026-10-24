@@ -1,11 +1,28 @@
 {{define "title"}}{{.Data.Title}}{{end}}{{define "content"}}
-<h1>Limits for {{.Data.Name}}</h1>
-<p class="muted"><code>{{.Data.ID}}</code> · <a href="/admin/users">All users</a> · <a href="/admin/settings/resource-caps">Organization limits</a></p>
-<section class="card"><h2>Resource limits</h2>
-<form method="post" action="/admin/users/{{.Data.ID}}/limits" class="stack"><input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
-<table><thead><tr><th>Resource</th><th>In use</th><th>Effective</th><th>Override</th></tr></thead><tbody>
-{{range .Data.Rows}}<tr><td>{{.Noun}}</td><td>{{with .Used}}{{.}}{{else}}<span class="muted">?</span>{{end}}</td><td>{{if eq .Limit 0}}unlimited{{else}}{{.Limit}}{{end}}</td><td><input type="number" name="{{.Field}}" min="0" max="100000" value="{{with .Override}}{{.}}{{end}}" placeholder="organization" aria-label="{{.Noun}} override"></td></tr>
-{{end}}</tbody></table>
-<span class="muted">Blank uses the organization value; 0 is unlimited.</span>
-<p><button class="btn primary" type="submit">Save overrides</button></p></form></section>
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/users">Users</a><span class="sep">/</span>{{.Data.Name}}<span class="sep">/</span>Limits</p>
+    <h1>Limits for {{.Data.Name}}</h1>
+    <p class="page-desc"><code>{{.Data.ID}}</code> · Overrides for this user replace the <a href="/admin/settings/resource-caps">organization limits</a>.</p>
+  </div>
+  <div class="page-actions"><a class="btn" href="/admin/users">{{icon "arrow-left"}}All users</a><a class="btn" href="/admin/settings/resource-caps">Organization limits</a></div>
+</header>
+
+<section class="section">
+  <div class="section-head"><div><h2>Resource limits</h2><p>Blank uses the organization value; 0 is unlimited.</p></div></div>
+  <form method="post" action="/admin/users/{{.Data.ID}}/limits" class="stack wide">
+    <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+    <div class="table-wrap">
+    <table><thead><tr><th>Resource</th><th class="num">In use</th><th class="num">Effective</th><th>Override</th></tr></thead><tbody>
+    {{range .Data.Rows}}<tr>
+      <td>{{.Noun}}</td>
+      <td class="num">{{with .Used}}{{.}}{{else}}<span class="muted">?</span>{{end}}</td>
+      <td class="num">{{if eq .Limit 0}}<span class="muted">unlimited</span>{{else}}{{.Limit}}{{end}}</td>
+      <td><input type="number" name="{{.Field}}" min="0" max="100000" value="{{with .Override}}{{.}}{{end}}" placeholder="organization" aria-label="{{.Noun}} override"></td>
+    </tr>
+    {{end}}</tbody></table>
+    </div>
+    <div class="form-actions"><button class="btn primary" type="submit">Save overrides</button></div>
+  </form>
+</section>
 {{end}}

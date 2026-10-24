@@ -2,9 +2,14 @@
 {{define "content"}}
 {{with .Data.Legal}}
 <article class="legal">
-<h1>Privacy Policy</h1>
+<header class="page-head">
+  <div>
+    <h1>Privacy Policy</h1>
+    <p class="page-desc muted">Effective {{.EffectiveDisplay}}.</p>
+  </div>
+  <div class="page-actions"><a class="btn small" href="/terms">Terms of Service</a></div>
+</header>
 {{if .Draft}}<p class="notice draft" role="note" data-legal-draft>Draft – pending review. This text has not been reviewed by a lawyer yet and may change before it takes effect.</p>{{end}}
-<p class="muted">Effective {{.EffectiveDisplay}}.</p>
 
 <p>This policy explains what the MCP Gateway at this address (the "gateway") collects, why, how long it is kept, who it is shared with, and what you can do about it. The gateway is run by <strong>{{.OperatorDisplay}}</strong> ("we"), who is responsible for the data described here. Contact: {{if .ContactMailto}}<a href="{{.ContactMailto}}">{{.ContactDisplay}}</a>{{else}}{{.ContactDisplay}}{{end}}.</p>
 

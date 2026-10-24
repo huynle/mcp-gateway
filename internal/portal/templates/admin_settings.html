@@ -1,7 +1,25 @@
 {{define "title"}}Organization settings{{end}}{{define "content"}}
-<h1>Organization settings</h1>
-<p class="muted">Settings for this gateway deployment. Persisted values override environment defaults and apply without a restart.</p>
-{{if .Data.Rates}}<div class="card"><h2>Rate limits</h2><p>Organization defaults, app overrides and user overrides.</p><a class="btn" href="/admin/settings/rate-limits">Manage rate limits</a></div>{{end}}
-{{if .Data.Caps}}<div class="card"><h2>Resource limits</h2><p>MCP servers, tunnels, connected accounts and pending approvals per user.</p><a class="btn" href="/admin/settings/resource-caps">Manage resource limits</a></div>{{end}}
-<div class="card"><h2>Default role</h2><p>The role assigned on first sign-in.</p><a class="btn" href="/admin/settings/default-role">Choose default role</a></div>
+<header class="page-head">
+  <div>
+    <h1>Organization settings</h1>
+    <p class="page-desc">Settings for this gateway deployment. Persisted values override environment defaults and apply without a restart.</p>
+  </div>
+</header>
+<div class="grid grid-2">
+{{if .Data.Rates}}<section class="panel">
+  <div class="panel-head"><h2>Rate limits</h2></div>
+  <p class="muted">Organization defaults, app overrides and user overrides.</p>
+  <div class="panel-foot"><a class="btn" href="/admin/settings/rate-limits">Manage rate limits</a></div>
+</section>{{end}}
+{{if .Data.Caps}}<section class="panel">
+  <div class="panel-head"><h2>Resource limits</h2></div>
+  <p class="muted">MCP servers, tunnels, connected accounts and pending approvals per user.</p>
+  <div class="panel-foot"><a class="btn" href="/admin/settings/resource-caps">Manage resource limits</a></div>
+</section>{{end}}
+<section class="panel">
+  <div class="panel-head"><h2>Default role</h2></div>
+  <p class="muted">The role assigned on first sign-in.</p>
+  <div class="panel-foot"><a class="btn" href="/admin/settings/default-role">Choose default role</a></div>
+</section>
+</div>
 {{end}}

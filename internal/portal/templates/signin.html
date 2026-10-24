@@ -1,15 +1,22 @@
 {{define "title"}}Sign in{{end}}
 {{define "content"}}
-<h1>Sign in</h1>
-{{if .Data.HasInvite}}<p class="ok">You have an invite. Sign in to create your account.</p>
-{{else if .Data.InviteOnly}}<p class="muted">This gateway is invite-only: new accounts need the invite link an administrator sent. Existing users sign in as usual.</p>
-{{else}}<p class="muted">Use your company account. Your user is created on first sign-in.</p>{{end}}
-<div class="stack">
-  {{range .Data.Providers}}
-  <a class="btn primary" href="{{.StartURL}}">Continue with {{.DisplayName}}</a>
-  {{else}}
-  <p class="error">No identity provider is configured. Set <code>GATEWAY_OIDC_PROVIDERS</code> (see .env.example).</p>
-  {{end}}
+<div class="auth">
+  <section class="panel">
+    <p class="eyebrow">{{icon "brand"}}MCP Gateway</p>
+    <h1>Sign in</h1>
+    {{if .Data.HasInvite}}<p class="ok">You have an invite. Sign in to create your account.</p>
+    {{else if .Data.InviteOnly}}<p class="muted">This gateway is invite-only: new accounts need the invite link an administrator sent. Existing users sign in as usual.</p>
+    {{else}}<p class="muted">Use your company account. Your user is created on first sign-in.</p>{{end}}
+    <div class="stack">
+      {{range .Data.Providers}}
+      <a class="btn primary block" href="{{.StartURL}}">Continue with {{.DisplayName}}</a>
+      {{else}}
+      <p class="error">No identity provider is configured. Set <code>GATEWAY_OIDC_PROVIDERS</code> (see .env.example).</p>
+      {{end}}
+    </div>
+    <div class="panel-foot">
+      <p class="hint">By signing in you agree to the <a href="/terms">Terms of Service</a> and acknowledge the <a href="/privacy">Privacy Policy</a>. <a href="/">What is this gateway?</a></p>
+    </div>
+  </section>
 </div>
-<p class="muted">By signing in you agree to the <a href="/terms">Terms of Service</a> and acknowledge the <a href="/privacy">Privacy Policy</a>. <a href="/">What is this gateway?</a></p>
 {{end}}

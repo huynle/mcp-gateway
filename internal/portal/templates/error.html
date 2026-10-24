@@ -1,8 +1,14 @@
 {{define "title"}}{{.Data.Title}}{{end}}
 {{define "content"}}
-<h1>{{.Data.Title}}</h1>
-<div class="error">
-  <p>{{.Data.Message}}</p>
-  <p><a class="btn" href="{{.Data.Back}}">Back</a></p>
+<div class="auth">
+  <section class="panel">
+    <h1>{{.Data.Title}}</h1>
+    <div class="error">
+      <p>{{.Data.Message}}</p>
+    </div>
+    <div class="panel-foot">
+      <a class="btn" href="{{.Data.Back}}">{{icon "arrow-left"}}Back</a>
+    </div>
+  </section>
 </div>
 {{end}}

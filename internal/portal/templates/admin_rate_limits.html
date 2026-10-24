@@ -1,7 +1,60 @@
 {{define "title"}}Rate limits{{end}}{{define "content"}}
-<h1>Rate limits</h1>
-<p class="muted">Persisted settings override ENV defaults. Changes apply immediately on this replica and within seconds on other replicas. Budgets are per minute; burst equals the limit.</p>
-<section class="card"><h2>Organization defaults</h2><form method="post" action="/admin/settings/rate-limits/org" class="stack"><input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}"><label>Per user <input type="number" name="user_per_min" min="1" max="100000" value="{{.Data.UserDefault}}" required></label><label>Per app, shared by users <input type="number" name="app_per_min" min="1" max="100000" value="{{.Data.AppDefault}}" required></label><button class="btn primary" type="submit">Save defaults</button></form></section>
-<section class="card"><h2>App overrides</h2><table><thead><tr><th>App</th><th>Calls/min</th></tr></thead><tbody>{{range .Data.Apps}}<tr><td><code>{{.App}}</code></td><td>{{.PerMin}}</td></tr>{{else}}<tr><td colspan="2" class="muted">No overrides.</td></tr>{{end}}</tbody></table><form method="post" action="/admin/settings/rate-limits/app" class="inline"><input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}"><label>App <input name="app" pattern="[a-z0-9_-]{1,63}" required></label><label>Calls/min <input type="number" name="per_min" min="1" max="100000" placeholder="blank removes"></label><button class="btn" type="submit">Set override</button></form></section>
-<section class="card"><h2>User overrides</h2><table><thead><tr><th>User</th><th>Admin override</th><th>User ceiling</th><th>Effective</th><th></th></tr></thead><tbody>{{range .Data.Users}}<tr><td>{{.Name}}<br><code>{{.ID}}</code></td><td>{{with .Admin}}{{.}}{{else}}default{{end}}</td><td>{{with .Self}}{{.}}{{else}}—{{end}}</td><td>{{.Effective}}</td><td><form method="post" action="/admin/settings/rate-limits/user" class="inline"><input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}"><input type="hidden" name="user_id" value="{{.ID}}"><input type="number" name="per_min" min="1" max="100000" placeholder="blank clears"><button class="btn small" type="submit">Set</button></form></td></tr>{{end}}</tbody></table></section>
+<header class="page-head">
+  <div>
+    <p class="crumbs"><a href="/admin/settings">Organization settings</a><span class="sep">/</span>Rate limits</p>
+    <h1>Rate limits</h1>
+    <p class="page-desc">Persisted settings override ENV defaults. Changes apply immediately on this replica and within seconds on other replicas. Budgets are per minute; burst equals the limit.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-head"><h2>Organization defaults</h2></div>
+  <form method="post" action="/admin/settings/rate-limits/org" class="stack">
+    <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+    <label>Per user <input type="number" name="user_per_min" min="1" max="100000" value="{{.Data.UserDefault}}" required><span class="hint">Tool calls per minute for each user, across all apps.</span></label>
+    <label>Per app, shared by users <input type="number" name="app_per_min" min="1" max="100000" value="{{.Data.AppDefault}}" required><span class="hint">Tool calls per minute to one app, shared by every user.</span></label>
+    <div class="form-actions"><button class="btn primary" type="submit">Save defaults</button></div>
+  </form>
+</section>
+
+<section class="section">
+  <div class="section-head"><div><h2>App overrides</h2><p>A different per-app budget for specific apps.</p></div></div>
+  {{if .Data.Apps}}
+  <div class="table-wrap">
+  <table><thead><tr><th>App</th><th class="num">Calls/min</th></tr></thead><tbody>
+  {{range .Data.Apps}}<tr><td><code>{{.App}}</code></td><td class="num">{{.PerMin}}</td></tr>
+  {{end}}</tbody></table>
+  </div>
+  {{else}}
+  <p class="empty">No overrides.</p>
+  {{end}}
+  <section class="panel">
+    <form method="post" action="/admin/settings/rate-limits/app" class="row">
+      <input type="hidden" name="_csrf" value="{{.Principal.CSRFToken}}">
+      <label>App <input name="app" pattern="[a-z0-9_-]{1,63}" required></label>
+      <label>Calls/min <input type="number" name="per_min" min="1" max="100000" placeholder="blank removes"></label>
+      <button class="btn" type="submit">Set override</button>
+    </form>
+    <p class="hint">Leave calls/min blank to remove an app's override.</p>
+  </section>
+</section>
+
+<section class="section">
+  <div class="section-head"><div><h2>User overrides</h2><p>An administrator's base limit per user, and the lower ceiling a user set for themselves. Leave the field blank to clear an override.</p></div></div>
+  {{if .Data.Users}}
+  <div class="table-wrap">
+  <table><thead><tr><th>User</th><th>Admin override</th><th>User ceiling</th><th>Effective</th><th></th></tr></thead><tbody>
+  {{range .Data.Users}}<tr>
+    <td>{{.Name}}<br><code class="muted">{{.ID}}</code></td>
+    <td>{{with .Admin}}{{.}}{{else}}<span class="muted">default</span>{{end}}</td>
+    <td>{{with .Self}}{{.}}{{else}}<span class="muted">—</span>{{end}}</td>
+    <td><span class="pill plain">{{.Effective}}/min</span></td>
+    <td class="actions"><form method="post" action="/admin/settings/rate-limits/user" class="inline"><input type="hidden" name="_csrf" value="{{$.Principal.CSRFToken}}"><input type="hidden" name="user_id" value="{{.ID}}"><input type="number" name="per_min" min="1" max="100000" placeholder="blank clears" aria-label="Admin override for {{.Name}}"> <button class="btn small" type="submit">Set</button></form></td>
+  </tr>{{end}}
+  </tbody></table>
+  </div>
+  {{else}}
+  <div class="empty">{{icon "users"}}<strong>No users yet</strong><p>Users appear here after their first sign-in.</p></div>
+  {{end}}
+</section>
 {{end}}
