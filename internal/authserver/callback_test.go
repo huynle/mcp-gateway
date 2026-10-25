@@ -91,7 +91,7 @@ func TestConsentApproveLoopbackRendersInterstitial(t *testing.T) {
 			if lq.Get("code") == "" || lq.Get("state") != "xyz" || lq.Get("iss") != strings.TrimSuffix(f.cfg.Issuer, "/") {
 				t.Errorf("link query = %v", lq)
 			}
-			if want := "curl '" + link.String() + "'"; curl != want {
+			if want := "curl -g '" + link.String() + "'"; curl != want {
 				t.Errorf("curl = %q, want %q", curl, want)
 			}
 			if want := "1;url=" + link.String(); refresh != want {
@@ -123,7 +123,25 @@ func TestConsentInterstitialShellQuotes(t *testing.T) {
 	q.Set("client_id", out["client_id"].(string))
 	q.Set("redirect_uri", uri)
 	_, curl, _ := interstitial(t, f.consent(q, "approve", csrf))
-	if !strings.HasPrefix(curl, `curl 'http://127.0.0.1:4000/it'\''s/cb?code=`) || !strings.HasSuffix(curl, "'") {
+	if !strings.HasPrefix(curl, `curl -g 'http://127.0.0.1:4000/it'\''s/cb?code=`) || !strings.HasSuffix(curl, "'") {
+		t.Errorf("curl = %q", curl)
+	}
+}
+
+// curl expands [] and {} in URLs (globbing): an IPv6 loopback host
+// ([::1]) must reach curl verbatim, so the command turns globbing off.
+func TestConsentInterstitialCurlDoesNotGlob(t *testing.T) {
+	f := newFlow(t)
+	uri := "http://[::1]:4000/cb"
+	code, out := f.register(t, map[string]any{"client_name": "Claude Code", "redirect_uris": []string{uri}})
+	if code != http.StatusCreated {
+		t.Fatalf("register: %d %v", code, out)
+	}
+	q := f.authorizeParams()
+	q.Set("client_id", out["client_id"].(string))
+	q.Set("redirect_uri", uri)
+	_, curl, _ := interstitial(t, f.consent(q, "approve", csrf))
+	if !strings.HasPrefix(curl, "curl -g 'http://[::1]:4000/cb?code=") {
 		t.Errorf("curl = %q", curl)
 	}
 }

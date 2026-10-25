@@ -50,8 +50,8 @@ func TestLoopbackCallbackPage(t *testing.T) {
 		// The curl command is the callback, single-quoted for a POSIX shell
 		// (the encoded query carries no quote to escape).
 		curl := regexp.MustCompile(`(?s)<pre id="callback-curl">(.*?)</pre>`).FindStringSubmatch(body)
-		if curl == nil || html.UnescapeString(curl[1]) != "curl '"+loc.String()+"'" {
-			t.Errorf("curl command = %q, want curl '%s'", curl, loc)
+		if curl == nil || html.UnescapeString(curl[1]) != "curl -g '"+loc.String()+"'" {
+			t.Errorf("curl command = %q, want curl -g '%s'", curl, loc)
 		}
 		// The code is the one the redirect would have carried: single use.
 		code := loc.Query().Get("code")

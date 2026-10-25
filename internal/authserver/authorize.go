@@ -166,14 +166,15 @@ const remoteField = "remote"
 // browser's redirect lands on the wrong computer; the page still sends
 // the browser on (a meta refresh unless the user said the harness is
 // remote, and a Continue link, both without script) and shows the
-// callback as a curl command to run where the harness runs. The code's
-// semantics do not change: single use, PKCE-bound, CodeTTL. The page is
-// hardened like every other one here (pageHeaders: no-store, no
-// Referer, no framing).
+// callback as a curl command to run where the harness runs (-g: no URL
+// globbing, so an IPv6 loopback host or a [ ] { } in the path is sent
+// verbatim). The code's semantics do not change: single use, PKCE-bound,
+// CodeTTL. The page is hardened like every other one here (pageHeaders:
+// no-store, no Referer, no framing).
 func (s *Service) renderCallback(w http.ResponseWriter, r *http.Request, csrfToken, clientName, callback string, remote bool) {
 	s.render(w, r, http.StatusOK, "callback.html", callbackData{
 		Title: "Harness approved", CSRFToken: csrfToken, ClientName: clientName, CallbackURL: callback,
-		CurlCommand: "curl " + shellQuote(callback), CodeTTL: humanDuration(s.cfg.CodeTTL), AutoRedirect: !remote,
+		CurlCommand: "curl -g " + shellQuote(callback), CodeTTL: humanDuration(s.cfg.CodeTTL), AutoRedirect: !remote,
 	})
 }
 
