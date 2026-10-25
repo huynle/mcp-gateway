@@ -36,7 +36,7 @@ func isUnique(err error) bool {
 
 func (p *pgStore) CreateDeviceRequest(ctx context.Context, d *store.MachineDeviceRequest) error {
 	err := p.jobs(ctx, func(tx store.Tx) error { return store.CreateMachineDeviceRequest(ctx, tx, d) })
-	if isUnique(err) {
+	if isUnique(err) || errors.Is(err, store.ErrUserCodeTaken) {
 		return errCodeCollision
 	}
 	return err
