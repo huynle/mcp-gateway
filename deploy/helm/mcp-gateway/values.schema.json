@@ -68,6 +68,7 @@
             "refreshTokenTTL": { "$ref": "#/definitions/duration" },
             "codeTTL": { "$ref": "#/definitions/duration" },
             "registerPerMinute": { "type": "integer", "minimum": 1 },
+            "devicePerMinute": { "type": "integer", "minimum": 1 },
             "maxUnusedClients": { "type": "integer", "minimum": 1 },
             "clientIdle": { "$ref": "#/definitions/duration" },
             "keyRotation": { "$ref": "#/definitions/duration" },

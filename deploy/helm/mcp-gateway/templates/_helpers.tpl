@@ -203,6 +203,8 @@ Job has its own, smaller, set).
   value: {{ $g.oauth.codeTTL | quote }}
 - name: GATEWAY_OAUTH_REGISTER_PER_MIN
   value: {{ int64 $g.oauth.registerPerMinute | quote }}
+- name: GATEWAY_OAUTH_DEVICE_PER_MIN
+  value: {{ int64 $g.oauth.devicePerMinute | quote }}
 - name: GATEWAY_OAUTH_MAX_UNUSED_CLIENTS
   value: {{ int64 $g.oauth.maxUnusedClients | quote }}
 - name: GATEWAY_OAUTH_CLIENT_IDLE

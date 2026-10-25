@@ -218,6 +218,8 @@ spec:
               value: "10m"
             - name: GATEWAY_OAUTH_REGISTER_PER_MIN
               value: "10"
+            - name: GATEWAY_OAUTH_DEVICE_PER_MIN
+              value: "10"
             - name: GATEWAY_OAUTH_MAX_UNUSED_CLIENTS
               value: "1000"
             - name: GATEWAY_OAUTH_CLIENT_IDLE
