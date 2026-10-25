@@ -163,6 +163,9 @@ type RateLimits struct {
 	TokenFailures int
 	// UserCodeFailures: wrong user codes per signed-in user (default 10).
 	UserCodeFailures int
+	// UserCodeFailuresPerIP: wrong user codes on /activate per client
+	// address, across users (default 30).
+	UserCodeFailuresPerIP int
 }
 
 // Options configure a Service. Store, Servers and Tunnels are required.
@@ -198,6 +201,7 @@ type Service struct {
 	enrollLimiter   *tokens.FailureLimiter
 	tokenLimiter    *tokens.FailureLimiter
 	userCodeLimiter *tokens.FailureLimiter
+	userCodeIPLimit *tokens.FailureLimiter
 }
 
 // New builds a Service.
@@ -227,7 +231,8 @@ func New(o Options) (*Service, error) {
 	s.enrollLimiter = tokens.NewFailureLimiter(orDefault(l.Enroll, 10), time.Minute)
 	s.tokenLimiter = tokens.NewFailureLimiter(orDefault(l.TokenFailures, 30), time.Minute)
 	s.userCodeLimiter = tokens.NewFailureLimiter(orDefault(l.UserCodeFailures, 10), time.Minute)
-	for _, lim := range []*tokens.FailureLimiter{s.deviceLimiter, s.enrollLimiter, s.tokenLimiter, s.userCodeLimiter} {
+	s.userCodeIPLimit = tokens.NewFailureLimiter(orDefault(l.UserCodeFailuresPerIP, 30), time.Minute)
+	for _, lim := range []*tokens.FailureLimiter{s.deviceLimiter, s.enrollLimiter, s.tokenLimiter, s.userCodeLimiter, s.userCodeIPLimit} {
 		lim.SetClock(s.now)
 	}
 	return s, nil
@@ -374,15 +379,23 @@ func (s *Service) LookupUserCode(ctx context.Context, userID, code string) (*sto
 		s.userCodeLimiter.Fail(userID)
 		return nil, ErrUnknownUserCode
 	}
-	d, err := s.o.Store.DeviceRequestByUserCode(ctx, HashSecret(n))
+	d, err := s.pendingRequest(ctx, n)
+	if errors.Is(err, ErrUnknownUserCode) {
+		s.userCodeLimiter.Fail(userID)
+	}
+	return d, err
+}
+
+// pendingRequest finds the pending, unexpired request of a normalized
+// user code (ErrUnknownUserCode), without rate limiting.
+func (s *Service) pendingRequest(ctx context.Context, normalized string) (*store.MachineDeviceRequest, error) {
+	d, err := s.o.Store.DeviceRequestByUserCode(ctx, HashSecret(normalized))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		s.userCodeLimiter.Fail(userID)
 		return nil, ErrUnknownUserCode
 	case err != nil:
 		return nil, err
 	case d.Status != store.MachineRequestPending || !s.now().Before(d.ExpiresAt):
-		s.userCodeLimiter.Fail(userID)
 		return nil, ErrUnknownUserCode
 	}
 	return d, nil

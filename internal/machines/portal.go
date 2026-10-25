@@ -2,6 +2,7 @@ package machines
 
 import (
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"errors"
 	"html/template"
@@ -10,15 +11,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/authserver"
 	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 	"github.com/huynle/mcp-gateway/internal/store"
+	"github.com/huynle/mcp-gateway/internal/tokens"
 )
 
 // Identity resolves the caller of a page: the signed-in (active) user's
 // id ("" when none), the session's CSRF token and the admin flag.
 type Identity func(r *http.Request) (userID, csrfToken string, isAdmin bool)
+
+// HarnessGrants is the authorization server's side of /activate: harness
+// device grants (RFC 8628) share the page and the user-code format with
+// machine device requests. *authserver.Service implements it.
+type HarnessGrants interface {
+	LookupDeviceGrant(ctx context.Context, userCode string) (*authserver.DeviceGrantView, error)
+	ApproveDeviceGrant(ctx context.Context, userID, id string) (*authserver.DeviceGrantView, error)
+	DenyDeviceGrant(ctx context.Context, userID, id string) error
+}
 
 // Portal serves the machine pages:
 //
@@ -34,16 +46,29 @@ type Identity func(r *http.Request) (userID, csrfToken string, isAdmin bool)
 // The gateway mounts them through the portal (sign-in, pending users
 // redirected, CSRF, admin check for /admin); every handler checks the
 // caller, the CSRF token of POSTs and the admin flag again and sets
-// Cache-Control: no-store. A machine the caller may not touch is the 404
-// page.
+// Cache-Control: no-store and X-Frame-Options: DENY. A machine the caller
+// may not touch is the 404 page.
+//
+// /activate confirms machine device requests and, once SetHarnessGrants
+// is called, harness device grants: the code the user enters (or a
+// ?code= link prefills; that only shows the request) is looked up in
+// both, and the confirmation names its kind. Approving or denying is
+// always a POST with the CSRF token whose request_id must belong to the
+// code. Wrong codes count against the user and the client address. A
+// code found in both (the store prevents it) is treated as unknown.
 type Portal struct {
-	svc *Service
-	id  Identity
-	log *slog.Logger
-	tpl *template.Template
+	svc         *Service
+	id          Identity
+	log         *slog.Logger
+	tpl         *template.Template
+	harness     HarnessGrants
+	userLimiter *tokens.FailureLimiter
+	ipLimiter   *tokens.FailureLimiter
+	clientIP    func(*http.Request) string
 }
 
-// NewPortal builds the pages.
+// NewPortal builds the pages. Without svc (no machine enrollment) only
+// /activate is served, for harness device grants.
 func NewPortal(svc *Service, id Identity, log *slog.Logger) *Portal {
 	if log == nil {
 		log = slog.Default()
@@ -59,8 +84,16 @@ func NewPortal(svc *Service, id Identity, log *slog.Logger) *Portal {
 			return rowsView{Rows: rows, CSRF: csrf, Admin: true, Prefix: "/admin"}
 		},
 	}).Parse(portalTemplates))
-	return &Portal{svc: svc, id: id, log: log, tpl: tpl}
+	p := &Portal{svc: svc, id: id, log: log, tpl: tpl, clientIP: remoteIP,
+		userLimiter: tokens.NewFailureLimiter(10, time.Minute), ipLimiter: tokens.NewFailureLimiter(30, time.Minute)}
+	if svc != nil {
+		p.userLimiter, p.ipLimiter, p.clientIP = svc.userCodeLimiter, svc.userCodeIPLimit, svc.clientIP
+	}
+	return p
 }
+
+// SetHarnessGrants lets /activate confirm harness device grants too.
+func (p *Portal) SetHarnessGrants(h HarnessGrants) { p.harness = h }
 
 func fmtTimeP(t *time.Time) string {
 	if t == nil {
@@ -74,6 +107,9 @@ func fmtTimeP(t *time.Time) string {
 func (p *Portal) Mount(mount func(pattern string, h http.Handler)) {
 	mount("GET "+ActivatePath, p.user(p.activateGet))
 	mount("POST "+ActivatePath, p.user(p.activatePost))
+	if p.svc == nil {
+		return
+	}
 	mount("GET /machines", p.user(p.list))
 	mount("POST /machines/{id}/revoke", p.user(p.revoke))
 	mount("POST /machines/codes", p.user(p.createCode))
@@ -98,7 +134,12 @@ func (p *Portal) user(h handler) http.Handler {
 			http.Error(w, "sign in first", http.StatusUnauthorized)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
+		hd := w.Header()
+		hd.Set("Cache-Control", "no-store")
+		hd.Set("X-Frame-Options", "DENY")
+		if hd.Get("Content-Security-Policy") == "" {
+			hd.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			r.Body = http.MaxBytesReader(w, r.Body, maxPortalForm)
 			if err := r.ParseForm(); err != nil {
@@ -152,6 +193,8 @@ func (p *Portal) fail(w http.ResponseWriter, r *http.Request, what string, err e
 type messageData struct {
 	Title, Message string
 	OK             bool
+	// Harness links the Harnesses page instead of Machines.
+	Harness bool
 }
 
 // --- /activate -----------------------------------------------------------------------
@@ -162,6 +205,7 @@ type activateData struct {
 	Code    string
 	Error   string
 	Request *requestView
+	Harness *authserver.DeviceGrantView
 }
 
 type requestView struct {
@@ -170,34 +214,107 @@ type requestView struct {
 	Expires                                                         time.Time
 }
 
+// activation is what a user code confirms: a machine request or a
+// harness grant.
+type activation struct {
+	machine *store.MachineDeviceRequest
+	harness *authserver.DeviceGrantView
+}
+
+func (a *activation) id() string {
+	if a.harness != nil {
+		return a.harness.ID
+	}
+	return a.machine.ID
+}
+
+const formTitle = "Connect a machine or harness"
+
 func (p *Portal) activateGet(w http.ResponseWriter, r *http.Request, c caller) {
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
-		p.render(w, r, http.StatusOK, "activate", activateData{Title: "Connect a machine", CSRF: c.CSRF})
+		p.render(w, r, http.StatusOK, "activate", activateData{Title: formTitle, CSRF: c.CSRF})
 		return
 	}
 	p.showRequest(w, r, c, code)
 }
 
+// lookup resolves a user code to the pending request it confirms:
+// ErrTooManyAttempts while the user or the address is over its budget,
+// ErrUnknownUserCode (counted against both) when neither kind has it.
+func (p *Portal) lookup(r *http.Request, c caller, code string) (*activation, error) {
+	ip := p.clientIP(r)
+	if ok, _ := p.userLimiter.Allow(c.UserID); !ok {
+		return nil, ErrTooManyAttempts
+	}
+	if ok, _ := p.ipLimiter.Allow(ip); !ok {
+		return nil, ErrTooManyAttempts
+	}
+	unknown := func() (*activation, error) {
+		p.userLimiter.Fail(c.UserID)
+		p.ipLimiter.Fail(ip)
+		return nil, ErrUnknownUserCode
+	}
+	n, ok := NormalizeUserCode(code)
+	if !ok {
+		return unknown()
+	}
+	var a activation
+	if p.svc != nil {
+		d, err := p.svc.pendingRequest(r.Context(), n)
+		switch {
+		case err == nil:
+			a.machine = d
+		case !errors.Is(err, ErrUnknownUserCode):
+			return nil, err
+		}
+	}
+	if p.harness != nil {
+		v, err := p.harness.LookupDeviceGrant(r.Context(), n)
+		switch {
+		case err == nil:
+			a.harness = v
+		case !errors.Is(err, authserver.ErrDeviceGrantGone):
+			return nil, err
+		}
+	}
+	switch {
+	case a.machine == nil && a.harness == nil:
+		return unknown()
+	case a.machine != nil && a.harness != nil:
+		p.log.Warn("user code held by a machine request and a harness grant; refused", "event", "machine.user_code_ambiguous",
+			"request_id", a.machine.ID, "device_grant_id", a.harness.ID)
+		return nil, ErrUnknownUserCode
+	}
+	return &a, nil
+}
+
 // showRequest renders the confirmation page of a user code, or the form
 // again with an error.
 func (p *Portal) showRequest(w http.ResponseWriter, r *http.Request, c caller, code string) {
-	d, err := p.svc.LookupUserCode(r.Context(), c.UserID, code)
-	data := activateData{Title: "Connect a machine", CSRF: c.CSRF, Code: code}
+	a, err := p.lookup(r, c, code)
+	data := activateData{Title: formTitle, CSRF: c.CSRF, Code: code}
 	switch {
 	case errors.Is(err, ErrTooManyAttempts):
 		data.Error = "Too many wrong codes. Wait a minute and try again."
 		p.render(w, r, http.StatusTooManyRequests, "activate", data)
 		return
 	case errors.Is(err, ErrUnknownUserCode):
-		data.Error = "No pending request has this code. Check the code shown by mcp-gateway login; it is valid for 10 minutes."
+		data.Error = "No pending request has this code. Check the code shown by mcp-gateway login or your harness; it is valid for 10 minutes."
 		p.render(w, r, http.StatusOK, "activate", data)
 		return
 	case err != nil:
 		p.fail(w, r, "lookup user code", err)
 		return
 	}
+	if a.harness != nil {
+		data.Title, data.Harness = "Connect a harness", a.harness
+		p.render(w, r, http.StatusOK, "activate", data)
+		return
+	}
+	d := a.machine
 	n, _ := NormalizeUserCode(code)
+	data.Title = "Connect a machine"
 	data.Request = &requestView{
 		ID: d.ID, Code: FormatUserCode(n), Name: d.Name, Fingerprint: DisplayFingerprint(d.Fingerprint), FullFingerprint: d.Fingerprint,
 		IP: d.RequestIP, ClientVersion: d.ClientVersion, Requested: d.CreatedAt, Expires: d.ExpiresAt,
@@ -212,13 +329,31 @@ func (p *Portal) activatePost(w http.ResponseWriter, r *http.Request, c caller) 
 		p.showRequest(w, r, c, code)
 		return
 	}
-	// The request id must belong to the code the user confirmed.
-	d, err := p.svc.LookupUserCode(r.Context(), c.UserID, code)
-	if err != nil || d.ID != r.PostForm.Get("request_id") {
-		p.render(w, r, http.StatusOK, "activate", activateData{Title: "Connect a machine", CSRF: c.CSRF, Code: code,
-			Error: "This request is no longer waiting for approval. Run mcp-gateway login again."})
+	if action != "approve" && action != "deny" {
+		http.Error(w, "unknown action", http.StatusBadRequest)
 		return
 	}
+	// The request id must belong to the code the user confirmed.
+	a, err := p.lookup(r, c, code)
+	switch {
+	case errors.Is(err, ErrTooManyAttempts):
+		p.render(w, r, http.StatusTooManyRequests, "activate", activateData{Title: formTitle, CSRF: c.CSRF, Code: code,
+			Error: "Too many wrong codes. Wait a minute and try again."})
+		return
+	case err != nil || a.id() != r.PostForm.Get("request_id"):
+		if err != nil && !errors.Is(err, ErrUnknownUserCode) {
+			p.fail(w, r, "lookup user code", err)
+			return
+		}
+		p.render(w, r, http.StatusOK, "activate", activateData{Title: formTitle, CSRF: c.CSRF, Code: code,
+			Error: "This request is no longer waiting for approval. Start again on the machine or in the harness."})
+		return
+	}
+	if a.harness != nil {
+		p.decideHarness(w, r, c, a.harness, action)
+		return
+	}
+	d := a.machine
 	switch action {
 	case "approve":
 		m, err := p.svc.Approve(r.Context(), c.UserID, d.ID)
@@ -242,8 +377,30 @@ func (p *Portal) activatePost(w http.ResponseWriter, r *http.Request, c caller) 
 			return
 		}
 		p.render(w, r, http.StatusOK, "message", messageData{Title: "Request denied", Message: "The request was denied; the machine was not connected."})
+	}
+}
+
+// decideHarness allows or denies a harness device grant.
+func (p *Portal) decideHarness(w http.ResponseWriter, r *http.Request, c caller, g *authserver.DeviceGrantView, action string) {
+	gone := messageData{Title: "Harness not connected", Harness: true, Message: "This request is no longer waiting for approval. Start the sign-in again in the harness."}
+	if action == "deny" {
+		err := p.harness.DenyDeviceGrant(r.Context(), c.UserID, g.ID)
+		if err != nil && !errors.Is(err, authserver.ErrDeviceGrantGone) {
+			p.fail(w, r, "deny harness", err)
+			return
+		}
+		p.render(w, r, http.StatusOK, "message", messageData{Title: "Request denied", Harness: true, Message: "The request was denied; the harness was not connected."})
+		return
+	}
+	v, err := p.harness.ApproveDeviceGrant(r.Context(), c.UserID, g.ID)
+	switch {
+	case errors.Is(err, authserver.ErrDeviceGrantGone):
+		p.render(w, r, http.StatusOK, "message", gone)
+	case err != nil:
+		p.fail(w, r, "approve harness", err)
 	default:
-		http.Error(w, "unknown action", http.StatusBadRequest)
+		p.render(w, r, http.StatusOK, "message", messageData{Title: "Harness connected", OK: true, Harness: true,
+			Message: "You allowed “" + v.ClientName + "” (" + v.Scope + ") to use the gateway as you. It finishes signing in on its own within a few seconds. You can disconnect it on the Harnesses page at any time."})
 	}
 }
 
