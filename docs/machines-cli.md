@@ -36,6 +36,7 @@ Approve the tools of each new server on the review link `up` prints (tool approv
 | `mcp-gateway up [--config P] [--register-only]` | See [`up`](#up). |
 | `mcp-gateway logout` | `POST /machine/v1/logout` (self-revoke), then deletes the key and `machine.json`. If the gateway cannot be reached, the local credentials are still deleted and you are told to revoke the machine on the Machines page. |
 | `mcp-gateway service install\|uninstall\|status [--config P]` | See [Background service](#background-service). |
+| `mcp-gateway proxy [--gateway URL] [--scope mcp\|mcp:read] [--login] [--key-store keychain\|file] [--config P]` | Not machine enrollment: a stdio MCP server for a harness that forwards to `/mcp` and signs in as an OAuth client with the device flow (its own credentials under `~/.config/mcp-gateway/proxy/` or the keychain service `mcp-gateway-proxy`). See [harness-setup.md](harness-setup.md#any-stdio-harness-mcp-gateway-proxy). |
 
 Every command takes `--help`; `--verbose` turns on debug logging (requests are logged as method, path and status only).
 

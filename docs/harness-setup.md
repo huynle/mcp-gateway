@@ -4,7 +4,7 @@ Every harness talks to one endpoint, `GATEWAY_BASE_URL` + `/mcp` (stateless Stre
 
 | | **MCP OAuth sign-in** | **Generated token** |
 |---|---|---|
-| Who | harnesses that implement the MCP authorization spec (Claude Code, Claude Desktop, the MCP inspector, most SDK clients) | anything that can set a header: OpenCode, scripts, `curl`, older harnesses |
+| Who | harnesses that implement the MCP authorization spec (Claude Code, Claude Desktop, the MCP inspector, most SDK clients), and any stdio harness through `mcp-gateway proxy` | anything that can set a header: OpenCode, scripts, `curl`, older harnesses |
 | How | the harness discovers the gateway's authorization server, registers itself, opens the browser (or, on a remote host, shows a code you enter at `/activate`); you sign in with your company account and approve it | you create a token at `/tokens` and paste it into the harness config |
 | Lifetime | 1-hour access tokens, renewed with a 30-day rotating refresh token for as long as you keep signing in to the portal | up to 90 days; stops working if you have not signed in to the portal for 30 days |
 | Revoke | `/harnesses` → *Disconnect* (or disable the user) | `/tokens` → *Revoke* |
@@ -34,19 +34,55 @@ or in `.mcp.json`:
 
 *Settings → Connectors → Add custom connector*, name `gateway`, URL `https://gw.example.com/mcp`. Leave the OAuth client ID and secret empty: Claude Desktop registers itself dynamically. Press *Connect*, sign in and approve in the browser window that opens. Claude Desktop keeps the refresh token in its own keychain; *Disconnect* on `/harnesses` ends it from the gateway side.
 
-## Harnesses on a remote host (device flow)
+## Any stdio harness: `mcp-gateway proxy`
 
-A harness running over SSH on another machine cannot receive the browser's loopback redirect. Harnesses that implement the OAuth 2.0 Device Authorization Grant (RFC 8628) sign in with a code instead:
+`mcp-gateway proxy` (the client CLI, `brew install huynle/tap/mcp-gateway` or `curl -fsSL https://gateway.huynle.com/install | sh`) is a local stdio MCP server that forwards every message to `<base>/mcp`. Any harness that can start a local MCP command uses it, with no token to paste and no browser redirect: it signs in with the device flow below, so it works the same on your laptop and on a remote host over SSH.
 
-1. The harness registers for the grant (`grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]`, public client, no redirect URIs needed) and calls `POST /oauth/device_authorization`.
-2. It prints a code like `BCDF-GHJK` and a link, `<base>/activate` (or `<base>/activate?code=BCDF-GHJK`).
-3. Open the link in any browser **signed in** to the portal (or enter the code there; case and dash do not matter). The page shows the harness name, what it asks for, and the address and User-Agent the request came from. Check that they are the remote host you are working on, then press **Allow**. Opening the link never approves anything by itself; only the Allow button does. Never allow a code someone sent you.
-4. Within a few seconds the harness finishes on its own. It now holds exactly what the browser sign-in gives (1-hour access token, 30-day rotating refresh token), lists on `/harnesses` and is disconnected there like any other.
+```jsonc
+// OpenCode: opencode.json (project or ~/.config/opencode/opencode.json)
+{ "$schema": "https://opencode.ai/config.json",
+  "mcp": { "mcp-gateway": { "type": "local", "enabled": true,
+                            "command": ["mcp-gateway", "proxy", "--gateway", "https://gw.example.com"] } } }
+```
 
-The code is valid for `GATEWAY_OAUTH_CODE_TTL` (10 minutes). The same `/activate` page enrolls machines (`mcp-gateway login`, [machines.md](machines.md)); it tells you which kind of request a code belongs to.
+```bash
+# Claude Code (or any harness that takes a stdio command)
+claude mcp add gateway -- mcp-gateway proxy --gateway https://gw.example.com
+```
 
+```jsonc
+// .mcp.json / Claude Desktop / other mcpServers-style configs
+{ "mcpServers": { "gateway": { "command": "mcp-gateway", "args": ["proxy", "--gateway", "https://gw.example.com"] } } }
+```
 
-OpenCode (as of 1.x) sends static headers for remote MCP servers, so use a generated token:
+Instead of `--gateway`, set `MCP_GATEWAY_URL` in the harness's environment or `gateway:` in `~/.config/mcp-gateway/config.yaml`; on a machine enrolled with `mcp-gateway login` the proxy also falls back to that machine's gateway. With just `"command": ["mcp-gateway", "proxy"]` the gateway comes from one of those.
+
+**First run.** The proxy registers itself (`POST /oauth/register`, public client `mcp-gateway proxy (<hostname>)`, grants `device_code` + `refresh_token`) and prints to **stderr** (the harness's MCP log; stdout carries only MCP messages):
+
+```
+mcp-gateway proxy: sign in to https://gw.example.com to connect this harness.
+To sign in, open https://gw.example.com/activate and enter BCDF-GHJK
+  or open https://gw.example.com/activate?code=BCDF-GHJK
+The page shows the client "mcp-gateway proxy (devbox)". Waiting for approval...
+```
+
+Open the link on **any** device signed in to the portal (your laptop's browser, your phone), check the client name and the address it came from, press **Allow**. The harness's first request waits until then; if the harness gives up first, restart it after allowing, or sign in ahead of time from a terminal on that host with `mcp-gateway proxy --login --gateway https://gw.example.com` (it signs in and exits). Deny or a code left for 10 minutes ends the proxy with an error.
+
+**Afterwards** the access token (1 hour) lives in the proxy's memory only and is renewed a minute before it expires, or once after a `401` (the request is then retried once). The rotating refresh token is stored after every renewal, per user and host and per gateway, independent of machine enrollment: in the macOS keychain (service `mcp-gateway-proxy`, account = the gateway URL) or, with `--key-store file` and on Linux, in `~/.config/mcp-gateway/proxy/<id>.token` (0600), next to `<id>.json` (client id and scope, no secret) and `<id>.lock`, where `<id>` is the first 16 hex digits of SHA-256(gateway URL). Several harnesses on the same host share that sign-in; the lock makes their renewals take turns, so none presents a refresh token another already rotated (which would revoke the family). *Disconnect* on `/harnesses` (or a lapsed portal sign-in) ends it: the next renewal answers `invalid_grant` and the proxy shows a new code. Delete the files (or the keychain item) to forget the sign-in.
+
+| Flag | |
+|---|---|
+| `--gateway URL` | gateway base URL (default `$MCP_GATEWAY_URL`, then `gateway` in `config.yaml`, then the enrolled machine's gateway) |
+| `--scope mcp\|mcp:read` | `mcp:read` limits the harness to read tools; changing it signs in again |
+| `--login` | sign in if needed and exit |
+| `--key-store keychain\|file` | where the refresh token goes (keychain is the macOS default) |
+| `--config PATH`, `--verbose` | as for the other commands; debug lines go to stderr and never contain tokens |
+
+Messages are forwarded as they come, concurrently (a slow tool call does not hold up the others), and answers are written one per line; JSON and `text/event-stream` answers are both understood, and notifications (`202`) produce no output. The proxy keeps `MCP-Protocol-Version` from the `initialize` answer (and a `Mcp-Session-Id` if the gateway ever sends one). When stdin closes it writes the answers still in flight and exits. Not supported on Windows yet.
+
+## OpenCode
+
+Use `mcp-gateway proxy` as above (recommended: no token in the config, works over SSH). OpenCode (as of 1.x) sends only static headers for remote MCP servers, so the alternative is a generated token:
 
 ```jsonc
 // opencode.json
@@ -56,6 +92,17 @@ OpenCode (as of 1.x) sends static headers for remote MCP servers, so use a gener
 ```
 
 `/tokens/new` renders this snippet with the token filled in. When OpenCode gains OAuth support it will work like Claude Code: the discovery below is standard.
+
+## Harnesses on a remote host (device flow)
+
+A harness running over SSH on another machine cannot receive the browser's loopback redirect. Harnesses that implement the OAuth 2.0 Device Authorization Grant (RFC 8628) sign in with a code instead (`mcp-gateway proxy` does this for any stdio harness):
+
+1. The harness registers for the grant (`grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]`, public client, no redirect URIs needed) and calls `POST /oauth/device_authorization`.
+2. It prints a code like `BCDF-GHJK` and a link, `<base>/activate` (or `<base>/activate?code=BCDF-GHJK`).
+3. Open the link in any browser **signed in** to the portal (or enter the code there; case and dash do not matter). The page shows the harness name, what it asks for, and the address and User-Agent the request came from. Check that they are the remote host you are working on, then press **Allow**. Opening the link never approves anything by itself; only the Allow button does. Never allow a code someone sent you.
+4. Within a few seconds the harness finishes on its own. It now holds exactly what the browser sign-in gives (1-hour access token, 30-day rotating refresh token), lists on `/harnesses` and is disconnected there like any other.
+
+The code is valid for `GATEWAY_OAUTH_CODE_TTL` (10 minutes). The same `/activate` page enrolls machines (`mcp-gateway login`, [machines.md](machines.md)); it tells you which kind of request a code belongs to.
 
 ## What the harness does (the discovery flow)
 
