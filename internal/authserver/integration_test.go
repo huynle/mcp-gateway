@@ -444,3 +444,86 @@ func TestIntegrationSigningKeysAndPrune(t *testing.T) {
 		t.Errorf("pruned client still usable: %d %v", status, out)
 	}
 }
+
+// TestIntegrationDeviceFlowOnPostgres runs the device authorization grant
+// against the real tables: pending, slow_down, approval, redemption into
+// a refresh-token family, replay revoking it, and pruning.
+func TestIntegrationDeviceFlowOnPostgres(t *testing.T) {
+	w := newPGWorld(t)
+	ctx := t.Context()
+	reg, err := w.svc.Register(ctx, authserver.RegistrationRequest{ClientName: "Remote Claude", GrantTypes: []string{authserver.GrantDeviceCode, "refresh_token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"client_id": {reg.ClientID}, "scope": {"mcp"}, "resource": {w.cfg.Resource()}}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, authserver.DeviceAuthorizationPath, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "remote-harness/1.0\x00\xff")
+	rec := httptest.NewRecorder()
+	w.svc.ServeDeviceAuthorization(rec, req)
+	var da map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &da)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("device_authorization: %d %s", rec.Code, rec.Body)
+	}
+	dc, uc := da["device_code"].(string), da["user_code"].(string)
+	poll := func() (int, map[string]any) {
+		form := url.Values{"grant_type": {authserver.GrantDeviceCode}, "device_code": {dc}, "client_id": {reg.ClientID}}
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, authserver.TokenPath, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		w.svc.ServeToken(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	if _, out := poll(); out["error"] != "authorization_pending" {
+		t.Fatalf("first poll: %v", out)
+	}
+	if _, out := poll(); out["error"] != "slow_down" {
+		t.Fatalf("second poll: %v", out)
+	}
+	v, err := w.svc.LookupDeviceGrant(ctx, strings.ToLower(uc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.ClientName != "Remote Claude" || v.UserAgent != "remote-harness/1.0" || v.RequestIP == "" {
+		t.Errorf("view = %+v", v)
+	}
+	if _, err := w.svc.ApproveDeviceGrant(ctx, w.bob, v.ID); err != nil {
+		t.Fatal(err)
+	}
+	status, out := poll()
+	if status != http.StatusOK {
+		t.Fatalf("redeem: %d %v", status, out)
+	}
+	p, err := w.svc.Authenticator().Authenticate(ctx, out["access_token"].(string))
+	if err != nil || p.UserID != w.bob {
+		t.Fatalf("authenticate: %+v %v", p, err)
+	}
+	if status, out := poll(); status != http.StatusBadRequest || out["error"] != "invalid_grant" {
+		t.Fatalf("replay: %d %v", status, out)
+	}
+	var live int
+	err = w.st.WithJobs(ctx, func(tx store.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM oauth_refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL`, w.bob).Scan(&live)
+	})
+	if err != nil || live != 0 {
+		t.Errorf("live refresh tokens after device code replay = %d (%v)", live, err)
+	}
+	hs, err := w.svc.ListHarnesses(ctx, w.bob)
+	if err != nil || len(hs) != 1 || hs[0].ClientName != "Remote Claude" {
+		t.Errorf("bob's harnesses = %+v (%v)", hs, err)
+	}
+	w.svc.SetClock(func() time.Time { return time.Now().UTC().Add(time.Hour) })
+	if _, _, err := w.svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	err = w.st.WithJobs(ctx, func(tx store.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM oauth_device_grants`).Scan(&left)
+	})
+	if err != nil || left != 0 {
+		t.Errorf("device grants after prune = %d (%v)", left, err)
+	}
+}
