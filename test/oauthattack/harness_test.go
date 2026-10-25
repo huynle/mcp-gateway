@@ -40,6 +40,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
+	"github.com/huynle/mcp-gateway/internal/machines"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/portal"
@@ -229,6 +230,7 @@ func newGateway(t *testing.T, opts ...option) *gateway {
 	g := &gateway{env: map[string]string{
 		// Most cases register several clients; the flooding case lowers it.
 		authserver.EnvRegisterPerMin: "1000",
+		authserver.EnvDevicePerMin:   "1000",
 	}, clock: &fakeClock{now: t0}, audit: &auditLog{}, logs: newLogCapture()}
 	for _, o := range opts {
 		o(g)
@@ -297,6 +299,14 @@ func newGateway(t *testing.T, opts ...option) *gateway {
 	}
 	g.authSvc.MountPortal(p.MountUser, session)
 	idSvc.OnDisable(g.authSvc.DisableHook())
+	// /activate, as cmd/gateway mounts it (here without machine
+	// enrollment: harness device grants only).
+	activate := machines.NewPortal(nil, func(r *http.Request) (string, string, bool) {
+		userID, csrf := session(r)
+		return userID, csrf, false
+	}, log)
+	activate.SetHarnessGrants(g.authSvc)
+	activate.Mount(p.MountUser)
 
 	f := fake.New(fake.Options{AutoAccount: true})
 	registry := connectors.NewRegistry()
