@@ -74,9 +74,14 @@ func TestTokenEndpointHygiene(t *testing.T) {
 		wantOAuthError(t, g.token(t, url.Values{"client_id": {c.id}}), http.StatusBadRequest, "invalid_request")
 	})
 	t.Run("unknown_grant_type", func(t *testing.T) {
-		for _, gt := range []string{"password", "client_credentials", "implicit", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:jwt-bearer", "AUTHORIZATION_CODE"} {
+		for _, gt := range []string{"password", "client_credentials", "implicit", "urn:ietf:params:oauth:grant-type:jwt-bearer", "AUTHORIZATION_CODE"} {
 			wantOAuthError(t, g.token(t, url.Values{"grant_type": {gt}, "client_id": {c.id}}), http.StatusBadRequest, "unsupported_grant_type")
 		}
+	})
+	t.Run("device_code_grant_not_registered", func(t *testing.T) {
+		// Supported (RFC 8628), but only for clients registered for it.
+		wantOAuthError(t, g.token(t, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {c.id}, "device_code": {"gwd_x"}}), http.StatusBadRequest, "unauthorized_client")
+		wantOAuthError(t, g.token(t, url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "client_id": {c.id}}), http.StatusBadRequest, "unauthorized_client")
 	})
 	t.Run("missing_client_id", func(t *testing.T) {
 		wantOAuthError(t, g.token(t, url.Values{"grant_type": {"authorization_code"}, "code": {"x"}}), http.StatusBadRequest, "invalid_request")

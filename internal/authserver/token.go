@@ -18,7 +18,8 @@ import (
 )
 
 // The token endpoint (OAuth 2.1 section 3.2): authorization_code with
-// PKCE and refresh_token with rotation. Codes are single use; a replayed
+// PKCE, refresh_token with rotation and the device_code grant (RFC 8628,
+// device.go). Codes are single use; a replayed
 // code revokes the refresh-token family it produced (section 4.1.3). A
 // refresh token is exchanged for a successor in the same family and
 // marked rotated; presenting a rotated token again is reuse and revokes
@@ -67,8 +68,10 @@ func (s *Service) ServeToken(w http.ResponseWriter, r *http.Request) {
 		resp, terr = s.exchangeCode(r.Context(), client, form)
 	case GrantRefreshToken:
 		resp, terr = s.refreshTokens(r.Context(), client, form)
+	case GrantDeviceCode:
+		resp, terr = s.exchangeDeviceCode(r.Context(), client, form)
 	default:
-		terr = badRequest("unsupported_grant_type", "grant_type must be authorization_code or refresh_token")
+		terr = badRequest("unsupported_grant_type", "grant_type must be authorization_code, refresh_token or "+GrantDeviceCode)
 	}
 	if terr != nil {
 		s.writeTokenError(w, terr)
@@ -141,7 +144,7 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 	}
 	form := r.PostForm
 	// OAuth 2.1 section 3.2.2: no parameter may appear more than once.
-	if duplicated(form, "grant_type", "client_id", "client_secret", "code", "redirect_uri", "code_verifier", "refresh_token", "resource", "scope", "token") {
+	if duplicated(form, "grant_type", "client_id", "client_secret", "code", "redirect_uri", "code_verifier", "refresh_token", "resource", "scope", "token", "device_code") {
 		return nil, nil, badRequest("invalid_request", "a parameter is repeated")
 	}
 	clientID, secret := form.Get("client_id"), form.Get("client_secret")

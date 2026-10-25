@@ -396,6 +396,11 @@ func hostOf(raw string) string {
 
 // record files a user audit event; a failure is logged, never surfaced.
 func (s *Service) record(ctx context.Context, userID, familyID, action string, client *store.OAuthClient, decision, outcome string) {
+	s.recordWith(ctx, userID, familyID, action, client, decision, outcome, nil)
+}
+
+// recordWith is record with extra resource identity fields.
+func (s *Service) recordWith(ctx context.Context, userID, familyID, action string, client *store.OAuthClient, decision, outcome string, extra map[string]string) {
 	ev := audit.Event{
 		Time:             s.now(),
 		UserID:           userID,
@@ -404,6 +409,11 @@ func (s *Service) record(ctx context.Context, userID, familyID, action string, c
 		Decision:         decision,
 		Outcome:          outcome,
 		RequestID:        observability.RequestIDFromContext(ctx),
+	}
+	for k, v := range extra {
+		if v != "" {
+			ev.ResourceIdentity[k] = v
+		}
 	}
 	if client != nil {
 		ev.ResourceIdentity["client_id"] = client.ClientID

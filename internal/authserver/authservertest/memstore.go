@@ -25,6 +25,7 @@ type MemStore struct {
 	codes    map[string]*store.OAuthCode         // by row id
 	refresh  map[string]*store.OAuthRefreshToken // by row id
 	keys     map[string]*store.SigningKey        // by row id
+	devices  map[string]*store.OAuthDeviceGrant  // by row id
 	FailWith error                               // when set, every transaction fails with it (outage)
 	// Now is the clock the store stamps created_at / issued_at with (the
 	// database's now() in production); tests set it to their fake clock.
@@ -39,6 +40,7 @@ func NewMemStore() *MemStore {
 		codes:   map[string]*store.OAuthCode{},
 		refresh: map[string]*store.OAuthRefreshToken{},
 		keys:    map[string]*store.SigningKey{},
+		devices: map[string]*store.OAuthDeviceGrant{},
 		Now:     time.Now,
 	}
 }
@@ -86,6 +88,18 @@ func (m *MemStore) Codes() []store.OAuthCode {
 	for _, c := range m.codes {
 		out = append(out, *c)
 	}
+	return out
+}
+
+// DeviceGrants returns copies of every device grant row, oldest first.
+func (m *MemStore) DeviceGrants() []store.OAuthDeviceGrant {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.OAuthDeviceGrant
+	for _, g := range m.devices {
+		out = append(out, *g)
+	}
+	slices.SortFunc(out, func(a, b store.OAuthDeviceGrant) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	return out
 }
 
@@ -161,6 +175,15 @@ func (t *memTx) FindClientByClientID(_ context.Context, clientID string) (*store
 	return nil, store.ErrNotFound
 }
 
+func (t *memTx) GetClient(_ context.Context, id string) (*store.OAuthClient, error) {
+	c, ok := t.m.clients[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	cp := *c
+	return &cp, nil
+}
+
 func (t *memTx) TouchClient(_ context.Context, id string, at time.Time) error {
 	if c, ok := t.m.clients[id]; ok {
 		c.LastUsedAt = &at
@@ -195,6 +218,11 @@ func (t *memTx) PruneClients(_ context.Context, idleBefore time.Time) (int64, er
 			for rid, r := range t.m.refresh {
 				if r.ClientID == id {
 					delete(t.m.refresh, rid)
+				}
+			}
+			for did, g := range t.m.devices {
+				if g.ClientID == id {
+					delete(t.m.devices, did)
 				}
 			}
 			n++
@@ -353,6 +381,103 @@ func (t *memTx) ListHarnesses(_ context.Context, userID string) ([]store.Harness
 	}
 	slices.SortFunc(out, func(a, b store.Harness) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	return out, nil
+}
+
+// Device grants are jobs-only in PostgreSQL: under AsUser they are not
+// reachable at all.
+func (t *memTx) bypassOnly() error {
+	if t.scope != "" {
+		return fmt.Errorf("store: oauth_device_grants: permission denied (SQLSTATE 42501)")
+	}
+	return nil
+}
+
+func (t *memTx) CreateDeviceGrant(_ context.Context, g *store.OAuthDeviceGrant) error {
+	if err := t.bypassOnly(); err != nil {
+		return err
+	}
+	for _, e := range t.m.devices {
+		if bytes.Equal(e.UserCodeHash, g.UserCodeHash) {
+			return store.ErrUserCodeTaken
+		}
+		if bytes.Equal(e.DeviceCodeHash, g.DeviceCodeHash) {
+			return fmt.Errorf("store: create device grant: duplicate device code")
+		}
+	}
+	g.ID = t.m.id("device")
+	g.Status = store.OAuthDevicePending
+	g.CreatedAt = t.m.Now()
+	cp := *g
+	t.m.devices[g.ID] = &cp
+	return nil
+}
+
+func (t *memTx) CountPendingDeviceGrants(_ context.Context, clientID string, at time.Time) (int64, error) {
+	if err := t.bypassOnly(); err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, g := range t.m.devices {
+		if g.ClientID == clientID && g.Status == store.OAuthDevicePending && g.ExpiresAt.After(at) {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (t *memTx) findDevice(match func(*store.OAuthDeviceGrant) bool) (*store.OAuthDeviceGrant, error) {
+	if err := t.bypassOnly(); err != nil {
+		return nil, err
+	}
+	for _, g := range t.m.devices {
+		if match(g) {
+			cp := *g
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (t *memTx) FindDeviceGrantByUserCode(_ context.Context, hash []byte) (*store.OAuthDeviceGrant, error) {
+	return t.findDevice(func(g *store.OAuthDeviceGrant) bool { return bytes.Equal(g.UserCodeHash, hash) })
+}
+
+func (t *memTx) LockDeviceGrant(_ context.Context, hash []byte) (*store.OAuthDeviceGrant, error) {
+	return t.findDevice(func(g *store.OAuthDeviceGrant) bool { return bytes.Equal(g.DeviceCodeHash, hash) })
+}
+
+func (t *memTx) LockDeviceGrantByID(_ context.Context, id string) (*store.OAuthDeviceGrant, error) {
+	return t.findDevice(func(g *store.OAuthDeviceGrant) bool { return g.ID == id })
+}
+
+func (t *memTx) UpdateDeviceGrant(_ context.Context, g *store.OAuthDeviceGrant) error {
+	if err := t.bypassOnly(); err != nil {
+		return err
+	}
+	e, ok := t.m.devices[g.ID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if (g.Status == store.OAuthDevicePending) != (g.UserID == "") || (g.FamilyID != nil && g.Status != store.OAuthDeviceRedeemed) {
+		return fmt.Errorf("store: update device grant: check constraint (SQLSTATE 23514)")
+	}
+	e.Status, e.UserID, e.Interval, e.LastPolledAt = g.Status, g.UserID, g.Interval, g.LastPolledAt
+	e.DecidedAt, e.RedeemedAt, e.FamilyID = g.DecidedAt, g.RedeemedAt, g.FamilyID
+	return nil
+}
+
+func (t *memTx) DeleteExpiredDeviceGrants(_ context.Context, before time.Time) (int64, error) {
+	if err := t.bypassOnly(); err != nil {
+		return 0, err
+	}
+	var n int64
+	for id, g := range t.m.devices {
+		if g.ExpiresAt.Before(before) {
+			delete(t.m.devices, id)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (t *memTx) FindUserAuthFacts(_ context.Context, userID string) (*store.UserAuthFacts, error) {

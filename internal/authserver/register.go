@@ -23,7 +23,9 @@ import (
 // https or loopback http, every address gets RegisterPerMin registrations
 // a minute, and at most MaxUnusedClients registrations that never
 // completed a sign-in are kept, the rest being pruned after ClientIdle.
-// Clients are public (PKCE, no secret) unless they ask for a secret.
+// Clients are public (PKCE, no secret) unless they ask for a secret. A
+// client registered for the device grant (RFC 8628) is public, and needs
+// redirect URIs only when it also uses the authorization code grant.
 
 // Registration limits.
 const (
@@ -48,12 +50,14 @@ const (
 const (
 	GrantAuthorizationCode = "authorization_code"
 	GrantRefreshToken      = "refresh_token"
-	ResponseTypeCode       = "code"
+	// GrantDeviceCode is the device authorization grant (RFC 8628).
+	GrantDeviceCode  = "urn:ietf:params:oauth:grant-type:device_code"
+	ResponseTypeCode = "code"
 )
 
 var (
 	authMethodsSupported = []string{AuthMethodNone, AuthMethodSecretPost, AuthMethodSecretBasic}
-	grantTypesSupported  = []string{GrantAuthorizationCode, GrantRefreshToken}
+	grantTypesSupported  = []string{GrantAuthorizationCode, GrantRefreshToken, GrantDeviceCode}
 )
 
 // RegistrationRequest is the RFC 7591 client metadata this server reads.
@@ -217,8 +221,13 @@ func validateRegistration(req RegistrationRequest) (clientMetadata, *Registratio
 	bad := func(code, format string, args ...any) (clientMetadata, *RegistrationResponse, error) {
 		return clientMetadata{}, nil, &RegistrationError{Code: code, Description: fmt.Sprintf(format, args...)}
 	}
+	grants := req.GrantTypes
+	if len(grants) == 0 {
+		grants = []string{GrantAuthorizationCode, GrantRefreshToken}
+	}
+	codeFlow := slices.Contains(grants, GrantAuthorizationCode)
 	switch {
-	case len(req.RedirectURIs) == 0:
+	case len(req.RedirectURIs) == 0 && codeFlow:
 		return bad("invalid_redirect_uri", "redirect_uris is required")
 	case len(req.RedirectURIs) > MaxRedirectURIs:
 		return bad("invalid_redirect_uri", "at most %d redirect_uris", MaxRedirectURIs)
@@ -239,21 +248,26 @@ func validateRegistration(req RegistrationRequest) (clientMetadata, *Registratio
 	if !slices.Contains(authMethodsSupported, method) {
 		return bad("invalid_client_metadata", "token_endpoint_auth_method %q is not supported", method)
 	}
-	grants := req.GrantTypes
-	if len(grants) == 0 {
-		grants = []string{GrantAuthorizationCode, GrantRefreshToken}
-	}
 	for _, g := range grants {
 		if !slices.Contains(grantTypesSupported, g) {
 			return bad("invalid_client_metadata", "grant_type %q is not supported", g)
 		}
 	}
-	if !slices.Contains(grants, GrantAuthorizationCode) {
-		return bad("invalid_client_metadata", "grant_types must include authorization_code")
+	deviceFlow := slices.Contains(grants, GrantDeviceCode)
+	switch {
+	case !codeFlow && !deviceFlow:
+		return bad("invalid_client_metadata", "grant_types must include authorization_code or %s", GrantDeviceCode)
+	case deviceFlow && method != AuthMethodNone:
+		return bad("invalid_client_metadata", "the device_code grant is for public clients (token_endpoint_auth_method none)")
 	}
 	responses := req.ResponseTypes
-	if len(responses) == 0 {
+	switch {
+	case len(responses) == 0 && codeFlow:
 		responses = []string{ResponseTypeCode}
+	case len(responses) == 0:
+		responses = []string{}
+	case !codeFlow:
+		return bad("invalid_client_metadata", "response_types must be empty without the authorization_code grant")
 	}
 	for _, rt := range responses {
 		if rt != ResponseTypeCode {

@@ -14,7 +14,8 @@ type Store interface {
 	// Bypass runs fn in one transaction that sees every row: client
 	// registration and lookup, the token endpoint (no user is known until
 	// the code or refresh token is), the JWT authenticator's owner check,
-	// signing keys, the disable hook and the pruning job.
+	// signing keys, the disable hook, the pruning job and every device
+	// grant operation (no user is known before approval).
 	Bypass(ctx context.Context, fn func(Tx) error) error
 	// AsUser runs fn scoped to userID: consent (the code is the user's) and
 	// the connected-harnesses page, where row-level security hides
@@ -27,6 +28,8 @@ type Store interface {
 type Tx interface {
 	CreateClient(ctx context.Context, c *store.OAuthClient) error
 	FindClientByClientID(ctx context.Context, clientID string) (*store.OAuthClient, error)
+	// GetClient finds a client by its row id.
+	GetClient(ctx context.Context, id string) (*store.OAuthClient, error)
 	TouchClient(ctx context.Context, id string, at time.Time) error
 	CountUnusedClients(ctx context.Context) (int64, error)
 	PruneClients(ctx context.Context, idleBefore time.Time) (int64, error)
@@ -49,6 +52,19 @@ type Tx interface {
 	RevokeRefreshFamily(ctx context.Context, familyID string, at time.Time) (int64, error)
 	RevokeUserRefreshTokens(ctx context.Context, userID string, at time.Time) (int64, error)
 	ListHarnesses(ctx context.Context, userID string) ([]store.Harness, error)
+
+	// CreateDeviceGrant stores a pending device grant;
+	// store.ErrUserCodeTaken when the user code is held by another grant
+	// or a machine device request.
+	CreateDeviceGrant(ctx context.Context, g *store.OAuthDeviceGrant) error
+	CountPendingDeviceGrants(ctx context.Context, clientID string, at time.Time) (int64, error)
+	FindDeviceGrantByUserCode(ctx context.Context, hash []byte) (*store.OAuthDeviceGrant, error)
+	// LockDeviceGrant / LockDeviceGrantByID hold the row until the
+	// transaction ends, so a poll and an approval never interleave.
+	LockDeviceGrant(ctx context.Context, deviceCodeHash []byte) (*store.OAuthDeviceGrant, error)
+	LockDeviceGrantByID(ctx context.Context, id string) (*store.OAuthDeviceGrant, error)
+	UpdateDeviceGrant(ctx context.Context, g *store.OAuthDeviceGrant) error
+	DeleteExpiredDeviceGrants(ctx context.Context, before time.Time) (int64, error)
 
 	FindUserAuthFacts(ctx context.Context, userID string) (*store.UserAuthFacts, error)
 
@@ -82,6 +98,10 @@ func (t pgTx) CreateClient(ctx context.Context, c *store.OAuthClient) error {
 
 func (t pgTx) FindClientByClientID(ctx context.Context, clientID string) (*store.OAuthClient, error) {
 	return store.FindOAuthClientByClientID(ctx, t.tx, clientID)
+}
+
+func (t pgTx) GetClient(ctx context.Context, id string) (*store.OAuthClient, error) {
+	return t.tx.OAuth().GetClient(ctx, id)
 }
 
 func (t pgTx) TouchClient(ctx context.Context, id string, at time.Time) error {
@@ -138,6 +158,34 @@ func (t pgTx) RevokeUserRefreshTokens(ctx context.Context, userID string, at tim
 
 func (t pgTx) ListHarnesses(ctx context.Context, userID string) ([]store.Harness, error) {
 	return store.ListOAuthHarnesses(ctx, t.tx, userID)
+}
+
+func (t pgTx) CreateDeviceGrant(ctx context.Context, g *store.OAuthDeviceGrant) error {
+	return store.CreateOAuthDeviceGrant(ctx, t.tx, g)
+}
+
+func (t pgTx) CountPendingDeviceGrants(ctx context.Context, clientID string, at time.Time) (int64, error) {
+	return store.CountPendingOAuthDeviceGrants(ctx, t.tx, clientID, at)
+}
+
+func (t pgTx) FindDeviceGrantByUserCode(ctx context.Context, hash []byte) (*store.OAuthDeviceGrant, error) {
+	return store.FindOAuthDeviceGrantByUserCode(ctx, t.tx, hash)
+}
+
+func (t pgTx) LockDeviceGrant(ctx context.Context, deviceCodeHash []byte) (*store.OAuthDeviceGrant, error) {
+	return store.LockOAuthDeviceGrant(ctx, t.tx, deviceCodeHash)
+}
+
+func (t pgTx) LockDeviceGrantByID(ctx context.Context, id string) (*store.OAuthDeviceGrant, error) {
+	return store.LockOAuthDeviceGrantByID(ctx, t.tx, id)
+}
+
+func (t pgTx) UpdateDeviceGrant(ctx context.Context, g *store.OAuthDeviceGrant) error {
+	return store.UpdateOAuthDeviceGrant(ctx, t.tx, g)
+}
+
+func (t pgTx) DeleteExpiredDeviceGrants(ctx context.Context, before time.Time) (int64, error) {
+	return store.DeleteExpiredOAuthDeviceGrants(ctx, t.tx, before)
 }
 
 func (t pgTx) FindUserAuthFacts(ctx context.Context, userID string) (*store.UserAuthFacts, error) {
