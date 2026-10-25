@@ -253,6 +253,9 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 	}
 	req := &authorizeRequest{client: client, redirectURI: redirectURI, state: q.Get("state")}
 	meta := clientMeta(client)
+	if !slices.Contains(meta.GrantTypes, GrantAuthorizationCode) {
+		return req, &protocolError{"unauthorized_client", "the client is not registered for the authorization_code grant"}
+	}
 	if duplicated(q, "response_type", "state", "code_challenge", "code_challenge_method", "scope") {
 		return req, &protocolError{"invalid_request", "a parameter is repeated"}
 	}
@@ -482,7 +485,9 @@ func (s *Service) recordWith(ctx context.Context, userID, familyID, action strin
 }
 
 // clientMeta decodes a stored client's metadata with the defaults a
-// registration without those fields received.
+// registration without those fields received (grant types
+// authorization_code + refresh_token; response type code only for a
+// client with the authorization_code grant).
 func clientMeta(c *store.OAuthClient) clientMetadata {
 	var m clientMetadata
 	_ = json.Unmarshal(c.Metadata, &m)
@@ -492,7 +497,7 @@ func clientMeta(c *store.OAuthClient) clientMetadata {
 	if len(m.GrantTypes) == 0 {
 		m.GrantTypes = []string{GrantAuthorizationCode, GrantRefreshToken}
 	}
-	if len(m.ResponseTypes) == 0 {
+	if len(m.ResponseTypes) == 0 && slices.Contains(m.GrantTypes, GrantAuthorizationCode) {
 		m.ResponseTypes = []string{ResponseTypeCode}
 	}
 	return m

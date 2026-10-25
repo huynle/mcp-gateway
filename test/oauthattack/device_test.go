@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/authserver"
+	"github.com/huynle/mcp-gateway/internal/store"
 )
 
 // Device authorization grant (RFC 8628; RFC 8628 section 5 security
@@ -325,4 +326,37 @@ func TestDeviceAuthorizationFlooding(t *testing.T) {
 	if r.header.Get("Retry-After") == "" {
 		t.Error("no Retry-After")
 	}
+}
+
+// A client registered only for the device grant cannot use the
+// authorization code flow: registration refuses its redirect URIs, and a
+// stored device-only client that has one (an older registration) gets
+// unauthorized_client at /oauth/authorize, at consent and at the token
+// endpoint, never a code.
+func TestDeviceOnlyClientCannotUseTheCodeFlow(t *testing.T) {
+	g := newGateway(t)
+	r := g.registerDoc(t, map[string]any{"grant_types": []string{authserver.GrantDeviceCode, "refresh_token"}, "redirect_uris": []string{"http://localhost:7777/cb"}})
+	wantOAuthError(t, r, http.StatusBadRequest, "invalid_redirect_uri")
+
+	// Without redirect URIs the authorization endpoint has nowhere to
+	// send it: an error page.
+	dev := g.deviceClient(t)
+	p := newPKCE(t)
+	br := g.browser(t, true)
+	wantErrorPage(t, g.authorize(t, br, g.authorizeParams(client{id: dev.id, redirect: "http://localhost:7777/cb"}, p, "s1")))
+
+	// A stored device-only client with a registered redirect URI.
+	stored := &store.OAuthClient{ClientID: "gwc_stored_device_only", ClientName: "Stored", RedirectURIs: []string{"http://localhost:7777/cb"},
+		Metadata: []byte(`{"token_endpoint_auth_method":"none","grant_types":["` + authserver.GrantDeviceCode + `","refresh_token"],"response_types":[]}`)}
+	if err := g.astore.Bypass(t.Context(), func(tx authserver.Tx) error { return tx.CreateClient(t.Context(), stored) }); err != nil {
+		t.Fatal(err)
+	}
+	c := client{id: stored.ClientID, redirect: "http://localhost:7777/cb"}
+	q := g.authorizeParams(c, p, "s2")
+	wantRedirectError(t, g.authorize(t, br, q), c.redirect, "unauthorized_client", "s2")
+	wantRedirectError(t, g.consent(t, br, q, "approve"), c.redirect, "unauthorized_client", "s2")
+	if n := len(g.astore.Codes()); n != 0 {
+		t.Fatalf("%d codes issued to a device-only client", n)
+	}
+	wantOAuthError(t, g.token(t, g.exchangeForm(c, "any-code", p)), http.StatusBadRequest, "unauthorized_client")
 }

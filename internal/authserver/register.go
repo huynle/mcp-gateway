@@ -259,6 +259,8 @@ func validateRegistration(req RegistrationRequest) (clientMetadata, *Registratio
 		return bad("invalid_client_metadata", "grant_types must include authorization_code or %s", GrantDeviceCode)
 	case deviceFlow && method != AuthMethodNone:
 		return bad("invalid_client_metadata", "the device_code grant is for public clients (token_endpoint_auth_method none)")
+	case len(req.RedirectURIs) > 0 && !codeFlow:
+		return bad("invalid_redirect_uri", "redirect_uris are only for the authorization_code grant, which grant_types does not include")
 	}
 	responses := req.ResponseTypes
 	switch {

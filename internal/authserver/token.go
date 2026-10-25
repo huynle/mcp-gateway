@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -198,7 +199,10 @@ func (s *Service) parseClientRequest(w http.ResponseWriter, r *http.Request) (ur
 // family it must revoke, and a failed check still burns the code.
 func (s *Service) exchangeCode(ctx context.Context, client *store.OAuthClient, form url.Values) (*tokenResponse, *tokenError) {
 	code, verifier := form.Get("code"), form.Get("code_verifier")
+	meta := clientMeta(client)
 	switch {
+	case !slices.Contains(meta.GrantTypes, GrantAuthorizationCode):
+		return nil, badRequest("unauthorized_client", "the client is not registered for the authorization_code grant")
 	case code == "":
 		return nil, badRequest("invalid_request", "code is required")
 	case verifier == "":
@@ -211,13 +215,7 @@ func (s *Service) exchangeCode(ctx context.Context, client *store.OAuthClient, f
 	var consumed bool
 	var terr *tokenError
 	var refreshRaw, familyID string
-	meta := clientMeta(client)
-	wantRefresh := false
-	for _, g := range meta.GrantTypes {
-		if g == GrantRefreshToken {
-			wantRefresh = true
-		}
-	}
+	wantRefresh := slices.Contains(meta.GrantTypes, GrantRefreshToken)
 	err := s.st.Bypass(ctx, func(tx Tx) error {
 		var err error
 		row, consumed, err = tx.ConsumeCode(ctx, hashSecret(code), now)
@@ -307,7 +305,10 @@ func (s *Service) revokeFamilyOnReplay(ctx context.Context, row *store.OAuthCode
 // detection.
 func (s *Service) refreshTokens(ctx context.Context, client *store.OAuthClient, form url.Values) (*tokenResponse, *tokenError) {
 	raw := form.Get("refresh_token")
-	if raw == "" {
+	switch {
+	case !slices.Contains(clientMeta(client).GrantTypes, GrantRefreshToken):
+		return nil, badRequest("unauthorized_client", "the client is not registered for the refresh_token grant")
+	case raw == "":
 		return nil, badRequest("invalid_request", "refresh_token is required")
 	}
 	now := s.now()
