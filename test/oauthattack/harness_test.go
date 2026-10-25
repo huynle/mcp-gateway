@@ -486,6 +486,35 @@ func (r reply) location() *url.URL {
 	return u
 }
 
+// callback asserts the answer to an approved consent for a loopback
+// redirect URI, the 200 page that sends the browser on (meta refresh +
+// Continue link) and shows the callback as a curl command for a harness
+// on another host, and returns the callback URL it links to. The page
+// carries the code, so it is never cached, never framed and never sent as
+// a Referer; it has no Location.
+func (r reply) callback(t *testing.T) *url.URL {
+	t.Helper()
+	if r.status != http.StatusOK {
+		t.Fatalf("approve: status %d, want the 200 callback page; Location %q; body %.300s", r.status, r.header.Get("Location"), r.body)
+	}
+	for name, want := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"} {
+		if got := r.header.Get(name); got != want {
+			t.Errorf("callback page %s = %q, want %q", name, got, want)
+		}
+	}
+	if csp := r.header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("callback page Content-Security-Policy = %q", csp)
+	}
+	if loc := r.header.Get("Location"); loc != "" {
+		t.Errorf("callback page carries Location %q", loc)
+	}
+	u, err := authservertest.CallbackURL(r.status, r.header, r.body)
+	if err != nil {
+		t.Fatalf("callback page: %v; body %.300s", err, r.body)
+	}
+	return u
+}
+
 // oauthError decodes an RFC 6749 error body.
 func (r reply) oauthError() (code, description string) {
 	var e struct {

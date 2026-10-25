@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {{template "page.head"}}
+  {{if .AutoRedirect}}<meta http-equiv="refresh" content="1;url={{.CallbackURL}}">{{end}}
+  <title>{{.Title}} · MCP Gateway</title>
+</head>
+<body>
+{{template "nav" navData}}
+<main>
+<div class="auth">
+<section class="panel consent">
+  <h1>{{.Title}}</h1>
+  {{if .AutoRedirect}}
+  <p>Returning to <strong>{{.ClientName}}</strong> on this computer. If nothing happens, choose Continue.</p>
+  {{else}}
+  <p><strong>{{.ClientName}}</strong> is approved. Finish the sign-in on the machine where the harness runs (below).</p>
+  {{end}}
+  <div class="panel-foot"><a class="btn primary" id="callback-link" href="{{.CallbackURL}}">{{icon "check"}}Continue</a></div>
+  <h2>Is the harness on another machine (SSH)?</h2>
+  <p>The redirect above goes to this computer. Run this on the machine where the harness runs:</p>
+  <div class="copyable"><pre id="callback-curl">{{.CurlCommand}}</pre><button type="button" class="btn small" data-copy="text" data-copy-target="callback-curl" hidden>{{icon "copy"}}Copy</button></div>
+  <p class="hint">It works once, within {{.CodeTTL}} of choosing Allow, and only while the harness is still waiting for the sign-in. Do not share it.</p>
+  <p class="muted">For harnesses on remote hosts, <code>mcp-gateway proxy</code> signs in with a code you approve at <code>/activate</code> instead, with no redirect to this computer (see the harness setup guide).</p>
+</section>
+</div>
+</main>
+{{template "footer"}}
+<script src="{{asset "copy.js"}}" defer></script>
+</body>
+</html>

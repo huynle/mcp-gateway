@@ -28,7 +28,7 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-// parseTemplates builds the consent, harnesses and error pages.
+// parseTemplates builds the consent, callback, harnesses and error pages.
 func parseTemplates() (*template.Template, error) {
 	return nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") },
@@ -46,6 +46,20 @@ type consentData struct {
 	Resource     string
 	Scopes       []string
 	Hidden       url.Values
+	// Loopback is set when the redirect URI is on the loopback interface:
+	// the page then offers the "harness on another machine" option.
+	Loopback bool
+}
+
+// callbackData is the page shown after Allow for a loopback redirect URI.
+type callbackData struct {
+	Title        string
+	CSRFToken    string
+	ClientName   string
+	CallbackURL  string
+	CurlCommand  string
+	CodeTTL      string
+	AutoRedirect bool
 }
 
 // harnessView is one row of the harnesses page.

@@ -88,10 +88,9 @@ func TestRedirectURILoopbackPortFlexibility(t *testing.T) {
 			if r := g.authorize(t, br, q); r.status != http.StatusOK {
 				t.Fatalf("authorize with another loopback port: %d %s", r.status, r.body)
 			}
-			r := g.consent(t, br, q, "approve")
-			loc := r.location()
-			if r.status != http.StatusSeeOther || loc.Host != host+":51234" || loc.Query().Get("code") == "" {
-				t.Fatalf("approve: %d %s", r.status, r.header.Get("Location"))
+			loc := g.consent(t, br, q, "approve").callback(t)
+			if loc.Host != host+":51234" || loc.Query().Get("code") == "" {
+				t.Fatalf("approve: callback %s", loc)
 			}
 			code := loc.Query().Get("code")
 			// The token request must name the redirect URI that was used,
@@ -108,7 +107,7 @@ func TestRedirectURILoopbackPortFlexibility(t *testing.T) {
 			p = newPKCE(t)
 			q = g.authorizeParams(c, p, "s2")
 			q.Set("redirect_uri", used)
-			code = g.consent(t, br, q, "approve").location().Query().Get("code")
+			code = g.consent(t, br, q, "approve").callback(t).Query().Get("code")
 			form = g.exchangeForm(c, code, p)
 			form.Set("redirect_uri", used)
 			if r := g.token(t, form); r.status != http.StatusOK {

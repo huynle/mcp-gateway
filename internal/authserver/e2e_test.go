@@ -199,6 +199,17 @@ func (r reply) location() *url.URL {
 	return u
 }
 
+// callback is where an approved consent sends the browser (the loopback
+// interstitial's Continue link, or a 303's Location).
+func (r reply) callback(t *testing.T) *url.URL {
+	t.Helper()
+	u, err := authservertest.CallbackURL(r.status, r.header, r.body)
+	if err != nil {
+		t.Fatalf("consent answer: %v; body: %.300s", err, r.body)
+	}
+	return u
+}
+
 // get and postForm run a request with the test context and drain the body.
 func get(t *testing.T, c *http.Client, u string) reply {
 	t.Helper()
@@ -320,9 +331,11 @@ func TestEndToEndOAuthFlow(t *testing.T) {
 	form.Set("action", "approve")
 	form.Set("_csrf", g.csrf(t, br))
 	r = postForm(t, br, base+"/oauth/authorize/consent", form)
-	loc := r.location()
-	if r.status != http.StatusSeeOther || loc.Host != "localhost:33333" || loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
-		t.Fatalf("consent: %d %s", r.status, r.header.Get("Location"))
+	// The redirect URI is on the loopback interface, so the answer is the
+	// callback page (it sends the browser on by itself), not a bare 303.
+	loc := r.callback(t)
+	if r.status != http.StatusOK || loc.Host != "localhost:33333" || loc.Query().Get("state") != "s1" || loc.Query().Get("code") == "" {
+		t.Fatalf("consent: %d %s", r.status, loc)
 	}
 	code := loc.Query().Get("code")
 
@@ -465,7 +478,7 @@ func TestDisableUserRevokesHarnesses(t *testing.T) {
 		"code_challenge": {challenge()}, "code_challenge_method": {"S256"}, "state": {"s"}, "resource": {base + "/mcp"},
 		"action": {"approve"}, "_csrf": {g.csrf(t, br)},
 	}
-	loc := postForm(t, br, base+"/oauth/authorize/consent", form).location()
+	loc := postForm(t, br, base+"/oauth/authorize/consent", form).callback(t)
 	r := postForm(t, hc, base+"/oauth/token", url.Values{
 		"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "redirect_uri": {"http://localhost:1/cb"},
 		"client_id": {reg.ClientID}, "code_verifier": {verifier},

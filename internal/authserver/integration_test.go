@@ -173,7 +173,7 @@ func (w *pgWorld) code(t *testing.T) string {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	w.svc.ServeConsent(rec, req)
-	loc := redirect(t, rec)
+	loc, _, _ := interstitial(t, rec)
 	if loc.Query().Get("code") == "" {
 		t.Fatalf("no code: %s", loc)
 	}

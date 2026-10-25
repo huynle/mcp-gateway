@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/huynle/mcp-gateway/internal/approvals"
+	"github.com/huynle/mcp-gateway/internal/authserver/authservertest"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/store"
 	"github.com/huynle/mcp-gateway/internal/tokens"
@@ -277,11 +278,16 @@ func (w *world) oauthFamily(u user) string {
 		form[k] = v
 	}
 	form.Set("action", "approve")
-	code, h, _ := w.post(u, "/oauth/authorize/consent", form)
-	if code != http.StatusSeeOther && code != http.StatusFound {
-		w.t.Fatalf("consent = %d", code)
+	// A loopback redirect URI: the answer is the 200 callback page (meta
+	// refresh + Continue link + curl command), not a bare 303.
+	code, h, consentPage := w.post(u, "/oauth/authorize/consent", form)
+	if code != http.StatusOK || h.Get("Cache-Control") != "no-store" || h.Get("Referrer-Policy") != "no-referrer" {
+		w.t.Fatalf("consent = %d (Cache-Control %q, Referrer-Policy %q)", code, h.Get("Cache-Control"), h.Get("Referrer-Policy"))
 	}
-	loc, _ := url.Parse(h.Get("Location"))
+	loc, err := authservertest.CallbackURL(code, h, []byte(consentPage))
+	if err != nil {
+		w.t.Fatalf("consent page: %v", err)
+	}
 	authCode := loc.Query().Get("code")
 	if authCode == "" {
 		w.t.Fatalf("no code in %s", loc)
