@@ -665,3 +665,43 @@ func TestDiscoveryRefusesForeignEndpoints(t *testing.T) {
 		t.Fatal("talked to the foreign endpoint")
 	}
 }
+
+// `echo '{...}' | mcp-gateway proxy`: stdin ends before the sign-in does;
+// the request still gets its answer once signed in.
+func TestEOFDuringSignInStillAnswers(t *testing.T) {
+	g := newFakeGateway(t)
+	g.devicePolls = []string{"authorization_pending", "authorization_pending", ""}
+	o := baseOptions(t, g, newFakeClock(), t.TempDir())
+	var out bytes.Buffer
+	stderr := &syncBuffer{}
+	o.Stdin = strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n")
+	o.Stdout, o.Stderr = &out, stderr
+	if err := Run(context.Background(), o); err != nil {
+		t.Fatalf("%v\n%s", err, stderr.String())
+	}
+	var m map[string]any
+	if err := json.Unmarshal(out.Bytes(), &m); err != nil || idOf(m) != 1 || m["error"] != nil {
+		t.Fatalf("stdout %q", out.String())
+	}
+	if _, dev, _, _ := g.snapshot(); len(dev) != 1 {
+		t.Fatalf("device flows %d (one code only)", len(dev))
+	}
+}
+
+// After a denied sign-in no request starts another device flow.
+func TestDeniedSignInIsFinal(t *testing.T) {
+	g := newFakeGateway(t)
+	g.devicePolls = []string{"access_denied"}
+	o := baseOptions(t, g, newFakeClock(), t.TempDir())
+	var lines strings.Builder
+	for i := range 5 {
+		lines.WriteString(`{"jsonrpc":"2.0","id":` + itoa(i) + `,"method":"ping"}` + "\n")
+	}
+	o.Stdin, o.Stdout, o.Stderr = strings.NewReader(lines.String()), io.Discard, io.Discard
+	if err := Run(context.Background(), o); !errors.Is(err, ErrSignInDenied) {
+		t.Fatalf("err %v", err)
+	}
+	if _, dev, _, _ := g.snapshot(); len(dev) != 1 {
+		t.Fatalf("device flows %d after a denial", len(dev))
+	}
+}

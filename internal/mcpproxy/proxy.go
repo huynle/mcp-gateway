@@ -148,8 +148,6 @@ func Run(ctx context.Context, o Options) error {
 func (b *bridge) serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	authCtx, authCancel := context.WithCancel(ctx)
-	defer authCancel()
 
 	fatal := make(chan error, 1)
 	report := func(err error) {
@@ -161,19 +159,22 @@ func (b *bridge) serve(ctx context.Context) error {
 			}
 		}
 	}
-	var wg sync.WaitGroup
 	// Sign in at once, so the code shows before the harness asks anything.
-	wg.Go(func() {
+	// Only this eager attempt stops when stdin closes; requests already
+	// read keep waiting for the sign-in and get their answers.
+	authCtx, authCancel := context.WithCancel(ctx)
+	defer authCancel()
+	eager := make(chan struct{})
+	go func() {
+		defer close(eager)
 		if _, err := b.ts.Token(authCtx); err != nil {
 			report(err)
-			if !errors.Is(err, context.Canceled) {
-				var se *signInError
-				if !errors.As(err, &se) {
-					say(b.o.Stderr, "mcp-gateway proxy: %v\n", err)
-				}
+			var se *signInError
+			if !errors.Is(err, context.Canceled) && !errors.As(err, &se) {
+				say(b.o.Stderr, "mcp-gateway proxy: %v\n", err)
 			}
 		}
-	})
+	}()
 
 	lines := make(chan []byte)
 	readErr := make(chan error, 1)
@@ -192,9 +193,11 @@ func (b *bridge) serve(ctx context.Context) error {
 		close(lines)
 	}()
 
-	sem := make(chan struct{}, b.o.MaxInFlight)
+	var requests sync.WaitGroup
 	finish := func(err error) error {
-		wg.Wait()
+		requests.Wait()
+		authCancel()
+		<-eager
 		select {
 		case ferr := <-fatal:
 			return ferr
@@ -202,13 +205,12 @@ func (b *bridge) serve(ctx context.Context) error {
 		}
 		return err
 	}
+	sem := make(chan struct{}, b.o.MaxInFlight)
 	for {
 		select {
 		case line, ok := <-lines:
 			if !ok {
-				// stdin closed: stop waiting for a sign-in, deliver the
-				// answers in flight, exit.
-				authCancel()
+				// stdin closed: deliver the answers in flight, then exit.
 				err := <-readErr
 				if err != nil {
 					err = fmt.Errorf("read stdin: %w", err)
@@ -223,14 +225,13 @@ func (b *bridge) serve(ctx context.Context) error {
 			case <-ctx.Done():
 				return finish(nil)
 			}
-			wg.Go(func() {
+			requests.Go(func() {
 				defer func() { <-sem }()
-				b.handle(ctx, authCtx, line, report)
+				b.handle(ctx, line, report)
 			})
 		case err := <-fatal:
 			cancel()
-			wg.Wait()
-			return err
+			return finish(err)
 		case <-ctx.Done():
 			return finish(nil)
 		}

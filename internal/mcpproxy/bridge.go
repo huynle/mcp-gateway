@@ -93,9 +93,9 @@ func inspect(body []byte) message {
 	return m
 }
 
-// handle forwards one line from stdin. authCtx ends waiting for a token
-// (stdin closed); ctx ends everything.
-func (b *bridge) handle(ctx, authCtx context.Context, line []byte, report func(error)) {
+// handle forwards one line from stdin; report gets token errors (a
+// failed sign-in ends the proxy).
+func (b *bridge) handle(ctx context.Context, line []byte, report func(error)) {
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
 		return
@@ -105,13 +105,9 @@ func (b *bridge) handle(ctx, authCtx context.Context, line []byte, report func(e
 		return
 	}
 	m := inspect(line)
-	tokCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stop := context.AfterFunc(authCtx, cancel)
-	defer stop()
 
 	for attempt := 0; ; attempt++ {
-		tok, err := b.ts.Token(tokCtx)
+		tok, err := b.ts.Token(ctx)
 		if err != nil {
 			report(err)
 			b.fail(m, "mcp-gateway proxy: not signed in to the gateway: "+err.Error())

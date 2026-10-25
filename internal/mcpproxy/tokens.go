@@ -47,6 +47,9 @@ type tokenSource struct {
 	ep     *endpoints
 	access string
 	expiry time.Time
+	// failed is the sign-in failure that ends the proxy: no request
+	// starts another device flow after it.
+	failed error
 	// unsaved holds a refresh token the store failed to persist: it is
 	// newer than the stored one.
 	unsaved string
@@ -56,19 +59,22 @@ func newTokenSource(o *Options, oc *oauthClient, store *credStore) *tokenSource 
 	return &tokenSource{o: o, oc: oc, store: store, sem: make(chan struct{}, 1)}
 }
 
-func (ts *tokenSource) current() (string, bool) {
+func (ts *tokenSource) current() (string, bool, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if ts.access != "" && ts.o.Now().Before(ts.expiry) {
-		return ts.access, true
+	if ts.failed != nil {
+		return "", false, ts.failed
 	}
-	return "", false
+	if ts.access != "" && ts.o.Now().Before(ts.expiry) {
+		return ts.access, true, nil
+	}
+	return "", false, nil
 }
 
 // Token returns a valid access token, renewing it when needed.
 func (ts *tokenSource) Token(ctx context.Context) (string, error) {
-	if tok, ok := ts.current(); ok {
-		return tok, nil
+	if tok, ok, err := ts.current(); ok || err != nil {
+		return tok, err
 	}
 	select {
 	case ts.sem <- struct{}{}:
@@ -76,10 +82,17 @@ func (ts *tokenSource) Token(ctx context.Context) (string, error) {
 		return "", ctx.Err()
 	}
 	defer func() { <-ts.sem }()
-	if tok, ok := ts.current(); ok {
-		return tok, nil
+	if tok, ok, err := ts.current(); ok || err != nil {
+		return tok, err
 	}
-	return ts.renew(ctx)
+	tok, err := ts.renew(ctx)
+	var se *signInError
+	if errors.As(err, &se) {
+		ts.mu.Lock()
+		ts.failed = err
+		ts.mu.Unlock()
+	}
+	return tok, err
 }
 
 // Invalidate drops tok after /mcp rejected it, so the next Token renews.
