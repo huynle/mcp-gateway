@@ -129,10 +129,12 @@ func (c *credStore) dropClient(ctx context.Context) error {
 	return nil
 }
 
-// lock takes the cross-process lock of this gateway's credentials.
-func (c *credStore) lock(ctx context.Context) (unlock func(), err error) {
+// lockWaiting takes the cross-process lock of this gateway's
+// credentials, calling waiting (when set) once if another process holds
+// it.
+func (c *credStore) lockWaiting(ctx context.Context, waiting func()) (unlock func(), err error) {
 	if err := os.MkdirAll(c.dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", c.dir, err)
 	}
-	return lockFile(ctx, c.lockPath())
+	return lockFile(ctx, c.lockPath(), waiting)
 }

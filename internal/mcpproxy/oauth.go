@@ -36,6 +36,9 @@ type endpoints struct {
 	register string
 	device   string
 	token    string
+	// revoke is the RFC 7009 endpoint ("" when not advertised or not on
+	// the gateway's origin).
+	revoke string
 }
 
 // oauthError is an OAuth error answer (RFC 6749 section 5.2).
@@ -117,6 +120,7 @@ func (c *oauthClient) discover(ctx context.Context) (*endpoints, error) {
 		TokenEndpoint               string `json:"token_endpoint"`
 		RegistrationEndpoint        string `json:"registration_endpoint"`
 		DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
+		RevocationEndpoint          string `json:"revocation_endpoint"`
 	}
 	if err := c.getJSON(ctx, asURL, &asm); err != nil {
 		return nil, fmt.Errorf("discover the authorization server metadata: %w", err)
@@ -137,10 +141,14 @@ func (c *oauthClient) discover(ctx context.Context) (*endpoints, error) {
 			return nil, err
 		}
 	}
-	return &endpoints{
+	ep := &endpoints{
 		resource: prm.Resource, issuer: issuer, register: asm.RegistrationEndpoint,
 		device: asm.DeviceAuthorizationEndpoint, token: asm.TokenEndpoint,
-	}, nil
+	}
+	if asm.RevocationEndpoint != "" && c.sameOrigin(asm.RevocationEndpoint) == nil {
+		ep.revoke = asm.RevocationEndpoint
+	}
+	return ep, nil
 }
 
 // sameOrigin refuses a URL that is not on the gateway's scheme and host.
@@ -197,6 +205,12 @@ func (c *oauthClient) token(ctx context.Context, ep *endpoints, form url.Values)
 	return &tr, nil
 }
 
+// revoke revokes a refresh token (RFC 7009); the answer has no body.
+func (c *oauthClient) revoke(ctx context.Context, ep *endpoints, clientID, refreshToken string) error {
+	form := url.Values{"token": {refreshToken}, "token_type_hint": {"refresh_token"}, "client_id": {clientID}}
+	return c.send(ctx, http.MethodPost, ep.revoke, "application/x-www-form-urlencoded", []byte(form.Encode()), nil)
+}
+
 func (c *oauthClient) getJSON(ctx context.Context, u string, v any) error {
 	return c.send(ctx, http.MethodGet, u, "", nil, v)
 }
@@ -241,6 +255,9 @@ func (c *oauthClient) send(ctx context.Context, method, u, contentType string, b
 			oe.Code, oe.Description = clean(e.Error), trimRunes(clean(e.Description), maxDescription)
 		}
 		return oe
+	}
+	if v == nil {
+		return nil
 	}
 	if err := json.Unmarshal(data, v); err != nil {
 		return fmt.Errorf("%s: the answer is not JSON", req.URL.Path)

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -578,6 +579,76 @@ func TestScopeChangeSignsInAgain(t *testing.T) {
 	}
 	if c := storedCreds(t, o); c.Scope != "mcp:read" || c.ClientID != "gwc_old" {
 		t.Fatalf("stored %+v", c)
+	}
+	// The sign-in for the old scope is revoked first (best effort).
+	rev := g.revocations()
+	if len(rev) != 1 || rev[0].Get("token") != seedRT || rev[0].Get("client_id") != "gwc_old" || rev[0].Get("token_type_hint") != "refresh_token" {
+		t.Fatalf("revocations %v", rev)
+	}
+	if strings.Contains(h.stderr.String(), "waiting for another") {
+		t.Errorf("waited for a lock nobody held:\n%s", h.stderr.String())
+	}
+}
+
+// Revoking the old scope's sign-in never blocks the new one: a failing
+// revocation endpoint, or none advertised, still signs in.
+func TestScopeChangeRevokeIsBestEffort(t *testing.T) {
+	for name, set := range map[string]func(*fakeGateway){
+		"revocation fails":       func(g *fakeGateway) { g.revokeStatus = http.StatusServiceUnavailable },
+		"no revocation endpoint": func(g *fakeGateway) { g.noRevoke = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newFakeGateway(t)
+			g.seedOldClient()
+			set(g)
+			clock := newFakeClock()
+			dir := t.TempDir()
+			seedStored(t, baseOptions(t, g, clock, dir), "gwc_old")
+			h := startProxy(t, g, clock, dir, func(o *Options) { o.Scope = "mcp:read"; o.LoginOnly = true })
+			if err := h.finish(); err != nil {
+				t.Fatalf("%v\n%s", err, h.stderr.String())
+			}
+			if c := storedCreds(t, baseOptions(t, g, clock, dir)); c.Scope != "mcp:read" || c.RefreshToken == seedRT {
+				t.Fatalf("stored %+v", c)
+			}
+			if n := len(g.revocations()); (name == "no revocation endpoint") != (n == 0) {
+				t.Fatalf("%d revocation requests", n)
+			}
+		})
+	}
+}
+
+// A proxy that finds another proxy of the same gateway signing in (the
+// credential lock is held) says so once on stderr and carries on when
+// the lock is released.
+func TestWaitingForAnotherProxySaysSoOnce(t *testing.T) {
+	g := newFakeGateway(t)
+	g.seedOldClient()
+	clock := newFakeClock()
+	dir := t.TempDir()
+	o := baseOptions(t, g, clock, dir)
+	seedStored(t, o, "gwc_old")
+	unlock, err := newCredStore(o.Dir, o.Gateway, o.Secrets).lockWaiting(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := startProxy(t, g, clock, dir, func(o *Options) { o.LoginOnly = true })
+	const msg = "waiting for another mcp-gateway proxy to finish signing in"
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(h.stderr.String(), msg) {
+		if time.Now().After(deadline) {
+			unlock()
+			t.Fatalf("no waiting message; stderr:\n%s", h.stderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(400 * time.Millisecond) // several lock polls
+	unlock()
+	if err := h.finish(); err != nil {
+		t.Fatalf("%v\n%s", err, h.stderr.String())
+	}
+	if n := strings.Count(h.stderr.String(), msg); n != 1 {
+		t.Fatalf("waiting message printed %d times:\n%s", n, h.stderr.String())
 	}
 }
 

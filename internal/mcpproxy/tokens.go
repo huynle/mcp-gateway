@@ -136,7 +136,7 @@ func (ts *tokenSource) renew(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	unlock, err := ts.store.lock(ctx)
+	unlock, err := ts.store.lockWaiting(ctx, func() { ts.say("waiting for another mcp-gateway proxy to finish signing in…") })
 	if err != nil {
 		return "", err
 	}
@@ -154,6 +154,7 @@ func (ts *tokenSource) renew(ctx context.Context) (string, error) {
 	case cr.ClientID == "" || cr.RefreshToken == "":
 	case cr.Scope != ts.o.Scope:
 		ts.say("the stored sign-in is for scope %q; signing in again for %q.", cr.Scope, ts.o.Scope)
+		ts.revokeBestEffort(ctx, ep, cr)
 	default:
 		tr, err := ts.oc.token(ctx, ep, url.Values{
 			"grant_type": {grantRefreshToken}, "refresh_token": {cr.RefreshToken}, "client_id": {cr.ClientID}, "resource": {ep.resource},
@@ -179,6 +180,18 @@ func (ts *tokenSource) renew(ctx context.Context) (string, error) {
 		}
 	}
 	return ts.signIn(ctx, ep, cr.ClientID)
+}
+
+// revokeBestEffort revokes a sign-in the proxy is about to replace (RFC
+// 7009), when the gateway advertises a revocation endpoint. A failure is
+// logged and ignored: the new sign-in goes ahead either way.
+func (ts *tokenSource) revokeBestEffort(ctx context.Context, ep *endpoints, cr *credentials) {
+	if ep.revoke == "" {
+		return
+	}
+	if err := ts.oc.revoke(ctx, ep, cr.ClientID, cr.RefreshToken); err != nil && ts.o.Log != nil {
+		ts.o.Log.Debug("revoking the replaced sign-in failed; continuing", "error", err)
+	}
 }
 
 func (ts *tokenSource) forgetUnsaved() {

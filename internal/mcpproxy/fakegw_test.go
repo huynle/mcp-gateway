@@ -46,6 +46,11 @@ type fakeGateway struct {
 	foreign string
 	// sessionID is sent on the initialize answer when set.
 	sessionID string
+	// noRevoke leaves revocation_endpoint out of the AS metadata;
+	// revokeStatus, when set, is the revocation endpoint's answer.
+	noRevoke     bool
+	revokeStatus int
+	revokeReqs   []url.Values
 
 	registrations []map[string]any
 	deviceReqs    []url.Values
@@ -75,6 +80,7 @@ func newFakeGateway(t *testing.T) *fakeGateway {
 	mux.HandleFunc("POST /oauth/register", g.register)
 	mux.HandleFunc("POST /oauth/device_authorization", g.device)
 	mux.HandleFunc("POST /oauth/token", g.token)
+	mux.HandleFunc("POST /oauth/revoke", g.revoke)
 	mux.HandleFunc("POST /mcp", g.mcp)
 	g.srv = httptest.NewServer(mux)
 	t.Cleanup(g.srv.Close)
@@ -94,15 +100,42 @@ func (g *fakeGateway) asm(w http.ResponseWriter, _ *http.Request) {
 	b := g.URL()
 	g.mu.Lock()
 	other := g.foreign
+	noRevoke := g.noRevoke
 	g.mu.Unlock()
 	if other == "" {
 		other = b
 	}
-	writeJSONT(w, 200, map[string]any{
+	doc := map[string]any{
 		"issuer": b, "authorization_endpoint": b + "/oauth/authorize", "token_endpoint": other + "/oauth/token",
 		"registration_endpoint": other + "/oauth/register", "device_authorization_endpoint": b + "/oauth/device_authorization",
 		"grant_types_supported": []string{"authorization_code", "refresh_token", deviceGrant},
-	})
+	}
+	if !noRevoke {
+		doc["revocation_endpoint"] = other + "/oauth/revoke"
+	}
+	writeJSONT(w, 200, doc)
+}
+
+// revoke is RFC 7009: the refresh token's family ends (here: the token).
+func (g *fakeGateway) revoke(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.revokeReqs = append(g.revokeReqs, r.PostForm)
+	if g.revokeStatus != 0 {
+		writeJSONT(w, g.revokeStatus, map[string]string{"error": "server_error"})
+		return
+	}
+	if g.refresh[r.PostForm.Get("token")] == r.PostForm.Get("client_id") {
+		delete(g.refresh, r.PostForm.Get("token"))
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (g *fakeGateway) revocations() []url.Values {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]url.Values(nil), g.revokeReqs...)
 }
 
 func (g *fakeGateway) register(w http.ResponseWriter, r *http.Request) {
