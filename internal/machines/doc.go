@@ -7,7 +7,10 @@
 // request at /activate after checking the machine's name and key
 // fingerprint, the CLI polls POST /machine/token) or presents a one-time
 // enrollment code created on the Machines page (POST /machine/enroll),
-// for headless hosts. The private key never leaves the machine.
+// for headless hosts. The private key never leaves the machine. The
+// /activate page also confirms the authorization server's harness device
+// grants (internal/authserver, RFC 8628): both kinds share the user-code
+// format, and the store never lets them hold the same code.
 //
 // Afterwards the machine signs a short-lived JWT assertion (EdDSA,
 // audience the token endpoint, jti replay-checked) and trades it for a

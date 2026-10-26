@@ -66,6 +66,9 @@ gateway:
     refreshTokenTTL: 720h
     codeTTL: 10m
     registerPerMinute: 10
+    # POST /oauth/device_authorization per client address (RFC 8628
+    # device flow; behind the Ingress every request may share one address).
+    devicePerMinute: 10
     maxUnusedClients: 1000
     clientIdle: 720h
     keyRotation: 720h

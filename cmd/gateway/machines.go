@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/authserver"
 	"github.com/huynle/mcp-gateway/internal/caps"
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/federation/connector"
@@ -61,15 +62,22 @@ func withMachineRoutes(svc *machines.Service) muxExtra {
 
 // withMachinePages mounts /activate, /machines and /admin/machines behind
 // the portal's checks (signed-in active users, CSRF, admin for /admin).
-func withMachinePages(svc *machines.Service) portalExtra {
+// /activate also confirms the authorization server's harness device
+// grants (RFC 8628); without machine enrollment it is mounted for those
+// alone.
+func withMachinePages(svc *machines.Service, authSvc *authserver.Service) portalExtra {
 	return func(_ *identity.Service, mount func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
-		if svc == nil {
+		if svc == nil && authSvc == nil {
 			return
 		}
 		id := func(r *http.Request) (string, string, bool) {
 			userID, csrf := session(r)
 			return userID, csrf, identity.PrincipalFrom(r.Context()).IsAdmin()
 		}
-		machines.NewPortal(svc, id, log).Mount(mount)
+		p := machines.NewPortal(svc, id, log)
+		if authSvc != nil {
+			p.SetHarnessGrants(authSvc)
+		}
+		p.Mount(mount)
 	}
 }

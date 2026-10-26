@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -283,7 +284,8 @@ func scanDeviceRequest(row interface{ Scan(dest ...any) error }, d *MachineDevic
 
 // CreateMachineDeviceRequest stores a device request (status pending);
 // the stored row is written back into d. Requests that expired a day ago
-// are deleted on the way.
+// are deleted on the way. ErrUserCodeTaken when a harness device grant
+// (00034) holds the user code.
 func CreateMachineDeviceRequest(ctx context.Context, q Querier, d *MachineDeviceRequest) error {
 	if _, err := q.Exec(ctx, `DELETE FROM machine_device_requests WHERE expires_at < now() - interval '1 day'`); err != nil {
 		return fmt.Errorf("store: prune device requests: %w", err)
@@ -291,9 +293,13 @@ func CreateMachineDeviceRequest(ctx context.Context, q Querier, d *MachineDevice
 	err := scanDeviceRequest(q.QueryRow(ctx, `
 		INSERT INTO machine_device_requests (device_code_hash, user_code_hash, name, public_key, fingerprint, client_version,
 			request_ip, expires_at, interval_seconds)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+		WHERE NOT EXISTS (SELECT 1 FROM oauth_device_grants WHERE user_code_hash = $2)
 		RETURNING `+deviceRequestColumns,
 		d.DeviceCodeHash, d.UserCodeHash, d.Name, d.PublicKey, d.Fingerprint, d.ClientVersion, d.RequestIP, d.ExpiresAt, d.Interval), d)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserCodeTaken
+	}
 	if err != nil {
 		return fmt.Errorf("store: create device request: %w", err)
 	}

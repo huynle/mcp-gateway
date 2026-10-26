@@ -15,6 +15,7 @@ const (
 	EnvCodeTTL          = "GATEWAY_OAUTH_CODE_TTL"
 	EnvClientIdle       = "GATEWAY_OAUTH_CLIENT_IDLE"
 	EnvRegisterPerMin   = "GATEWAY_OAUTH_REGISTER_PER_MIN"
+	EnvDevicePerMin     = "GATEWAY_OAUTH_DEVICE_PER_MIN"
 	EnvMaxUnusedClients = "GATEWAY_OAUTH_MAX_UNUSED_CLIENTS"
 	EnvKeyRotation      = "GATEWAY_OAUTH_KEY_ROTATION"
 	EnvKeyGrace         = "GATEWAY_OAUTH_KEY_GRACE"
@@ -27,6 +28,7 @@ const (
 	DefaultCodeTTL          = 10 * time.Minute
 	DefaultClientIdle       = 30 * 24 * time.Hour
 	DefaultRegisterPerMin   = 10
+	DefaultDevicePerMin     = 10
 	DefaultMaxUnusedClients = 1000
 	DefaultKeyRotation      = 30 * 24 * time.Hour
 	DefaultKeyGrace         = 2 * time.Hour
@@ -46,12 +48,14 @@ type Config struct {
 	// RefreshTokenTTL is how long a refresh token lives from its issue (30d);
 	// every rotation issues a fresh one.
 	RefreshTokenTTL time.Duration
-	// CodeTTL bounds an authorization code (10m).
+	// CodeTTL bounds an authorization code and a device grant (10m).
 	CodeTTL time.Duration
 	// ClientIdle is how long an unused registered client is kept (30d).
 	ClientIdle time.Duration
 	// RegisterPerMin is the per-IP registration budget (10).
 	RegisterPerMin int
+	// DevicePerMin is the per-IP device authorization budget (10).
+	DevicePerMin int
 	// MaxUnusedClients caps registrations that never completed a sign-in.
 	MaxUnusedClients int
 	// KeyRotation is how old the active signing key may get before the
@@ -74,6 +78,7 @@ func DefaultConfig() Config {
 		CodeTTL:          DefaultCodeTTL,
 		ClientIdle:       DefaultClientIdle,
 		RegisterPerMin:   DefaultRegisterPerMin,
+		DevicePerMin:     DefaultDevicePerMin,
 		MaxUnusedClients: DefaultMaxUnusedClients,
 		KeyRotation:      DefaultKeyRotation,
 		KeyGrace:         DefaultKeyGrace,
@@ -104,7 +109,7 @@ func ConfigFromEnv(issuer string, getenv func(string) string) (Config, error) {
 	for _, n := range []struct {
 		env string
 		dst *int
-	}{{EnvRegisterPerMin, &cfg.RegisterPerMin}, {EnvMaxUnusedClients, &cfg.MaxUnusedClients}} {
+	}{{EnvRegisterPerMin, &cfg.RegisterPerMin}, {EnvDevicePerMin, &cfg.DevicePerMin}, {EnvMaxUnusedClients, &cfg.MaxUnusedClients}} {
 		if v := strings.TrimSpace(getenv(n.env)); v != "" {
 			i, err := strconv.Atoi(v)
 			if err != nil {
@@ -135,6 +140,8 @@ func (c *Config) Validate() error {
 		return errors.New("authserver: every lifetime must be positive")
 	case c.RegisterPerMin < 1:
 		return fmt.Errorf("authserver: %s must be at least 1", EnvRegisterPerMin)
+	case c.DevicePerMin < 1:
+		return fmt.Errorf("authserver: %s must be at least 1", EnvDevicePerMin)
 	case c.MaxUnusedClients < 1:
 		return fmt.Errorf("authserver: %s must be at least 1", EnvMaxUnusedClients)
 	}

@@ -17,6 +17,19 @@ One endpoint for everything: `https://gw.example.com/mcp`. Two ways to authentic
 | Lifetime | up to 90 days (you choose; default 30), no renewal — make a new one | 1-hour access tokens, renewed automatically for 30 days of inactivity |
 | Stop it | `/tokens` → *Revoke* | `/harnesses` → *Disconnect* |
 
+### `mcp-gateway proxy` (OpenCode, Claude Code, any harness — also over SSH)
+
+Install the client CLI (`brew install huynle/tap/mcp-gateway`) on the host where the harness runs and add it as a local MCP server:
+
+```jsonc
+// OpenCode: opencode.json
+{ "$schema": "https://opencode.ai/config.json",
+  "mcp": { "mcp-gateway": { "type": "local", "enabled": true,
+                            "command": ["mcp-gateway", "proxy", "--gateway", "https://gw.example.com"] } } }
+```
+
+The first time, the harness's MCP log shows `To sign in, open https://gw.example.com/activate and enter BCDF-GHJK`. Open that page on any device where you are signed in to the portal (your laptop, your phone), check the name `mcp-gateway proxy (<host>)`, press **Allow**. No token to paste; it renews itself; *Disconnect* on `/harnesses` stops it. To sign in before starting the harness: `mcp-gateway proxy --login --gateway https://gw.example.com`. Details in [harness-setup.md](harness-setup.md#any-stdio-harness-mcp-gateway-proxy).
+
 ### Generated token (OpenCode, scripts)
 
 1. `/tokens` → *New token*: name it after the harness/machine (`laptop opencode`), pick an expiry, optionally restrict it to some apps/tools or make it **read-only**.

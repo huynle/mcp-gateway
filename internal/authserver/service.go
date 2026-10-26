@@ -47,6 +47,7 @@ type Service struct {
 	mint     *Minter
 	auth     *JWTAuthenticator
 	limiter  *tokens.FailureLimiter
+	devices  *tokens.FailureLimiter
 	clientIP func(*http.Request) string
 	who      Identity
 	tpl      *template.Template
@@ -81,6 +82,7 @@ func New(cfg Config, st Store, kp crypto.KeyProvider, opts Options) (*Service, e
 		cfg:      cfg,
 		st:       st,
 		limiter:  tokens.NewFailureLimiter(cfg.RegisterPerMin, time.Minute),
+		devices:  tokens.NewFailureLimiter(cfg.DevicePerMin, time.Minute),
 		clientIP: opts.ClientIP,
 		metrics:  opts.Metrics,
 		audit:    opts.Audit,
@@ -105,6 +107,7 @@ func (s *Service) SetClock(now func() time.Time) {
 	s.mint.SetClock(now)
 	s.auth.SetClock(now)
 	s.limiter.SetClock(now)
+	s.devices.SetClock(now)
 }
 
 // Config returns the effective configuration.
@@ -125,23 +128,28 @@ const (
 	DefaultRotationInterval = time.Hour
 )
 
-// Prune deletes clients idle for longer than ClientIdle (with their codes
-// and refresh tokens) and codes past their expiry; it returns the counts.
+// Prune deletes clients idle for longer than ClientIdle (with their codes,
+// device grants and refresh tokens), and codes and device grants past
+// their expiry; it returns the client and code counts.
 func (s *Service) Prune(ctx context.Context) (clients, codes int64, err error) {
 	now := s.now()
+	var devices int64
 	err = s.st.Bypass(ctx, func(tx Tx) error {
 		var err error
 		if clients, err = tx.PruneClients(ctx, now.Add(-s.cfg.ClientIdle)); err != nil {
 			return err
 		}
-		codes, err = tx.DeleteExpiredCodes(ctx, now)
+		if codes, err = tx.DeleteExpiredCodes(ctx, now); err != nil {
+			return err
+		}
+		devices, err = tx.DeleteExpiredDeviceGrants(ctx, now)
 		return err
 	})
 	if err != nil {
 		return 0, 0, err
 	}
-	if clients > 0 || codes > 0 {
-		s.log.Info("oauth state pruned", "event", "authserver.pruned", "clients", clients, "codes", codes)
+	if clients > 0 || codes > 0 || devices > 0 {
+		s.log.Info("oauth state pruned", "event", "authserver.pruned", "clients", clients, "codes", codes, "device_grants", devices)
 	}
 	return clients, codes, nil
 }

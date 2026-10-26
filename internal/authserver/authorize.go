@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,11 +87,15 @@ func (s *Service) ServeAuthorize(w http.ResponseWriter, r *http.Request) {
 	if s.answerAuthorizeError(w, r, req, err) {
 		return
 	}
+	// The remote option is the form's own checkbox; a copy smuggled into
+	// the authorization request is not echoed as a hidden field.
+	hidden := r.URL.Query()
+	hidden.Del(remoteField)
 	w.Header().Set("Cache-Control", "no-store")
 	s.render(w, r, http.StatusOK, "consent.html", consentData{
 		Title: "Connect a harness", CSRFToken: csrfToken, ClientName: req.client.ClientName, ClientID: req.client.ClientID,
 		RedirectHost: hostOf(req.redirectURI), Resource: req.resource, Scopes: describeScopes(req.scope),
-		Hidden: r.URL.Query(),
+		Hidden: hidden, Loopback: isLoopbackRedirect(req.redirectURI),
 	})
 }
 
@@ -143,8 +148,61 @@ func (s *Service) ServeConsent(w http.ResponseWriter, r *http.Request) {
 	q.Set("state", req.state)
 	q.Set("iss", s.cfg.issuer()) // RFC 9207: the client checks it against the metadata it recorded
 	u.RawQuery = q.Encode()
+	if isLoopbackRedirect(req.redirectURI) {
+		s.renderCallback(w, r, csrfToken, req.client.ClientName, u.String(), r.PostForm.Get(remoteField) == "1")
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, u.String(), http.StatusSeeOther)
+}
+
+// remoteField is the consent form's "the harness runs on another
+// machine" checkbox (shown for loopback redirect URIs only).
+const remoteField = "remote"
+
+// renderCallback answers an approval whose redirect URI is on the
+// loopback interface with a page instead of a bare redirect. A harness on
+// a remote host (over SSH) listens on that host's loopback, so the
+// browser's redirect lands on the wrong computer; the page still sends
+// the browser on (a meta refresh unless the user said the harness is
+// remote, and a Continue link, both without script) and shows the
+// callback as a curl command to run where the harness runs (-g: no URL
+// globbing, so an IPv6 loopback host or a [ ] { } in the path is sent
+// verbatim). The code's semantics do not change: single use, PKCE-bound,
+// CodeTTL. The page is hardened like every other one here (pageHeaders:
+// no-store, no Referer, no framing).
+func (s *Service) renderCallback(w http.ResponseWriter, r *http.Request, csrfToken, clientName, callback string, remote bool) {
+	s.render(w, r, http.StatusOK, "callback.html", callbackData{
+		Title: "Harness approved", CSRFToken: csrfToken, ClientName: clientName, CallbackURL: callback,
+		CurlCommand: "curl -g " + shellQuote(callback), CodeTTL: humanDuration(s.cfg.CodeTTL), AutoRedirect: !remote,
+	})
+}
+
+// isLoopbackRedirect reports whether raw is a native-app loopback
+// redirect URI (http on localhost / 127.0.0.1 / [::1], the hosts
+// redirectURIRegistered and registration treat as loopback).
+func isLoopbackRedirect(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "http" && isLoopbackHost(u.Hostname())
+}
+
+// shellQuote quotes s as one POSIX shell word: single quotes, with each
+// embedded single quote closed, escaped and reopened.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// humanDuration renders a lifetime for a sentence ("10 minutes").
+func humanDuration(d time.Duration) string {
+	switch {
+	case d >= time.Minute && d%time.Minute == 0:
+		if n := int(d / time.Minute); n != 1 {
+			return strconv.Itoa(n) + " minutes"
+		}
+		return "1 minute"
+	default:
+		return d.String()
+	}
 }
 
 // issueCode stores a fresh single-use code bound to the request.
@@ -196,6 +254,9 @@ func (s *Service) parseAuthorize(ctx context.Context, q url.Values) (*authorizeR
 	}
 	req := &authorizeRequest{client: client, redirectURI: redirectURI, state: q.Get("state")}
 	meta := clientMeta(client)
+	if !slices.Contains(meta.GrantTypes, GrantAuthorizationCode) {
+		return req, &protocolError{"unauthorized_client", "the client is not registered for the authorization_code grant"}
+	}
 	if duplicated(q, "response_type", "state", "code_challenge", "code_challenge_method", "scope") {
 		return req, &protocolError{"invalid_request", "a parameter is repeated"}
 	}
@@ -396,6 +457,11 @@ func hostOf(raw string) string {
 
 // record files a user audit event; a failure is logged, never surfaced.
 func (s *Service) record(ctx context.Context, userID, familyID, action string, client *store.OAuthClient, decision, outcome string) {
+	s.recordWith(ctx, userID, familyID, action, client, decision, outcome, nil)
+}
+
+// recordWith is record with extra resource identity fields.
+func (s *Service) recordWith(ctx context.Context, userID, familyID, action string, client *store.OAuthClient, decision, outcome string, extra map[string]string) {
 	ev := audit.Event{
 		Time:             s.now(),
 		UserID:           userID,
@@ -404,6 +470,11 @@ func (s *Service) record(ctx context.Context, userID, familyID, action string, c
 		Decision:         decision,
 		Outcome:          outcome,
 		RequestID:        observability.RequestIDFromContext(ctx),
+	}
+	for k, v := range extra {
+		if v != "" {
+			ev.ResourceIdentity[k] = v
+		}
 	}
 	if client != nil {
 		ev.ResourceIdentity["client_id"] = client.ClientID
@@ -415,7 +486,9 @@ func (s *Service) record(ctx context.Context, userID, familyID, action string, c
 }
 
 // clientMeta decodes a stored client's metadata with the defaults a
-// registration without those fields received.
+// registration without those fields received (grant types
+// authorization_code + refresh_token; response type code only for a
+// client with the authorization_code grant).
 func clientMeta(c *store.OAuthClient) clientMetadata {
 	var m clientMetadata
 	_ = json.Unmarshal(c.Metadata, &m)
@@ -425,7 +498,7 @@ func clientMeta(c *store.OAuthClient) clientMetadata {
 	if len(m.GrantTypes) == 0 {
 		m.GrantTypes = []string{GrantAuthorizationCode, GrantRefreshToken}
 	}
-	if len(m.ResponseTypes) == 0 {
+	if len(m.ResponseTypes) == 0 && slices.Contains(m.GrantTypes, GrantAuthorizationCode) {
 		m.ResponseTypes = []string{ResponseTypeCode}
 	}
 	return m

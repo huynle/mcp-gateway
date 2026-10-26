@@ -13,7 +13,7 @@ import (
 // ExpectedSchemaVersion is the goose migration version this binary was built
 // against. Startup and /readyz refuse a database at any other version; the
 // unit test in store_test.go pins it to the highest embedded migration.
-const ExpectedSchemaVersion int64 = 33
+const ExpectedSchemaVersion int64 = 34
 
 // Sentinel errors.
 var (

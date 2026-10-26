@@ -26,7 +26,7 @@ const portalTemplates = `
 <section class="panel">
   <h1>{{.Title}}</h1>
   <p class="{{if .OK}}ok{{else}}notice{{end}}">{{.Message}}</p>
-  <div class="panel-foot"><a class="btn" href="/machines">{{icon "machines"}}Machines</a></div>
+  <div class="panel-foot">{{if .Harness}}<a class="btn" href="/harnesses">{{icon "harnesses"}}Harnesses</a>{{else}}<a class="btn" href="/machines">{{icon "machines"}}Machines</a>{{end}}</div>
 </section>
 </div>
 {{template "foot" .}}{{end}}
@@ -56,13 +56,35 @@ const portalTemplates = `
       <button class="btn danger" type="submit" name="action" value="deny">{{icon "x"}}Deny</button>
     </div>
   </form>
+{{else with .Harness}}
+  <p><strong>A harness asks to sign in to the MCP gateway as you.</strong> Allow only if you just started the sign-in yourself (for example in a harness on a remote host) and the details below match what it printed. Allowing lets it use the tools your role allows, under policy and approvals, until you disconnect it on the Harnesses page.</p>
+  <dl class="kv">
+    <dt>Code</dt><dd><code>{{.UserCode}}</code></dd>
+    <dt>Harness</dt><dd><strong>{{.ClientName}}</strong><br><span class="muted"><code>{{.ClientID}}</code></span></dd>
+    <dt>It will be able to</dt><dd>{{range .Scopes}}{{.}}<br>{{end}}</dd>
+    <dt>Tokens for</dt><dd><code>{{.Resource}}</code></dd>
+    <dt>Requested from</dt><dd><code>{{.RequestIP}}</code></dd>
+    <dt>User-Agent</dt><dd>{{if .UserAgent}}<code class="clip" title="{{.UserAgent}}">{{.UserAgent}}</code>{{else}}<span class="muted">not given</span>{{end}}</dd>
+    <dt>Requested at</dt><dd>{{fmtTime .CreatedAt}}<br><span class="muted">expires {{fmtTime .ExpiresAt}}</span></dd>
+  </dl>
+  <p class="callout warn">Check that the address and User-Agent are those of the host you are signing in from. If someone sent you this code or link, deny it.</p>
+  <form method="post" action="/activate">
+    <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="request_id" value="{{.ID}}">
+    <input type="hidden" name="code" value="{{.UserCode}}">
+    <p class="hint">By allowing, you let this harness act as you under the <a href="/terms">Terms of Service</a> and the <a href="/privacy">Privacy Policy</a>.</p>
+    <div class="panel-foot">
+      <button class="btn primary" type="submit" name="action" value="approve">{{icon "check"}}Allow</button>
+      <button class="btn danger" type="submit" name="action" value="deny">{{icon "x"}}Deny</button>
+    </div>
+  </form>
 {{else}}
-  <p class="muted">Enter the code <code>mcp-gateway login</code> printed on your machine.</p>
+  <p class="muted">Enter the code <code>mcp-gateway login</code> printed on your machine, or the code your harness showed.</p>
   <form method="post" action="/activate" class="stack">
     <input type="hidden" name="_csrf" value="{{.CSRF}}">
     <input type="hidden" name="action" value="lookup">
     <label>Code <input class="code-input" name="code" value="{{.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" required placeholder="BCDF-GHJK">
-      <span class="hint">Eight letters, valid for 10 minutes after <code>mcp-gateway login</code> prints it.</span></label>
+      <span class="hint">Eight letters, valid for 10 minutes after it is shown.</span></label>
     <div class="panel-foot"><button class="btn primary" type="submit">Continue</button></div>
   </form>
 {{end}}

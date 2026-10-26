@@ -40,6 +40,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/identity"
 	"github.com/huynle/mcp-gateway/internal/identity/identitytest"
+	"github.com/huynle/mcp-gateway/internal/machines"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
 	"github.com/huynle/mcp-gateway/internal/portal"
@@ -229,6 +230,7 @@ func newGateway(t *testing.T, opts ...option) *gateway {
 	g := &gateway{env: map[string]string{
 		// Most cases register several clients; the flooding case lowers it.
 		authserver.EnvRegisterPerMin: "1000",
+		authserver.EnvDevicePerMin:   "1000",
 	}, clock: &fakeClock{now: t0}, audit: &auditLog{}, logs: newLogCapture()}
 	for _, o := range opts {
 		o(g)
@@ -297,6 +299,14 @@ func newGateway(t *testing.T, opts ...option) *gateway {
 	}
 	g.authSvc.MountPortal(p.MountUser, session)
 	idSvc.OnDisable(g.authSvc.DisableHook())
+	// /activate, as cmd/gateway mounts it (here without machine
+	// enrollment: harness device grants only).
+	activate := machines.NewPortal(nil, func(r *http.Request) (string, string, bool) {
+		userID, csrf := session(r)
+		return userID, csrf, false
+	}, log)
+	activate.SetHarnessGrants(g.authSvc)
+	activate.Mount(p.MountUser)
 
 	f := fake.New(fake.Options{AutoAccount: true})
 	registry := connectors.NewRegistry()
@@ -473,6 +483,35 @@ type reply struct {
 
 func (r reply) location() *url.URL {
 	u, _ := url.Parse(r.header.Get("Location"))
+	return u
+}
+
+// callback asserts the answer to an approved consent for a loopback
+// redirect URI, the 200 page that sends the browser on (meta refresh +
+// Continue link) and shows the callback as a curl command for a harness
+// on another host, and returns the callback URL it links to. The page
+// carries the code, so it is never cached, never framed and never sent as
+// a Referer; it has no Location.
+func (r reply) callback(t *testing.T) *url.URL {
+	t.Helper()
+	if r.status != http.StatusOK {
+		t.Fatalf("approve: status %d, want the 200 callback page; Location %q; body %.300s", r.status, r.header.Get("Location"), r.body)
+	}
+	for name, want := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY"} {
+		if got := r.header.Get(name); got != want {
+			t.Errorf("callback page %s = %q, want %q", name, got, want)
+		}
+	}
+	if csp := r.header.Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("callback page Content-Security-Policy = %q", csp)
+	}
+	if loc := r.header.Get("Location"); loc != "" {
+		t.Errorf("callback page carries Location %q", loc)
+	}
+	u, err := authservertest.CallbackURL(r.status, r.header, r.body)
+	if err != nil {
+		t.Fatalf("callback page: %v; body %.300s", err, r.body)
+	}
 	return u
 }
 

@@ -9,15 +9,19 @@ import (
 // well-known paths are fixed by RFC 8414 and RFC 9728; the rest are this
 // gateway's choice and are only ever reached through the metadata.
 const (
-	MetadataPath          = "/.well-known/oauth-authorization-server"
-	ProtectedResourcePath = "/.well-known/oauth-protected-resource"
-	AuthorizePath         = "/oauth/authorize"
-	ConsentPath           = "/oauth/authorize/consent"
-	TokenPath             = "/oauth/token"
-	RegisterPath          = "/oauth/register"
-	RevokePath            = "/oauth/revoke"
-	JWKSPath              = "/oauth/jwks"
-	HarnessesPath         = "/harnesses"
+	MetadataPath            = "/.well-known/oauth-authorization-server"
+	ProtectedResourcePath   = "/.well-known/oauth-protected-resource"
+	AuthorizePath           = "/oauth/authorize"
+	ConsentPath             = "/oauth/authorize/consent"
+	TokenPath               = "/oauth/token"
+	RegisterPath            = "/oauth/register"
+	RevokePath              = "/oauth/revoke"
+	DeviceAuthorizationPath = "/oauth/device_authorization"
+	// ActivatePath is the verification URI of the device grant: the
+	// /activate page (internal/machines) that machine enrollment shares.
+	ActivatePath  = "/activate"
+	JWKSPath      = "/oauth/jwks"
+	HarnessesPath = "/harnesses"
 	// DefaultResourcePath is where the protected resource (the MCP
 	// endpoint) lives under the issuer.
 	DefaultResourcePath = "/mcp"
@@ -41,6 +45,7 @@ type ASMetadata struct {
 	TokenEndpoint                     string   `json:"token_endpoint"`
 	RegistrationEndpoint              string   `json:"registration_endpoint"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint"`
 	JWKSURI                           string   `json:"jwks_uri"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	ResponseModesSupported            []string `json:"response_modes_supported"`
@@ -72,10 +77,11 @@ func AuthorizationServerMetadata(cfg Config) ASMetadata {
 		TokenEndpoint:                     cfg.URL(TokenPath),
 		RegistrationEndpoint:              cfg.URL(RegisterPath),
 		RevocationEndpoint:                cfg.URL(RevokePath),
+		DeviceAuthorizationEndpoint:       cfg.URL(DeviceAuthorizationPath),
 		JWKSURI:                           cfg.URL(JWKSPath),
 		ResponseTypesSupported:            []string{"code"},
 		ResponseModesSupported:            []string{"query"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
+		GrantTypesSupported:               grantTypesSupported,
 		CodeChallengeMethodsSupported:     []string{"S256"},
 		TokenEndpointAuthMethodsSupported: []string{"none", "client_secret_post", "client_secret_basic"},
 		RevocationAuthMethodsSupported:    []string{"none", "client_secret_post", "client_secret_basic"},

@@ -15,6 +15,7 @@ import (
 //	GET  /.well-known/oauth-protected-resource          RFC 9728
 //	GET  /.well-known/oauth-protected-resource/mcp      RFC 9728, path-aware (MCP 2025-11)
 //	POST /oauth/register                                RFC 7591
+//	POST /oauth/device_authorization                    RFC 8628 (approved at /activate, internal/machines)
 //	POST /oauth/token                                   OAuth 2.1 token endpoint
 //	POST /oauth/revoke                                  RFC 7009
 //	GET  /oauth/jwks                                    JWK Set
@@ -46,6 +47,7 @@ func (s *Service) Mount(mux Mounter) {
 	}
 	mux.Handle(JWKSPath, methods(http.MethodGet, http.HandlerFunc(s.ServeJWKS)))
 	mux.Handle(RegisterPath, methods(http.MethodPost, http.HandlerFunc(s.ServeRegister)))
+	mux.Handle(DeviceAuthorizationPath, methods(http.MethodPost, http.HandlerFunc(s.ServeDeviceAuthorization)))
 	mux.Handle(TokenPath, methods(http.MethodPost, http.HandlerFunc(s.ServeToken)))
 	mux.Handle(RevokePath, methods(http.MethodPost, http.HandlerFunc(s.ServeRevoke)))
 }

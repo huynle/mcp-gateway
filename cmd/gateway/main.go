@@ -221,7 +221,7 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{Service: rateSvc, caps: capsSvc, push: pushSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc), withSecretPages(secretSvc), withElicitPages(fed, st, rec), withSignupAudit(rec), withPushDisableHook(pushSvc))
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{Service: rateSvc, caps: capsSvc, push: pushSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc, authSvc), withSecretPages(secretSvc), withElicitPages(fed, st, rec), withSignupAudit(rec), withPushDisableHook(pushSvc))
 		if err != nil {
 			return err
 		}

@@ -2,13 +2,11 @@ package machines
 
 import (
 	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/huynle/mcp-gateway/internal/tokens"
@@ -74,57 +72,19 @@ func DisplayFingerprint(fp string) string {
 	return strings.Join(append(parts, fp), " ")
 }
 
-// UserCodeAlphabet is the device flow's user code alphabet: consonants
-// only (no vowels, so no words; no look-alike digits), RFC 8628 §6.1.
-const UserCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
-
-// userCodeLen is the number of letters in a user code (20^8 ≈ 2^34.6).
-const userCodeLen = 8
+// UserCodeAlphabet is the device flow's user code alphabet (shared with
+// the harness device grant, tokens.UserCodeAlphabet).
+const UserCodeAlphabet = tokens.UserCodeAlphabet
 
 // NewUserCode returns a random user code formatted "ABCD-EFGH".
-func NewUserCode() (string, error) {
-	b := make([]byte, userCodeLen)
-	n := big.NewInt(int64(len(UserCodeAlphabet)))
-	for i := range b {
-		v, err := rand.Int(rand.Reader, n)
-		if err != nil {
-			return "", fmt.Errorf("machines: user code: %w", err)
-		}
-		b[i] = UserCodeAlphabet[v.Int64()]
-	}
-	return FormatUserCode(string(b)), nil
-}
+func NewUserCode() (string, error) { return tokens.NewUserCode() }
 
 // NormalizeUserCode accepts a user code as typed (any case, spaces and
 // dashes) and returns its eight letters, or false when it cannot be one.
-func NormalizeUserCode(s string) (string, bool) {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(s) {
-		switch {
-		case r == '-' || r == ' ' || r == '\t':
-			continue
-		case strings.ContainsRune(UserCodeAlphabet, r):
-			b.WriteRune(r)
-		default:
-			return "", false
-		}
-		if b.Len() > userCodeLen {
-			return "", false
-		}
-	}
-	if b.Len() != userCodeLen {
-		return "", false
-	}
-	return b.String(), true
-}
+func NormalizeUserCode(s string) (string, bool) { return tokens.NormalizeUserCode(s) }
 
 // FormatUserCode formats eight normalized letters as "ABCD-EFGH".
-func FormatUserCode(n string) string {
-	if len(n) != userCodeLen {
-		return n
-	}
-	return n[:4] + "-" + n[4:]
-}
+func FormatUserCode(n string) string { return tokens.FormatUserCode(n) }
 
 // Secret prefixes. Every secret has the gateway token shape
 // <prefix><8 base62>_<43 base62> (decision uamxx6ba) and is stored as its

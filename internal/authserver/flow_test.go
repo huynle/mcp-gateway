@@ -98,7 +98,7 @@ func (f *flow) consent(q url.Values, action, csrfToken string) *httptest.Respons
 func (f *flow) code() string {
 	f.t.Helper()
 	rec := f.consent(f.authorizeParams(), "approve", csrf)
-	loc := redirect(f.t, rec)
+	loc, _, _ := interstitial(f.t, rec) // a loopback redirect URI: the callback page, not a bare 303
 	if loc.Query().Get("code") == "" || loc.Query().Get("state") != "xyz" {
 		f.t.Fatalf("approve redirect = %s", loc)
 	}
@@ -225,7 +225,7 @@ func TestAuthorizeLoopbackRedirectPortMayDiffer(t *testing.T) {
 	if rec := f.authorize(q); rec.Code != http.StatusOK {
 		t.Fatalf("authorize with another loopback port: %d %s", rec.Code, rec.Body.String())
 	}
-	loc := redirect(t, f.consent(q, "approve", csrf))
+	loc, _, _ := interstitial(t, f.consent(q, "approve", csrf))
 	if loc.Host != "localhost:51234" || loc.Query().Get("code") == "" {
 		t.Fatalf("approve redirected to %s", loc)
 	}
@@ -301,7 +301,7 @@ func TestRepeatedParametersAreRefused(t *testing.T) {
 func TestAuthorizationResponsesCarryIss(t *testing.T) {
 	f := newFlow(t)
 	issuer := strings.TrimSuffix(f.cfg.Issuer, "/")
-	loc := redirect(t, f.consent(f.authorizeParams(), "approve", csrf))
+	loc, _, _ := interstitial(t, f.consent(f.authorizeParams(), "approve", csrf))
 	if loc.Query().Get("iss") != issuer || loc.Query().Get("code") == "" {
 		t.Errorf("approve redirect = %s", loc)
 	}
