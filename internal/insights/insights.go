@@ -242,8 +242,12 @@ func fmtMS(ms float64) string {
 		return strconv.FormatFloat(math.Round(ms), 'f', -1, 64) + " ms"
 	case ms < 60_000:
 		return strconv.FormatFloat(ms/1000, 'f', 1, 64) + " s"
-	default:
+	case ms < 3_600_000:
 		return strconv.FormatFloat(ms/60_000, 'f', 1, 64) + " min"
+	case ms < 86_400_000:
+		return strconv.FormatFloat(ms/3_600_000, 'f', 1, 64) + " h"
+	default:
+		return strconv.FormatFloat(ms/86_400_000, 'f', 1, 64) + " d"
 	}
 }
 

@@ -139,7 +139,7 @@ func TestFormatting(t *testing.T) {
 			t.Errorf("fmtCount(%d) = %q, want %q", in, got, want)
 		}
 	}
-	for in, want := range map[float64]string{0: "–", 12.4: "12 ms", 1500: "1.5 s", 90000: "1.5 min"} {
+	for in, want := range map[float64]string{0: "–", 12.4: "12 ms", 1500: "1.5 s", 90000: "1.5 min", 5_400_000: "1.5 h", 2.5e9: "28.9 d"} {
 		if got := fmtMS(in); got != want {
 			t.Errorf("fmtMS(%v) = %q, want %q", in, got, want)
 		}
@@ -195,7 +195,10 @@ func TestAdminHandlerGuards(t *testing.T) {
 
 func TestAdminHandlerRendersChartsAndUsers(t *testing.T) {
 	var gotRange Range
-	load := func(_ context.Context, r Range, u *url.URL) (*Dashboard, error) { gotRange = r; return sampleDashboard(r, u), nil }
+	load := func(_ context.Context, r Range, u *url.URL) (*Dashboard, error) {
+		gotRange = r
+		return sampleDashboard(r, u), nil
+	}
 	rec := serve(AdminHandler(load, who("u1", true), nil), http.MethodGet, "/admin/insights?range=30d")
 	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("GET = %d (Cache-Control %q)", rec.Code, rec.Header().Get("Cache-Control"))

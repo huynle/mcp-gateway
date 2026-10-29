@@ -55,10 +55,25 @@
     if (v === null || v === undefined || isNaN(v)) { return "–"; }
     if (unit === "ms") {
       if (v < 1000) { return Math.round(v) + " ms"; }
-      if (v < 60000) { return (v / 1000).toFixed(1) + " s"; }
-      return (v / 60000).toFixed(1) + " min";
+      if (v < 60000) { return trim(v / 1000) + " s"; }
+      if (v < 3600000) { return trim(v / 60000) + " min"; }
+      if (v < 86400000) { return trim(v / 3600000) + " h"; }
+      return trim(v / 86400000) + " d";
     }
     return nf.format(v);
+  }
+
+  // trim keeps one decimal only where it matters (1.5 s, but 2 s).
+  function trim(v) { return v >= 10 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
+
+  // integerTicks puts one tick on each category of a linear bubble axis
+  // (its range is padded by half a step, so the default ticks would fall
+  // between the categories).
+  function integerTicks(n) {
+    return function (axis) {
+      axis.ticks = [];
+      for (var i = 0; i < n; i++) { axis.ticks.push({ value: i }); }
+    };
   }
 
   function withUnit(v, unit) {
@@ -205,7 +220,7 @@
     bar: function (spec, p) {
       var o = baseOptions(spec, p);
       o.plugins.tooltip.callbacks = { label: valueLabel(spec) };
-      o.scales = { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: valueAxis(spec, p) };
+      o.scales = { x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: false } }, y: valueAxis(spec, p) };
       interactive(spec, o);
       return { type: "bar", data: { labels: spec.labels, datasets: spec.series.map(function (s) {
         return { label: s.name, data: s.data, backgroundColor: colour(p, s.tone), borderRadius: 3 };
@@ -276,8 +291,10 @@
         return " " + WEEKDAYS[6 - r.y] + " " + two(r.x) + ":00–" + two((r.x + 1) % 24) + ":00: " + withUnit(r.v, spec.unit);
       } };
       o.scales = {
-        x: { type: "linear", min: -0.5, max: 23.5, grid: { color: p.line }, ticks: { stepSize: 1, autoSkip: true, maxRotation: 0, callback: function (v) { return v % 3 === 0 ? two(v) + ":00" : ""; } } },
-        y: { type: "linear", min: -0.5, max: 6.5, grid: { color: p.line }, ticks: { stepSize: 1, callback: function (v) { return WEEKDAYS[6 - v] || ""; } } }
+        x: { type: "linear", min: -0.5, max: 23.5, grid: { color: p.line }, afterBuildTicks: integerTicks(24),
+          ticks: { autoSkip: false, maxRotation: 0, callback: function (v) { return v % 3 === 0 ? two(v) + ":00" : ""; } } },
+        y: { type: "linear", min: -0.5, max: 6.5, grid: { color: p.line }, afterBuildTicks: integerTicks(7),
+          ticks: { autoSkip: false, callback: function (v) { return WEEKDAYS[6 - v] || ""; } } }
       };
       return { type: "bubble", data: { datasets: [{ label: "calls", data: pts, backgroundColor: alpha(c, 0.55), borderColor: c, borderWidth: 1 }] }, options: o };
     },
@@ -296,10 +313,10 @@
         return " " + spec.labels[r.row] + " · " + spec.xLabels[r.x] + ": " + withUnit(r.v, spec.unit);
       } };
       o.scales = {
-        x: { type: "linear", min: -0.5, max: spec.xLabels.length - 0.5, grid: { color: p.line },
-          ticks: { stepSize: 1, autoSkip: false, maxRotation: 35, minRotation: 0, callback: function (v) { return truncate(spec.xLabels[v] || "", 24); } } },
-        y: { type: "linear", min: -0.5, max: rows - 0.5, grid: { color: p.line },
-          ticks: { stepSize: 1, autoSkip: false, callback: function (v) { return truncate(spec.labels[rows - 1 - v] || "", 22); } } }
+        x: { type: "linear", min: -0.5, max: spec.xLabels.length - 0.5, grid: { color: p.line }, afterBuildTicks: integerTicks(spec.xLabels.length),
+          ticks: { autoSkip: false, maxRotation: 35, minRotation: 0, callback: function (v) { return truncate(spec.xLabels[v] || "", 24); } } },
+        y: { type: "linear", min: -0.5, max: rows - 0.5, grid: { color: p.line }, afterBuildTicks: integerTicks(rows),
+          ticks: { autoSkip: false, callback: function (v) { return truncate(spec.labels[rows - 1 - v] || "", 22); } } }
       };
       interactive(spec, o, function (el, chart) {
         return [chart.data.datasets[el.datasetIndex].data[el.index].row, 0];

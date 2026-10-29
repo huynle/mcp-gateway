@@ -126,7 +126,7 @@ func (s *Source) Admin(ctx context.Context, r Range, u *url.URL) (*Dashboard, er
 		return nil, fmt.Errorf("insights: admin: %w", err)
 	}
 	audit := DrillHref("/admin/audit", u)
-	d := &Dashboard{Title: "Insights", Range: r, RangeLinks: RangeLinksFor(u, r),
+	d := &Dashboard{Title: "Overview", Range: r, RangeLinks: RangeLinksFor(u, r),
 		Empty: c.sum.Calls == 0 && o.sum.Writes == 0 && appr.Total == 0}
 
 	d.Stats = append(c.stats(true),
@@ -230,7 +230,8 @@ func (c *calls) stats(admin bool) []Stat {
 
 // outcomeTones orders and colours the outcome series; "" is a call with
 // no outcome (not a filterable value, so it has no drill key).
-var outcomeTones = []tone{{"succeeded", "succeeded", "ok"}, {"failed", "failed", "danger"}, {"denied", "denied", "warn"}, {"none", "no outcome", "muted"}}
+var outcomeTones = []tone{{"succeeded", "succeeded", "ok"}, {"failed", "failed", "danger"}, {"denied", "denied", "warn"},
+	{"unresolved", "unresolved", "c3"}, {"unknown", "unknown", "c4"}, {"none", "no outcome", "muted"}}
 
 // groups are the tool-call charts: volume and occurrence, tools and
 // errors, latency. drill is the filtered table the clicks open.
@@ -290,14 +291,10 @@ func histogramChart(hist []int64) Chart {
 	ch := Chart{ID: "latency-histogram", Title: "Latency distribution", Desc: "How many calls took how long", Kind: KindBar, Unit: "calls"}
 	s := Series{Key: "calls", Name: "calls", Tone: "accent"}
 	for i, n := range hist {
-		var label string
-		switch {
-		case i == 0:
-			label = "< " + fmtMS(float64(latencyBounds[0]))
-		case i == len(latencyBounds):
-			label = "≥ " + fmtMS(float64(latencyBounds[i-1]))
-		default:
-			label = fmtMS(float64(latencyBounds[i-1])) + "–" + fmtMS(float64(latencyBounds[i]))
+		// Upper bounds keep the axis labels short: "≤ 50 ms" … "> 30 s".
+		label := "> " + fmtMS(float64(latencyBounds[len(latencyBounds)-1]))
+		if i < len(latencyBounds) {
+			label = "≤ " + fmtMS(float64(latencyBounds[i]))
 		}
 		ch.Labels = append(ch.Labels, label)
 		s.Data = append(s.Data, Num(n))
@@ -406,7 +403,7 @@ func (o *writes) charts(w store.InsightsWindow, drill string) []Chart {
 	return []Chart{
 		{ID: "writes", Title: "Writes over time", Desc: "By ledger state", Kind: KindStacked, Wide: true, Unit: "writes",
 			Times: millis(times), Bucket: w.Bucket.Milliseconds(), Series: stacked(o.byState, times, stateTones)},
-		{ID: "write-duration", Title: "Write duration", Desc: "p50, p95 and p99 from start to a final state", Kind: KindLine, Wide: true, Unit: "ms",
+		{ID: "write-duration", Title: "Write duration", Desc: "p50, p95 and p99 from start to success or failure", Kind: KindLine, Wide: true, Unit: "ms",
 			Times: millis(times), Bucket: w.Bucket.Milliseconds(), Series: percentiles(o.duration, times)},
 		tools,
 		countsChart("write-errors", "Write errors", "Error codes of failed and unresolved writes", o.errors, "danger", nil),

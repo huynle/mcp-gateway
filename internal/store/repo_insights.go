@@ -88,8 +88,8 @@ type InsightsUserToolCount struct {
 }
 
 // InsightsWriteSummary summarises the ledger operations of a window.
-// P50 and P95 are the duration (finished_at - created_at) of finished
-// writes in milliseconds.
+// P50 and P95 are the duration (finished_at - created_at) of succeeded
+// and failed writes in milliseconds.
 type InsightsWriteSummary struct {
 	Writes, Succeeded, Failed, Unknown, Unresolved, InProgress int64
 	P50, P95                                                   float64
@@ -148,7 +148,8 @@ func InsightsCalls(ctx context.Context, q Querier, admin bool, w InsightsWindow)
 }
 
 // InsightsCallsByOutcome counts tool calls per bucket and outcome
-// (succeeded, failed, denied; "none" when the row has no outcome).
+// (succeeded, failed, denied, and the reconciler's unknown / unresolved
+// verdicts; "none" when the row has no outcome).
 func InsightsCallsByOutcome(ctx context.Context, q Querier, admin bool, w InsightsWindow) ([]InsightsBucketCount, error) {
 	return bucketCounts(ctx, q, w, "calls by outcome", `SELECT `+insightsBin+`, coalesce(outcome, 'none'), count(*)
 		FROM `+auditTable(admin)+` WHERE `+toolCall+` AND created_at >= $2 AND created_at < $3
@@ -361,8 +362,11 @@ func InsightsUserTools(ctx context.Context, q Querier, w InsightsWindow, users, 
 	return out, nil
 }
 
-// insightsDuration is a finished write's duration in milliseconds.
-const insightsDuration = `extract(epoch FROM finished_at - created_at) * 1000`
+// insightsDuration is a write's duration in milliseconds, for writes that
+// reached succeeded or failed: an unknown or unresolved write "finishes"
+// when the reconciler gives up, hours or days later, which says nothing
+// about how long the vendor took (percentile_cont skips the NULLs).
+const insightsDuration = `CASE WHEN state IN ('succeeded', 'failed') THEN extract(epoch FROM finished_at - created_at) * 1000 END`
 
 // InsightsWrites returns the window's ledger totals.
 func InsightsWrites(ctx context.Context, q Querier, admin bool, w InsightsWindow) (InsightsWriteSummary, error) {
@@ -393,14 +397,14 @@ func InsightsWritesByState(ctx context.Context, q Querier, admin bool, w Insight
 		GROUP BY 1, 2 ORDER BY 1, 2`)
 }
 
-// InsightsWriteDuration returns finished-write duration percentiles per
-// bucket.
+// InsightsWriteDuration returns the duration percentiles of succeeded and
+// failed writes per bucket.
 func InsightsWriteDuration(ctx context.Context, q Querier, admin bool, w InsightsWindow) ([]InsightsPercentiles, error) {
 	return bucketPercentiles(ctx, q, w, "write duration", `SELECT `+insightsBin+`, count(*),
 			percentile_cont(0.5) WITHIN GROUP (ORDER BY `+insightsDuration+`),
 			percentile_cont(0.95) WITHIN GROUP (ORDER BY `+insightsDuration+`),
 			percentile_cont(0.99) WITHIN GROUP (ORDER BY `+insightsDuration+`)
-		FROM `+ledgerTable(admin)+` WHERE finished_at IS NOT NULL AND created_at >= $2 AND created_at < $3
+		FROM `+ledgerTable(admin)+` WHERE finished_at IS NOT NULL AND state IN ('succeeded', 'failed') AND created_at >= $2 AND created_at < $3
 		GROUP BY 1 ORDER BY 1`)
 }
 

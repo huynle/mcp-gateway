@@ -106,6 +106,12 @@ One row per tool call (`event_type = tool_call`), per user action without a tool
 
 Users see their own rows (`/activity`), admins see metadata for everyone (`/admin/audit`).
 
+### Insights (portal charts)
+
+`internal/insights` (decision `3yq9s5ev`) charts the audit events, the write ledger and the approvals on `/activity` (own calls), `/operations` (own writes) and `/admin/insights` (everyone; admin only, 404 for members like every `/admin` page). The data are SQL aggregates (`store/repo_insights.go`), each bounded by the selected range (`?range=24h|7d|30d`, default `7d`; hour, six-hour and day buckets aligned to UTC) and served by the existing `created_at` and `(user_id, created_at)` indexes. A user's charts read through `WithUser`, so row-level security pins them to that user; the admin page reads the `admin_*` views through `WithJobs`. Users are shown by `display_name` (the gateway stores no email).
+
+The page embeds the charts as a JSON data block (`<script type="application/json" data-insights>`, escaped by `html/template`); there is no JSON endpoint. The vendored Chart.js 4.6.1 (`static/chart.umd.min.js`, MIT) and `static/charts.js` draw them, so the CSP is unchanged. A failed aggregate query is logged (`event=insights.load_failed`) and the page still renders its table with a notice and the request id. Write durations count succeeded and failed writes only: an unresolved write "finishes" when the reconciler gives up. Prometheus metrics are unchanged; they remain the source for Grafana and alerts (no history, no per-user labels).
+
 **Account lifecycle events** (`user`, `internal/account`), written in the same transaction as the action: `user.data_exported` (My account → *Download my data*; at most one per user per 10 minutes, the limit reads the last such row) and `user.deleted` (`by=self` under the deleted user's id, or `by=admin` under the admin's id with `target_user_id`; plus the counts `servers`, `tunnels`, `connections`). Log lines `event=user.data_exported` / `event=user.deleted` carry the hashed user ids.
 
 ### Retention purge (`audit.purge` job)

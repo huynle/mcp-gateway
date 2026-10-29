@@ -79,7 +79,7 @@ func TestIntegrationInsightsAggregates(t *testing.T) {
 	}
 	ledger(alice, connA, "github.create_issue", "succeeded", "k1", at(1, 0), 200*time.Millisecond, "")
 	ledger(alice, connA, "github.create_issue", "failed", "k2", at(1, 30), 400*time.Millisecond, "vendor_error")
-	ledger(alice, connA, "github.create_issue", "unresolved", "k3", at(2, 0), 0, "outcome_unknown")
+	ledger(alice, connA, "github.create_issue", "unresolved", "k3", at(2, 0), 72*time.Hour, "outcome_unknown") // the reconciler gave up days later: not a duration
 	ledger(bob, connB, "slack.post_message", "succeeded", "k4", at(2, 10), 100*time.Millisecond, "")
 
 	approval := func(user, conn, status string, created time.Time, decide time.Duration) {
