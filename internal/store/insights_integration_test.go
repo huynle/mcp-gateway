@@ -3,10 +3,12 @@
 package store_test
 
 import (
+	"net/url"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/store"
 )
 
@@ -286,4 +288,133 @@ func equalBucketCounts(got, want []store.InsightsBucketCount) bool {
 		}
 	}
 	return true
+}
+
+// The insights source end to end over a migrated database: a user's
+// dashboards see only their own rows, the admin dashboard sees everyone
+// with names, and every chart's series lines up with its timeline.
+func TestIntegrationInsightsSource(t *testing.T) {
+	env := setup(t)
+	env.reset(t)
+	ctx := t.Context()
+	st := env.open(t)
+	alice := newUser(t, st, "Alice")
+	bob := newUser(t, st, "Bob")
+	appID := newVendorApp(t, st)
+	connA := newConnection(t, st, alice, appID, "acct-a")
+	var pvID string
+	if err := env.super.QueryRow(ctx, `INSERT INTO policy_versions (version_hash, cedar, source) VALUES ('sha256:src', 'permit(principal, action, resource);', '{}') RETURNING id`).Scan(&pvID); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for i, c := range []struct {
+		user, tool, decision, outcome string
+		ago                           time.Duration
+	}{
+		{alice, "github.get_issue", "allow", "succeeded", 2 * time.Hour},
+		{alice, "github.create_issue", "allow", "failed", 3 * time.Hour},
+		{bob, "slack.post_message", "deny", "denied", 30 * time.Minute},
+		{bob, "slack.post_message", "allow", "succeeded", 40 * 24 * time.Hour}, // outside every range
+	} {
+		if _, err := env.super.Exec(ctx, `INSERT INTO audit_events (event_type, user_id, tool, decision, outcome, latency_ms, created_at)
+			VALUES ('tool_call', $1, $2, $3, $4, $5, $6)`, c.user, c.tool, c.decision, c.outcome, 100*(i+1), now.Add(-c.ago)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := env.super.Exec(ctx, `INSERT INTO ledger_operations (user_id, connection_id, tool, state, idempotency_key, window_start, window_end, policy_version_id, created_at, updated_at, finished_at)
+		VALUES ($1, $2, 'github.create_issue', 'succeeded', 'k', $3, $3::timestamptz + interval '1 day', $4, $3, $3, $3::timestamptz + interval '2 seconds')`, alice, connA, now.Add(-time.Hour), pvID); err != nil {
+		t.Fatal(err)
+	}
+
+	src := insights.NewSource(st)
+	u, _ := url.Parse("/activity?range=24h")
+	day, _ := insights.ParseRange("24h")
+
+	act, err := src.Activity(ctx, alice, day, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if act.Empty || stat(act, "Tool calls") != "2" || stat(act, "Failed") != "1" || stat(act, "Denied") != "0" {
+		t.Errorf("alice activity stats = %+v", act.Stats)
+	}
+	checkCharts(t, "activity", act)
+	if c := chart(act, "tools"); c == nil || len(c.Labels) != 2 || c.Drill == nil || c.Drill.Href != "/activity?range=24h" {
+		t.Errorf("alice tools chart = %+v", c)
+	}
+
+	ops, err := src.Operations(ctx, alice, day, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat(ops, "Writes") != "1" || stat(ops, "Duration p50") != "2.0 s" {
+		t.Errorf("alice operations stats = %+v", ops.Stats)
+	}
+	checkCharts(t, "operations", ops)
+
+	bobOps, err := src.Operations(ctx, bob, day, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bobOps.Empty {
+		t.Errorf("bob sees writes: %+v", bobOps.Stats)
+	}
+
+	month, _ := insights.ParseRange("30d")
+	adm, err := src.Admin(ctx, month, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat(adm, "Tool calls") != "3" || stat(adm, "Active users") != "2" || stat(adm, "Writes") != "1" {
+		t.Errorf("admin stats = %+v", adm.Stats)
+	}
+	if len(adm.Users) != 2 || adm.Users[0].Name != "Alice" || adm.Users[0].Href != "/admin/audit?user_id="+alice {
+		t.Errorf("admin users = %+v", adm.Users)
+	}
+	checkCharts(t, "admin", adm)
+	if c := chart(adm, "user-tools"); c == nil || len(c.Points) != 3 {
+		t.Errorf("admin user × tool = %+v", c)
+	}
+}
+
+func stat(d *insights.Dashboard, label string) string {
+	for _, s := range d.Stats {
+		if s.Label == label {
+			return s.Value
+		}
+	}
+	return "<missing>"
+}
+
+func chart(d *insights.Dashboard, id string) *insights.Chart {
+	for _, c := range d.Charts() {
+		if c.ID == id {
+			return &c
+		}
+	}
+	return nil
+}
+
+// checkCharts: ids are unique, every time series has one value per
+// bucket, every category series one per label.
+func checkCharts(t *testing.T, what string, d *insights.Dashboard) {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, c := range d.Charts() {
+		if seen[c.ID] {
+			t.Errorf("%s: duplicate chart id %q", what, c.ID)
+		}
+		seen[c.ID] = true
+		n := len(c.Labels)
+		if len(c.Times) > 0 {
+			n = len(c.Times)
+		}
+		if c.Kind == insights.KindMatrix {
+			continue
+		}
+		for _, s := range c.Series {
+			if len(s.Data) != n {
+				t.Errorf("%s: chart %s series %s has %d values for %d buckets/labels", what, c.ID, s.Key, len(s.Data), n)
+			}
+		}
+	}
 }

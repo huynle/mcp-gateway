@@ -1,0 +1,45 @@
+{{define "admin.html"}}<!doctype html>
+<html lang="en">
+<head>
+  {{template "page.head"}}
+  <title>Insights · MCP Gateway</title>
+</head>
+<body>
+{{template "nav" navData}}
+<main>
+<header class="page-head">
+  <div>
+    <h1>Insights</h1>
+    <p class="page-desc">What goes through the gateway: who calls which tools, how often, how fast and with what outcome, plus writes and approvals. Built from the audit trail and the write ledger: metadata only, never arguments or content.</p>
+  </div>
+  <a class="btn" href="/admin/audit">{{icon "audit"}}Audit search</a>
+</header>
+{{template "insights.charts" .}}
+{{if .Users}}
+<section class="section">
+  <div class="section-head"><div><h2>Top users</h2><p>The most active users in the last {{.Range.Label}}.</p></div></div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>User</th><th class="num">Calls</th><th class="num">Failed</th><th class="num">Denied</th><th class="num">Tools</th><th>Last call (UTC)</th><th></th></tr></thead>
+    <tbody>
+    {{range .Users}}
+    <tr>
+      <td><span title="{{.UserID}}">{{.Name}}</span></td>
+      <td class="num">{{.Calls}}</td>
+      <td class="num">{{if .Failed}}<span class="pill failed">{{.Failed}}</span>{{else}}0{{end}}</td>
+      <td class="num">{{if .Denied}}<span class="pill pending">{{.Denied}}</span>{{else}}0{{end}}</td>
+      <td class="num">{{.Tools}}</td>
+      <td class="nowrap">{{fmtTime .LastSeen}}</td>
+      <td><a href="{{.Href}}">Audit trail</a></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{end}}
+</main>
+{{template "footer"}}
+</body>
+</html>
+{{end}}

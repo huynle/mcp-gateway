@@ -3,7 +3,9 @@
 // script and styles, the IBM Plex web fonts portal.css loads from fonts/
 // (SIL OFL 1.1, licence texts next to them), and the installable-app
 // script and icons (pwa.js; icons/*.png, rendered by
-// scripts/render-pwa-icons.py). They are embedded so the portal ships
+// scripts/render-pwa-icons.py), and the insights charts: the vendored
+// Chart.js (chart.umd.min.js, MIT, licence in chart.LICENSE) and its
+// glue (charts.js). They are embedded so the portal ships
 // inside the single gateway binary (decision 7datr7x4) and served by the
 // portal under /static/. The service worker source (sw.js) is embedded
 // too, as ServiceWorker, but served by the portal at /sw.js.
@@ -34,7 +36,7 @@ func init() {
 
 // FS is the embedded asset tree served under /static/.
 //
-//go:embed htmx.min.js review.js review.css portal.css theme.js copy.js pwa.js favicon.svg fonts/*.woff2 icons/*.png
+//go:embed htmx.min.js chart.umd.min.js charts.js review.js review.css portal.css theme.js copy.js pwa.js favicon.svg fonts/*.woff2 icons/*.png
 var FS embed.FS
 
 // ServiceWorker is the source of the portal's service worker. It is not in

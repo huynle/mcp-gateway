@@ -12,6 +12,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/config"
 	"github.com/huynle/mcp-gateway/internal/connectors"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/jobs"
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
@@ -83,13 +84,17 @@ func ledgerJobs(svc *ledger.Service) []jobs.Job {
 }
 
 // withOperationsPage mounts GET /operations behind the portal's
-// signed-in check.
-func withOperationsPage(svc *ledger.Service) portalExtra {
+// signed-in check, with charts of the user's writes when src is set.
+func withOperationsPage(svc *ledger.Service, src *insights.Source) portalExtra {
 	return func(_ *identity.Service, mountUser func(string, http.Handler), session func(*http.Request) (string, string), log *slog.Logger, _ http.Handler) {
 		if svc == nil {
 			return
 		}
-		ledger.NewPortal(svc, session, log).Mount(mountUser)
+		p := ledger.NewPortal(svc, session, log)
+		if src != nil {
+			p.WithInsights(src.Operations)
+		}
+		p.Mount(mountUser)
 	}
 }
 

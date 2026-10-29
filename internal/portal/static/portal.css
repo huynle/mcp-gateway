@@ -39,6 +39,13 @@
   --warn-soft: #faf0da;
   --focus: #0e7268;
   --shadow: #10182814;
+  /* chart series (insights): categorical colours beside the status ones */
+  --chart-1: #0e7268;
+  --chart-2: #5b57d1;
+  --chart-3: #c2410c;
+  --chart-4: #8a3ffc;
+  --chart-5: #0369a1;
+  --chart-6: #a16207;
 }
 
 /* @palette dark */
@@ -64,6 +71,12 @@
   --warn-soft: #2e2411;
   --focus: #3ad3bf;
   --shadow: #00000066;
+  --chart-1: #3ad3bf;
+  --chart-2: #a5a1ff;
+  --chart-3: #fb923c;
+  --chart-4: #c9a7ff;
+  --chart-5: #5fb8f0;
+  --chart-6: #e3b85a;
 }
 
 /* @palette system-dark (copy of dark) */
@@ -90,6 +103,12 @@
   --warn-soft: #2e2411;
   --focus: #3ad3bf;
   --shadow: #00000066;
+  --chart-1: #3ad3bf;
+  --chart-2: #a5a1ff;
+  --chart-3: #fb923c;
+  --chart-4: #c9a7ff;
+  --chart-5: #5fb8f0;
+  --chart-6: #e3b85a;
   }
 }
 
@@ -582,6 +601,25 @@ pre.elicit-url mark { background: var(--accent-soft); color: var(--accent); bord
 .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0; padding: 0; list-style: none; }
 .chips > li { margin: 0; }
 :is(h2, h3) > .pill { margin-left: .5rem; font-size: var(--text-xs); }
+
+/* --- insights charts (package insights; static/charts.js draws them) ---- */
+.insights .section-head .tabs { margin: 0; border-bottom: 0; }
+.insights-stats { margin-bottom: var(--sp-4); }
+.stat-hint { color: var(--muted); font-size: var(--text-xs); margin-top: .1rem; }
+.stat-ok .stat-value { color: var(--ok); }
+.stat-warn .stat-value { color: var(--warn); }
+.stat-danger .stat-value { color: var(--danger); }
+.insights-group { margin: var(--sp-5) 0 var(--sp-3); color: var(--muted); font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.chart-grid { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.chart-card { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--elev-1); padding: var(--sp-3) var(--sp-4) var(--sp-4); min-width: 0; }
+.chart-card.wide { grid-column: 1 / -1; }
+.chart-card figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem; margin-bottom: var(--sp-2); }
+.chart-card figcaption span { color: var(--muted); font-size: var(--text-sm); }
+.chart-box { position: relative; height: 15rem; }
+.chart-card.wide .chart-box { height: 16rem; }
+.chart-box.tall, .chart-card.wide .chart-box.tall { height: 19rem; }
+.chart-box canvas { max-width: 100%; }
+.insights-table-head { margin: var(--sp-6) 0 var(--sp-3); }
 
 /* --- fixes after the visual pass ----------------------------------------- */
 /* .panel > :last-child zeroes margins; the foot must stay flush, and so

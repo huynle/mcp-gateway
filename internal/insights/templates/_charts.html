@@ -1,0 +1,41 @@
+{{define "insights.charts"}}{{with .}}
+<section class="section insights" aria-labelledby="insights-title">
+  <div class="section-head">
+    <div>
+      <h2 id="insights-title">{{.Title}}</h2>
+      <p>Last {{.Range.Label}}. Times are shown in your local time zone.</p>
+    </div>
+    <nav class="tabs insights-range" aria-label="Time range">
+      {{- range .RangeLinks}}<a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end -}}
+    </nav>
+  </div>
+  {{if .Failed}}
+  <p class="callout warn">The charts could not be loaded. Try again; if it keeps happening, quote request id <code>{{.RequestID}}</code>.</p>
+  {{else}}
+  <div class="stats insights-stats">
+    {{- range .Stats}}
+    <div class="stat{{if .Tone}} stat-{{.Tone}}{{end}}"><div class="stat-label">{{.Label}}</div><div class="stat-value">{{.Value}}</div>{{if .Hint}}<div class="stat-hint">{{.Hint}}</div>{{end}}</div>
+    {{- end}}
+  </div>
+  {{if .Empty}}
+  <div class="empty">{{icon "activity"}}<strong>Nothing to chart yet.</strong><p>No activity in the last {{.Range.Label}}. Pick a longer range, or come back once tools have been called.</p></div>
+  {{else}}
+  {{range .Groups}}
+  <h3 class="insights-group">{{.Title}}</h3>
+  <div class="chart-grid">
+    {{- range .Charts}}
+    <figure class="chart-card{{if .Wide}} wide{{end}}">
+      <figcaption><strong>{{.Title}}</strong>{{if .Desc}}<span>{{.Desc}}</span>{{end}}</figcaption>
+      <div class="chart-box{{if eq .Kind "matrix" "punchcard"}} tall{{end}}"><canvas id="chart-{{.ID}}" role="img" aria-label="{{.Title}}"></canvas></div>
+    </figure>
+    {{- end}}
+  </div>
+  {{end}}
+  <script type="application/json" data-insights>{{.Charts}}</script>
+  <noscript><p class="muted">Turn on JavaScript to see the charts; the numbers above and the table below work without it.</p></noscript>
+  <script src="{{asset "chart.umd.min.js"}}" defer></script>
+  <script src="{{asset "charts.js"}}" defer></script>
+  {{end}}
+  {{end}}
+</section>
+{{end}}{{end}}

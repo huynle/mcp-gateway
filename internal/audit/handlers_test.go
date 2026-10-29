@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/huynle/mcp-gateway/internal/audit"
+	"github.com/huynle/mcp-gateway/internal/insights"
 )
 
 const (
@@ -252,5 +254,37 @@ func TestAdminSearchRejectsBadUserID(t *testing.T) {
 	}
 	if f.adminCalls != 0 {
 		t.Error("reader called with a malformed user id")
+	}
+}
+
+// With insights, /activity charts the session user's own calls above the
+// table (the loader gets the session user whatever the query says), keeps
+// the range in the filter form, and rejects a bad range.
+func TestActivityChartsWithInsights(t *testing.T) {
+	f := &fakeReader{rows: sampleRows()}
+	var gotUser, gotRange string
+	load := func(_ context.Context, user string, r insights.Range, u *url.URL) (*insights.Dashboard, error) {
+		gotUser, gotRange = user, r.Key
+		return &insights.Dashboard{Title: "Insights", Range: r, RangeLinks: insights.RangeLinksFor(u, r),
+			Stats:  []insights.Stat{{Label: "Tool calls", Value: "7"}},
+			Groups: []insights.Group{{Title: "Calls", Charts: []insights.Chart{{ID: "calls", Title: "Calls over time", Kind: insights.KindStacked}}}}}, nil
+	}
+	h := audit.ActivityHandler(f, identity(alice, false), audit.WithInsights(load))
+	rec := get(t, h, "/activity?range=24h&user_id="+bob)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || gotUser != alice || gotRange != "24h" {
+		t.Fatalf("GET = %d, loader user %q range %q", rec.Code, gotUser, gotRange)
+	}
+	for _, want := range []string{`<canvas id="chart-calls"`, "data-insights", `<input type="hidden" name="range" value="24h">`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if rec := get(t, h, "/activity?range=1y"); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad range = %d, want 400", rec.Code)
+	}
+	// Without insights the page has no charts.
+	if body := get(t, audit.ActivityHandler(f, identity(alice, false)), "/activity").Body.String(); strings.Contains(body, "data-insights") {
+		t.Error("charts rendered without insights")
 	}
 }

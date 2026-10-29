@@ -37,6 +37,7 @@ import (
 	"github.com/huynle/mcp-gateway/internal/crypto"
 	"github.com/huynle/mcp-gateway/internal/federation/gatewaytools"
 	"github.com/huynle/mcp-gateway/internal/identity"
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/ledger"
 	"github.com/huynle/mcp-gateway/internal/mcp"
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -221,7 +222,8 @@ func run() error {
 		}
 		// My account's switch goes through the gate so switching off
 		// takes effect at once.
-		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), rec, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{Service: rateSvc, caps: capsSvc, push: pushSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc, authSvc), withSecretPages(secretSvc), withElicitPages(fed, st, rec), withSignupAudit(rec), withPushDisableHook(pushSvc))
+		insightsSrc := insights.NewSource(st)
+		portalHandler, err = newPortalWithAccount(cfg, identity.NewPostgresStore(st), insightsReader{Reader: rec, src: insightsSrc}, tokenSvc, policySvc, approvalSvc, connSvc, registry, gw.Setting(perms), portalSettings{Service: rateSvc, caps: capsSvc, push: pushSvc}, newAccountLifecycle(st, fed, log), log, withOperationsPage(ledgerSvc, insightsSrc), withInsightsPage(insightsSrc), withHarnessPages(authSvc), withFederationPages(fed, st, cfg.BaseURL, policySvc, rec), withFederationAdmin(fed, st, rec), withMachinePages(machineSvc, authSvc), withSecretPages(secretSvc), withElicitPages(fed, st, rec), withSignupAudit(rec), withPushDisableHook(pushSvc))
 		if err != nil {
 			return err
 		}
@@ -387,7 +389,11 @@ func newPortalWithAccount(cfg config.Config, st identity.Store, reader audit.Rea
 		}
 		return pr.UserID, pr.IsAdmin()
 	}
-	p.MountUser("GET /activity", audit.ActivityHandler(reader, who))
+	var activityOpts []audit.Option
+	if ir, ok := reader.(interface{ activityInsights() insights.Loader }); ok {
+		activityOpts = append(activityOpts, audit.WithInsights(ir.activityInsights())) // charts on /activity (insights.go)
+	}
+	p.MountUser("GET /activity", audit.ActivityHandler(reader, who, activityOpts...))
 	p.MountAdmin("GET /admin/audit", audit.AdminSearchHandler(reader, who))
 	session := func(r *http.Request) (string, string) {
 		pr := identity.PrincipalFrom(r.Context())
