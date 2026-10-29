@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -24,10 +25,10 @@ type Identity func(r *http.Request) (userID string, isAdmin bool)
 //go:embed templates/*.html
 var templateFS embed.FS
 
-var templates = template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
+var templates = template.Must(template.Must(insights.Setup(nav.Setup(template.New("")).Funcs(template.FuncMap{
 	"fmtTime": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05Z") },
 	"fmtDur":  func(d time.Duration) string { return d.String() },
-}).ParseFS(templateFS, "templates/*.html"))
+}))).ParseFS(templateFS, "templates/*.html"))
 
 var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -40,13 +41,36 @@ type page struct {
 	PageNum  int
 	PrevLink string
 	NextLink string
+	// Insights are the charts above the table (nil: none); Range keeps
+	// the chart range across a filter submit.
+	Insights *insights.Dashboard
+	Range    string
+}
+
+// Option configures ActivityHandler.
+type Option func(*options)
+
+type options struct {
+	insights insights.Loader
+}
+
+// WithInsights adds charts of the user's own calls above the table
+// (decision 3yq9s5ev); load is normally insights.Source.Activity.
+func WithInsights(load insights.Loader) Option {
+	return func(o *options) { o.insights = load }
 }
 
 // ActivityHandler serves a user's own activity ("my activity"): GET only,
 // query parameters tool, decision, outcome, since, until (RFC 3339 or
 // YYYY-MM-DD) and page (1-based). It always lists the session user's rows,
-// whatever the query says, through Reader.ListForUser.
-func ActivityHandler(reader Reader, who Identity) http.Handler {
+// whatever the query says, through Reader.ListForUser. With WithInsights
+// the page also charts the user's calls over the range query parameter
+// (24h, 7d or 30d).
+func ActivityHandler(reader Reader, who Identity, opts ...Option) http.Handler {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowGet(w, r) {
 			return
@@ -61,13 +85,19 @@ func ActivityHandler(reader Reader, who Identity) http.Handler {
 			http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		dash, err := insights.ForUser(r, o.insights, userID, nil)
+		if err != nil {
+			http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		rows, err := reader.ListForUser(r.Context(), userID, f, p)
 		if err != nil {
 			fail(w, r, "audit: activity page", err)
 			return
 		}
 		render(w, r, "activity.html", page{Title: "My activity", Rows: rows, Filter: f, PageNum: pageNum,
-			PrevLink: pageLink(r.URL, pageNum-1, len(rows), p.Limit), NextLink: pageLink(r.URL, pageNum+1, len(rows), p.Limit)})
+			PrevLink: pageLink(r.URL, pageNum-1, len(rows), p.Limit), NextLink: pageLink(r.URL, pageNum+1, len(rows), p.Limit),
+			Insights: dash, Range: r.URL.Query().Get(insights.RangeParam)})
 	})
 }
 

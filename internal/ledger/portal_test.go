@@ -1,12 +1,15 @@
 package ledger_test
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 
 	"github.com/huynle/mcp-gateway/internal/ledger"
@@ -72,5 +75,38 @@ func TestOperationsPageListsTheCallersOperationsWithHints(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous status = %d", rec.Code)
+	}
+}
+
+// With insights the page charts the caller's writes above the list (the
+// loader gets the caller and the range); a bad range is a 400.
+func TestOperationsPageChartsWithInsights(t *testing.T) {
+	f := newFixture(t)
+	var gotUser, gotRange string
+	load := func(_ context.Context, user string, r insights.Range, u *url.URL) (*insights.Dashboard, error) {
+		gotUser, gotRange = user, r.Key
+		return &insights.Dashboard{Title: "Insights", Range: r, RangeLinks: insights.RangeLinksFor(u, r),
+			Stats:  []insights.Stat{{Label: "Writes", Value: "42"}},
+			Groups: []insights.Group{{Title: "Writes", Charts: []insights.Chart{{ID: "writes", Title: "Writes over time", Kind: insights.KindStacked}}}}}, nil
+	}
+	mux := http.NewServeMux()
+	who := func(*http.Request) (string, string) { return alice, "csrf-token" }
+	ledger.NewPortal(f.svc, who, slog.New(slog.DiscardHandler)).WithInsights(load).Mount(mux.Handle)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations?range=30d", nil))
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || gotUser != alice || gotRange != "30d" {
+		t.Fatalf("GET = %d, loader user %q range %q", rec.Code, gotUser, gotRange)
+	}
+	for _, want := range []string{`<canvas id="chart-writes"`, "data-insights", "Latest writes", "42"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/operations?range=forever", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad range = %d, want 400", rec.Code)
 	}
 }

@@ -92,6 +92,7 @@ var AdminGroup = Group{"Admin", []Link{
 	{"/admin/roles", "Roles", "roles"},
 	{"/admin/servers", "All servers", "allservers"},
 	{"/admin/machines", "All machines", "allmachines"},
+	{"/admin/insights", "Insights", "insights"},
 	{"/admin/audit", "Audit", "audit"},
 	{"/admin/vendor-apps", "Vendor apps", "vendorapps"},
 }}

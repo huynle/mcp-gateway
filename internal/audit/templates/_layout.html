@@ -11,6 +11,7 @@
 
 {{define "filters"}}
 <form class="filters" method="get" role="search" aria-label="Filter activity">
+  {{if .Range}}<input type="hidden" name="range" value="{{.Range}}">{{end}}
   {{if .Admin}}<label>User ID <input name="user_id" value="{{.Filter.UserID}}" size="36" pattern="[0-9a-fA-F-]{36}"></label>{{end}}
   <label>Tool <input name="tool" value="{{.Filter.Tool}}" placeholder="github.create_issue"></label>
   <label>Decision <input name="decision" value="{{.Filter.Decision}}" placeholder="allow / deny / confirm"></label>

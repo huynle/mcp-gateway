@@ -37,7 +37,7 @@ Drift is caught by tests: `navtest.AssertShell` (called from each module's `shel
 
 ## Icons
 
-`{{icon "name"}}` renders an inline, `aria-hidden` SVG (24×24, stroked in `currentColor`) from `internal/portal/nav/icons.go`; an unknown name is a template error. Use them in buttons (`<button class="btn">{{icon "plus"}}Add server</button>`), empty states and the nav. Names: the nav icons (`account tokens harnesses machines connections servers secrets approvals operations activity settings users roles allservers allmachines audit vendorapps`) and `plus copy external arrow-left warning info check x search inbox sun moon system menu signout brand`. Add new ones to the map (hand-drawn, no copied icon sets).
+`{{icon "name"}}` renders an inline, `aria-hidden` SVG (24×24, stroked in `currentColor`) from `internal/portal/nav/icons.go`; an unknown name is a template error. Use them in buttons (`<button class="btn">{{icon "plus"}}Add server</button>`), empty states and the nav. Names: the nav icons (`account tokens harnesses machines connections servers secrets approvals operations activity settings users roles allservers allmachines insights audit vendorapps`) and `plus copy external arrow-left warning info check x search inbox sun moon system menu signout brand`. Add new ones to the map (hand-drawn, no copied icon sets).
 
 ## Page structure
 
@@ -100,7 +100,7 @@ IBM Plex Sans (400/500/600) and IBM Plex Mono (400/500), Latin subset, self-host
 
 ## Static assets and cache busting
 
-`internal/portal/static` embeds the assets; the portal serves them under `/static/` with `Cache-Control: public, max-age=86400`. Templates link assets with `{{asset "portal.css"}}`, which renders `/static/portal.css?v=<first 12 hex of the file's SHA-256>`. A deploy that changes a file changes its URL, so browsers fetch the new copy straight away. An unknown asset name is a template error, not a dead link. Fonts are loaded by `portal.css` with relative URLs (`fonts/…`); `TestFontsReferencedByTheStylesheetAreEmbedded` checks they exist.
+`internal/portal/static` embeds the assets; the portal serves them under `/static/` with `Cache-Control: public, max-age=86400`. Templates link assets with `{{asset "portal.css"}}`, which renders `/static/portal.css?v=<first 12 hex of the file's SHA-256>`. A deploy that changes a file changes its URL, so browsers fetch the new copy straight away. An unknown asset name is a template error, not a dead link. The insights pages also load the vendored Chart.js (`chart.umd.min.js`, MIT, licence in `chart.LICENSE`, listed in `THIRD_PARTY_NOTICES.md`) and `charts.js`; the "insights.charts" partial (`internal/insights`, added to a module's set with `insights.Setup`) links them, so other pages never load them. Chart colours come from `--chart-1`…`--chart-6` plus the status colours of the palette, and the charts are redrawn when the theme changes. Fonts are loaded by `portal.css` with relative URLs (`fonts/…`); `TestFontsReferencedByTheStylesheetAreEmbedded` checks they exist.
 
 ## Public pages (no sign-in)
 

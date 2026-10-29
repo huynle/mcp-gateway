@@ -25,6 +25,7 @@ var icons = map[string]string{
 	"roles":       `<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>`,
 	"allservers":  `<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5M3 16.5l9 5 9-5"/>`,
 	"allmachines": `<rect x="2" y="7" width="14" height="10" rx="1.5"/><path d="M6 21h6M9 17v4M6 4h14.5A1.5 1.5 0 0 1 22 5.5V14"/>`,
+	"insights":    `<path d="M3 20h18M6 16v-4M10 16V8M14 16v-6M18 16V5"/>`,
 	"audit":       `<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5M14 3l5 5h-5z"/><circle cx="16.5" cy="16.5" r="3"/><path d="M19 19l2.5 2.5"/>`,
 	"vendorapps":  `<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>`,
 	"sun":         `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>`,

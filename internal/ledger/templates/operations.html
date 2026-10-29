@@ -5,6 +5,8 @@
     <p class="page-desc">Your last {{.Limit}} writes through the gateway and what became of them. The gateway keeps only identifiers of what a write produced, never its content.</p>
   </div>
 </header>
+{{if .Insights}}{{template "insights.charts" .Insights}}
+<h2 class="insights-table-head">Latest writes</h2>{{end}}
 <p class="callout warn">A write marked <span class="pill unresolved">unresolved</span> could not be verified: <strong>verify in the app</strong> whether it took effect before trying again.</p>
 <section class="section">
   {{if .Operations}}

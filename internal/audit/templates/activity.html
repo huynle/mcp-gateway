@@ -5,6 +5,8 @@
     <p class="page-desc">Every tool call made with your tokens and connected accounts. The gateway records what was called and on which resource, never the arguments or content.</p>
   </div>
 </header>
+{{if .Insights}}{{template "insights.charts" .Insights}}
+<h2 class="insights-table-head">Calls</h2>{{end}}
 {{template "filters" .}}
 {{template "rows" .}}
 {{template "foot" .}}

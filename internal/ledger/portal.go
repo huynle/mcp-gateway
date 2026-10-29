@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huynle/mcp-gateway/internal/insights"
 	"github.com/huynle/mcp-gateway/internal/portal/nav"
 
 	"github.com/huynle/mcp-gateway/internal/observability"
@@ -30,10 +31,11 @@ const HistoryLimit = 50
 // unresolved ones. It is mounted behind the portal's signed-in check
 // (MountUser) and still refuses anonymous callers itself.
 type Portal struct {
-	svc *Service
-	who Identity
-	log *slog.Logger
-	tpl *template.Template
+	svc      *Service
+	who      Identity
+	log      *slog.Logger
+	tpl      *template.Template
+	insights insights.Loader
 }
 
 // NewPortal builds the page.
@@ -41,12 +43,20 @@ func NewPortal(svc *Service, who Identity, log *slog.Logger) *Portal {
 	if log == nil {
 		log = slog.Default()
 	}
-	tpl := template.Must(nav.Setup(template.New("")).Funcs(template.FuncMap{
+	tpl := template.Must(template.Must(insights.Setup(nav.Setup(template.New("")).Funcs(template.FuncMap{
 		"fmtTime": fmtTime,
 		"shortID": func(id string) string { return id[:min(8, len(id))] },
 		"isURL":   func(v string) bool { return strings.HasPrefix(v, "https://") || strings.HasPrefix(v, "http://") },
-	}).ParseFS(templateFS, "templates/*.html"))
+	}))).ParseFS(templateFS, "templates/*.html"))
 	return &Portal{svc: svc, who: who, log: log, tpl: tpl}
+}
+
+// WithInsights adds charts of the user's own writes above the list
+// (decision 3yq9s5ev); load is normally insights.Source.Operations. It
+// returns p.
+func (p *Portal) WithInsights(load insights.Loader) *Portal {
+	p.insights = load
+	return p
 }
 
 // Mount registers the route through mount (portal.MountUser or a
@@ -65,6 +75,7 @@ type listData struct {
 	Caller     caller
 	Operations []Operation
 	Limit      int
+	Insights   *insights.Dashboard
 }
 
 func (p *Portal) list(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +85,11 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	dash, err := insights.ForUser(r, p.insights, userID, p.log)
+	if err != nil {
+		http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	ops, err := p.svc.Operations(r.Context(), userID, HistoryLimit)
 	if err != nil {
 		p.log.Error("operations page failed", "event", "ledger.page_failed", "path", r.URL.Path,
@@ -82,7 +98,7 @@ func (p *Portal) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var buf bytes.Buffer
-	data := listData{Title: "Operations", Caller: caller{UserID: userID, CSRFToken: csrfToken}, Operations: ops, Limit: HistoryLimit}
+	data := listData{Title: "Operations", Caller: caller{UserID: userID, CSRFToken: csrfToken}, Operations: ops, Limit: HistoryLimit, Insights: dash}
 	if err := nav.Execute(p.tpl, r, &buf, "operations.html", data); err != nil {
 		p.log.Error("operations page failed", "event", "ledger.page_failed", "what", "render", "error", observability.RedactError(err))
 		http.Error(w, "the request could not be completed; try again", http.StatusInternalServerError)
