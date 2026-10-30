@@ -19,6 +19,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/sheets/v4"
+	"google.golang.org/api/slides/v1"
 	"google.golang.org/api/tasks/v1"
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -56,8 +57,8 @@ type Options struct {
 	// trailing slash): the Calendar API is reached at
 	// BaseURL + "calendar/v3/", Drive at BaseURL + "drive/v3/", Tasks,
 	// Gmail, Docs, Sheets, People and Chat at BaseURL + "tasks/v1/",
-	// "gmail/v1/", "v1/documents", "v4/spreadsheets", "v1/people" and
-	// "v1/spaces".
+	// "gmail/v1/", "v1/documents", "v4/spreadsheets", "v1/people",
+	// "v1/spaces" and Slides at "v1/presentations".
 	// Empty means Google's own hosts; tests point it at an httptest
 	// server.
 	BaseURL string
@@ -82,7 +83,7 @@ type Connector struct {
 
 	calendar, tasks, gmail *App
 	drive, docs, sheets    *App
-	contacts, chat         *App
+	contacts, chat, slides *App
 }
 
 // New builds the Google connector.
@@ -145,16 +146,20 @@ func New(opts Options) (*Connector, error) {
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
+	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs, sheets, contacts, chat. Each is
+// calendar, tasks, gmail, drive, docs, sheets, contacts, chat, slides. Each is
 // registered with connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
 func (c *Connector) Apps() []*App {
-	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat}
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat, c.slides}
 }
+
+// Slides returns the "slides" app.
+func (c *Connector) Slides() *App { return c.slides }
 
 // Chat returns the "chat" app (Google Workspace accounts only).
 func (c *Connector) Chat() *App { return c.chat }
@@ -439,6 +444,19 @@ func (cl *client) chat(ctx context.Context) (*chat.Service, error) {
 	svc, err := chat.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "chat client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// slides builds the Slides API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) slides(ctx context.Context) (*slides.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := slides.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "slides client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

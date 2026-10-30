@@ -1,0 +1,47 @@
+{
+  "presentationId": "1PresExample00000000000000000000000",
+  "title": "Q4 review",
+  "slides": [
+    {
+      "objectId": "p1",
+      "pageElements": [
+        {"objectId": "t1", "shape": {"shapeType": "TEXT_BOX", "text": {"textElements": [
+          {"endIndex": 1, "paragraphMarker": {}},
+          {"endIndex": 10, "textRun": {"content": "Q4 review\n"}}
+        ]}}},
+        {"objectId": "t2", "shape": {"shapeType": "TEXT_BOX", "text": {"textElements": [
+          {"textRun": {"content": "Slide "}}, {"autoText": {"type": "SLIDE_NUMBER", "content": "1"}}, {"textRun": {"content": "\n"}}
+        ]}}}
+      ],
+      "slideProperties": {"notesPage": {
+        "notesProperties": {"speakerNotesObjectId": "n1"},
+        "pageElements": [
+          {"objectId": "n0", "shape": {"shapeType": "RECTANGLE"}},
+          {"objectId": "n1", "shape": {"shapeType": "TEXT_BOX", "text": {"textElements": [{"textRun": {"content": "Welcome everyone.\n"}}]}}}
+        ]
+      }}
+    },
+    {
+      "objectId": "p2",
+      "pageElements": [
+        {"objectId": "tbl", "table": {"rows": 2, "columns": 2, "tableRows": [
+          {"tableCells": [
+            {"text": {"textElements": [{"textRun": {"content": "Region\n"}}]}},
+            {"text": {"textElements": [{"textRun": {"content": "Revenue\n"}}]}}
+          ]},
+          {"tableCells": [
+            {"text": {"textElements": [{"textRun": {"content": "EMEA\n"}}]}},
+            {"text": {"textElements": [{"textRun": {"content": "1.2M\n"}}]}}
+          ]}
+        ]}},
+        {"objectId": "g1", "elementGroup": {"children": [
+          {"objectId": "s3", "shape": {"text": {"textElements": [{"textRun": {"content": "Grouped note\n"}}]}}}
+        ]}}
+      ]
+    },
+    {
+      "objectId": "p3",
+      "pageElements": [{"objectId": "img1", "image": {"contentUrl": "https://example.test/image.png"}}]
+    }
+  ]
+}

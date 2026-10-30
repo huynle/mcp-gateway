@@ -70,6 +70,15 @@ const (
 	ScopeChatMembershipsReadonly = "https://www.googleapis.com/auth/chat.memberships.readonly"
 	ScopeChatMemberships         = "https://www.googleapis.com/auth/chat.memberships"
 
+	// Increment 4: Google Slides (sensitive). presentations.get accepts
+	// presentations.readonly, presentations, drive.readonly, drive and
+	// drive.file; presentations.batchUpdate presentations, drive and
+	// drive.file (and, per the reference, drive.readonly, spreadsheets
+	// and spreadsheets.readonly, which are not modelled as implying a
+	// write scope).
+	ScopePresentationsReadonly = "https://www.googleapis.com/auth/presentations.readonly"
+	ScopePresentations         = "https://www.googleapis.com/auth/presentations"
+
 	// chatScopePrefix is the common prefix of every Chat API scope.
 	chatScopePrefix = "https://www.googleapis.com/auth/chat."
 )
@@ -90,11 +99,12 @@ var scopeImplies = map[string][]string{
 	ScopeGmailModify:            {ScopeGmailReadonly, ScopeGmailCompose, ScopeGmailLabels},
 	ScopeGmailCompose:           {ScopeGmailSend},
 	ScopeGmailReadonly:          {ScopeGmailLabels, ScopeGmailMetadata},
-	ScopeDrive:                  {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets},
-	ScopeDriveReadonly:          {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly},
+	ScopeDrive:                  {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets, ScopePresentations},
+	ScopeDriveReadonly:          {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly, ScopePresentationsReadonly},
 	ScopeDriveMetadata:          {ScopeDriveMetadataReadonly},
 	ScopeDocuments:              {ScopeDocumentsReadonly},
 	ScopeSpreadsheets:           {ScopeSpreadsheetsReadonly},
+	ScopePresentations:          {ScopePresentationsReadonly},
 	ScopeContacts:               {ScopeContactsReadonly},
 	ScopeChatSpaces:             {ScopeChatSpacesReadonly},
 	ScopeChatMessages:           {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
@@ -102,7 +112,7 @@ var scopeImplies = map[string][]string{
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the
-// Drive, Docs and Sheets methods accept drive.file, limited to the files
+// Drive, Docs, Sheets and Slides methods accept drive.file, limited to the files
 // the gateway created or the user opened with it, so an account that
 // granted only drive.file may run those tools on that subset (Google
 // decides per file: anything else answers not_found).
@@ -110,6 +120,7 @@ var perFileScopes = map[string]bool{
 	ScopeDriveMetadataReadonly: true, ScopeDriveReadonly: true, ScopeDriveFile: true,
 	ScopeDocumentsReadonly: true, ScopeDocuments: true,
 	ScopeSpreadsheetsReadonly: true, ScopeSpreadsheets: true,
+	ScopePresentationsReadonly: true, ScopePresentations: true,
 }
 
 // PerFile reports whether drive.file admits a tool requiring scope, on

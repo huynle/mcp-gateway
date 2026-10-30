@@ -2,11 +2,12 @@
 -- (Workspace tools): the Workspace-only calendar event types (out of
 -- office, working location, focus time), the Google Chat messages
 -- (send_message, reply_in_thread) and the Gmail vacation responder
--- (set_vacation). They act as the connected user through the user's
--- token (an out-of-office or focus-time event can decline the user's
--- invitations; a Chat message is posted under the user's name; the
--- vacation responder answers every incoming mail), so every call needs a
--- confirmation
+-- (set_vacation), and the Google Slides writes (create, replace_text).
+-- They act as the connected user through the user's token (an
+-- out-of-office or focus-time event can decline the user's invitations;
+-- a Chat message is posted under the user's name; the vacation responder
+-- answers every incoming mail; replace_text rewrites a whole deck), so
+-- every call needs a confirmation
 -- until an admin switches a tool to Auto (Settings -> Vendor apps ->
 -- google -> Tool approvals, or gateway.set_tool_approval). Later
 -- increment-4 writes append their rows here.
@@ -23,7 +24,9 @@ INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('calendar', 'set_working_location'),
     ('chat', 'reply_in_thread'),
     ('chat', 'send_message'),
-    ('gmail', 'set_vacation')
+    ('gmail', 'set_vacation'),
+    ('slides', 'create'),
+    ('slides', 'replace_text')
 ON CONFLICT (app, tool) DO NOTHING;
 
 -- +goose Down
@@ -33,5 +36,7 @@ DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('calendar', 'set_working_location'),
     ('chat', 'reply_in_thread'),
     ('chat', 'send_message'),
-    ('gmail', 'set_vacation')
+    ('gmail', 'set_vacation'),
+    ('slides', 'create'),
+    ('slides', 'replace_text')
 );
