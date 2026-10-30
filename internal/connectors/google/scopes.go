@@ -1,5 +1,11 @@
 package google
 
+import (
+	"strings"
+
+	"github.com/huynle/mcp-gateway/internal/connectors"
+)
+
 // Google OAuth scopes the tools declare as RequiredScopes (the minimal
 // scope each tool works with; docs/vendor-apps.md section 4.3). The
 // account may have granted a broader one: Grants applies the implication
@@ -25,6 +31,11 @@ const (
 	ScopeGmailCompose           = "https://www.googleapis.com/auth/gmail.compose"
 	ScopeGmailModify            = "https://www.googleapis.com/auth/gmail.modify"
 	ScopeMail                   = "https://mail.google.com/"
+	// gmail.settings.basic (restricted) is the only scope
+	// users.settings.updateVacation accepts (not even mail.google.com);
+	// getVacation and filters.list also accept gmail.readonly, which the
+	// settings reads declare. No implication: nothing covers it.
+	ScopeGmailSettingsBasic = "https://www.googleapis.com/auth/gmail.settings.basic"
 
 	// Increment 2: Drive, Docs, Sheets, Contacts. drive, drive.readonly,
 	// drive.metadata and drive.metadata.readonly are restricted scopes
@@ -43,6 +54,43 @@ const (
 	ScopeSpreadsheets          = "https://www.googleapis.com/auth/spreadsheets"
 	ScopeContactsReadonly      = "https://www.googleapis.com/auth/contacts.readonly"
 	ScopeContacts              = "https://www.googleapis.com/auth/contacts"
+
+	// Increment 4: Google Workspace only (WorkspaceOnlyScope). The
+	// directory (People API searchDirectoryPeople, listDirectoryPeople)
+	// and the Chat API exist only for Workspace accounts; personal
+	// (gmail.com) accounts can never grant them. All are sensitive.
+	ScopeDirectoryReadonly    = "https://www.googleapis.com/auth/directory.readonly"
+	ScopeChatSpacesReadonly   = "https://www.googleapis.com/auth/chat.spaces.readonly"
+	ScopeChatSpaces           = "https://www.googleapis.com/auth/chat.spaces"
+	ScopeChatMessagesReadonly = "https://www.googleapis.com/auth/chat.messages.readonly"
+	ScopeChatMessages         = "https://www.googleapis.com/auth/chat.messages"
+	ScopeChatMessagesCreate   = "https://www.googleapis.com/auth/chat.messages.create"
+	// spaces.members.list accepts chat.memberships.readonly or
+	// chat.memberships with user authentication.
+	ScopeChatMembershipsReadonly = "https://www.googleapis.com/auth/chat.memberships.readonly"
+	ScopeChatMemberships         = "https://www.googleapis.com/auth/chat.memberships"
+
+	// Increment 4: Google Slides (sensitive). presentations.get accepts
+	// presentations.readonly, presentations, drive.readonly, drive and
+	// drive.file; presentations.batchUpdate presentations, drive and
+	// drive.file (and, per the reference, drive.readonly, spreadsheets
+	// and spreadsheets.readonly, which are not modelled as implying a
+	// write scope).
+	ScopePresentationsReadonly = "https://www.googleapis.com/auth/presentations.readonly"
+	ScopePresentations         = "https://www.googleapis.com/auth/presentations"
+
+	// Increment 4: Google Forms (sensitive). forms.get accepts
+	// forms.body.readonly, forms.body, drive.readonly, drive and
+	// drive.file; forms.responses.list accepts forms.responses.readonly,
+	// drive and drive.file (not drive.readonly); every forms.body method
+	// (create, batchUpdate, setPublishSettings) accepts drive and
+	// drive.file.
+	ScopeFormsBodyReadonly      = "https://www.googleapis.com/auth/forms.body.readonly"
+	ScopeFormsBody              = "https://www.googleapis.com/auth/forms.body"
+	ScopeFormsResponsesReadonly = "https://www.googleapis.com/auth/forms.responses.readonly"
+
+	// chatScopePrefix is the common prefix of every Chat API scope.
+	chatScopePrefix = "https://www.googleapis.com/auth/chat."
 )
 
 // scopeImplies lists, per scope, the narrower scopes it covers (one
@@ -61,16 +109,23 @@ var scopeImplies = map[string][]string{
 	ScopeGmailModify:            {ScopeGmailReadonly, ScopeGmailCompose, ScopeGmailLabels},
 	ScopeGmailCompose:           {ScopeGmailSend},
 	ScopeGmailReadonly:          {ScopeGmailLabels, ScopeGmailMetadata},
-	ScopeDrive:                  {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets},
-	ScopeDriveReadonly:          {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly},
-	ScopeDriveMetadata:          {ScopeDriveMetadataReadonly},
-	ScopeDocuments:              {ScopeDocumentsReadonly},
-	ScopeSpreadsheets:           {ScopeSpreadsheetsReadonly},
-	ScopeContacts:               {ScopeContactsReadonly},
+	ScopeDrive: {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets, ScopePresentations,
+		ScopeFormsBody, ScopeFormsResponsesReadonly},
+	ScopeDriveReadonly: {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly, ScopePresentationsReadonly,
+		ScopeFormsBodyReadonly},
+	ScopeDriveMetadata:   {ScopeDriveMetadataReadonly},
+	ScopeDocuments:       {ScopeDocumentsReadonly},
+	ScopeSpreadsheets:    {ScopeSpreadsheetsReadonly},
+	ScopePresentations:   {ScopePresentationsReadonly},
+	ScopeFormsBody:       {ScopeFormsBodyReadonly},
+	ScopeContacts:        {ScopeContactsReadonly},
+	ScopeChatSpaces:      {ScopeChatSpacesReadonly},
+	ScopeChatMessages:    {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
+	ScopeChatMemberships: {ScopeChatMembershipsReadonly},
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the
-// Drive, Docs and Sheets methods accept drive.file, limited to the files
+// Drive, Docs, Sheets, Slides and Forms methods accept drive.file, limited to the files
 // the gateway created or the user opened with it, so an account that
 // granted only drive.file may run those tools on that subset (Google
 // decides per file: anything else answers not_found).
@@ -78,6 +133,8 @@ var perFileScopes = map[string]bool{
 	ScopeDriveMetadataReadonly: true, ScopeDriveReadonly: true, ScopeDriveFile: true,
 	ScopeDocumentsReadonly: true, ScopeDocuments: true,
 	ScopeSpreadsheetsReadonly: true, ScopeSpreadsheets: true,
+	ScopePresentationsReadonly: true, ScopePresentations: true,
+	ScopeFormsBodyReadonly: true, ScopeFormsBody: true, ScopeFormsResponsesReadonly: true,
 }
 
 // PerFile reports whether drive.file admits a tool requiring scope, on
@@ -118,4 +175,48 @@ func Grants(granted []string, required string) bool {
 // files it may see).
 func GrantsOrPerFile(granted []string, required string) bool {
 	return Grants(granted, required) || (PerFile(required) && Grants(granted, ScopeDriveFile))
+}
+
+// wholeDriveTools are the Drive tools whose method drive.file does not
+// stand in for, although their scope is one it admits per file: the
+// method lists no file (drives.list lists shared drives and accepts only
+// drive and drive.readonly), so the per-file admission does not apply.
+var wholeDriveTools = map[string]bool{AppDrive + "." + ToolListSharedDrives: true}
+
+// toolGrants is the scope gate's test for one tool: GrantsOrPerFile,
+// or Grants alone for a wholeDriveTools tool.
+func toolGrants(tool connectors.Tool, granted []string, required string) bool {
+	if wholeDriveTools[tool.App+"."+tool.Name] {
+		return Grants(granted, required)
+	}
+	return GrantsOrPerFile(granted, required)
+}
+
+// WorkspaceOnlyScope reports whether only Google Workspace accounts can
+// use scope: the directory (directory.readonly) and every Chat scope.
+// Personal (gmail.com) accounts cannot grant them, so connect and grant
+// more access never ask them (ScopeGrantable) and the binder strips them
+// from accounts without a hosted domain.
+func WorkspaceOnlyScope(scope string) bool {
+	scope = strings.TrimSpace(scope)
+	return scope == ScopeDirectoryReadonly || strings.HasPrefix(scope, chatScopePrefix)
+}
+
+// stripWorkspaceOnlyScopes returns scopes without the Workspace-only
+// ones (WorkspaceOnlyScope), and whether any was removed.
+func stripWorkspaceOnlyScopes(scopes []string) ([]string, bool) {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !WorkspaceOnlyScope(s) {
+			out = append(out, s)
+		}
+	}
+	return out, len(out) != len(scopes)
+}
+
+// ScopeGrantable is the connectors.ScopeGrantable of every Google app:
+// personal accounts cannot grant the Workspace-only scopes
+// (WorkspaceOnlyScope); company accounts can grant everything.
+func ScopeGrantable(label connectors.AccountLabel, scope string) bool {
+	return label != connectors.LabelPersonal || !WorkspaceOnlyScope(scope)
 }

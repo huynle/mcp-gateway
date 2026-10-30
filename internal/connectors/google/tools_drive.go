@@ -17,8 +17,15 @@ const (
 )
 
 // DriveMy is the "drive" resource identity of the account's own My Drive
-// (when no shared drive id is given).
+// (when no shared drive id is given). drive.search also takes it as
+// drive_id: My Drive and the files shared with the account, no shared
+// drives.
 const DriveMy = "my"
+
+// DriveAll is drive.search's "drive" resource identity without drive_id:
+// every drive the account can see (My Drive, files shared with it and
+// every shared drive it is a member of).
+const DriveAll = "all"
 
 // Google Workspace MIME types the connector creates.
 const (
@@ -54,7 +61,7 @@ func driveQueryEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(s)
 }
 
-var driveIDProperty = property{"drive_id", "string", "Shared drive id (from a file's drive_id); the account's My Drive and the files shared with it when omitted.", nil}
+var driveIDProperty = property{"drive_id", "string", "Shared drive id (from a file's drive_id or list_shared_drives) to search only that drive; \"my\" for My Drive and the files shared with the account only. Every drive the account can see when omitted.", nil}
 
 // DriveFile is get_file_metadata's result and one search item: metadata
 // only, never content.
@@ -79,13 +86,16 @@ type DriveFile struct {
 
 // FilesPage is search's result.
 type FilesPage struct {
-	Query         string      `json:"query,omitempty"`
-	Drive         string      `json:"drive"`
-	MaxResults    int         `json:"max_results"`
-	NextPageToken string      `json:"next_page_token,omitempty"`
-	HasMore       bool        `json:"has_more"`
-	Truncated     bool        `json:"truncated,omitempty"`
-	Items         []DriveFile `json:"items"`
+	Query      string `json:"query,omitempty"`
+	Drive      string `json:"drive"`
+	MaxResults int    `json:"max_results"`
+	// IncompleteSearch says Google did not search every drive (too many
+	// shared drives for one request): narrow with drive_id.
+	IncompleteSearch bool        `json:"incomplete_search,omitempty"`
+	NextPageToken    string      `json:"next_page_token,omitempty"`
+	HasMore          bool        `json:"has_more"`
+	Truncated        bool        `json:"truncated,omitempty"`
+	Items            []DriveFile `json:"items"`
 }
 
 // CreatedFolder is create_folder's result: the identifiers of the new
@@ -119,7 +129,8 @@ func (c *Connector) driveReadTools() []connectors.Tool {
 			Description: "Search Google Drive with the Drive query syntax (name contains 'budget', fullText contains 'quarterly', " +
 				"mimeType = 'application/vnd.google-apps.document', '<folder id>' in parents, modifiedTime > '2026-01-01T00:00:00'); " +
 				"every file when q is omitted. Each item has id, name, mime_type, modified, url, size, parents and drive_id; trashed files are " +
-				"left out unless include_trashed is true. Searches My Drive and the files shared with the account, or one shared drive (drive_id). " +
+				"left out unless include_trashed is true. Searches every drive the account can see (My Drive, files shared with it, shared drives), " +
+				"or one shared drive (drive_id; \"my\" for My Drive and files shared with the account only). " +
 				"has_more and next_page_token say whether another page exists (pass page_token).",
 			InputSchema: objectSchema([]property{
 				{"q", "string", "Drive search query (files.list q syntax). Omit for every file.", nil},
@@ -129,7 +140,7 @@ func (c *Connector) driveReadTools() []connectors.Tool {
 				{"page_token", "string", "Token of the page to fetch (next_page_token of the previous result).", nil},
 			}, nil),
 			RequiredScopes:   []string{ScopeDriveMetadataReadonly},
-			ResourceIdentity: driveIdentity(false),
+			ResourceIdentity: driveSearchIdentity,
 			Bounds:           c.pagedBounds(),
 		},
 		{
@@ -162,7 +173,7 @@ func (c *Connector) driveWriteTools() []connectors.Tool {
 			{"drive_id", "string", "Shared drive to create the folder in (its root when parent_id is omitted).", nil},
 		}, []string{"name"}),
 		RequiredScopes:   []string{ScopeDriveFile},
-		ResourceIdentity: driveIdentity(true),
+		ResourceIdentity: driveIdentity,
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDriveMarker},
 		ResultIDs:        folderResultIDs,
 		Bounds:           c.singleBounds(),
@@ -173,22 +184,28 @@ func (c *Connector) driveWriteHandlers() map[string]handler {
 	return map[string]handler{ToolCreateFolder: c.createFolder}
 }
 
-// driveIdentity extracts drive ("my", or the shared drive id) and, when
-// withParent, folder_id (the parent folder) from the arguments; never a
-// query or a name.
-func driveIdentity(withParent bool) func(map[string]any) map[string]string {
-	return func(args map[string]any) map[string]string {
-		out := map[string]string{"drive": DriveMy}
-		if id, _ := args["drive_id"].(string); strings.TrimSpace(id) != "" {
-			out["drive"] = strings.TrimSpace(id)
-		}
-		if withParent {
-			if id, _ := args["parent_id"].(string); strings.TrimSpace(id) != "" {
-				out["folder_id"] = strings.TrimSpace(id)
-			}
-		}
-		return out
+// driveIdentity is the creates' identity: drive ("my", or the shared
+// drive id) and folder_id (the parent folder) from the arguments; never
+// a name.
+func driveIdentity(args map[string]any) map[string]string {
+	out := map[string]string{"drive": DriveMy}
+	if id, _ := args["drive_id"].(string); strings.TrimSpace(id) != "" {
+		out["drive"] = strings.TrimSpace(id)
 	}
+	if id, _ := args["parent_id"].(string); strings.TrimSpace(id) != "" {
+		out["folder_id"] = strings.TrimSpace(id)
+	}
+	return out
+}
+
+// driveSearchIdentity extracts drive.search's drive: "all" without drive_id
+// (every drive is searched), else drive_id ("my" or a shared drive id).
+func driveSearchIdentity(args map[string]any) map[string]string {
+	out := map[string]string{"drive": DriveAll}
+	if id, _ := args["drive_id"].(string); strings.TrimSpace(id) != "" {
+		out["drive"] = strings.TrimSpace(id)
+	}
+	return out
 }
 
 // fileIdentity extracts file_id from the arguments.
@@ -239,13 +256,17 @@ func (c *Connector) searchFiles(ctx context.Context, cl *client, call connectors
 		return connectors.Result{}, err
 	}
 	req := svc.Files.List().Context(ctx).Q(strings.Join(terms, " and ")).PageSize(int64(maxResults)).
-		Fields("nextPageToken,files(" + fileFields + ")").SupportsAllDrives(true)
-	drv := DriveMy
-	if driveID != "" {
+		Fields("nextPageToken,incompleteSearch,files(" + fileFields + ")").SupportsAllDrives(true)
+	drv := DriveAll
+	switch driveID {
+	case "":
+		req = req.Corpora("allDrives").IncludeItemsFromAllDrives(true)
+	case DriveMy:
+		drv = DriveMy
+		req = req.Corpora("user")
+	default:
 		drv = driveID
 		req = req.Corpora("drive").DriveId(driveID).IncludeItemsFromAllDrives(true)
-	} else {
-		req = req.Corpora("user")
 	}
 	if pageToken != "" {
 		req = req.PageToken(pageToken)
@@ -254,13 +275,16 @@ func (c *Connector) searchFiles(ctx context.Context, cl *client, call connectors
 	if err := classify("search files", err); err != nil {
 		return connectors.Result{}, err
 	}
-	out := FilesPage{Query: q, Drive: drv, MaxResults: maxResults, NextPageToken: list.NextPageToken, HasMore: list.NextPageToken != "", Items: make([]DriveFile, 0, len(list.Files))}
+	out := FilesPage{
+		Query: q, Drive: drv, MaxResults: maxResults, IncompleteSearch: list.IncompleteSearch,
+		NextPageToken: list.NextPageToken, HasMore: list.NextPageToken != "", Items: make([]DriveFile, 0, len(list.Files)),
+	}
 	for _, f := range list.Files {
 		if f != nil {
 			out.Items = append(out.Items, toDriveFile(f))
 		}
 	}
-	res := connectors.Result{Partial: clamped, Empty: len(out.Items) == 0}
+	res := connectors.Result{Partial: clamped || list.IncompleteSearch, Empty: len(out.Items) == 0}
 	for encodedSize(out) > c.bounds.MaxResultBytes && len(out.Items) > 1 {
 		out.Items = out.Items[:len(out.Items)-1]
 		out.Truncated, res.Partial = true, true

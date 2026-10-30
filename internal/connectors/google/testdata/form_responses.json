@@ -1,0 +1,14 @@
+{
+  "responses": [
+    {"formId": "1FormExample0000000000000000000000", "responseId": "ACYDBNexample1", "createTime": "2026-10-20T10:00:00.123Z", "lastSubmittedTime": "2026-10-20T10:05:00.456Z",
+     "respondentEmail": "riley@example.test",
+     "answers": {
+       "1b2c3d4e": {"questionId": "1b2c3d4e", "textAnswers": {"answers": [{"value": "March 3"}]}},
+       "0a1b2c3d": {"questionId": "0a1b2c3d", "textAnswers": {"answers": [{"value": "Riley"}]}},
+       "5f607182": {"questionId": "5f607182", "fileUploadAnswers": {"answers": [{"fileId": "1UploadedFile000", "fileName": "deck.pdf", "mimeType": "application/pdf"}]}}
+     }},
+    {"formId": "1FormExample0000000000000000000000", "responseId": "ACYDBNexample2", "createTime": "2026-10-21T09:00:00Z", "lastSubmittedTime": "2026-10-21T09:00:00Z",
+     "answers": {"2c3d4e5f": {"questionId": "2c3d4e5f", "textAnswers": {"answers": [{"value": "More coffee, please. The afternoon sessions ran long and the room was warm."}]}}}}
+  ],
+  "nextPageToken": "page-2"
+}

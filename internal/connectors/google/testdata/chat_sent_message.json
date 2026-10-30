@@ -1,0 +1,9 @@
+{
+  "name": "spaces/AAAAexample1/messages/sys3.sys3",
+  "sender": {"name": "users/111111111111111111111", "type": "HUMAN"},
+  "createTime": "2026-10-30T10:00:00.000Z",
+  "text": "hello",
+  "thread": {"name": "spaces/AAAAexample1/threads/thr9"},
+  "space": {"name": "spaces/AAAAexample1"},
+  "clientAssignedMessageId": "client-mcpgw-placeholder"
+}

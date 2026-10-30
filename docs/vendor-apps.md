@@ -501,7 +501,12 @@ Google's user type is set per Cloud project, so an Internal app and an External 
 `https://console.cloud.google.com/auth/overview` (pages: **Branding**, **Audience**,
 **Clients**, **Data Access**, **Verification Center**). Enable the APIs under
 **APIs & Services -> Library** in each project: Google Calendar API, Tasks API, Gmail API,
-Google Drive API, Google Docs API, Google Sheets API, People API.
+Google Drive API, Google Docs API, Google Sheets API, People API, Google Slides API (the
+`slides` tools), Google Forms API (the `forms` tools), and (for the `chat` tools,
+Workspace only) the **Google Chat API**, whose Chat app must also be configured on the Chat
+API's **Configuration** page (app name, avatar URL, description; required even though the
+gateway calls it with user authentication, else every Chat call answers 404 "Google Chat app
+not found"; see `docs/connectors/google.md` "Google Chat").
 
 ### 4.1 Which app is which
 
@@ -593,6 +598,44 @@ does not want the two new restricted scopes leaves them out: `drive.get_content`
 `drive.list_comments` then work only per file through `drive.file`, and the Gmail label /
 trash tools stay locked.
 
+Increment 4 (Google Workspace tools, `docs/connectors/google.md` "Increment 4"). The
+directory exists **only for Google Workspace accounts**: personal Google (gmail.com)
+accounts cannot grant `directory.readonly` nor any `chat.*` scope
+(`google.WorkspaceOnlyScope`). Connect and *Grant more access* never ask personal accounts
+for them, the binder strips them from accounts without a hosted domain (`hd`), and the
+directory and Chat tools answer `scope_required` for those connections. Enable the **People API**
+(already listed above) in each project; the directory tools also need the Workspace's
+directory sharing on (Admin console -> **Directory -> Directory settings -> Sharing
+settings**: contact sharing enabled); with sharing off they find no one.
+The same declaration rules as increment 3 apply; on an Internal app it is optional.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/directory.readonly` | read | `contacts.search_directory`, `contacts.list_directory` (People API `searchDirectoryPeople`, `listDirectoryPeople`; Workspace accounts only) | sensitive |
+| `https://www.googleapis.com/auth/chat.spaces.readonly` | read | `chat.list_spaces`, `chat.get_space` (`chat.spaces` also covers it; Workspace accounts only) | sensitive |
+| `https://www.googleapis.com/auth/chat.messages.readonly` | read | `chat.list_messages`, `chat.get_message`, and the reconciliation check of the Chat writes (`messages.get` does not accept `chat.messages.create`); `chat.messages` also covers it; Workspace accounts only | sensitive |
+| `https://www.googleapis.com/auth/chat.memberships.readonly` | read | `chat.list_members` (`chat.memberships` also covers it; Workspace accounts only) | sensitive |
+| `https://www.googleapis.com/auth/chat.messages.create` | write | `chat.send_message`, `chat.reply_in_thread` (`chat.messages` also covers it; Workspace accounts only) | sensitive |
+| `https://www.googleapis.com/auth/gmail.settings.basic` | write | `gmail.set_vacation` (`users.settings.updateVacation` accepts only this scope; nothing covers it). The settings reads `gmail.get_vacation`, `gmail.list_filters` use `gmail.readonly` | **restricted** |
+| `https://www.googleapis.com/auth/presentations.readonly` | read | `slides.get_text` (`presentations`, `drive.readonly`, `drive` also cover it; `drive.file` per file) | sensitive |
+| `https://www.googleapis.com/auth/presentations` | write | `slides.replace_text` (`drive` also covers it; `drive.file` per file). `slides.create` uses `drive.file` | sensitive |
+| `https://www.googleapis.com/auth/forms.body.readonly` | read | `forms.get` (`forms.body`, `drive.readonly`, `drive` also cover it; `drive.file` per file) | sensitive (not on the restricted list; confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/forms.responses.readonly` | read | `forms.list_responses` (`drive` also covers it, `drive.readonly` does not; `drive.file` per file) | sensitive (not on the restricted list; confirm on the Data Access page) |
+
+Unlike the directory and Chat scopes, `gmail.settings.basic` and the Slides and Forms scopes are
+granted by **every** account (personal ones included). `gmail.settings.basic` is
+**restricted**: on a verified External app it joins the CASA scope set, so a deployment that
+does not want it leaves `gmail.set_vacation` locked (the two settings reads keep working
+with `gmail.readonly`).
+
+The other increment-4 tools reuse registered scopes: `calendar.events` (`add_meet_link` on
+`calendar.create_event` / `update_event`, and the Workspace-only event types
+`calendar.set_out_of_office`, `set_working_location`, `create_focus_time`: Google refuses
+them for personal accounts), `drive.readonly` (`drive.list_shared_drives`: `drives.list`
+accepts only `drive` and `drive.readonly`, so neither `drive.metadata.readonly` nor the
+per-file `drive.file` admits it) and `drive.file` (`slides.create`, through Drive
+`files.create` like `docs.create`).
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever
@@ -621,7 +664,9 @@ the requested scopes differ from the declared ones.
 - Internal apps are not subject to verification or the cap, but Workspace admins control
   them: Admin console -> **Security -> Access and data control -> API controls**. Ask the
   admin to allow (or mark **Trusted**) the gateway's Internal app and to confirm the
-  restricted Gmail/Drive scopes are not blocked for the org.
+  restricted Gmail/Drive scopes are not blocked for the org. For the `chat` tools the admin
+  must also let users use Chat apps (Admin console -> **Apps -> Google Workspace -> Google
+  Chat -> Chat apps**), and the project's Chat app must be configured (section 4 above).
 - If there is no Workspace org, ask whether the company accounts' admin (if any) must
   trust the External app instead.
 
@@ -792,7 +837,10 @@ No registered scope is unused by a v1 tool except `openid`/`userinfo.email`,
   (`developers.google.com/workspace/drive/api/guides/api-specific-auth`) and `files.create`,
   `files.list` references; Calendar `events.list` / `events.insert`; Tasks `tasks.list` /
   `tasks.insert`; Docs `documents.batchUpdate`; Sheets `spreadsheets.values.append`;
-  People `people.searchContacts`.
+  People `people.searchContacts`. (2026-10-30) Gmail `users.settings.getVacation`,
+  `updateVacation`, `filters.list`; Slides scopes (`developers.google.com/workspace/slides/api/scopes`),
+  `presentations.get`, `batchUpdate`; Forms `forms.get`, `forms.responses.list`; the accepted-scope
+  lists of the discovery documents bundled with `google.golang.org/api` v0.298.0.
 - Microsoft: Graph permissions reference (`learn.microsoft.com/graph/permissions-reference`,
   AdminConsentRequired column); API pages for `user: list messages`, `sendMail`,
   `list events`, `create event`, `driveItem: search`, `create folder`, `channel: list`,
@@ -883,7 +931,13 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 `drive.create_file`, `update_file`, `share`, `add_comment`; `docs.replace_text`;
 `sheets.update_range`, `create`. `calendar.create_event`, `tasks.create`, `gmail.send`,
 `gmail.create_draft`, `drive.create_folder`, `docs.create`, `docs.append_text` and
-`sheets.append_rows` stay Auto. `TestGoogleNewWritesAreSeededAsAsk` guards the list.
+`sheets.append_rows` stay Auto. Migration 35 (`00035_google_workspace_default_ask.sql`)
+does the same for the increment-4 writes: `calendar.set_out_of_office`,
+`set_working_location`, `create_focus_time`; `chat.send_message`, `reply_in_thread`;
+`gmail.set_vacation`; `slides.create`, `replace_text`. The `forms` app has no writes.
+`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022 and 00035 together must seed
+every Google write except the eight Auto ones, and each migration's Down must remove
+exactly what its Up seeds.
 
 Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
 close the gap with github-mcp-server: `create_or_update_file`, `update_issue`,

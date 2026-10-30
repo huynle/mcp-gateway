@@ -6,17 +6,21 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/forms/v1"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/sheets/v4"
+	"google.golang.org/api/slides/v1"
 	"google.golang.org/api/tasks/v1"
 
 	"github.com/huynle/mcp-gateway/internal/connectors"
@@ -53,8 +57,9 @@ type Options struct {
 	// BaseURL replaces the root of every Google API endpoint (with a
 	// trailing slash): the Calendar API is reached at
 	// BaseURL + "calendar/v3/", Drive at BaseURL + "drive/v3/", Tasks,
-	// Gmail, Docs, Sheets and People at BaseURL + "tasks/v1/",
-	// "gmail/v1/", "v1/documents", "v4/spreadsheets" and "v1/people".
+	// Gmail, Docs, Sheets, People and Chat at BaseURL + "tasks/v1/",
+	// "gmail/v1/", "v1/documents", "v4/spreadsheets", "v1/people",
+	// "v1/spaces", Slides at "v1/presentations" and Forms at "v1/forms".
 	// Empty means Google's own hosts; tests point it at an httptest
 	// server.
 	BaseURL string
@@ -79,7 +84,8 @@ type Connector struct {
 
 	calendar, tasks, gmail *App
 	drive, docs, sheets    *App
-	contacts               *App
+	contacts, chat, slides *App
+	forms                  *App
 }
 
 // New builds the Google connector.
@@ -118,34 +124,52 @@ func New(opts Options) (*Connector, error) {
 	}
 	c := &Connector{tokens: opts.Tokens, accounts: opts.Accounts, transport: transport, baseURL: base, bounds: bounds, timeout: timeout}
 	c.calendar = c.newApp(AppCalendar,
-		append(c.calendarReadTools(), c.calendarManageReadTools()...), append(c.calendarWriteTools(), c.calendarManageWriteTools()...),
-		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()), merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers()))
+		append(c.calendarReadTools(), c.calendarManageReadTools()...),
+		slices.Concat(c.calendarWriteTools(), c.calendarManageWriteTools(), c.calendarWorkspaceWriteTools()),
+		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()),
+		merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers(), c.calendarWorkspaceWriteHandlers()))
 	c.tasks = c.newApp(AppTasks,
 		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
 		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
 	c.gmail = c.newApp(AppGmail,
-		append(c.gmailReadTools(), c.gmailManageReadTools()...), append(c.gmailWriteTools(), c.gmailManageWriteTools()...),
-		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers()), merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers()))
+		slices.Concat(c.gmailReadTools(), c.gmailManageReadTools(), c.gmailSettingsReadTools()),
+		slices.Concat(c.gmailWriteTools(), c.gmailManageWriteTools(), c.gmailSettingsWriteTools()),
+		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers(), c.gmailSettingsReadHandlers()),
+		merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers(), c.gmailSettingsWriteHandlers()))
 	c.drive = c.newApp(AppDrive,
-		append(c.driveReadTools(), c.driveManageReadTools()...), append(c.driveWriteTools(), c.driveManageWriteTools()...),
-		merge(c.driveReadHandlers(), c.driveManageReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
+		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
+		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
 		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
 		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
 		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
-	c.contacts = c.newApp(AppContacts, append(c.contactsReadTools(), c.contactsManageReadTools()...), c.contactsWriteTools(),
-		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers()), c.contactsWriteHandlers())
+	c.contacts = c.newApp(AppContacts,
+		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
+		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
+	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
+	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
+	c.forms = c.newApp(AppForms, c.formsReadTools(), nil, c.formsReadHandlers(), nil)
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs, sheets, contacts. Each is
+// calendar, tasks, gmail, drive, docs, sheets, contacts, chat, slides,
+// forms. Each is
 // registered with connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
 func (c *Connector) Apps() []*App {
-	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts}
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat, c.slides, c.forms}
 }
+
+// Forms returns the "forms" app (read only).
+func (c *Connector) Forms() *App { return c.forms }
+
+// Slides returns the "slides" app.
+func (c *Connector) Slides() *App { return c.slides }
+
+// Chat returns the "chat" app (Google Workspace accounts only).
+func (c *Connector) Chat() *App { return c.chat }
 
 // Drive returns the "drive" app.
 func (c *Connector) Drive() *App { return c.drive }
@@ -261,9 +285,11 @@ func (a *App) finish(write bool, res connectors.Result, err error) (connectors.R
 // source, the account's recorded scopes must cover the tool's
 // RequiredScopes (Grants), or the tool must be one drive.file admits on
 // the files the gateway created or the user opened with it
-// (GrantsOrPerFile; Google answers not_found for the rest). An account
-// the source does not list, or one without recorded scopes, is not
-// blocked here (Google decides).
+// (GrantsOrPerFile; Google answers not_found for the rest), unless the
+// tool lists no file (wholeDriveTools: list_shared_drives). A missing
+// Workspace-only scope (WorkspaceOnlyScope) is reported as one personal
+// accounts cannot grant. An account the source does not list, or one
+// without recorded scopes, is not blocked here (Google decides).
 func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connectors.Tool) error {
 	if a.c.accounts == nil || len(tool.RequiredScopes) == 0 {
 		return nil
@@ -277,11 +303,17 @@ func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connec
 			continue
 		}
 		for _, required := range tool.RequiredScopes {
-			if !GrantsOrPerFile(acct.Scopes, required) {
+			if toolGrants(tool, acct.Scopes, required) {
+				continue
+			}
+			if WorkspaceOnlyScope(required) {
 				return &Error{Class: ClassScopeRequired, Message: fmt.Sprintf(
-					"%s needs the Google scope %s, which this account did not grant; grant more access on the portal (Connections) by reconnecting the account with that scope",
+					"%s needs the Google scope %s, which only Google Workspace accounts can grant: personal Google (gmail.com) accounts cannot grant it; with a Google Workspace account, grant more access on the portal (Connections)",
 					call.Tool, required)}
 			}
+			return &Error{Class: ClassScopeRequired, Message: fmt.Sprintf(
+				"%s needs the Google scope %s, which this account did not grant; grant more access on the portal (Connections) by reconnecting the account with that scope",
+				call.Tool, required)}
 		}
 	}
 	return nil
@@ -406,6 +438,45 @@ func (cl *client) people(ctx context.Context) (*people.Service, error) {
 	svc, err := people.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "people client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// chat builds the Chat API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) chat(ctx context.Context) (*chat.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := chat.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "chat client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// slides builds the Slides API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) slides(ctx context.Context) (*slides.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := slides.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "slides client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// forms builds the Forms API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) forms(ctx context.Context) (*forms.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := forms.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "forms client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

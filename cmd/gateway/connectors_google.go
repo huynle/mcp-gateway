@@ -11,13 +11,15 @@ import (
 )
 
 // registerGoogle registers the Google connector's apps (calendar, tasks,
-// gmail, drive, docs, sheets, contacts: google.Apps) on the registry with
+// gmail, drive, docs, sheets, contacts, chat, slides, forms: google.Apps) on the registry with
 // the connections service as their
 // account source (also consulted for the account's granted scopes: a
 // tool whose scope was declined under granular consent answers
 // scope_required) and token source, installs the Google account binder
-// for vendor "google" (both the internal and the external app) and maps
-// each app to the vendor so one Google connection serves them all. It
+// for vendor "google" (both the internal and the external app), tells
+// the registry that personal accounts cannot grant the Workspace-only
+// scopes (google.ScopeGrantable) and maps each app to the vendor so one
+// Google connection serves them all. It
 // runs whenever connections are mounted, whether or not an admin has
 // registered a Google vendor app yet: the tools are listed (so roles
 // can grant them) and answer "no connected account" until a user
@@ -37,6 +39,10 @@ func registerGoogle(_ config.Config, registry *connectors.Registry, connSvc *con
 		// Google's broader scopes imply narrower ones (google.Grants);
 		// the pipeline's scope stage uses the same semantics.
 		registry.SetScopeCoverage(app.App(), google.Grants)
+		// Personal (gmail.com) accounts cannot grant the Workspace-only
+		// scopes (directory, Chat): connect and grant more access never
+		// ask them for those.
+		registry.SetScopeGrantable(app.App(), google.ScopeGrantable)
 		tools += len(app.Tools())
 	}
 	connSvc.RegisterBinder(connections.VendorGoogle, google.Binder{})

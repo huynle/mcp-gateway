@@ -1,5 +1,5 @@
 // Package google is the Google Workspace connector (decision bt8ukyrd):
-// a connections.Binder for Google accounts (binder.go) and seven
+// a connections.Binder for Google accounts (binder.go) and ten
 // connector apps that share one Google account (vendor "google",
 // connections.MapApp). Increment 1: "calendar" (list_events, get_event,
 // create_event), "tasks" (list, create) and "gmail" (search,
@@ -13,7 +13,14 @@
 // modify_labels, trash, send_draft; drive get_content, list_folder,
 // list_permissions, list_comments, create_file, update_file, share,
 // add_comment; docs replace_text; sheets get_metadata, update_range,
-// create; contacts get, list (docs/connectors/google.md). Each app is its own connectors.Connector so
+// create; contacts get, list (docs/connectors/google.md). Increment 4
+// (decision 94k2b0pp) adds the Google Workspace tools: contacts
+// search_directory, list_directory, and the "chat" app (Google Chat API:
+// list_spaces, get_space, list_messages, get_message, list_members), plus
+// the Gmail settings: gmail get_vacation, list_filters, set_vacation, and
+// the "slides" app (Google Slides API: get_text, create, replace_text)
+// and the read-only "forms" app (Google Forms API: get, list_responses).
+// Each app is its own connectors.Connector so
 // tool names read calendar.list_events, drive.search and docs.get_text,
 // roles can grant or deny a whole app, and the restricted Gmail and
 // Drive scopes stay separable from the rest.
@@ -38,11 +45,19 @@
 // calendar.events.readonly; mail.google.com covers every Gmail scope,
 // gmail.modify covers readonly, labels, compose and send, gmail.compose
 // covers send; tasks covers tasks.readonly; drive covers every Drive,
-// Docs and Sheets scope, drive.readonly their read-only ones; contacts
+// Docs, Sheets, Slides and Forms scope, drive.readonly their read-only
+// ones (but not forms.responses.readonly); contacts
 // covers contacts.readonly) is applied, so an account that granted a
 // broader scope than a tool asks for is not blocked; drive.file admits
-// the Drive, Docs and Sheets tools on the files the gateway created or
+// the Drive, Docs, Sheets, Slides and Forms tools on the files the gateway created or
 // the user opened with it (GrantsOrPerFile).
+//
+// The directory and Chat scopes exist only for Google Workspace accounts
+// (WorkspaceOnlyScope): personal accounts are never asked for them
+// (ScopeGrantable, installed with connectors.Registry.SetScopeGrantable),
+// the binder drops them from an account without a hosted domain (hd),
+// and the scope gate's message says a personal account cannot grant
+// them.
 //
 // Writes require the ledger's Call.OperationID (ErrMissingOperation) and
 // reconcile from the resource identity and the operation id alone:
@@ -60,10 +75,10 @@
 // The tool set is designed after taylorwilsdon/google_workspace_mcp
 // (Python, MIT) without copying code (decision 0sod196t); the API is
 // reached through google.golang.org/api (calendar/v3, tasks/v1, gmail/v1,
-// drive/v3, docs/v1, sheets/v4, people/v1).
+// drive/v3, docs/v1, sheets/v4, people/v1, chat/v1, slides/v1, forms/v1).
 //
 // Design: Brain plan 36bakiw8 section 5; decisions bt8ukyrd, mh7c6z3v,
-// dovthftx, wcp2fmbz, rrmfnkqu, 0sod196t, 85k9b1ig.
+// dovthftx, wcp2fmbz, rrmfnkqu, 0sod196t, 85k9b1ig, 94k2b0pp.
 package google
 
 // Vendor is the connections vendor every app of this package uses; the
@@ -72,7 +87,8 @@ const Vendor = "google"
 
 // The connector apps; every tool is "<app>.<name>". Increment 1 is
 // calendar, tasks and gmail; increment 2 adds drive, docs, sheets and
-// contacts over the same account binding.
+// contacts over the same account binding; increment 4 adds chat (Google
+// Workspace accounts only), slides and forms.
 const (
 	AppCalendar = "calendar"
 	AppTasks    = "tasks"
@@ -81,10 +97,13 @@ const (
 	AppDocs     = "docs"
 	AppSheets   = "sheets"
 	AppContacts = "contacts"
+	AppChat     = "chat"
+	AppSlides   = "slides"
+	AppForms    = "forms"
 )
 
 // Apps lists the apps in registration order.
-var Apps = []string{AppCalendar, AppTasks, AppGmail, AppDrive, AppDocs, AppSheets, AppContacts}
+var Apps = []string{AppCalendar, AppTasks, AppGmail, AppDrive, AppDocs, AppSheets, AppContacts, AppChat, AppSlides, AppForms}
 
 // userAgent identifies the gateway to Google.
 const userAgent = "mcp-gateway"

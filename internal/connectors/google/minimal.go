@@ -68,6 +68,14 @@ type CreatedEvent struct {
 	Status     string `json:"status,omitempty"`
 	Start      string `json:"start,omitempty"`
 	End        string `json:"end,omitempty"`
+	// EventType is Google's eventType when it is not a plain event
+	// (outOfOffice, workingLocation, focusTime).
+	EventType string `json:"event_type,omitempty"`
+	// MeetURL is the event's Google Meet link (add_meet_link, or one the
+	// event already had); MeetStatus is Google's status of the
+	// conference request (pending, success, failure) when one was made.
+	MeetURL    string `json:"meet_url,omitempty"`
+	MeetStatus string `json:"meet_status,omitempty"`
 }
 
 func toEvent(ev *calendar.Event, calendarID string) Event {
@@ -132,7 +140,14 @@ func meetingURL(ev *calendar.Event) string {
 
 func toCreatedEvent(ev *calendar.Event, calendarID string) CreatedEvent {
 	s, e, _, _ := eventTimes(ev.Start, ev.End)
-	return CreatedEvent{ID: ev.Id, CalendarID: calendarID, URL: ev.HtmlLink, Status: ev.Status, Start: s, End: e}
+	out := CreatedEvent{ID: ev.Id, CalendarID: calendarID, URL: ev.HtmlLink, Status: ev.Status, Start: s, End: e, MeetURL: meetingURL(ev)}
+	if ev.EventType != "" && ev.EventType != "default" {
+		out.EventType = ev.EventType
+	}
+	if cd := ev.ConferenceData; cd != nil && cd.CreateRequest != nil && cd.CreateRequest.Status != nil {
+		out.MeetStatus = cd.CreateRequest.Status.StatusCode
+	}
+	return out
 }
 
 // normalizeTimestamp renders Google's RFC 3339 timestamps (which carry

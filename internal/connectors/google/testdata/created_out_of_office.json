@@ -1,0 +1,23 @@
+{
+  "kind": "calendar#event",
+  "id": "n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "created": "2026-10-08T10:00:00.000Z",
+  "updated": "2026-10-08T10:00:00.000Z",
+  "summary": "Out of office",
+  "eventType": "outOfOffice",
+  "transparency": "opaque",
+  "start": {
+    "dateTime": "2026-10-12T00:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "end": {
+    "dateTime": "2026-10-17T00:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "outOfOfficeProperties": {
+    "autoDeclineMode": "declineAllConflictingInvitations",
+    "declineMessage": "Away this week."
+  }
+}

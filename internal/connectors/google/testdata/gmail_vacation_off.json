@@ -1,0 +1,6 @@
+{
+  "enableAutoReply": false,
+  "responseSubject": "Old subject",
+  "responseBodyPlainText": "Old body.",
+  "restrictToContacts": true
+}

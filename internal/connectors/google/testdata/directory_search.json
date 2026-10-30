@@ -1,0 +1,20 @@
+{
+  "people": [
+    {
+      "resourceName": "people/104857392018374659201",
+      "etag": "%EgcBAj0JPjcuGgQBAgUH",
+      "names": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "displayName": "Carol Example", "familyName": "Example", "givenName": "Carol"}],
+      "emailAddresses": [{"metadata": {"primary": true, "verified": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "value": "carol@example.test"}],
+      "organizations": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "name": "Example Corp", "title": "Product Manager", "department": "Product"}],
+      "phoneNumbers": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "value": "+1 555 0100", "type": "work"}]
+    },
+    {
+      "resourceName": "people/c5550001112223334445",
+      "etag": "%EgcBAj0JPjcuGgQBAgUH",
+      "names": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_CONTACT", "id": "5550001112223334445"}}, "displayName": "Carlos Vendor"}],
+      "emailAddresses": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_CONTACT", "id": "5550001112223334445"}}, "value": "carlos@vendor.example.test"}]
+    }
+  ],
+  "nextPageToken": "dir-page-2",
+  "totalSize": 7
+}

@@ -180,7 +180,7 @@ func (c *Connector) docsWriteTools() []connectors.Tool {
 				{"drive_id", "string", "Shared drive to create the document in (its root when parent_id is omitted).", nil},
 			}, []string{"title"}),
 			RequiredScopes:   []string{ScopeDriveFile},
-			ResourceIdentity: driveIdentity(true),
+			ResourceIdentity: driveIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDriveMarker},
 			ResultIDs:        documentResultIDs,
 			Bounds:           c.singleBounds(),

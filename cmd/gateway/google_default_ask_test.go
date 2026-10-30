@@ -14,22 +14,29 @@ import (
 )
 
 // The Google writes of increments 1 and 2 keep their Auto default; every
-// later Google write is seeded as Ask by migration 00022. A new Google
-// write tool must be seeded by a migration like it (or be listed here on
-// purpose), so it never ships without the confirmation default.
+// later Google write is seeded as Ask by a migration: 00022 (increment 3)
+// or 00035 (increment 4, Workspace tools; later phases append to it). A
+// new Google write tool must be seeded by one of them (or be listed here
+// on purpose), so it never ships without the confirmation default.
 var googleAutoWrites = []string{
 	"calendar.create_event", "tasks.create", "gmail.send", "gmail.create_draft",
 	"drive.create_folder", "docs.create", "docs.append_text", "sheets.append_rows",
 }
 
-func TestGoogleNewWritesAreSeededAsAsk(t *testing.T) {
-	raw, err := migrations.FS.ReadFile("00022_google_default_ask.sql")
+// googleAskMigrations are the migrations seeding Ask for Google writes.
+var googleAskMigrations = []string{"00022_google_default_ask.sql", "00035_google_workspace_default_ask.sql"}
+
+// seededAsk returns the (app.tool) rows a migration's goose Up inserts
+// and its Down deletes, each sorted.
+func seededAsk(t *testing.T, file string) (up, down []string) {
+	t.Helper()
+	raw, err := migrations.FS.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sections := regexp.MustCompile(`(?s)-- \+goose Up(.*)-- \+goose Down(.*)`).FindSubmatch(raw)
 	if sections == nil {
-		t.Fatal("no goose Up / Down sections")
+		t.Fatalf("%s: no goose Up / Down sections", file)
 	}
 	pairs := regexp.MustCompile(`\('([a-z0-9_]+)', '([a-z0-9_]+)'\)`)
 	names := func(b []byte) []string {
@@ -40,7 +47,27 @@ func TestGoogleNewWritesAreSeededAsAsk(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	up, down := names(sections[1]), names(sections[2])
+	return names(sections[1]), names(sections[2])
+}
+
+func TestGoogleNewWritesAreSeededAsAsk(t *testing.T) {
+	var up []string
+	for _, file := range googleAskMigrations {
+		u, d := seededAsk(t, file)
+		if len(u) == 0 {
+			t.Errorf("%s seeds nothing", file)
+		}
+		if !slices.Equal(d, u) {
+			t.Errorf("%s: Down removes %v, want exactly the seeded %v", file, d, u)
+		}
+		for _, name := range u {
+			if slices.Contains(up, name) {
+				t.Errorf("%s seeds %s again", file, name)
+			}
+		}
+		up = append(up, u...)
+	}
+	slices.Sort(up)
 
 	c, err := google.New(google.Options{Tokens: func(context.Context, string, string) oauth2.TokenSource { return nil }})
 	if err != nil {
@@ -57,10 +84,7 @@ func TestGoogleNewWritesAreSeededAsAsk(t *testing.T) {
 	}
 	slices.Sort(want)
 	if len(want) == 0 || !slices.Equal(up, want) {
-		t.Errorf("migration seeds Ask for %v,\nwant every new Google write %v", up, want)
-	}
-	if !slices.Equal(down, up) {
-		t.Errorf("Down removes %v, want exactly the seeded %v", down, up)
+		t.Errorf("migrations seed Ask for %v,\nwant every new Google write %v", up, want)
 	}
 	for _, auto := range googleAutoWrites {
 		if slices.Contains(up, auto) {

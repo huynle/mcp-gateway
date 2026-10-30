@@ -34,7 +34,9 @@ const DefaultUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
 // fallbacks); the scopes are the token response's scope field (Google
 // returns exactly what the user granted, which with granular consent may
 // be fewer than requested), nil when the response carried none (the
-// connect flow then records the requested scopes).
+// connect flow then records the requested scopes). An account without a
+// hosted domain (hd: a consumer account) never keeps the Workspace-only
+// scopes (WorkspaceOnlyScope), whatever its label.
 type Binder struct {
 	// UserInfoURL overrides the userinfo endpoint. Empty uses the vendor
 	// app's UserInfoURL, then DefaultUserInfoURL.
@@ -71,8 +73,29 @@ func (b Binder) Bind(ctx context.Context, in connections.BindInput) (connections
 		ExternalAccountID: "google:" + info.Sub,
 		DisplayName:       name,
 		Label:             labelFor(in.App, info),
-		Scopes:            grantedScopes(in),
+		Scopes:            boundScopes(in, info),
 	}, nil
+}
+
+// boundScopes are the scopes Bind records: grantedScopes, minus the
+// Workspace-only scopes (WorkspaceOnlyScope) when the account has no
+// hosted domain (a consumer account cannot use them, whatever its label).
+// Without a scope field a consumer account that was asked for one gets
+// the requested scopes minus them; otherwise nil leaves the flow to
+// record what it requested.
+func boundScopes(in connections.BindInput, info userInfo) []string {
+	scopes := grantedScopes(in)
+	if strings.TrimSpace(info.HD) != "" {
+		return scopes
+	}
+	if scopes == nil {
+		if stripped, removed := stripWorkspaceOnlyScopes(connections.SplitScopes(strings.Join(in.RequestedScopes, " "))); removed {
+			return stripped
+		}
+		return nil
+	}
+	stripped, _ := stripWorkspaceOnlyScopes(scopes)
+	return stripped
 }
 
 // fetchUserInfo GETs the userinfo document with the authenticated client.

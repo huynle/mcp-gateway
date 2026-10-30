@@ -1,0 +1,19 @@
+{
+  "filter": [
+    {
+      "id": "ANe1BmjExample1",
+      "criteria": {"from": "billing@vendor.example", "hasAttachment": true},
+      "action": {"addLabelIds": ["Label_12"], "removeLabelIds": ["INBOX"]}
+    },
+    {
+      "id": "ANe1BmjExample2",
+      "criteria": {"query": "list:dev.example.test", "negatedQuery": "urgent", "size": 1048576, "sizeComparison": "larger", "excludeChats": true},
+      "action": {"forward": "archive@example.test"}
+    },
+    {
+      "id": "ANe1BmjExample3",
+      "criteria": {"to": "team@example.test", "subject": "weekly report"},
+      "action": {"addLabelIds": ["STARRED"]}
+    }
+  ]
+}

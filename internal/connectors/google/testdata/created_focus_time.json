@@ -1,0 +1,20 @@
+{
+  "kind": "calendar#event",
+  "id": "n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "summary": "Focus time",
+  "eventType": "focusTime",
+  "start": {
+    "dateTime": "2026-10-12T09:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "end": {
+    "dateTime": "2026-10-12T11:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "focusTimeProperties": {
+    "autoDeclineMode": "declineOnlyNewConflictingInvitations",
+    "chatStatus": "doNotDisturb"
+  }
+}

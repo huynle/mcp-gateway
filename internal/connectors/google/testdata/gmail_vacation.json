@@ -1,0 +1,10 @@
+{
+  "enableAutoReply": true,
+  "responseSubject": "Out of office",
+  "responseBodyPlainText": "I am away until January 4. For urgent matters contact ops@example.test.",
+  "responseBodyHtml": "<p>I am away until January 4.</p>",
+  "restrictToContacts": false,
+  "restrictToDomain": true,
+  "startTime": "1797724800000",
+  "endTime": "1799020800000"
+}

@@ -240,7 +240,7 @@ func (c *Connector) driveManageWriteTools() []connectors.Tool {
 				{"drive_id", "string", "Shared drive to create the file in (its root when parent_id is omitted).", nil},
 			}, []string{"name", "content"}),
 			RequiredScopes:   []string{ScopeDriveFile},
-			ResourceIdentity: driveIdentity(true),
+			ResourceIdentity: driveIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDriveMarker},
 			ResultIDs:        createdFileResultIDs,
 			Bounds:           c.singleBounds(),

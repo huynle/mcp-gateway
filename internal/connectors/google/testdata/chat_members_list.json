@@ -1,0 +1,24 @@
+{
+  "memberships": [
+    {
+      "name": "spaces/AAAAexample1/members/111111111111111111111",
+      "state": "JOINED",
+      "role": "ROLE_MANAGER",
+      "member": {"name": "users/111111111111111111111", "type": "HUMAN"},
+      "createTime": "2026-01-05T17:00:00.000Z"
+    },
+    {
+      "name": "spaces/AAAAexample1/members/app-1",
+      "state": "JOINED",
+      "role": "ROLE_MEMBER",
+      "member": {"name": "users/app", "displayName": "Build Bot", "type": "BOT"}
+    },
+    {
+      "name": "spaces/AAAAexample1/members/group-1",
+      "state": "JOINED",
+      "role": "ROLE_MEMBER",
+      "groupMember": {"name": "groups/03abcexample"}
+    }
+  ],
+  "nextPageToken": "members-page-2"
+}

@@ -48,6 +48,7 @@ func catalogRegistry(t *testing.T, svc *connections.Service) *connectors.Registr
 		}
 		svc.MapApp(app.App(), connections.VendorGoogle)
 		reg.SetScopeCoverage(app.App(), google.Grants)
+		reg.SetScopeGrantable(app.App(), google.ScopeGrantable)
 	}
 	noop := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
 	schema := []byte(`{"type":"object"}`)
@@ -200,9 +201,17 @@ func TestMissingAccessGoogleImpliedScopes(t *testing.T) {
 			t.Errorf("%s: gap %+v lacks the tasks read scope and tool", variant, gap)
 		}
 		for _, tool := range gap.Tools {
+			// gmail.set_vacation needs gmail.settings.basic, which nothing
+			// covers (updateVacation accepts no other scope).
+			if tool == "gmail.set_vacation" {
+				continue
+			}
 			if strings.HasPrefix(tool, "gmail.") || strings.HasPrefix(tool, "calendar.") {
 				t.Errorf("%s: unlocked tools contain %s, which already works", variant, tool)
 			}
+		}
+		if !slices.Contains(gap.Tools, "gmail.set_vacation") || !slices.Contains(gap.Scopes, google.ScopeGmailSettingsBasic) {
+			t.Errorf("%s: gap %+v lacks gmail.set_vacation and gmail.settings.basic (gmail.modify does not cover it)", variant, gap)
 		}
 	}
 }
@@ -263,7 +272,7 @@ func TestAccessHintForListAccounts(t *testing.T) {
 	if hint.LockedTools != len(gap.Tools) || hint.LockedTools == 0 || hint.GrantURL != "http://gw.test/connections" {
 		t.Errorf("slack hint = %+v, want %d locked tools and the connections page", hint, len(gap.Tools))
 	}
-	gmail := connectors.Account{ID: "g-1", App: google.AppGmail, Scopes: []string{google.ScopeGmailModify}}
+	gmail := connectors.Account{ID: "g-1", App: google.AppGmail, Scopes: []string{google.ScopeGmailModify, google.ScopeGmailSettingsBasic}}
 	if hint, err := env.svc.AccessHint(ctx, userAlice, gmail); err != nil || hint != (connectors.AccessHint{}) {
 		t.Errorf("gmail hint = %+v, %v; want none (calendar's gap is not gmail's)", hint, err)
 	}

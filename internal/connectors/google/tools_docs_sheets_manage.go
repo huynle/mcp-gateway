@@ -124,7 +124,7 @@ func (c *Connector) sheetsManageWriteTools() []connectors.Tool {
 				{"drive_id", "string", "Shared drive to create it in (its root when parent_id is omitted).", nil},
 			}, []string{"title"}),
 			RequiredScopes:   []string{ScopeDriveFile},
-			ResourceIdentity: driveIdentity(true),
+			ResourceIdentity: driveIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDriveMarker},
 			ResultIDs:        createdFileResultIDs,
 			Bounds:           c.singleBounds(),

@@ -1,0 +1,18 @@
+{
+  "people": [
+    {
+      "resourceName": "people/104857392018374659201",
+      "etag": "%EgcBAj0JPjcuGgQBAgUH",
+      "names": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "displayName": "Carol Example", "familyName": "Example", "givenName": "Carol"}],
+      "emailAddresses": [{"metadata": {"primary": true, "verified": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "value": "carol@example.test"}],
+      "organizations": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "104857392018374659201"}}, "name": "Example Corp", "title": "Product Manager"}]
+    },
+    {
+      "resourceName": "people/109283746501928374650",
+      "etag": "%EgcBAj0JPjcuGgQBAgUH",
+      "names": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "109283746501928374650"}}, "displayName": "Dave Example", "familyName": "Example", "givenName": "Dave"}],
+      "emailAddresses": [{"metadata": {"primary": true, "verified": true, "source": {"type": "DOMAIN_PROFILE", "id": "109283746501928374650"}}, "value": "dave@example.test"}],
+      "phoneNumbers": [{"metadata": {"primary": true, "source": {"type": "DOMAIN_PROFILE", "id": "109283746501928374650"}}, "value": "+1 555 0101"}]
+    }
+  ]
+}

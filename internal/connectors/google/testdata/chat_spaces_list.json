@@ -1,0 +1,23 @@
+{
+  "spaces": [
+    {
+      "name": "spaces/AAAAexample1",
+      "type": "ROOM",
+      "spaceType": "SPACE",
+      "displayName": "Eng Team",
+      "spaceThreadingState": "THREADED_MESSAGES",
+      "spaceUri": "https://chat.google.com/room/AAAAexample1?cls=11",
+      "spaceHistoryState": "HISTORY_ON",
+      "createTime": "2026-01-05T17:00:00.000Z"
+    },
+    {
+      "name": "spaces/BBBBexample2",
+      "type": "DM",
+      "spaceType": "DIRECT_MESSAGE",
+      "singleUserBotDm": true,
+      "spaceThreadingState": "UNTHREADED_MESSAGES",
+      "spaceUri": "https://chat.google.com/dm/BBBBexample2"
+    }
+  ],
+  "nextPageToken": "spaces-page-2"
+}

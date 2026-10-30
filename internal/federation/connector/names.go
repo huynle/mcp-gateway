@@ -33,8 +33,8 @@ var serverNameRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}$`)
 // one of them would put its tools next to, or be mistaken for, a built-in
 // app's.
 var reserved = []string{
-	"atlassian", "calendar", "confluence", "contacts", "docs", "drive", "fake", "gateway", "github", "gmail",
-	"google", "jira", "mcp", "microsoft", "secrets", "sheets", "slack", "tasks",
+	"atlassian", "calendar", "chat", "confluence", "contacts", "docs", "drive", "fake", "forms", "gateway", "github", "gmail",
+	"google", "jira", "mcp", "microsoft", "secrets", "sheets", "slack", "slides", "tasks",
 }
 
 // ReservedNames returns the server names nobody may use, sorted.
