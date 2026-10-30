@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,8 +135,9 @@ func New(opts Options) (*Connector, error) {
 	c.sheets = c.newApp(AppSheets,
 		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
 		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
-	c.contacts = c.newApp(AppContacts, append(c.contactsReadTools(), c.contactsManageReadTools()...), c.contactsWriteTools(),
-		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers()), c.contactsWriteHandlers())
+	c.contacts = c.newApp(AppContacts,
+		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
+		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
 	return c, nil
 }
 
@@ -261,9 +263,10 @@ func (a *App) finish(write bool, res connectors.Result, err error) (connectors.R
 // source, the account's recorded scopes must cover the tool's
 // RequiredScopes (Grants), or the tool must be one drive.file admits on
 // the files the gateway created or the user opened with it
-// (GrantsOrPerFile; Google answers not_found for the rest). An account
-// the source does not list, or one without recorded scopes, is not
-// blocked here (Google decides).
+// (GrantsOrPerFile; Google answers not_found for the rest). A missing
+// Workspace-only scope (WorkspaceOnlyScope) is reported as one personal
+// accounts cannot grant. An account the source does not list, or one
+// without recorded scopes, is not blocked here (Google decides).
 func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connectors.Tool) error {
 	if a.c.accounts == nil || len(tool.RequiredScopes) == 0 {
 		return nil
@@ -277,11 +280,17 @@ func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connec
 			continue
 		}
 		for _, required := range tool.RequiredScopes {
-			if !GrantsOrPerFile(acct.Scopes, required) {
+			if GrantsOrPerFile(acct.Scopes, required) {
+				continue
+			}
+			if WorkspaceOnlyScope(required) {
 				return &Error{Class: ClassScopeRequired, Message: fmt.Sprintf(
-					"%s needs the Google scope %s, which this account did not grant; grant more access on the portal (Connections) by reconnecting the account with that scope",
+					"%s needs the Google scope %s, which only Google Workspace accounts can grant: personal Google (gmail.com) accounts cannot grant it; with a Google Workspace account, grant more access on the portal (Connections)",
 					call.Tool, required)}
 			}
+			return &Error{Class: ClassScopeRequired, Message: fmt.Sprintf(
+				"%s needs the Google scope %s, which this account did not grant; grant more access on the portal (Connections) by reconnecting the account with that scope",
+				call.Tool, required)}
 		}
 	}
 	return nil

@@ -48,6 +48,7 @@ func catalogRegistry(t *testing.T, svc *connections.Service) *connectors.Registr
 		}
 		svc.MapApp(app.App(), connections.VendorGoogle)
 		reg.SetScopeCoverage(app.App(), google.Grants)
+		reg.SetScopeGrantable(app.App(), google.ScopeGrantable)
 	}
 	noop := func(context.Context, connectors.Call) (connectors.Result, error) { return connectors.Result{}, nil }
 	schema := []byte(`{"type":"object"}`)

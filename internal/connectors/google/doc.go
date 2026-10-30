@@ -13,7 +13,9 @@
 // modify_labels, trash, send_draft; drive get_content, list_folder,
 // list_permissions, list_comments, create_file, update_file, share,
 // add_comment; docs replace_text; sheets get_metadata, update_range,
-// create; contacts get, list (docs/connectors/google.md). Each app is its own connectors.Connector so
+// create; contacts get, list (docs/connectors/google.md). Increment 4
+// (decision 94k2b0pp) adds the Google Workspace tools: contacts
+// search_directory, list_directory. Each app is its own connectors.Connector so
 // tool names read calendar.list_events, drive.search and docs.get_text,
 // roles can grant or deny a whole app, and the restricted Gmail and
 // Drive scopes stay separable from the rest.
@@ -44,6 +46,13 @@
 // the Drive, Docs and Sheets tools on the files the gateway created or
 // the user opened with it (GrantsOrPerFile).
 //
+// The directory and Chat scopes exist only for Google Workspace accounts
+// (WorkspaceOnlyScope): personal accounts are never asked for them
+// (ScopeGrantable, installed with connectors.Registry.SetScopeGrantable),
+// the binder drops them from an account without a hosted domain (hd),
+// and the scope gate's message says a personal account cannot grant
+// them.
+//
 // Writes require the ledger's Call.OperationID (ErrMissingOperation) and
 // reconcile from the resource identity and the operation id alone:
 // calendar.create_event by a client-chosen event id derived from the
@@ -63,7 +72,7 @@
 // drive/v3, docs/v1, sheets/v4, people/v1).
 //
 // Design: Brain plan 36bakiw8 section 5; decisions bt8ukyrd, mh7c6z3v,
-// dovthftx, wcp2fmbz, rrmfnkqu, 0sod196t, 85k9b1ig.
+// dovthftx, wcp2fmbz, rrmfnkqu, 0sod196t, 85k9b1ig, 94k2b0pp.
 package google
 
 // Vendor is the connections vendor every app of this package uses; the

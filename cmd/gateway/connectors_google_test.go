@@ -47,3 +47,24 @@ func TestRegisterConnectorsRegistersGoogleWithConnections(t *testing.T) {
 		t.Errorf("list_labels without an account: err = %v, want class %s", err, google.ClassNoAccount)
 	}
 }
+
+// Every Google app tells the access gap that personal accounts cannot
+// grant the Workspace-only scopes (google.ScopeGrantable).
+func TestRegisterGoogleInstallsScopeGrantable(t *testing.T) {
+	connSvc, _ := newMemConnections(t)
+	registry := connectors.NewRegistry()
+	if _, err := registerConnectors(config.Config{}, registry, connSvc, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatal(err)
+	}
+	for _, app := range google.Apps {
+		if registry.Grantable(app, connectors.LabelPersonal, google.ScopeDirectoryReadonly) {
+			t.Errorf("%s: personal accounts may grant directory.readonly, want not", app)
+		}
+		if !registry.Grantable(app, connectors.LabelCompany, google.ScopeDirectoryReadonly) || !registry.Grantable(app, connectors.LabelPersonal, google.ScopeContactsReadonly) {
+			t.Errorf("%s: company accounts and consumer scopes must stay grantable", app)
+		}
+	}
+	if _, ok := registry.Get("contacts.search_directory"); !ok {
+		t.Error("contacts.search_directory missing from the registry")
+	}
+}

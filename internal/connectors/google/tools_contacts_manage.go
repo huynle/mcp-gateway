@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 
+	"google.golang.org/api/people/v1"
+
 	"github.com/huynle/mcp-gateway/internal/connectors"
 )
 
@@ -92,13 +94,18 @@ func (c *Connector) getContact(ctx context.Context, cl *client, call connectors.
 	if err := classify("get contact", err); err != nil {
 		return connectors.Result{}, err
 	}
+	return connectors.Result{Content: toContactDetail(p)}, nil
+}
+
+// toContactDetail is toContact plus the phone numbers.
+func toContactDetail(p *people.Person) ContactDetail {
 	out := ContactDetail{Contact: toContact(p)}
 	for _, ph := range p.PhoneNumbers {
 		if ph != nil && ph.Value != "" {
 			out.Phones = append(out.Phones, ph.Value)
 		}
 	}
-	return connectors.Result{Content: out}, nil
+	return out
 }
 
 func (c *Connector) listContacts(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error) {
