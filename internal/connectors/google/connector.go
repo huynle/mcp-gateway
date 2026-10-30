@@ -130,8 +130,8 @@ func New(opts Options) (*Connector, error) {
 		append(c.gmailReadTools(), c.gmailManageReadTools()...), append(c.gmailWriteTools(), c.gmailManageWriteTools()...),
 		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers()), merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers()))
 	c.drive = c.newApp(AppDrive,
-		append(c.driveReadTools(), c.driveManageReadTools()...), append(c.driveWriteTools(), c.driveManageWriteTools()...),
-		merge(c.driveReadHandlers(), c.driveManageReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
+		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
+		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
 	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
 		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
@@ -265,7 +265,8 @@ func (a *App) finish(write bool, res connectors.Result, err error) (connectors.R
 // source, the account's recorded scopes must cover the tool's
 // RequiredScopes (Grants), or the tool must be one drive.file admits on
 // the files the gateway created or the user opened with it
-// (GrantsOrPerFile; Google answers not_found for the rest). A missing
+// (GrantsOrPerFile; Google answers not_found for the rest), unless the
+// tool lists no file (wholeDriveTools: list_shared_drives). A missing
 // Workspace-only scope (WorkspaceOnlyScope) is reported as one personal
 // accounts cannot grant. An account the source does not list, or one
 // without recorded scopes, is not blocked here (Google decides).
@@ -282,7 +283,7 @@ func (a *App) checkScopes(ctx context.Context, call connectors.Call, tool connec
 			continue
 		}
 		for _, required := range tool.RequiredScopes {
-			if GrantsOrPerFile(acct.Scopes, required) {
+			if toolGrants(tool, acct.Scopes, required) {
 				continue
 			}
 			if WorkspaceOnlyScope(required) {

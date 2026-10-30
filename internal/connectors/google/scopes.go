@@ -142,6 +142,21 @@ func GrantsOrPerFile(granted []string, required string) bool {
 	return Grants(granted, required) || (PerFile(required) && Grants(granted, ScopeDriveFile))
 }
 
+// wholeDriveTools are the Drive tools whose method drive.file does not
+// stand in for, although their scope is one it admits per file: the
+// method lists no file (drives.list lists shared drives and accepts only
+// drive and drive.readonly), so the per-file admission does not apply.
+var wholeDriveTools = map[string]bool{AppDrive + "." + ToolListSharedDrives: true}
+
+// toolGrants is the scope gate's test for one tool: GrantsOrPerFile,
+// or Grants alone for a wholeDriveTools tool.
+func toolGrants(tool connectors.Tool, granted []string, required string) bool {
+	if wholeDriveTools[tool.App+"."+tool.Name] {
+		return Grants(granted, required)
+	}
+	return GrantsOrPerFile(granted, required)
+}
+
 // WorkspaceOnlyScope reports whether only Google Workspace accounts can
 // use scope: the directory (directory.readonly) and every Chat scope.
 // Personal (gmail.com) accounts cannot grant them, so connect and grant

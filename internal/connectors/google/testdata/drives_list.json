@@ -1,0 +1,31 @@
+{
+  "kind": "drive#driveList",
+  "nextPageToken": "drives-page-two",
+  "drives": [
+    {
+      "kind": "drive#drive",
+      "id": "0ASharedDrive00000000PVA",
+      "name": "Engineering",
+      "createdTime": "2025-03-01T09:00:00.000Z",
+      "hidden": false,
+      "colorRgb": "#4986e7",
+      "capabilities": {
+        "canAddChildren": true
+      },
+      "restrictions": {
+        "adminManagedRestrictions": true,
+        "domainUsersOnly": true,
+        "driveMembersOnly": false,
+        "copyRequiresWriterPermission": false,
+        "sharingFoldersRequiresOrganizerPermission": true
+      }
+    },
+    {
+      "kind": "drive#drive",
+      "id": "0BArchiveDrive0000000PVA",
+      "name": "Archive",
+      "createdTime": "2024-11-15T12:00:00.000Z",
+      "hidden": true
+    }
+  ]
+}

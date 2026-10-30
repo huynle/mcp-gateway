@@ -34,7 +34,7 @@ func TestDriveSearch(t *testing.T) {
 	}
 	q := query(t, srv, "/drive/v3/files")
 	for k, want := range map[string]string{
-		"q": "(name contains 'budget') and trashed = false", "pageSize": "10", "corpora": "user", "supportsAllDrives": "true",
+		"q": "(name contains 'budget') and trashed = false", "pageSize": "10", "corpora": "allDrives", "includeItemsFromAllDrives": "true", "supportsAllDrives": "true",
 	} {
 		if got := q.Get(k); got != want {
 			t.Errorf("query %s = %q, want %q", k, got, want)
@@ -43,12 +43,12 @@ func TestDriveSearch(t *testing.T) {
 	if f := q.Get("fields"); !strings.Contains(f, "files(id,name,mimeType") || strings.Contains(f, "appProperties") {
 		t.Errorf("fields = %q: metadata only, never appProperties", f)
 	}
-	if q.Get("driveId") != "" || q.Get("includeItemsFromAllDrives") != "" {
+	if q.Get("driveId") != "" {
 		t.Errorf("query %v names a drive without drive_id", q)
 	}
 	var page google.FilesPage
 	decode(t, res, &page)
-	if page.Drive != "my" || !page.HasMore || page.NextPageToken != "files-page-two" || page.MaxResults != 10 || len(page.Items) != 2 {
+	if page.Drive != "all" || !page.HasMore || page.NextPageToken != "files-page-two" || page.MaxResults != 10 || len(page.Items) != 2 {
 		t.Fatalf("page = %+v", page)
 	}
 	first, second := page.Items[0], page.Items[1]
@@ -203,8 +203,11 @@ func encodedSizeOf(t *testing.T, res connectors.Result) int {
 func TestDriveResourceIdentityAndScopes(t *testing.T) {
 	c, _ := newConnector(t, newAPIServer(t, nil), connectors.Bounds{})
 	search := toolOf(t, c, "drive.search")
-	if got := search.ResourceIdentity(map[string]any{"q": "secret"}); got["drive"] != "my" || len(got) != 1 {
-		t.Errorf("search identity = %v", got)
+	if got := search.ResourceIdentity(map[string]any{"q": "secret"}); got["drive"] != "all" || len(got) != 1 {
+		t.Errorf("search identity = %v, want drive all (every drive is searched)", got)
+	}
+	if got := search.ResourceIdentity(map[string]any{"drive_id": "my", "q": "secret"}); got["drive"] != "my" || len(got) != 1 {
+		t.Errorf("search identity with drive_id my = %v", got)
 	}
 	if got := search.ResourceIdentity(map[string]any{"drive_id": " 0ADrive ", "q": "secret"}); got["drive"] != "0ADrive" || len(got) != 1 {
 		t.Errorf("search identity with drive = %v", got)
