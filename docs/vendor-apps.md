@@ -519,6 +519,15 @@ Open item from the design (section 10): confirm whether the company is a Google
 Workspace org. If not, skip the Internal client and note that company users consume the
 External app's cap.
 
+**Without a Workspace org** the gateway runs on the External app alone. The tools that
+work with consumer (gmail.com) accounts are unaffected; enable their APIs (Slides, Forms
+and the rest of the list above) in the External project. The Workspace-only tools stay
+registered but unusable: `contacts.search_directory`, `contacts.list_directory` and the
+`chat` app (personal accounts are never asked for their scopes, see 4.3 Increment 4), and
+`calendar.set_out_of_office`, `set_working_location` and `create_focus_time` (Google
+refuses those event types on consumer calendars). Skip the People-directory and Chat app
+setup until a Workspace org exists; adding the Internal client later needs no code change.
+
 ### 4.2 Redirect URIs (Clients page -> Web application)
 
 Add the authorized domains first (`example.com` placeholder; must be a domain the project
