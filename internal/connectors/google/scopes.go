@@ -1,5 +1,11 @@
 package google
 
+import (
+	"strings"
+
+	"github.com/huynle/mcp-gateway/internal/connectors"
+)
+
 // Google OAuth scopes the tools declare as RequiredScopes (the minimal
 // scope each tool works with; docs/vendor-apps.md section 4.3). The
 // account may have granted a broader one: Grants applies the implication
@@ -43,6 +49,20 @@ const (
 	ScopeSpreadsheets          = "https://www.googleapis.com/auth/spreadsheets"
 	ScopeContactsReadonly      = "https://www.googleapis.com/auth/contacts.readonly"
 	ScopeContacts              = "https://www.googleapis.com/auth/contacts"
+
+	// Increment 4: Google Workspace only (WorkspaceOnlyScope). The
+	// directory (People API searchDirectoryPeople, listDirectoryPeople)
+	// and the Chat API exist only for Workspace accounts; personal
+	// (gmail.com) accounts can never grant them. All are sensitive.
+	ScopeDirectoryReadonly    = "https://www.googleapis.com/auth/directory.readonly"
+	ScopeChatSpacesReadonly   = "https://www.googleapis.com/auth/chat.spaces.readonly"
+	ScopeChatSpaces           = "https://www.googleapis.com/auth/chat.spaces"
+	ScopeChatMessagesReadonly = "https://www.googleapis.com/auth/chat.messages.readonly"
+	ScopeChatMessages         = "https://www.googleapis.com/auth/chat.messages"
+	ScopeChatMessagesCreate   = "https://www.googleapis.com/auth/chat.messages.create"
+
+	// chatScopePrefix is the common prefix of every Chat API scope.
+	chatScopePrefix = "https://www.googleapis.com/auth/chat."
 )
 
 // scopeImplies lists, per scope, the narrower scopes it covers (one
@@ -67,6 +87,8 @@ var scopeImplies = map[string][]string{
 	ScopeDocuments:              {ScopeDocumentsReadonly},
 	ScopeSpreadsheets:           {ScopeSpreadsheetsReadonly},
 	ScopeContacts:               {ScopeContactsReadonly},
+	ScopeChatSpaces:             {ScopeChatSpacesReadonly},
+	ScopeChatMessages:           {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the
@@ -118,4 +140,33 @@ func Grants(granted []string, required string) bool {
 // files it may see).
 func GrantsOrPerFile(granted []string, required string) bool {
 	return Grants(granted, required) || (PerFile(required) && Grants(granted, ScopeDriveFile))
+}
+
+// WorkspaceOnlyScope reports whether only Google Workspace accounts can
+// use scope: the directory (directory.readonly) and every Chat scope.
+// Personal (gmail.com) accounts cannot grant them, so connect and grant
+// more access never ask them (ScopeGrantable) and the binder strips them
+// from accounts without a hosted domain.
+func WorkspaceOnlyScope(scope string) bool {
+	scope = strings.TrimSpace(scope)
+	return scope == ScopeDirectoryReadonly || strings.HasPrefix(scope, chatScopePrefix)
+}
+
+// stripWorkspaceOnlyScopes returns scopes without the Workspace-only
+// ones (WorkspaceOnlyScope), and whether any was removed.
+func stripWorkspaceOnlyScopes(scopes []string) ([]string, bool) {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !WorkspaceOnlyScope(s) {
+			out = append(out, s)
+		}
+	}
+	return out, len(out) != len(scopes)
+}
+
+// ScopeGrantable is the connectors.ScopeGrantable of every Google app:
+// personal accounts cannot grant the Workspace-only scopes
+// (WorkspaceOnlyScope); company accounts can grant everything.
+func ScopeGrantable(label connectors.AccountLabel, scope string) bool {
+	return label != connectors.LabelPersonal || !WorkspaceOnlyScope(scope)
 }
