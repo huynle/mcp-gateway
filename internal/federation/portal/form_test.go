@@ -88,7 +88,7 @@ func TestDetectErrorsShownAsClasses(t *testing.T) {
 func TestReservedAndInvalidNamesRefused(t *testing.T) {
 	e := newEnv(t)
 	for _, name := range []string{"github", "slack", "atlassian", "jira", "confluence", "google", "calendar", "tasks", "gmail",
-		"drive", "docs", "sheets", "contacts", "chat", "slides", "microsoft", "fake"} {
+		"drive", "docs", "sheets", "contacts", "chat", "slides", "forms", "microsoft", "fake"} {
 		r := e.post("/servers/new", alice, addForm("action", "create", "name", name, "url", "https://x.example/mcp", "auth_kind", "none"))
 		if r.code != 422 {
 			t.Errorf("%s: status %d", name, r.code)

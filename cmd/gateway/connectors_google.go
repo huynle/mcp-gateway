@@ -11,7 +11,7 @@ import (
 )
 
 // registerGoogle registers the Google connector's apps (calendar, tasks,
-// gmail, drive, docs, sheets, contacts, chat, slides: google.Apps) on the registry with
+// gmail, drive, docs, sheets, contacts, chat, slides, forms: google.Apps) on the registry with
 // the connections service as their
 // account source (also consulted for the account's granted scopes: a
 // tool whose scope was declined under granular consent answers
