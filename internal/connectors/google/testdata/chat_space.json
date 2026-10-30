@@ -1,0 +1,13 @@
+{
+  "name": "spaces/AAAAexample1",
+  "type": "ROOM",
+  "spaceType": "SPACE",
+  "displayName": "Eng Team",
+  "spaceThreadingState": "THREADED_MESSAGES",
+  "spaceUri": "https://chat.google.com/room/AAAAexample1?cls=11",
+  "spaceDetails": {"description": "Where the engineers talk.", "guidelines": "Be kind."},
+  "externalUserAllowed": true,
+  "createTime": "2026-01-05T17:00:00.000Z",
+  "lastActiveTime": "2026-10-28T09:15:00.000Z",
+  "membershipCount": {"joinedDirectHumanUserCount": 12, "joinedGroupCount": 1}
+}

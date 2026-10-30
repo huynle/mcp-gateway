@@ -18,6 +18,7 @@ var workspaceScopes = []string{
 	google.ScopeDirectoryReadonly,
 	google.ScopeChatSpacesReadonly, google.ScopeChatSpaces,
 	google.ScopeChatMessagesReadonly, google.ScopeChatMessages, google.ScopeChatMessagesCreate,
+	google.ScopeChatMembershipsReadonly, google.ScopeChatMemberships,
 }
 
 func TestWorkspaceOnlyScope(t *testing.T) {

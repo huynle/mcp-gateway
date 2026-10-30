@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
@@ -54,8 +55,9 @@ type Options struct {
 	// BaseURL replaces the root of every Google API endpoint (with a
 	// trailing slash): the Calendar API is reached at
 	// BaseURL + "calendar/v3/", Drive at BaseURL + "drive/v3/", Tasks,
-	// Gmail, Docs, Sheets and People at BaseURL + "tasks/v1/",
-	// "gmail/v1/", "v1/documents", "v4/spreadsheets" and "v1/people".
+	// Gmail, Docs, Sheets, People and Chat at BaseURL + "tasks/v1/",
+	// "gmail/v1/", "v1/documents", "v4/spreadsheets", "v1/people" and
+	// "v1/spaces".
 	// Empty means Google's own hosts; tests point it at an httptest
 	// server.
 	BaseURL string
@@ -80,7 +82,7 @@ type Connector struct {
 
 	calendar, tasks, gmail *App
 	drive, docs, sheets    *App
-	contacts               *App
+	contacts, chat         *App
 }
 
 // New builds the Google connector.
@@ -140,16 +142,20 @@ func New(opts Options) (*Connector, error) {
 	c.contacts = c.newApp(AppContacts,
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
+	c.chat = c.newApp(AppChat, c.chatReadTools(), nil, c.chatReadHandlers(), nil)
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs, sheets, contacts. Each is
+// calendar, tasks, gmail, drive, docs, sheets, contacts, chat. Each is
 // registered with connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
 func (c *Connector) Apps() []*App {
-	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts}
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat}
 }
+
+// Chat returns the "chat" app (Google Workspace accounts only).
+func (c *Connector) Chat() *App { return c.chat }
 
 // Drive returns the "drive" app.
 func (c *Connector) Drive() *App { return c.drive }
@@ -418,6 +424,19 @@ func (cl *client) people(ctx context.Context) (*people.Service, error) {
 	svc, err := people.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "people client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// chat builds the Chat API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) chat(ctx context.Context) (*chat.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := chat.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "chat client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

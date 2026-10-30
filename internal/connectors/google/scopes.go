@@ -60,6 +60,10 @@ const (
 	ScopeChatMessagesReadonly = "https://www.googleapis.com/auth/chat.messages.readonly"
 	ScopeChatMessages         = "https://www.googleapis.com/auth/chat.messages"
 	ScopeChatMessagesCreate   = "https://www.googleapis.com/auth/chat.messages.create"
+	// spaces.members.list accepts chat.memberships.readonly or
+	// chat.memberships with user authentication.
+	ScopeChatMembershipsReadonly = "https://www.googleapis.com/auth/chat.memberships.readonly"
+	ScopeChatMemberships         = "https://www.googleapis.com/auth/chat.memberships"
 
 	// chatScopePrefix is the common prefix of every Chat API scope.
 	chatScopePrefix = "https://www.googleapis.com/auth/chat."
@@ -89,6 +93,7 @@ var scopeImplies = map[string][]string{
 	ScopeContacts:               {ScopeContactsReadonly},
 	ScopeChatSpaces:             {ScopeChatSpacesReadonly},
 	ScopeChatMessages:           {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
+	ScopeChatMemberships:        {ScopeChatMembershipsReadonly},
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the

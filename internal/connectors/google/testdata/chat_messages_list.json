@@ -1,0 +1,26 @@
+{
+  "messages": [
+    {
+      "name": "spaces/AAAAexample1/messages/msg2.msg2",
+      "sender": {"name": "users/111111111111111111111", "type": "HUMAN"},
+      "createTime": "2026-10-28T09:15:00.000Z",
+      "text": "Deploy is done.",
+      "thread": {"name": "spaces/AAAAexample1/threads/thr1"},
+      "threadReply": true,
+      "space": {"name": "spaces/AAAAexample1"}
+    },
+    {
+      "name": "spaces/AAAAexample1/messages/msg1.msg1",
+      "sender": {"name": "users/222222222222222222222", "displayName": "Dave Example", "type": "HUMAN"},
+      "createTime": "2026-10-28T09:00:00.000Z",
+      "text": "Starting the deploy, see the attached plan.",
+      "thread": {"name": "spaces/AAAAexample1/threads/thr1"},
+      "attachment": [
+        {"name": "spaces/AAAAexample1/messages/msg1.msg1/attachments/att1", "contentName": "plan.pdf", "contentType": "application/pdf", "source": "UPLOADED_CONTENT"},
+        {"name": "spaces/AAAAexample1/messages/msg1.msg1/attachments/att2", "contentName": "Rollout", "contentType": "application/vnd.google-apps.document", "source": "DRIVE_FILE"}
+      ],
+      "space": {"name": "spaces/AAAAexample1"}
+    }
+  ],
+  "nextPageToken": "messages-page-2"
+}

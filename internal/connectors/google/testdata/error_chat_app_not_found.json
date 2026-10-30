@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": 404,
+    "message": "Google Chat app not found. To create a Chat app, you must turn on the Chat API and configure the app in the Google Cloud console.",
+    "status": "NOT_FOUND"
+  }
+}
