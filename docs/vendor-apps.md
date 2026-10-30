@@ -593,6 +593,21 @@ does not want the two new restricted scopes leaves them out: `drive.get_content`
 `drive.list_comments` then work only per file through `drive.file`, and the Gmail label /
 trash tools stay locked.
 
+Increment 4 (Google Workspace tools, `docs/connectors/google.md` "Increment 4"). The
+directory exists **only for Google Workspace accounts**: personal Google (gmail.com)
+accounts cannot grant `directory.readonly` (`google.WorkspaceOnlyScope`, which also covers
+every `chat.*` scope a later phase uses). Connect and *Grant more access* never ask personal
+accounts for it, the binder strips it from accounts without a hosted domain (`hd`), and the
+directory tools answer `scope_required` for those connections. Enable the **People API**
+(already listed above) in each project; the directory tools also need the Workspace's
+directory sharing on (Admin console -> **Directory -> Directory settings -> Sharing
+settings**: contact sharing enabled); with sharing off they find no one.
+The same declaration rules as increment 3 apply; on an Internal app it is optional.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/directory.readonly` | read | `contacts.search_directory`, `contacts.list_directory` (People API `searchDirectoryPeople`, `listDirectoryPeople`; Workspace accounts only) | sensitive |
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever

@@ -10,11 +10,11 @@ Package `internal/connectors/google`, vendor `google`. One Google connection (bo
 | `drive` | `search`, `get_file_metadata`, `create_folder`; `get_content`, `list_folder`, `list_permissions`, `list_comments`, `create_file`, `update_file`, `share`, `add_comment` | Drive API v3 | 2, 3 |
 | `docs` | `get_text`, `create`, `append_text`; `replace_text` | Docs API v1 (+ Drive for `create`) | 2, 3 |
 | `sheets` | `read_range`, `append_rows`; `get_metadata`, `update_range`, `create` | Sheets API v4 (+ Drive for `create`) | 2, 3 |
-| `contacts` | `search`; `get`, `list` | People API v1 | 2, 3 |
+| `contacts` | `search`; `get`, `list`; `search_directory`, `list_directory` | People API v1 | 2, 3, 4 |
 
 The connector follows the GitHub reference (`docs/connectors/github.md`, Brain decisions `89k5cln0`, `8023b958`): tokens come from the connection's `oauth2.TokenSource` per call and are never stored; every write runs behind the safety core and declares how it is reconciled after an unknown outcome. The APIs are reached through [google.golang.org/api](https://pkg.go.dev/google.golang.org/api) v0.298.0 (the newest release declaring Go 1.25; v0.299+ require Go 1.26). The tool set is designed after [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) (Python, MIT) without copying code.
 
-Increment 2 (Drive, Docs, Sheets, Contacts; Brain decision `85k9b1ig`) adds four apps over the same binding; its design choices are in [Increment 2 notes](#increment-2-notes-drive-docs-sheets-contacts). Increment 3 closes the gaps with Claude's Gmail / Calendar / Drive connectors and `google_workspace_mcp` (Brain plan `5soa9785`): 30 tools listed in [Increment 3: management tools](#increment-3-management-tools); its 16 new writes default to **Ask** (migration `00022`).
+Increment 2 (Drive, Docs, Sheets, Contacts; Brain decision `85k9b1ig`) adds four apps over the same binding; its design choices are in [Increment 2 notes](#increment-2-notes-drive-docs-sheets-contacts). Increment 3 closes the gaps with Claude's Gmail / Calendar / Drive connectors and `google_workspace_mcp` (Brain plan `5soa9785`): 30 tools listed in [Increment 3: management tools](#increment-3-management-tools); its 16 new writes default to **Ask** (migration `00022`). Increment 4 (Brain decision `94k2b0pp`) adds tools only Google Workspace accounts can use, starting with the directory: see [Increment 4: Workspace tools](#increment-4-workspace-tools).
 
 ## Reads
 
@@ -152,6 +152,10 @@ A 401 on userinfo fails the connect with `reconnect_required`; a 5xx with `unava
    https://www.googleapis.com/auth/gmail.modify
    https://www.googleapis.com/auth/drive.readonly
    ```
+   plus, for increment 4 and **Workspace accounts only** (personal accounts are never asked for it; see [Increment 4](#increment-4-workspace-tools)):
+   ```
+   https://www.googleapis.com/auth/directory.readonly
+   ```
    (read-only deployments list `calendar.events.readonly`, `tasks.readonly`, `gmail.readonly`, `drive.metadata.readonly`, `documents.readonly`, `spreadsheets.readonly`, `contacts.readonly`; `gmail.labels` alone keeps `list_labels` working without any restricted scope; leaving `drive.metadata.readonly` out keeps the External app free of a restricted Drive scope at the price of the [`drive.file` limitation](#increment-2-notes-drive-docs-sheets-contacts)), the extras `access_type=offline`, `prompt=consent`, `include_granted_scopes=true` (defaults), and in **Extra parameters** the line
    ```
    company_domains=acme.com,acme.co.uk
@@ -165,7 +169,8 @@ The connector is registered whenever the connections module is mounted (a key pr
 ## Tests
 
 - `go test ./internal/connectors/google/`: the contract test for each of the seven apps (`connectortest.ContractTest`), the error classification table, the binder (company by `hd`, by email domain, personal, the `default_label` and variant fallbacks, granted scopes recorded exactly, 401 / 5xx / no `sub`), and every tool against hand-written, scrubbed fixtures under `testdata/` served by an `httptest` server that also checks the bearer: reads (success, empty, partial, 404, 401 reconnect, 403 forbidden, 403 insufficient scope, 400, 403 and 429 rate limits, 5xx, network failure, timeout, cancellation, argument validation, resource identity and schema shape, bounds truncation, `gmail.search`'s partial header fetches), writes (the derived event id, marker and `Message-ID` in the request, reply threading, `ResultIDs`, the missing operation id, 400 / 403 / 404 / 401 / 409 / 429 as known outcomes, 5xx / timeout / dropped connection / cancellation as `ErrOutcomeUnknown`, the reply lookup failing as a known outcome), every `Check` (found, not_found, cannot tell, bounded pagination with the marker on a later page, the search miss confirmed by the scan, missing identity or operation id), and the scope gate (`TestDeclinedGmailScopeBlocksGmailToolsWhileCalendarWorks`: an account that declined the Gmail scope is blocked on every Gmail tool before any request while `calendar.list_events` works; `Grants`' implication table). Increment 2 adds the same per tool (`tools_drive_test.go`, `tools_docs_test.go`, `tools_sheets_test.go`, `tools_contacts_test.go`): `DocumentText` over a hand-written document (headings, chips, bullets, a table, a table of contents), the text / row / description bounds with `partial`, the `trashed = false` and shared-drive query shapes, the marker in the `files.create` body, `docs.create`'s body-insert failures (`body_status` failed / unknown), `append_rows`' RAW default and the `rows` schema, the Drive marker check (found, not_found, cannot tell on 404 / 401 / 403 / 429 / 5xx, missing operation or account; `docs.create` shares it) and the per-app scope gate (`TestDeclinedIncrement2ScopeBlocksOnlyThatApp`: a Drive-only account is blocked on Docs, Sheets and Contacts before any request; a `drive.file`-only account is admitted per file to Drive, Docs and Sheets but not to Contacts). No real tokens or personal data appear in the fixtures (`*.example.test`, synthetic ids).
-- `go test ./cmd/gateway/`: the seven apps and their `list_accounts` tools are registered with the connections service and answer *no connected account* before a user connects.
+- Increment 4 (`workspace_test.go`, `tools_contacts_directory_test.go`): `WorkspaceOnlyScope`, `ScopeGrantable`, the Chat implication, the binder stripping the Workspace-only scopes from an account without `hd` (also when labelled company, and from the requested scopes without a `scope` field) and keeping them with `hd`; the directory tools (sources and read mask in the request, items with phones, `total`, paging, empty, clamped, truncated, argument validation, the read error table, identity without the query) and the scope gate's Workspace-only message. `internal/connections` `TestMissingAccessGooglePersonalSkipsDirectory`: a personal account's gap never asks for `directory.readonly` nor promises the directory tools, a company account's does, and Connect leaves it out.
+- `go test ./cmd/gateway/`: the seven apps and their `list_accounts` tools are registered with the connections service and answer *no connected account* before a user connects; every app has `google.ScopeGrantable` installed (`TestRegisterGoogleInstallsScopeGrantable`).
 - `GOOGLE_LIVE_TOKEN=ya29.... go test -tags live -run Live ./internal/connectors/google/`: `calendar.list_events`, `gmail.list_labels`, `drive.search` and `contacts.search` against Google with a dedicated test account's access token (the scopes it carries decide what works); `docs.get_text` and `sheets.read_range` read `GOOGLE_LIVE_DOCUMENT_ID` and `GOOGLE_LIVE_SHEET_RANGE` (`<spreadsheet id>!<A1 range>`) when set. With `GOOGLE_LIVE_WRITE=1` as well, `TestLiveCreateEventAndReconcile` creates an event and `TestLiveCreateFolderAndReconcile` a folder, each under a fresh operation id, run the tool's check from the resource identity alone and expect it to find the resource (by its derived id, by its `appProperties` marker), then delete it. Behind the `live` build tag and skipped without the variables; never run in CI.
 
 ## Increment 2 notes (Drive, Docs, Sheets, Contacts)
@@ -230,6 +235,29 @@ All 16 default to **Ask** (migration `00022_google_default_ask.sql`; `TestGoogle
 **Resource identity** of the new tools: `calendar_id`, `domain`, `event_id` (+ `response` for `respond_to_event`); `calendar_ids` and `domains` for `free_busy`; `tasklist`, `task_id`; `message_id` / `thread_id` / `attachment_id` / `draft_id` and `add_labels` / `remove_labels` (sorted label ids) for Gmail; `file_id`, `folder_id` (the folder moved into or listed); `drive.share` adds `role`, `type` and `grantee_domain` (the domain of the email, or the domain shared with) so a rule such as *deny `drive.share` when `grantee_domain` not equals `acme.com`* or *when `type` equals `anyone`* keeps files inside the company; `document_id`, `spreadsheet_id`, `resource_name`. Never text, names, titles, cell values or full addresses.
 
 **Not built** (and why): Gmail filters, vacation / out-of-office and label management (settings, not mail); Calendar creation of secondary calendars, focus-time / working-location events; Docs structural edits (tables, images, headers, `batch_update` with arbitrary requests: too open for a reviewed write); Sheets formatting, conditional formatting, tab management; Contacts writes; Forms, Slides, Chat, Apps Script and Custom Search (no app here); Drive permission removal and file deletion (destructive; `update_file` cannot trash).
+
+## Increment 4: Workspace tools
+
+Brain decision `94k2b0pp`. Tools that only Google Workspace (company) accounts can use; same conventions as above.
+
+### Workspace-only scopes
+
+Like Microsoft's work-only permissions (`microsoft.WorkOnlyScope`), some Google scopes exist only for Workspace accounts: `directory.readonly` and every Chat scope (`chat.spaces.readonly`, `chat.spaces`, `chat.messages.readonly`, `chat.messages`, `chat.messages.create`; declared now, used by a later phase). `google.WorkspaceOnlyScope` names them, and:
+
+- **Connect and grant more access never ask a personal account for them.** `cmd/gateway` installs `google.ScopeGrantable` on every Google app (`registry.SetScopeGrantable`): an account labelled **personal** cannot grant them, so its access gap neither asks for them nor promises the tools that need them; Connect, which does not know yet which account will sign in, leaves them to grant more access for every account (`readScopes` keeps only scopes every label can grant). A **company** account's gap asks for them.
+- **The binder strips them from consumer accounts.** An account whose userinfo has **no `hd` claim** (a gmail.com account) never keeps them in its recorded scopes, whatever its label (a consumer account labelled company by `default_label` included); a Workspace account (with `hd`) keeps them. Without a `scope` field in the token response, a consumer account that was asked for one records the requested scopes minus them.
+- **The scope gate says why.** A tool whose Workspace-only scope is missing answers `scope_required` with "only Google Workspace accounts can grant: personal Google (gmail.com) accounts cannot grant it; with a Google Workspace account, grant more access on the portal (Connections)".
+
+Implication (`google.Grants`): `chat.spaces` ⊃ `chat.spaces.readonly`; `chat.messages` ⊃ `chat.messages.readonly`, `chat.messages.create`.
+
+### Reads
+
+| Tool | Arguments | Result | Scope |
+|---|---|---|---|
+| `contacts.search_directory` | `query`, `max_results`, `page_token` | `{max_results, total, next_page_token, has_more, truncated?, items: [contact as contacts.get]}` (People `people:searchDirectoryPeople`, `sources` = `DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE`, `DIRECTORY_SOURCE_TYPE_DOMAIN_CONTACT`, read mask `names,emailAddresses,organizations,phoneNumbers`; `total` is Google's estimate) | `directory.readonly` (**new**, Workspace only) |
+| `contacts.list_directory` | `max_results`, `page_token` | `{max_results, next_page_token, has_more, truncated?, items: [contact as contacts.get]}` (`people:listDirectoryPeople`, same sources and mask) | `directory.readonly` (Workspace only) |
+
+**Resource identity**: `source` = `directory` for both; never the query. Pages follow `MaxPageSize` (default 50); the result is fitted to `MaxResultBytes` by dropping trailing items. The directory needs the Workspace's contact sharing on (Admin console -> Directory -> Directory settings -> Sharing settings); with it off the tools find no one.
 
 ## Adding the next tool
 
