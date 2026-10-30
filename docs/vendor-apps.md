@@ -608,6 +608,13 @@ The same declaration rules as increment 3 apply; on an Internal app it is option
 | --- | --- | --- | --- |
 | `https://www.googleapis.com/auth/directory.readonly` | read | `contacts.search_directory`, `contacts.list_directory` (People API `searchDirectoryPeople`, `listDirectoryPeople`; Workspace accounts only) | sensitive |
 
+The other increment-4 tools reuse registered scopes: `calendar.events` (`add_meet_link` on
+`calendar.create_event` / `update_event`, and the Workspace-only event types
+`calendar.set_out_of_office`, `set_working_location`, `create_focus_time`: Google refuses
+them for personal accounts) and `drive.readonly` (`drive.list_shared_drives`: `drives.list`
+accepts only `drive` and `drive.readonly`, so neither `drive.metadata.readonly` nor the
+per-file `drive.file` admits it).
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever
@@ -898,7 +905,12 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 `drive.create_file`, `update_file`, `share`, `add_comment`; `docs.replace_text`;
 `sheets.update_range`, `create`. `calendar.create_event`, `tasks.create`, `gmail.send`,
 `gmail.create_draft`, `drive.create_folder`, `docs.create`, `docs.append_text` and
-`sheets.append_rows` stay Auto. `TestGoogleNewWritesAreSeededAsAsk` guards the list.
+`sheets.append_rows` stay Auto. Migration 35 (`00035_google_workspace_default_ask.sql`)
+does the same for the increment-4 Workspace writes: `calendar.set_out_of_office`,
+`set_working_location`, `create_focus_time` (later increment-4 writes append to it).
+`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022 and 00035 together must seed
+every Google write except the eight Auto ones, and each migration's Down must remove
+exactly what its Up seeds.
 
 Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
 close the gap with github-mcp-server: `create_or_update_file`, `update_issue`,
