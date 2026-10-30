@@ -1,0 +1,24 @@
+{
+  "kind": "calendar#event",
+  "id": "n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "summary": "Gateway review",
+  "start": {
+    "date": "2026-10-10"
+  },
+  "end": {
+    "date": "2026-10-11"
+  },
+  "conferenceData": {
+    "createRequest": {
+      "requestId": "mcpgw-n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+      "conferenceSolutionKey": {
+        "type": "hangoutsMeet"
+      },
+      "status": {
+        "statusCode": "pending"
+      }
+    }
+  }
+}

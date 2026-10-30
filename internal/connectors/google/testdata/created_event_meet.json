@@ -1,0 +1,43 @@
+{
+  "kind": "calendar#event",
+  "id": "n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "created": "2026-10-08T10:00:00.000Z",
+  "updated": "2026-10-08T10:00:00.000Z",
+  "summary": "Gateway review",
+  "start": {
+    "dateTime": "2026-10-10T10:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "end": {
+    "dateTime": "2026-10-10T11:00:00-07:00",
+    "timeZone": "America/Los_Angeles"
+  },
+  "hangoutLink": "https://meet.google.com/xyz-abcd-efg",
+  "conferenceData": {
+    "createRequest": {
+      "requestId": "mcpgw-n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+      "conferenceSolutionKey": {
+        "type": "hangoutsMeet"
+      },
+      "status": {
+        "statusCode": "success"
+      }
+    },
+    "entryPoints": [
+      {
+        "entryPointType": "video",
+        "uri": "https://meet.google.com/xyz-abcd-efg",
+        "label": "meet.google.com/xyz-abcd-efg"
+      }
+    ],
+    "conferenceSolution": {
+      "key": {
+        "type": "hangoutsMeet"
+      },
+      "name": "Google Meet"
+    },
+    "conferenceId": "xyz-abcd-efg"
+  }
+}

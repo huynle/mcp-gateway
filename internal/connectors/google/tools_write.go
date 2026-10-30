@@ -41,6 +41,20 @@ func EventID(operationID string) string {
 	return strings.ToLower(base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:32]
 }
 
+// MeetRequestID returns the conferenceData.createRequest.requestId
+// add_meet_link sends: "mcpgw-" + EventID(operation id). Google
+// dedupes conference creation by it, so a retry of the same operation
+// never asks for a second Meet; it never carries the operation id itself.
+func MeetRequestID(operationID string) string { return "mcpgw-" + EventID(operationID) }
+
+// meetRequest is the conference data that asks Google for a new Meet.
+func meetRequest(operationID string) *calendar.ConferenceData {
+	return &calendar.ConferenceData{CreateRequest: &calendar.CreateConferenceRequest{
+		RequestId:             MeetRequestID(operationID),
+		ConferenceSolutionKey: &calendar.ConferenceSolutionKey{Type: "hangoutsMeet"},
+	}}
+}
+
 // taskMarkerPhrase is the searchable text inside a task marker.
 const taskMarkerPhrase = "mcp-gateway op:"
 
@@ -86,6 +100,8 @@ var (
 	subjectProperty   = property{"subject", "string", "Subject line.", nil}
 	bodyProperty      = property{"body", "string", "Plain-text body.", nil}
 	inReplyToProperty = property{"in_reply_to", "string", "Id of the Gmail message being replied to (from search or get_message): the reply joins its thread and references it.", nil}
+	// addMeetLinkProperty is create_event's and update_event's add_meet_link.
+	addMeetLinkProperty = property{"add_meet_link", "boolean", "Add a Google Meet video link to the event (meet_url in the result; meet_status pending means Google is still creating it). Default false.", nil}
 )
 
 // calendarWriteTools declares calendar.create_event.
@@ -94,7 +110,7 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 		App: AppCalendar, Name: ToolCreateEvent, Kind: connectors.KindWrite,
 		Description: "Create an event in a Google Calendar with a summary, start and end (RFC 3339 timestamps, or YYYY-MM-DD dates for an all-day event), " +
 			"and optionally a description, location, attendees and whether to email them (send_updates; default none). " +
-			"Returns the new event's id and url.",
+			"add_meet_link adds a Google Meet video link. Returns the new event's id and url (and meet_url).",
 		InputSchema: objectSchema([]property{
 			{"calendar_id", "string", "Calendar to create the event in: \"primary\" (default) or a calendar id.", nil},
 			{"summary", "string", "Event title.", nil},
@@ -105,6 +121,7 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 			{"location", "string", "Where the event takes place.", nil},
 			{"attendees", "array", "Attendee email addresses.", nil},
 			{"send_updates", "string", "Whether Google emails the attendees: all, externalOnly or none (default).", sendUpdatesValues},
+			addMeetLinkProperty,
 		}, []string{"summary", "start", "end"}),
 		RequiredScopes:   []string{ScopeCalendarEvents},
 		ResourceIdentity: calendarIdentity(false),
@@ -211,7 +228,11 @@ func eventResultIDs(res connectors.Result) map[string]string {
 	if !ok || v.ID == "" {
 		return nil
 	}
-	return map[string]string{"id": v.ID, "url": v.URL}
+	ids := map[string]string{"id": v.ID, "url": v.URL}
+	if v.MeetURL != "" {
+		ids["meet_url"] = v.MeetURL
+	}
+	return ids
 }
 
 func taskResultIDs(res connectors.Result) map[string]string {
@@ -306,6 +327,10 @@ func (c *Connector) createEvent(ctx context.Context, cl *client, call connectors
 	if !slices.Contains(sendUpdatesValues, sendUpdates) {
 		return connectors.Result{}, invalid("send_updates must be all, externalOnly or none")
 	}
+	addMeet, err := optionalBool(call.Args, "add_meet_link", false)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	ev := &calendar.Event{Id: EventID(call.OperationID), Summary: summary, Description: description, Location: location}
 	if startAllDay {
 		ev.Start, ev.End = &calendar.EventDateTime{Date: start}, &calendar.EventDateTime{Date: end}
@@ -323,7 +348,12 @@ func (c *Connector) createEvent(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	created, err := svc.Events.Insert(calendarID, ev).Context(ctx).SendUpdates(sendUpdates).Do()
+	req := svc.Events.Insert(calendarID, ev).Context(ctx).SendUpdates(sendUpdates)
+	if addMeet {
+		ev.ConferenceData = meetRequest(call.OperationID)
+		req = req.ConferenceDataVersion(1)
+	}
+	created, err := req.Do()
 	if err := classifyWrite("create event", err); err != nil {
 		return connectors.Result{}, err
 	}

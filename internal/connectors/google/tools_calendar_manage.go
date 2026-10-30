@@ -143,7 +143,8 @@ func (c *Connector) calendarManageWriteTools() []connectors.Tool {
 			App: AppCalendar, Name: ToolUpdateEvent, Kind: connectors.KindWrite,
 			Description: "Change an event of a Google Calendar: only the fields given are changed (summary, description, location, " +
 				"start and end in the same form as create_event, time_zone, attendees: the new full list of addresses). " +
-				"send_updates says whether Google emails the attendees (default none). Returns the event's id and url.",
+				"send_updates says whether Google emails the attendees (default none). add_meet_link adds a Google Meet video link " +
+				"(an event that already has one keeps it). Returns the event's id and url (and meet_url).",
 			InputSchema: objectSchema([]property{
 				calendarIDProperty, eventIDProperty,
 				{"summary", "string", "New title.", nil},
@@ -154,6 +155,7 @@ func (c *Connector) calendarManageWriteTools() []connectors.Tool {
 				{"time_zone", "string", "IANA time zone of start and end.", nil},
 				{"attendees", "array", "The new full list of attendee email addresses (replaces the current list).", nil},
 				sendUpdatesProperty,
+				addMeetLinkProperty,
 			}, []string{"event_id"}),
 			RequiredScopes:   []string{ScopeCalendarEvents},
 			ResourceIdentity: calendarIdentity(true),
@@ -493,8 +495,12 @@ func (c *Connector) updateEvent(ctx context.Context, cl *client, call connectors
 		}
 		changed = true
 	}
-	if !changed {
-		return connectors.Result{}, invalid("nothing to change: give at least one of summary, description, location, start, end or attendees")
+	addMeet, err := optionalBool(call.Args, "add_meet_link", false)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	if !changed && !addMeet {
+		return connectors.Result{}, invalid("nothing to change: give at least one of summary, description, location, start, end, attendees or add_meet_link")
 	}
 	sendUpdates, err := sendUpdatesArg(call.Args)
 	if err != nil {
@@ -504,7 +510,7 @@ func (c *Connector) updateEvent(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	current, err := svc.Events.Get(calendarID, eventID).Context(ctx).Fields("id,extendedProperties").Do()
+	current, err := svc.Events.Get(calendarID, eventID).Context(ctx).Fields("id,extendedProperties,hangoutLink,conferenceData").Do()
 	if err := classify("look up the event", err); err != nil {
 		return connectors.Result{}, err
 	}
@@ -516,7 +522,14 @@ func (c *Connector) updateEvent(ctx context.Context, cl *client, call connectors
 	}
 	private[EventMarkerKey] = call.OperationID
 	patch.ExtendedProperties = &calendar.EventExtendedProperties{Private: private}
-	updated, err := svc.Events.Patch(calendarID, eventID, patch).Context(ctx).SendUpdates(sendUpdates).Do()
+	req := svc.Events.Patch(calendarID, eventID, patch).Context(ctx).SendUpdates(sendUpdates)
+	if addMeet && meetingURL(current) == "" {
+		// A new conference only when the event has none: a createRequest
+		// on an event with a Meet would replace the link attendees have.
+		patch.ConferenceData = meetRequest(call.OperationID)
+		req = req.ConferenceDataVersion(1)
+	}
+	updated, err := req.Do()
 	if err := classifyWrite("update event", err); err != nil {
 		return connectors.Result{}, err
 	}
