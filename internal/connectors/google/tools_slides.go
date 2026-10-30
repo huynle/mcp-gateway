@@ -242,6 +242,9 @@ func (c *Connector) getSlidesText(ctx context.Context, cl *client, call connecto
 func (c *Connector) fitSlides(out *PresentationText) {
 	max := c.bounds.MaxResultBytes
 	obj := func() any { return *out }
+	if encodedSize(out) > max {
+		out.Truncated = true // counted while cutting
+	}
 	for i := len(out.Slides) - 1; i >= 0 && encodedSize(out) > max; i-- {
 		s := &out.Slides[i]
 		for _, body := range []*string{&s.Notes, &s.Text} {
@@ -249,7 +252,6 @@ func (c *Connector) fitSlides(out *PresentationText) {
 				fitBody(body, &s.Truncated, max, obj)
 			}
 		}
-		out.Truncated = out.Truncated || s.Truncated
 	}
 	for encodedSize(out) > max && len(out.Slides) > 1 {
 		out.Slides = out.Slides[:len(out.Slides)-1]

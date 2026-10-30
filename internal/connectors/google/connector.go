@@ -15,6 +15,7 @@ import (
 	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/forms/v1"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
@@ -58,7 +59,7 @@ type Options struct {
 	// BaseURL + "calendar/v3/", Drive at BaseURL + "drive/v3/", Tasks,
 	// Gmail, Docs, Sheets, People and Chat at BaseURL + "tasks/v1/",
 	// "gmail/v1/", "v1/documents", "v4/spreadsheets", "v1/people",
-	// "v1/spaces" and Slides at "v1/presentations".
+	// "v1/spaces", Slides at "v1/presentations" and Forms at "v1/forms".
 	// Empty means Google's own hosts; tests point it at an httptest
 	// server.
 	BaseURL string
@@ -84,6 +85,7 @@ type Connector struct {
 	calendar, tasks, gmail *App
 	drive, docs, sheets    *App
 	contacts, chat, slides *App
+	forms                  *App
 }
 
 // New builds the Google connector.
@@ -147,16 +149,21 @@ func New(opts Options) (*Connector, error) {
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
 	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
+	c.forms = c.newApp(AppForms, c.formsReadTools(), nil, c.formsReadHandlers(), nil)
 	return c, nil
 }
 
 // Apps returns the connector apps in registration order (Apps):
-// calendar, tasks, gmail, drive, docs, sheets, contacts, chat, slides. Each is
+// calendar, tasks, gmail, drive, docs, sheets, contacts, chat, slides,
+// forms. Each is
 // registered with connectors.RegisterConnector and mapped to Vendor with
 // connections.Service.MapApp.
 func (c *Connector) Apps() []*App {
-	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat, c.slides}
+	return []*App{c.calendar, c.tasks, c.gmail, c.drive, c.docs, c.sheets, c.contacts, c.chat, c.slides, c.forms}
 }
+
+// Forms returns the "forms" app (read only).
+func (c *Connector) Forms() *App { return c.forms }
 
 // Slides returns the "slides" app.
 func (c *Connector) Slides() *App { return c.slides }
@@ -457,6 +464,19 @@ func (cl *client) slides(ctx context.Context) (*slides.Service, error) {
 	svc, err := slides.NewService(ctx, cl.options("")...)
 	if err != nil {
 		return nil, &Error{Class: ClassVendorError, Message: "slides client: " + err.Error(), Err: err}
+	}
+	return svc, nil
+}
+
+// forms builds the Forms API service. Its base path is the host root
+// (method paths start with "v1/"), so the endpoint prefix is empty.
+func (cl *client) forms(ctx context.Context) (*forms.Service, error) {
+	if err := cl.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	svc, err := forms.NewService(ctx, cl.options("")...)
+	if err != nil {
+		return nil, &Error{Class: ClassVendorError, Message: "forms client: " + err.Error(), Err: err}
 	}
 	return svc, nil
 }

@@ -273,3 +273,21 @@ func TestSlidesScopeGate(t *testing.T) {
 		t.Error("drive.file must admit the Slides scopes per file")
 	}
 }
+
+// Whatever the bound, the cut deck fits it (the top-level truncated flag
+// included) and says it was cut.
+func TestSlidesGetTextFitsEveryBound(t *testing.T) {
+	srv := newAPIServer(t, map[string]route{getPresPath: {status: 200, body: "presentation.json"}})
+	for limit := 250; limit < 380; limit += 3 { // the whole deck is 380 bytes
+		c, _ := newConnector(t, srv, connectors.Bounds{MaxResultBytes: limit})
+		res, err := run(t, c, call("slides.get_text", map[string]any{"presentation_id": presID}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out presentationText
+		decode(t, res, &out)
+		if size := encodedSizeOf(t, res); size > limit || !out.Truncated || !res.Partial {
+			t.Errorf("limit %d: %d bytes, truncated %v, partial %v", limit, size, out.Truncated, res.Partial)
+		}
+	}
+}

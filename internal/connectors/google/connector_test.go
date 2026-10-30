@@ -39,6 +39,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
 		google.AppChat:     {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
 		google.AppSlides:   {"get_text", "create", "replace_text"},
+		google.AppForms:    {"get", "list_responses"},
 	}
 	for app, names := range want {
 		var got []string

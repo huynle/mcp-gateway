@@ -79,6 +79,16 @@ const (
 	ScopePresentationsReadonly = "https://www.googleapis.com/auth/presentations.readonly"
 	ScopePresentations         = "https://www.googleapis.com/auth/presentations"
 
+	// Increment 4: Google Forms (sensitive). forms.get accepts
+	// forms.body.readonly, forms.body, drive.readonly, drive and
+	// drive.file; forms.responses.list accepts forms.responses.readonly,
+	// drive and drive.file (not drive.readonly); every forms.body method
+	// (create, batchUpdate, setPublishSettings) accepts drive and
+	// drive.file.
+	ScopeFormsBodyReadonly      = "https://www.googleapis.com/auth/forms.body.readonly"
+	ScopeFormsBody              = "https://www.googleapis.com/auth/forms.body"
+	ScopeFormsResponsesReadonly = "https://www.googleapis.com/auth/forms.responses.readonly"
+
 	// chatScopePrefix is the common prefix of every Chat API scope.
 	chatScopePrefix = "https://www.googleapis.com/auth/chat."
 )
@@ -99,20 +109,23 @@ var scopeImplies = map[string][]string{
 	ScopeGmailModify:            {ScopeGmailReadonly, ScopeGmailCompose, ScopeGmailLabels},
 	ScopeGmailCompose:           {ScopeGmailSend},
 	ScopeGmailReadonly:          {ScopeGmailLabels, ScopeGmailMetadata},
-	ScopeDrive:                  {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets, ScopePresentations},
-	ScopeDriveReadonly:          {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly, ScopePresentationsReadonly},
-	ScopeDriveMetadata:          {ScopeDriveMetadataReadonly},
-	ScopeDocuments:              {ScopeDocumentsReadonly},
-	ScopeSpreadsheets:           {ScopeSpreadsheetsReadonly},
-	ScopePresentations:          {ScopePresentationsReadonly},
-	ScopeContacts:               {ScopeContactsReadonly},
-	ScopeChatSpaces:             {ScopeChatSpacesReadonly},
-	ScopeChatMessages:           {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
-	ScopeChatMemberships:        {ScopeChatMembershipsReadonly},
+	ScopeDrive: {ScopeDriveReadonly, ScopeDriveFile, ScopeDriveMetadata, ScopeDocuments, ScopeSpreadsheets, ScopePresentations,
+		ScopeFormsBody, ScopeFormsResponsesReadonly},
+	ScopeDriveReadonly: {ScopeDriveMetadataReadonly, ScopeDocumentsReadonly, ScopeSpreadsheetsReadonly, ScopePresentationsReadonly,
+		ScopeFormsBodyReadonly},
+	ScopeDriveMetadata:   {ScopeDriveMetadataReadonly},
+	ScopeDocuments:       {ScopeDocumentsReadonly},
+	ScopeSpreadsheets:    {ScopeSpreadsheetsReadonly},
+	ScopePresentations:   {ScopePresentationsReadonly},
+	ScopeFormsBody:       {ScopeFormsBodyReadonly},
+	ScopeContacts:        {ScopeContactsReadonly},
+	ScopeChatSpaces:      {ScopeChatSpacesReadonly},
+	ScopeChatMessages:    {ScopeChatMessagesReadonly, ScopeChatMessagesCreate},
+	ScopeChatMemberships: {ScopeChatMembershipsReadonly},
 }
 
 // perFileScopes are the required scopes drive.file stands in for: the
-// Drive, Docs, Sheets and Slides methods accept drive.file, limited to the files
+// Drive, Docs, Sheets, Slides and Forms methods accept drive.file, limited to the files
 // the gateway created or the user opened with it, so an account that
 // granted only drive.file may run those tools on that subset (Google
 // decides per file: anything else answers not_found).
@@ -121,6 +134,7 @@ var perFileScopes = map[string]bool{
 	ScopeDocumentsReadonly: true, ScopeDocuments: true,
 	ScopeSpreadsheetsReadonly: true, ScopeSpreadsheets: true,
 	ScopePresentationsReadonly: true, ScopePresentations: true,
+	ScopeFormsBodyReadonly: true, ScopeFormsBody: true, ScopeFormsResponsesReadonly: true,
 }
 
 // PerFile reports whether drive.file admits a tool requiring scope, on

@@ -1,0 +1,17 @@
+{
+  "formId": "1FormExample0000000000000000000000",
+  "info": {"title": "Team offsite survey", "description": "Tell us what works for the offsite.", "documentTitle": "Offsite survey"},
+  "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLSexample/viewform",
+  "revisionId": "00000012",
+  "items": [
+    {"itemId": "1a2b3c4d", "title": "Your name", "questionItem": {"question": {"questionId": "0a1b2c3d", "required": true, "textQuestion": {}}}},
+    {"itemId": "2b3c4d5e", "title": "Preferred date", "questionItem": {"question": {"questionId": "1b2c3d4e", "choiceQuestion": {"type": "RADIO", "options": [{"value": "March 3"}, {"value": "March 10"}, {"isOther": true}]}}}},
+    {"itemId": "3c4d5e6f", "title": "Comments", "questionItem": {"question": {"questionId": "2c3d4e5f", "textQuestion": {"paragraph": true}}}},
+    {"itemId": "4d5e6f70", "title": "Rate the sessions", "questionGroupItem": {
+      "questions": [{"questionId": "3d4e5f60", "rowQuestion": {"title": "Morning"}}, {"questionId": "4e5f6071", "rowQuestion": {"title": "Afternoon"}}],
+      "grid": {"columns": {"type": "RADIO", "options": [{"value": "Good"}, {"value": "Bad"}]}}}},
+    {"itemId": "5e6f7081", "title": "Logistics", "pageBreakItem": {}},
+    {"itemId": "6f708192", "title": "Upload your slides", "questionItem": {"question": {"questionId": "5f607182", "fileUploadQuestion": {"folderId": "1UploadFolder", "maxFiles": 1}}}},
+    {"itemId": "708192a3", "title": "Venue map", "imageItem": {"image": {"contentUri": "https://example.test/map.png"}}}
+  ]
+}
