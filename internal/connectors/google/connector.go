@@ -129,8 +129,10 @@ func New(opts Options) (*Connector, error) {
 		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
 		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
 	c.gmail = c.newApp(AppGmail,
-		append(c.gmailReadTools(), c.gmailManageReadTools()...), append(c.gmailWriteTools(), c.gmailManageWriteTools()...),
-		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers()), merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers()))
+		slices.Concat(c.gmailReadTools(), c.gmailManageReadTools(), c.gmailSettingsReadTools()),
+		slices.Concat(c.gmailWriteTools(), c.gmailManageWriteTools(), c.gmailSettingsWriteTools()),
+		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers(), c.gmailSettingsReadHandlers()),
+		merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers(), c.gmailSettingsWriteHandlers()))
 	c.drive = c.newApp(AppDrive,
 		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
 		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))

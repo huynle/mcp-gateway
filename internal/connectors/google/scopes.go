@@ -31,6 +31,11 @@ const (
 	ScopeGmailCompose           = "https://www.googleapis.com/auth/gmail.compose"
 	ScopeGmailModify            = "https://www.googleapis.com/auth/gmail.modify"
 	ScopeMail                   = "https://mail.google.com/"
+	// gmail.settings.basic (restricted) is the only scope
+	// users.settings.updateVacation accepts (not even mail.google.com);
+	// getVacation and filters.list also accept gmail.readonly, which the
+	// settings reads declare. No implication: nothing covers it.
+	ScopeGmailSettingsBasic = "https://www.googleapis.com/auth/gmail.settings.basic"
 
 	// Increment 2: Drive, Docs, Sheets, Contacts. drive, drive.readonly,
 	// drive.metadata and drive.metadata.readonly are restricted scopes

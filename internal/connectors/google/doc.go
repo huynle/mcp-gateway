@@ -16,7 +16,8 @@
 // create; contacts get, list (docs/connectors/google.md). Increment 4
 // (decision 94k2b0pp) adds the Google Workspace tools: contacts
 // search_directory, list_directory, and the "chat" app (Google Chat API:
-// list_spaces, get_space, list_messages, get_message, list_members).
+// list_spaces, get_space, list_messages, get_message, list_members), plus
+// the Gmail settings: gmail get_vacation, list_filters, set_vacation.
 // Each app is its own connectors.Connector so
 // tool names read calendar.list_events, drive.search and docs.get_text,
 // roles can grant or deny a whole app, and the restricted Gmail and
