@@ -142,7 +142,7 @@ func New(opts Options) (*Connector, error) {
 	c.contacts = c.newApp(AppContacts,
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
-	c.chat = c.newApp(AppChat, c.chatReadTools(), nil, c.chatReadHandlers(), nil)
+	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
 	return c, nil
 }
 
