@@ -150,7 +150,8 @@ func New(opts Options) (*Connector, error) {
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
 	c.slides = c.newApp(AppSlides, c.slidesReadTools(), append(c.slidesWriteTools(), c.slidesFullWriteTools()...),
 		c.slidesReadHandlers(), merge(c.slidesWriteHandlers(), c.slidesFullWriteHandlers()))
-	c.forms = c.newApp(AppForms, c.formsReadTools(), c.formsWriteTools(), c.formsReadHandlers(), c.formsWriteHandlers())
+	c.forms = c.newApp(AppForms, append(c.formsReadTools(), c.formsFullReadTools()...), c.formsWriteTools(),
+		merge(c.formsReadHandlers(), c.formsFullReadHandlers()), c.formsWriteHandlers())
 	return c, nil
 }
 

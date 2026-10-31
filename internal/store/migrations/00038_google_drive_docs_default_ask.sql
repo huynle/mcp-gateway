@@ -18,6 +18,8 @@
 INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('docs', 'batch_update'),
     ('forms', 'batch_update'),
+    ('forms', 'create'),
+    ('forms', 'set_publish_settings'),
     ('sheets', 'batch_update'),
     ('slides', 'batch_update')
 ON CONFLICT (app, tool) DO NOTHING;
@@ -26,6 +28,8 @@ ON CONFLICT (app, tool) DO NOTHING;
 DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('docs', 'batch_update'),
     ('forms', 'batch_update'),
+    ('forms', 'create'),
+    ('forms', 'set_publish_settings'),
     ('sheets', 'batch_update'),
     ('slides', 'batch_update')
 );

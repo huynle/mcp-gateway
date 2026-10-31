@@ -341,11 +341,3 @@ func (c *Connector) slidesFullWriteTools() []connectors.Tool {
 func (c *Connector) slidesFullWriteHandlers() map[string]handler {
 	return map[string]handler{ToolBatchUpdate: c.batchHandler(slidesBatch)}
 }
-
-func (c *Connector) formsWriteTools() []connectors.Tool {
-	return []connectors.Tool{c.batchTool(formsBatch)}
-}
-
-func (c *Connector) formsWriteHandlers() map[string]handler {
-	return map[string]handler{ToolBatchUpdate: c.batchHandler(formsBatch)}
-}
