@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "autoExpunge": true,
+  "expungeBehavior": "trash",
+  "maxFolderSize": 1000
+}

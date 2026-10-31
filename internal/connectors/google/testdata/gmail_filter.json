@@ -1,0 +1,13 @@
+{
+  "id": "ANe1BmjExample2",
+  "criteria": {
+    "query": "list:dev.example.test",
+    "negatedQuery": "urgent",
+    "size": 1048576,
+    "sizeComparison": "larger",
+    "excludeChats": true
+  },
+  "action": {
+    "forward": "archive@example.test"
+  }
+}

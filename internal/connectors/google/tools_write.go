@@ -4,11 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base32"
-	"encoding/base64"
-	"mime"
 	"net/mail"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,9 +163,9 @@ func (c *Connector) gmailWriteTools() []connectors.Tool {
 	return []connectors.Tool{
 		{
 			App: AppGmail, Name: ToolSend, Kind: connectors.KindWrite,
-			Description: "Send a plain-text email from the Gmail account to one or more recipients, with optional cc and bcc; " +
+			Description: "Send a plain-text email from the Gmail account to one or more recipients, with optional cc, bcc and attachments; " +
 				"in_reply_to makes it a reply in that message's thread. Returns the sent message's id, thread id and Message-ID.",
-			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty}, []string{"to", "subject", "body"}),
+			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty, attachmentsProperty}, []string{"to", "subject", "body"}),
 			RequiredScopes:   []string{ScopeGmailSend},
 			ResourceIdentity: recipientsIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkSent},
@@ -175,9 +174,9 @@ func (c *Connector) gmailWriteTools() []connectors.Tool {
 		},
 		{
 			App: AppGmail, Name: ToolCreateDraft, Kind: connectors.KindWrite,
-			Description: "Create a draft email in the Gmail account (not sent): recipients, optional cc and bcc, subject and plain-text body; " +
+			Description: "Create a draft email in the Gmail account (not sent): recipients, optional cc, bcc and attachments, subject and plain-text body; " +
 				"in_reply_to drafts a reply in that message's thread. Returns the draft's id and the draft message's id.",
-			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty}, []string{"to", "subject", "body"}),
+			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty, attachmentsProperty}, []string{"to", "subject", "body"}),
 			RequiredScopes:   []string{ScopeGmailCompose},
 			ResourceIdentity: recipientsIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDraft},
@@ -217,6 +216,9 @@ func recipientsIdentity(args map[string]any) map[string]string {
 	if len(domains) > 0 {
 		sort.Strings(domains)
 		out["recipient_domains"] = strings.Join(domains, ",")
+	}
+	if n := attachmentCount(args); n > 0 {
+		out["attachments"] = strconv.Itoa(n)
 	}
 	return out
 }
@@ -406,8 +408,10 @@ func (c *Connector) createTask(ctx context.Context, cl *client, call connectors.
 type outgoing struct {
 	to, cc, bcc                []string
 	subject, body              string
+	html                       bool // the body is text/html (a forwarded HTML message)
 	messageID, inReplyTo, refs string
 	threadID                   string
+	attachments                []attachment
 }
 
 // addressList reads and validates an address-list argument.
@@ -457,6 +461,9 @@ func (c *Connector) outgoingArgs(ctx context.Context, cl *client, call connector
 		return m, err
 	}
 	m.body, _ = optionalString(call.Args, "body") // validated above; keep the body's own whitespace
+	if m.attachments, err = attachmentsArg(call.Args); err != nil {
+		return m, err
+	}
 	parentID, err := optionalString(call.Args, "in_reply_to")
 	if err != nil {
 		return m, err
@@ -481,36 +488,6 @@ func (c *Connector) outgoingArgs(ctx context.Context, cl *client, call connector
 	return m, nil
 }
 
-// raw renders the message as RFC 5322 text, base64url-encoded as the
-// Gmail API expects.
-func (m outgoing) raw() string {
-	var b strings.Builder
-	write := func(name, value string) {
-		if value != "" {
-			b.WriteString(name + ": " + value + "\r\n")
-		}
-	}
-	write("To", strings.Join(m.to, ", "))
-	write("Cc", strings.Join(m.cc, ", "))
-	write("Bcc", strings.Join(m.bcc, ", "))
-	write("Subject", mime.QEncoding.Encode("utf-8", m.subject))
-	write("Message-ID", m.messageID)
-	write("In-Reply-To", m.inReplyTo)
-	write("References", m.refs)
-	write("Date", time.Now().UTC().Format(time.RFC1123Z))
-	write("MIME-Version", "1.0")
-	write("Content-Type", "text/plain; charset=UTF-8")
-	write("Content-Transfer-Encoding", "base64")
-	b.WriteString("\r\n")
-	encoded := base64.StdEncoding.EncodeToString([]byte(m.body))
-	for len(encoded) > 76 {
-		b.WriteString(encoded[:76] + "\r\n")
-		encoded = encoded[76:]
-	}
-	b.WriteString(encoded + "\r\n")
-	return base64.RawURLEncoding.EncodeToString([]byte(b.String()))
-}
-
 func (c *Connector) sendMessage(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error) {
 	m, err := c.outgoingArgs(ctx, cl, call)
 	if err != nil {
@@ -520,7 +497,11 @@ func (c *Connector) sendMessage(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	sent, err := svc.Users.Messages.Send(gmailUser, &gmail.Message{Raw: m.raw(), ThreadId: m.threadID}).Context(ctx).Do()
+	req := svc.Users.Messages.Send(gmailUser, m.message()).Context(ctx)
+	if media, ct := m.media(); media != nil {
+		req = req.Media(media, ct)
+	}
+	sent, err := req.Do()
 	if err := classifyWrite("send message", err); err != nil {
 		return connectors.Result{}, err
 	}
@@ -536,7 +517,11 @@ func (c *Connector) createDraft(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	draft, err := svc.Users.Drafts.Create(gmailUser, &gmail.Draft{Message: &gmail.Message{Raw: m.raw(), ThreadId: m.threadID}}).Context(ctx).Do()
+	req := svc.Users.Drafts.Create(gmailUser, &gmail.Draft{Message: m.message()}).Context(ctx)
+	if media, ct := m.media(); media != nil {
+		req = req.Media(media, ct)
+	}
+	draft, err := req.Do()
 	if err := classifyWrite("create draft", err); err != nil {
 		return connectors.Result{}, err
 	}
