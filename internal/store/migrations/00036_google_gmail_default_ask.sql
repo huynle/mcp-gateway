@@ -19,14 +19,18 @@
 INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('gmail', 'batch_modify_labels'),
     ('gmail', 'delete'),
+    ('gmail', 'delete_draft'),
     ('gmail', 'forward'),
-    ('gmail', 'untrash')
+    ('gmail', 'untrash'),
+    ('gmail', 'update_draft')
 ON CONFLICT (app, tool) DO NOTHING;
 
 -- +goose Down
 DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('gmail', 'batch_modify_labels'),
     ('gmail', 'delete'),
+    ('gmail', 'delete_draft'),
     ('gmail', 'forward'),
-    ('gmail', 'untrash')
+    ('gmail', 'untrash'),
+    ('gmail', 'update_draft')
 );
