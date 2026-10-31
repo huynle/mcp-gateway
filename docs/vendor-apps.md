@@ -634,8 +634,8 @@ The same declaration rules as increment 3 apply; on an Internal app it is option
 Unlike the directory and Chat scopes, `gmail.settings.basic` and the Slides and Forms scopes are
 granted by **every** account (personal ones included). `gmail.settings.basic` is
 **restricted**: on a verified External app it joins the CASA scope set, so a deployment that
-does not want it leaves `gmail.set_vacation` locked (the two settings reads keep working
-with `gmail.readonly`).
+does not want it leaves `gmail.set_vacation` (and, since increment 5, the filter, signature,
+IMAP, POP and language writes) locked (the settings reads keep working with `gmail.readonly`).
 
 The other increment-4 tools reuse registered scopes: `calendar.events` (`add_meet_link` on
 `calendar.create_event` / `update_event`, and the Workspace-only event types
@@ -644,6 +644,28 @@ them for personal accounts), `drive.readonly` (`drive.list_shared_drives`: `driv
 accepts only `drive` and `drive.readonly`, so neither `drive.metadata.readonly` nor the
 per-file `drive.file` admits it) and `drive.file` (`slides.create`, through Drive
 `files.create` like `docs.create`).
+
+Increment 5 (full Gmail, `docs/connectors/google.md` "Increment 5"; Brain decision
+`9jfy0gb8`: users may do everything a consumer account can do through the Gmail API, gated
+by the deployment's approvals). Every account can grant these; the same declaration rules
+as increment 3 apply.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://mail.google.com/` | write | `gmail.delete` only (`messages.delete` / `threads.delete` accept no other scope). Covers every other Gmail scope but `gmail.settings.basic` / `gmail.settings.sharing` | **restricted** |
+| `https://www.googleapis.com/auth/gmail.settings.basic` (increment 4) | write | now also `gmail.create_filter`, `delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language` (their methods accept only this scope, `sendAs.patch` also `gmail.settings.sharing`; nothing covers it) | **restricted** |
+
+The other increment-5 tools reuse registered scopes: `gmail.readonly` (`get_draft`,
+`get_profile`, `get_filter`, `list_send_as`, `get_imap`, `get_pop`, `get_auto_forwarding`,
+`list_forwarding_addresses`, `get_language`; `forward` reads the original with it),
+`gmail.send` (`forward`, attachments on `send`), `gmail.compose` (`update_draft`,
+`delete_draft`, attachments on `create_draft`), `gmail.modify` (`untrash`,
+`batch_modify_labels`) and `gmail.labels` (`create_label`, `update_label`,
+`delete_label`; non-sensitive, `gmail.modify` covers it). A deployment that does not want
+`mail.google.com` leaves it out: only the permanent delete stays locked (`gmail.trash`
+keeps working). `gmail.settings.sharing` (auto-forwarding changes, forwarding addresses,
+send-as aliases, delegates) is never requested: Google grants it only to Workspace service
+accounts with domain-wide delegation.
 
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
@@ -659,7 +681,8 @@ the requested scopes differ from the declared ones.
 - Do **not** leave it in Testing: Testing mode caps at 100 test users and expires refresh
   tokens after 7 days.
 - Restricted scopes in the list above (`gmail.readonly`, `gmail.compose`,
-  `drive.metadata.readonly`, and with increment 3 `gmail.modify` and `drive.readonly`) are what trigger the heavier path if the app is ever
+  `drive.metadata.readonly`, with increment 3 `gmail.modify` and `drive.readonly`, with increment 4
+  `gmail.settings.basic` and with increment 5 `mail.google.com`) are what trigger the heavier path if the app is ever
   submitted for verification: restricted-scope verification plus an **annual CASA security
   assessment** by a Google-approved assessor, because the gateway stores restricted-scope
   data (tokens) on a server. The design explicitly defers this; revisit when personal
@@ -944,8 +967,13 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 does the same for the increment-4 writes: `calendar.set_out_of_office`,
 `set_working_location`, `create_focus_time`; `chat.send_message`, `reply_in_thread`;
 `gmail.set_vacation`; `slides.create`, `replace_text`. The `forms` app has no writes.
-`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022 and 00035 together must seed
-every Google write except the eight Auto ones, and each migration's Down must remove
+Migration 36 (`00036_google_gmail_default_ask.sql`) does the same for the increment-5 Gmail
+writes: `gmail.forward`, `untrash`, `delete`, `batch_modify_labels`, `update_draft`,
+`delete_draft`, `create_label`, `update_label`, `delete_label`, `create_filter`,
+`delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language`
+(attachments on `gmail.send` / `create_draft` keep those tools Auto).
+`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035 and 00036 together must
+seed every Google write except the eight Auto ones, and each migration's Down must remove
 exactly what its Up seeds.
 
 Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
