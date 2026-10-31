@@ -61,7 +61,11 @@ func TestMissingAccessGooglePersonalSkipsDirectory(t *testing.T) {
 		}
 	}
 
-	hint, err := env.svc.AccessHint(ctx, userAlice, connectors.Account{ID: "g-1", App: google.AppContacts, Label: connectors.LabelPersonal, Scopes: base})
+	// Every contacts scope a personal account can grant (increment 5 added
+	// the contact writes and the other contacts): only the directory is
+	// left, and it is not grantable.
+	grantable := append(slices.Clone(base), google.ScopeContacts, google.ScopeContactsOtherReadonly)
+	hint, err := env.svc.AccessHint(ctx, userAlice, connectors.Account{ID: "g-1", App: google.AppContacts, Label: connectors.LabelPersonal, Scopes: grantable})
 	if err != nil || hint.LockedTools != 0 {
 		t.Errorf("personal contacts hint = %+v, %v; want nothing locked (the directory is not grantable)", hint, err)
 	}

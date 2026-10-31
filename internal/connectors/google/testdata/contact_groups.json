@@ -1,0 +1,4 @@
+{"contactGroups": [
+  {"resourceName": "contactGroups/myContacts", "name": "myContacts", "formattedName": "My Contacts", "groupType": "SYSTEM_CONTACT_GROUP", "memberCount": 12},
+  {"resourceName": "contactGroups/friends", "name": "Friends", "formattedName": "Friends", "groupType": "USER_CONTACT_GROUP", "memberCount": 3}
+], "nextPageToken": "groups-2", "totalItems": 5}

@@ -63,6 +63,10 @@ const (
 	ScopeSpreadsheets          = "https://www.googleapis.com/auth/spreadsheets"
 	ScopeContactsReadonly      = "https://www.googleapis.com/auth/contacts.readonly"
 	ScopeContacts              = "https://www.googleapis.com/auth/contacts"
+	// Increment 5: "other contacts" (otherContacts.list and search accept
+	// only this scope; copyOtherContactToMyContactsGroup accepts it or
+	// contacts). contacts does not imply it.
+	ScopeContactsOtherReadonly = "https://www.googleapis.com/auth/contacts.other.readonly"
 
 	// Increment 4: Google Workspace only (WorkspaceOnlyScope). The
 	// directory (People API searchDirectoryPeople, listDirectoryPeople)

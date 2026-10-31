@@ -145,8 +145,10 @@ func New(opts Options) (*Connector, error) {
 		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
 		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
 	c.contacts = c.newApp(AppContacts,
-		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
-		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
+		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools(), c.contactsFullReadTools()),
+		append(c.contactsWriteTools(), c.contactsFullWriteTools()...),
+		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers(), c.contactsFullReadHandlers()),
+		merge(c.contactsWriteHandlers(), c.contactsFullWriteHandlers()))
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
 	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
 	c.forms = c.newApp(AppForms, c.formsReadTools(), nil, c.formsReadHandlers(), nil)
