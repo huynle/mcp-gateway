@@ -33,7 +33,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event", "set_out_of_office", "set_working_location", "create_focus_time"},
 		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation"},
-		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "create_folder", "create_file", "update_file", "share", "add_comment", "copy_file", "trash", "untrash", "delete", "empty_trash", "create_shortcut", "upload_new_version"},
+		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "list_revisions", "get_revision", "get_about", "create_folder", "create_file", "update_file", "share", "add_comment", "copy_file", "trash", "untrash", "delete", "empty_trash", "create_shortcut", "upload_new_version", "update_permission", "remove_permission", "transfer_ownership", "reply_comment", "resolve_comment", "delete_comment"},
 		google.AppDocs:     {"get_text", "create", "append_text", "replace_text", "batch_update"},
 		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create", "batch_update"},
 		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
