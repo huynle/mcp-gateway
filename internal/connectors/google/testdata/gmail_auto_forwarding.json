@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "emailAddress": "archive@example.test",
+  "disposition": "leaveInInbox"
+}

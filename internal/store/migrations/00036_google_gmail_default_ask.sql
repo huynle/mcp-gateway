@@ -6,8 +6,7 @@
 -- IMAP / POP / language / signature change how the account works), so
 -- every call needs a confirmation until an admin switches a tool to Auto
 -- (Settings -> Vendor apps -> google -> Tool approvals, or
--- gateway.set_tool_approval). Later increment-5 Gmail writes append
--- their rows here.
+-- gateway.set_tool_approval).
 --
 -- vendor_tool_approvals stores only Ask rows (00019), so the seed is one
 -- row per tool. ON CONFLICT keeps a row an admin already wrote.
@@ -27,7 +26,11 @@ INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('gmail', 'forward'),
     ('gmail', 'untrash'),
     ('gmail', 'update_draft'),
-    ('gmail', 'update_label')
+    ('gmail', 'update_imap'),
+    ('gmail', 'update_label'),
+    ('gmail', 'update_language'),
+    ('gmail', 'update_pop'),
+    ('gmail', 'update_signature')
 ON CONFLICT (app, tool) DO NOTHING;
 
 -- +goose Down
@@ -42,5 +45,9 @@ DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('gmail', 'forward'),
     ('gmail', 'untrash'),
     ('gmail', 'update_draft'),
-    ('gmail', 'update_label')
+    ('gmail', 'update_imap'),
+    ('gmail', 'update_label'),
+    ('gmail', 'update_language'),
+    ('gmail', 'update_pop'),
+    ('gmail', 'update_signature')
 );

@@ -132,10 +132,10 @@ func New(opts Options) (*Connector, error) {
 		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
 		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
 	c.gmail = c.newApp(AppGmail,
-		slices.Concat(c.gmailReadTools(), c.gmailManageReadTools(), c.gmailSettingsReadTools(), c.gmailDraftReadTools(), c.gmailOrganizeReadTools()),
-		slices.Concat(c.gmailWriteTools(), c.gmailManageWriteTools(), c.gmailSettingsWriteTools(), c.gmailMessageWriteTools(), c.gmailDraftWriteTools(), c.gmailOrganizeWriteTools()),
-		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers(), c.gmailSettingsReadHandlers(), c.gmailDraftReadHandlers(), c.gmailOrganizeReadHandlers()),
-		merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers(), c.gmailSettingsWriteHandlers(), c.gmailMessageWriteHandlers(), c.gmailDraftWriteHandlers(), c.gmailOrganizeWriteHandlers()))
+		slices.Concat(c.gmailReadTools(), c.gmailManageReadTools(), c.gmailSettingsReadTools(), c.gmailDraftReadTools(), c.gmailOrganizeReadTools(), c.gmailPrefsReadTools()),
+		slices.Concat(c.gmailWriteTools(), c.gmailManageWriteTools(), c.gmailSettingsWriteTools(), c.gmailMessageWriteTools(), c.gmailDraftWriteTools(), c.gmailOrganizeWriteTools(), c.gmailPrefsWriteTools()),
+		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers(), c.gmailSettingsReadHandlers(), c.gmailDraftReadHandlers(), c.gmailOrganizeReadHandlers(), c.gmailPrefsReadHandlers()),
+		merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers(), c.gmailSettingsWriteHandlers(), c.gmailMessageWriteHandlers(), c.gmailDraftWriteHandlers(), c.gmailOrganizeWriteHandlers(), c.gmailPrefsWriteHandlers()))
 	c.drive = c.newApp(AppDrive,
 		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
 		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
