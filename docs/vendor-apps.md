@@ -695,6 +695,30 @@ scopes of the tools a role shows, so `calendar.acls.readonly`,
 `calendar.settings.readonly` and `contacts.other.readonly` join Connect's request once a
 role shows those tools.
 
+Increment 5 (full Drive, Docs, Sheets, Slides and Forms, `docs/connectors/google.md`
+"Increment 5"). Two new scopes, both granted by every account; the same declaration rules
+as increment 3 apply.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/forms.body` | write | `forms.set_publish_settings`, `forms.batch_update` (`forms.setPublishSettings` and `forms.batchUpdate` accept `forms.body`, `drive` or `drive.file`; `drive.file` per file). It also covers `forms.body.readonly`. `forms.create` uses `drive.file` | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/drive` | write | `drive.empty_trash` only (`files.emptyTrash` accepts no other scope, so neither `drive.file` nor any narrower scope admits it). It covers every Drive, Docs, Sheets, Slides and Forms scope | **restricted** |
+
+The other increment-5 tools reuse registered scopes: `drive.file` (every Drive write:
+`copy_file`, `trash`, `untrash`, `delete`, `create_shortcut`, `upload_new_version`,
+`update_permission`, `remove_permission`, `transfer_ownership`, `reply_comment`,
+`resolve_comment`, `delete_comment`; and `forms.create`), `drive.metadata.readonly`
+(`drive.list_revisions`, `get_revision`, `get_about`; each also admitted per file by
+`drive.file`), `documents.readonly` / `documents` (`docs.get_structure`;
+`docs.batch_update`, `insert_text`, `insert_table`, `insert_image`, `delete_range`),
+`spreadsheets.readonly` / `spreadsheets` (`sheets.batch_get`; `sheets.batch_update`,
+`clear_range`, `add_sheet`, `delete_sheet`, `rename_sheet`, `duplicate_sheet`,
+`find_replace`), `presentations.readonly` / `presentations` (`slides.get_structure`,
+`get_thumbnail`; `slides.batch_update`, `add_slide`, `delete_slide`, `reorder_slides`,
+`insert_text`, `insert_image`) and `forms.responses.readonly` (`forms.get_response`). A
+deployment that does not want the restricted `drive` scope leaves it out: only
+`drive.empty_trash` stays locked (users empty the trash in Drive).
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever
@@ -900,7 +924,12 @@ No registered scope is unused by a v1 tool except `openid`/`userinfo.email`,
   People `people.searchContacts`. (2026-10-30) Gmail `users.settings.getVacation`,
   `updateVacation`, `filters.list`; Slides scopes (`developers.google.com/workspace/slides/api/scopes`),
   `presentations.get`, `batchUpdate`; Forms `forms.get`, `forms.responses.list`; the accepted-scope
-  lists of the discovery documents bundled with `google.golang.org/api` v0.298.0.
+  lists of the discovery documents bundled with `google.golang.org/api` v0.298.0. (2026-10-31)
+  the same discovery documents for every method increment 5 calls (Drive `files.copy`,
+  `update`, `delete`, `emptyTrash`, `permissions.update` / `delete` / `create`, `replies.create`,
+  `comments.get` / `delete`, `revisions.list` / `get`, `about.get`; Docs, Sheets, Slides and
+  Forms `batchUpdate`, Sheets `values.batchGet` / `clear`, Slides `pages.getThumbnail`, Forms
+  `setPublishSettings`, `responses.get`).
 - Microsoft: Graph permissions reference (`learn.microsoft.com/graph/permissions-reference`,
   AdminConsentRequired column); API pages for `user: list messages`, `sendMail`,
   `list events`, `create event`, `driveItem: search`, `create folder`, `channel: list`,
@@ -994,13 +1023,12 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 `sheets.append_rows` stay Auto. Migration 35 (`00035_google_workspace_default_ask.sql`)
 does the same for the increment-4 writes: `calendar.set_out_of_office`,
 `set_working_location`, `create_focus_time`; `chat.send_message`, `reply_in_thread`;
-`gmail.set_vacation`; `slides.create`, `replace_text`. The `forms` app has no writes.
+`gmail.set_vacation`; `slides.create`, `replace_text`.
 Migration 36 (`00036_google_gmail_default_ask.sql`) does the same for the increment-5 Gmail
 writes: `gmail.forward`, `untrash`, `delete`, `batch_modify_labels`, `update_draft`,
 `delete_draft`, `create_label`, `update_label`, `delete_label`, `create_filter`,
 `delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language`
 (attachments on `gmail.send` / `create_draft` keep those tools Auto).
-`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035 and 00036 together must
 
 Migration 37 (`00037_google_calendar_tasks_contacts_default_ask.sql`, increment 5, Brain
 decision `9jfy0gb8`) does the same for the full Calendar, Tasks and Contacts writes:
@@ -1010,9 +1038,20 @@ decision `9jfy0gb8`) does the same for the full Calendar, Tasks and Contacts wri
 `tasks.create_tasklist`, `update_tasklist`, `delete_tasklist`, `move`,
 `clear_completed`; `contacts.create`, `update`, `delete`, `create_group`,
 `update_group`, `delete_group`, `modify_group_members`, `copy_other_contact`.
-`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035 and 00037 together must
-seed every Google write except the eight Auto ones, and each migration's Down must remove
-exactly what its Up seeds.
+
+Migration 38
+(`00038_google_drive_docs_default_ask.sql`) does the same for every increment-5 write
+(Brain decision `9jfy0gb8`: everything a consumer account can do in these apps, with the
+approval as the gate): `drive.copy_file`, `trash`, `untrash`, `delete`, `empty_trash`,
+`create_shortcut`, `upload_new_version`, `update_permission`, `remove_permission`,
+`transfer_ownership`, `reply_comment`, `resolve_comment`, `delete_comment`;
+`docs.batch_update`, `insert_text`, `insert_table`, `insert_image`, `delete_range`;
+`sheets.batch_update`, `clear_range`, `add_sheet`, `delete_sheet`, `rename_sheet`,
+`duplicate_sheet`, `find_replace`; `slides.batch_update`, `add_slide`, `delete_slide`,
+`reorder_slides`, `insert_text`, `insert_image`; `forms.create`, `set_publish_settings`,
+`batch_update`. `TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035, 00036, 00037 and 00038
+together must seed every Google write except the eight Auto ones, and each
+migration's Down must remove exactly what its Up seeds.
 
 Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
 close the gap with github-mcp-server: `create_or_update_file`, `update_issue`,

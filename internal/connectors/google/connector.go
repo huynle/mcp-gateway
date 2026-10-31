@@ -137,21 +137,23 @@ func New(opts Options) (*Connector, error) {
 		merge(c.gmailReadHandlers(), c.gmailManageReadHandlers(), c.gmailSettingsReadHandlers(), c.gmailDraftReadHandlers(), c.gmailOrganizeReadHandlers(), c.gmailPrefsReadHandlers()),
 		merge(c.gmailWriteHandlers(), c.gmailManageWriteHandlers(), c.gmailSettingsWriteHandlers(), c.gmailMessageWriteHandlers(), c.gmailDraftWriteHandlers(), c.gmailOrganizeWriteHandlers(), c.gmailPrefsWriteHandlers()))
 	c.drive = c.newApp(AppDrive,
-		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
-		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
-	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
-		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
+		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools(), c.driveSharingReadTools()), slices.Concat(c.driveWriteTools(), c.driveManageWriteTools(), c.driveFilesWriteTools(), c.driveSharingWriteTools()),
+		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers(), c.driveSharingReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers(), c.driveFilesWriteHandlers(), c.driveSharingWriteHandlers()))
+	c.docs = c.newApp(AppDocs, append(c.docsReadTools(), c.docsFullReadTools()...), slices.Concat(c.docsWriteTools(), c.docsManageWriteTools(), c.docsFullWriteTools()),
+		merge(c.docsReadHandlers(), c.docsFullReadHandlers()), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers(), c.docsFullWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
-		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
-		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
+		slices.Concat(c.sheetsReadTools(), c.sheetsManageReadTools(), c.sheetsFullReadTools()), slices.Concat(c.sheetsWriteTools(), c.sheetsManageWriteTools(), c.sheetsFullWriteTools()),
+		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers(), c.sheetsFullReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers(), c.sheetsFullWriteHandlers()))
 	c.contacts = c.newApp(AppContacts,
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools(), c.contactsFullReadTools()),
 		append(c.contactsWriteTools(), c.contactsFullWriteTools()...),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers(), c.contactsFullReadHandlers()),
 		merge(c.contactsWriteHandlers(), c.contactsFullWriteHandlers()))
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
-	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
-	c.forms = c.newApp(AppForms, c.formsReadTools(), nil, c.formsReadHandlers(), nil)
+	c.slides = c.newApp(AppSlides, append(c.slidesReadTools(), c.slidesFullReadTools()...), append(c.slidesWriteTools(), c.slidesFullWriteTools()...),
+		merge(c.slidesReadHandlers(), c.slidesFullReadHandlers()), merge(c.slidesWriteHandlers(), c.slidesFullWriteHandlers()))
+	c.forms = c.newApp(AppForms, append(c.formsReadTools(), c.formsFullReadTools()...), c.formsWriteTools(),
+		merge(c.formsReadHandlers(), c.formsFullReadHandlers()), c.formsWriteHandlers())
 	return c, nil
 }
 

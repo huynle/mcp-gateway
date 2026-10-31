@@ -67,7 +67,7 @@ func TestFormsDeclarations(t *testing.T) {
 	declared(t, c, "forms.list_responses", connectors.KindRead, []string{google.ScopeFormsResponsesReadonly}, "")
 	for _, tool := range appOf(t, c, google.AppForms).Tools() {
 		if tool.Kind != connectors.KindRead {
-			t.Errorf("forms.%s is a %s; the forms app is read only", tool.Name, tool.Kind)
+			continue // increment 5 writes: tested in tools_forms_write_test.go and batch_test.go
 		}
 		id := tool.ResourceIdentity(map[string]any{"form_id": formID, "page_token": "secret"})
 		if len(id) != 1 || id["form_id"] != formID {
