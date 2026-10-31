@@ -141,13 +141,14 @@ func (c *Connector) tasksWriteTools() []connectors.Tool {
 	return []connectors.Tool{{
 		App: AppTasks, Name: ToolCreateTask, Kind: connectors.KindWrite,
 		Description: "Create a task in a Google Tasks list (the default list unless tasklist is given) with a title and optionally notes " +
-			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day). Returns the new task's id and url.",
-		InputSchema: objectSchema([]property{
+			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day); parent makes it a subtask, previous places it after a sibling. " +
+			"Returns the new task's id and url.",
+		InputSchema: objectSchema(append([]property{
 			tasklistProperty,
 			{"title", "string", "Task title.", nil},
 			{"notes", "string", "Task notes.", nil},
 			{"due", "string", "Due date, YYYY-MM-DD (an RFC 3339 timestamp is reduced to its date).", nil},
-		}, []string{"title"}),
+		}, subtaskProperties...), []string{"title"}),
 		RequiredScopes:   []string{ScopeTasks},
 		ResourceIdentity: tasksIdentity,
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkTask},
@@ -397,11 +398,22 @@ func (c *Connector) createTask(ctx context.Context, cl *client, call connectors.
 		}
 		task.Due = d.Format("2006-01-02") + "T00:00:00Z"
 	}
+	parent, previous, err := subtaskArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.tasks(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	created, err := svc.Tasks.Insert(tasklist, task).Context(ctx).Do()
+	req := svc.Tasks.Insert(tasklist, task).Context(ctx)
+	if parent != "" {
+		req = req.Parent(parent)
+	}
+	if previous != "" {
+		req = req.Previous(previous)
+	}
+	created, err := req.Do()
 	if err := classifyWrite("create task", err); err != nil {
 		return connectors.Result{}, err
 	}

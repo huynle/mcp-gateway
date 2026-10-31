@@ -25,7 +25,12 @@ INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('calendar', 'unsubscribe_calendar'),
     ('calendar', 'update_acl'),
     ('calendar', 'update_calendar'),
-    ('calendar', 'update_calendar_list_entry')
+    ('calendar', 'update_calendar_list_entry'),
+    ('tasks', 'clear_completed'),
+    ('tasks', 'create_tasklist'),
+    ('tasks', 'delete_tasklist'),
+    ('tasks', 'move'),
+    ('tasks', 'update_tasklist')
 ON CONFLICT (app, tool) DO NOTHING;
 
 -- +goose Down
@@ -41,5 +46,10 @@ DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('calendar', 'unsubscribe_calendar'),
     ('calendar', 'update_acl'),
     ('calendar', 'update_calendar'),
-    ('calendar', 'update_calendar_list_entry')
+    ('calendar', 'update_calendar_list_entry'),
+    ('tasks', 'clear_completed'),
+    ('tasks', 'create_tasklist'),
+    ('tasks', 'delete_tasklist'),
+    ('tasks', 'move'),
+    ('tasks', 'update_tasklist')
 );

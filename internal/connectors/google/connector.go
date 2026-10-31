@@ -129,8 +129,8 @@ func New(opts Options) (*Connector, error) {
 		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers(), c.calendarFullReadHandlers()),
 		merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers(), c.calendarWorkspaceWriteHandlers(), c.calendarFullWriteHandlers()))
 	c.tasks = c.newApp(AppTasks,
-		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
-		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))
+		append(c.tasksReadTools(), c.tasksManageReadTools()...), slices.Concat(c.tasksWriteTools(), c.tasksManageWriteTools(), c.tasksFullWriteTools()),
+		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers(), c.tasksFullWriteHandlers()))
 	c.gmail = c.newApp(AppGmail,
 		slices.Concat(c.gmailReadTools(), c.gmailManageReadTools(), c.gmailSettingsReadTools()),
 		slices.Concat(c.gmailWriteTools(), c.gmailManageWriteTools(), c.gmailSettingsWriteTools()),
