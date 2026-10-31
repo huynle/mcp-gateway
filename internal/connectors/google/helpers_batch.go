@@ -12,14 +12,35 @@ import (
 // arguments, sent and answered like the raw batch_update (BatchUpdated:
 // Google's reply and the new revision).
 
-// buildRequest validates a helper's arguments and builds its one request
-// ({"<kind>": {...}}); it runs before the token is fetched.
-type buildRequest func(args map[string]any) (kind string, params map[string]any, err error)
+// helperRequest is a helper's one request ({"<kind>": params}) and the
+// id of what it creates or changes (a sheet, a slide object), returned
+// in the result and ResultIDs.
+type helperRequest struct {
+	kind     string
+	params   map[string]any
+	sheetID  *int64
+	objectID string
+}
+
+// buildRequest validates a helper's arguments and builds its request; it
+// runs before the token is fetched. The operation id is there for the
+// helpers that derive the id of what they create from it.
+type buildRequest func(call connectors.Call) (helperRequest, error)
+
+// fromArgs adapts a builder that needs the arguments only.
+func fromArgs(f func(args map[string]any) (string, map[string]any, error)) buildRequest {
+	return func(call connectors.Call) (helperRequest, error) {
+		kind, params, err := f(call.Args)
+		return helperRequest{kind: kind, params: params}, err
+	}
+}
 
 // helperTool declares an edit helper of api: the id argument and
 // required_revision_id (when the API takes a writeControl) are added to
-// props; identity is the id alone (never text, uris or indexes).
-func (c *Connector) helperTool(api batchAPI, name, description string, props []property, required []string) connectors.Tool {
+// props; identity is the id alone (never text, uris or indexes) unless
+// identity is given.
+func (c *Connector) helperTool(api batchAPI, name, description string, props []property, required []string,
+	identity ...func(map[string]any) map[string]string) connectors.Tool {
 	tool := c.batchTool(api)
 	all := []property{{api.idArg, "string", "The " + api.noun + "'s id (from drive.search, or the id in its URL).", nil}}
 	all = append(all, props...)
@@ -31,6 +52,9 @@ func (c *Connector) helperTool(api batchAPI, name, description string, props []p
 	tool.Name, tool.Description = name, description+" Cannot be verified after an unknown outcome: check the "+api.noun+"."
 	tool.InputSchema = objectSchema(all, append([]string{api.idArg}, required...))
 	tool.ResourceIdentity = func(args map[string]any) map[string]string { return identityOf(args, idArg) }
+	if len(identity) > 0 {
+		tool.ResourceIdentity = identity[0]
+	}
 	return tool
 }
 
@@ -41,11 +65,11 @@ func (c *Connector) helperHandler(api batchAPI, build buildRequest) handler {
 		if err != nil {
 			return connectors.Result{}, err
 		}
-		kind, params, err := build(call.Args)
+		req, err := build(call)
 		if err != nil {
 			return connectors.Result{}, err
 		}
-		body := map[string]any{"requests": []any{map[string]any{kind: params}}}
+		body := map[string]any{"requests": []any{map[string]any{req.kind: req.params}}}
 		if api.writeControl {
 			rev, err := idArgDefault(call.Args, "required_revision_id", "")
 			if err != nil {
@@ -55,7 +79,7 @@ func (c *Connector) helperHandler(api batchAPI, build buildRequest) handler {
 				body["writeControl"] = map[string]string{"requiredRevisionId": rev}
 			}
 		}
-		out := BatchUpdated{RequestCount: 1, RequestKinds: []string{kind}}
+		out := BatchUpdated{RequestCount: 1, RequestKinds: []string{req.kind}, SheetID: req.sheetID, ObjectID: req.objectID}
 		out.setTarget(api.idArg, id)
 		return c.runBatch(ctx, cl, api, id, body, out)
 	}

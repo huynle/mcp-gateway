@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"google.golang.org/api/googleapi"
@@ -61,15 +62,19 @@ var (
 // the write produced (writeControl.requiredRevisionId), when Google
 // gives one.
 type BatchUpdated struct {
-	DocumentID     string            `json:"document_id,omitempty"`
-	SpreadsheetID  string            `json:"spreadsheet_id,omitempty"`
-	PresentationID string            `json:"presentation_id,omitempty"`
-	FormID         string            `json:"form_id,omitempty"`
-	RequestCount   int               `json:"request_count"`
-	RequestKinds   []string          `json:"request_kinds"`
-	RevisionID     string            `json:"revision_id,omitempty"`
-	Replies        []json.RawMessage `json:"replies"`
-	Truncated      bool              `json:"truncated,omitempty"`
+	DocumentID     string   `json:"document_id,omitempty"`
+	SpreadsheetID  string   `json:"spreadsheet_id,omitempty"`
+	PresentationID string   `json:"presentation_id,omitempty"`
+	FormID         string   `json:"form_id,omitempty"`
+	RequestCount   int      `json:"request_count"`
+	RequestKinds   []string `json:"request_kinds"`
+	RevisionID     string   `json:"revision_id,omitempty"`
+	// SheetID and ObjectID name the sheet or the slide object a helper
+	// created or changed.
+	SheetID   *int64            `json:"sheet_id,omitempty"`
+	ObjectID  string            `json:"object_id,omitempty"`
+	Replies   []json.RawMessage `json:"replies"`
+	Truncated bool              `json:"truncated,omitempty"`
 }
 
 // targetID returns the result's id whatever the API.
@@ -122,10 +127,18 @@ func (c *Connector) batchTool(api batchAPI) connectors.Tool {
 		},
 		Reconcile: connectors.Reconciliation{Kind: connectors.ReconcileNone},
 		ResultIDs: func(res connectors.Result) map[string]string {
-			if v, ok := res.Content.(BatchUpdated); ok && v.targetID() != "" {
-				return map[string]string{idArg: v.targetID()}
+			v, ok := res.Content.(BatchUpdated)
+			if !ok || v.targetID() == "" {
+				return nil
 			}
-			return nil
+			ids := map[string]string{idArg: v.targetID()}
+			if v.SheetID != nil {
+				ids["sheet_id"] = strconv.FormatInt(*v.SheetID, 10)
+			}
+			if v.ObjectID != "" {
+				ids["object_id"] = v.ObjectID
+			}
+			return ids
 		},
 		Bounds: c.singleBounds(),
 	}
@@ -317,14 +330,6 @@ func (cl *client) postJSON(ctx context.Context, host, path string, body, out any
 
 // Increment 5 write tools of Docs, Sheets, Slides and Forms; later
 // helpers append to these lists.
-
-func (c *Connector) sheetsFullWriteTools() []connectors.Tool {
-	return []connectors.Tool{c.batchTool(sheetsBatch)}
-}
-
-func (c *Connector) sheetsFullWriteHandlers() map[string]handler {
-	return map[string]handler{ToolBatchUpdate: c.batchHandler(sheetsBatch)}
-}
 
 func (c *Connector) slidesFullWriteTools() []connectors.Tool {
 	return []connectors.Tool{c.batchTool(slidesBatch)}

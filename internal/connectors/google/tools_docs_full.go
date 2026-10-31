@@ -116,10 +116,10 @@ func (c *Connector) docsFullWriteTools() []connectors.Tool {
 func (c *Connector) docsFullWriteHandlers() map[string]handler {
 	return map[string]handler{
 		ToolBatchUpdate: c.batchHandler(docsBatch),
-		ToolInsertText:  c.helperHandler(docsBatch, buildInsertText),
-		ToolInsertTable: c.helperHandler(docsBatch, buildInsertTable),
-		ToolInsertImage: c.helperHandler(docsBatch, buildInsertImage),
-		ToolDeleteRange: c.helperHandler(docsBatch, buildDeleteRange),
+		ToolInsertText:  c.helperHandler(docsBatch, fromArgs(buildInsertText)),
+		ToolInsertTable: c.helperHandler(docsBatch, fromArgs(buildInsertTable)),
+		ToolInsertImage: c.helperHandler(docsBatch, fromArgs(buildInsertImage)),
+		ToolDeleteRange: c.helperHandler(docsBatch, fromArgs(buildDeleteRange)),
 	}
 }
 

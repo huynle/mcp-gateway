@@ -35,7 +35,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation"},
 		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "list_revisions", "get_revision", "get_about", "create_folder", "create_file", "update_file", "share", "add_comment", "copy_file", "trash", "untrash", "delete", "empty_trash", "create_shortcut", "upload_new_version", "update_permission", "remove_permission", "transfer_ownership", "reply_comment", "resolve_comment", "delete_comment"},
 		google.AppDocs:     {"get_text", "get_structure", "create", "append_text", "replace_text", "batch_update", "insert_text", "insert_table", "insert_image", "delete_range"},
-		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create", "batch_update"},
+		google.AppSheets:   {"read_range", "get_metadata", "batch_get", "append_rows", "update_range", "create", "batch_update", "clear_range", "add_sheet", "delete_sheet", "rename_sheet", "duplicate_sheet", "find_replace"},
 		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
 		google.AppChat:     {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
 		google.AppSlides:   {"get_text", "create", "replace_text", "batch_update"},

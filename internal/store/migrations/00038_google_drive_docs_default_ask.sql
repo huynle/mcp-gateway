@@ -37,7 +37,13 @@ INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('forms', 'batch_update'),
     ('forms', 'create'),
     ('forms', 'set_publish_settings'),
+    ('sheets', 'add_sheet'),
     ('sheets', 'batch_update'),
+    ('sheets', 'clear_range'),
+    ('sheets', 'delete_sheet'),
+    ('sheets', 'duplicate_sheet'),
+    ('sheets', 'find_replace'),
+    ('sheets', 'rename_sheet'),
     ('slides', 'batch_update')
 ON CONFLICT (app, tool) DO NOTHING;
 
@@ -64,6 +70,12 @@ DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('forms', 'batch_update'),
     ('forms', 'create'),
     ('forms', 'set_publish_settings'),
+    ('sheets', 'add_sheet'),
     ('sheets', 'batch_update'),
+    ('sheets', 'clear_range'),
+    ('sheets', 'delete_sheet'),
+    ('sheets', 'duplicate_sheet'),
+    ('sheets', 'find_replace'),
+    ('sheets', 'rename_sheet'),
     ('slides', 'batch_update')
 );

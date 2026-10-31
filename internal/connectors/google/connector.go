@@ -142,8 +142,8 @@ func New(opts Options) (*Connector, error) {
 	c.docs = c.newApp(AppDocs, append(c.docsReadTools(), c.docsFullReadTools()...), slices.Concat(c.docsWriteTools(), c.docsManageWriteTools(), c.docsFullWriteTools()),
 		merge(c.docsReadHandlers(), c.docsFullReadHandlers()), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers(), c.docsFullWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
-		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), slices.Concat(c.sheetsWriteTools(), c.sheetsManageWriteTools(), c.sheetsFullWriteTools()),
-		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers(), c.sheetsFullWriteHandlers()))
+		slices.Concat(c.sheetsReadTools(), c.sheetsManageReadTools(), c.sheetsFullReadTools()), slices.Concat(c.sheetsWriteTools(), c.sheetsManageWriteTools(), c.sheetsFullWriteTools()),
+		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers(), c.sheetsFullReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers(), c.sheetsFullWriteHandlers()))
 	c.contacts = c.newApp(AppContacts,
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
