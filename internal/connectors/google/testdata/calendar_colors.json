@@ -1,0 +1,13 @@
+{
+  "kind": "calendar#colors",
+  "updated": "2012-02-14T00:00:00.000Z",
+  "calendar": {
+    "10": {"background": "#b3dc6c", "foreground": "#000000"},
+    "2": {"background": "#d06b64", "foreground": "#000000"},
+    "1": {"background": "#ac725e", "foreground": "#1d1d1d"}
+  },
+  "event": {
+    "11": {"background": "#dc2127", "foreground": "#1d1d1d"},
+    "1": {"background": "#a4bdfc", "foreground": "#1d1d1d"}
+  }
+}

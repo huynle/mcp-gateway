@@ -1,0 +1,13 @@
+{
+  "kind": "calendar#event",
+  "id": "n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=n8cek7dlhn61olmq3cco8a95d1rd4tdf",
+  "summary": "Weekly review",
+  "colorId": "5",
+  "visibility": "private",
+  "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"],
+  "attachments": [{"fileUrl": "https://drive.google.com/open?id=file_abc", "title": "Agenda"}],
+  "start": {"dateTime": "2026-10-12T10:00:00-07:00", "timeZone": "America/Los_Angeles"},
+  "end": {"dateTime": "2026-10-12T11:00:00-07:00", "timeZone": "America/Los_Angeles"}
+}

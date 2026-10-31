@@ -1,0 +1,2 @@
+{"resourceName": "contactGroups/friends", "etag": "%GROUPETAG", "name": "Friends", "formattedName": "Friends", "groupType": "USER_CONTACT_GROUP", "memberCount": 2,
+ "memberResourceNames": ["people/c1234567890", "people/c2"], "clientData": [{"key": "other-app", "value": "keep"}]}

@@ -667,6 +667,34 @@ keeps working). `gmail.settings.sharing` (auto-forwarding changes, forwarding ad
 send-as aliases, delegates) is never requested: Google grants it only to Workspace service
 accounts with domain-wide delegation.
 
+Increment 5 (full Calendar, Tasks and Contacts, `docs/connectors/google.md` "Increment 5";
+Brain decision `9jfy0gb8`). Every account can grant these (none is Workspace-only); the same
+declaration rules as increment 3 apply. Accepted scopes were checked against the discovery
+documents bundled in `google.golang.org/api` v0.298.0.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/calendar.calendars` | write | `calendar.create_calendar`, `update_calendar`, `delete_calendar`, `clear_calendar` (`calendars.insert` / `patch` / `delete` / `clear`; `calendar` also covers it; `calendar.app.created` would admit them only for calendars the gateway created and is not modelled) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.calendarlist` | write | `calendar.subscribe_calendar`, `unsubscribe_calendar`, `update_calendar_list_entry` (`calendarList.insert` / `delete` / `patch`; `calendar` also covers it; it covers `calendar.calendarlist.readonly`) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.acls.readonly` | read | `calendar.list_acl` (`acl.list` does **not** accept `calendar.readonly`; `calendar.acls` and `calendar` cover it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.acls` | write | `calendar.share_calendar`, `update_acl`, `unshare_calendar` and their reconciliation checks (`acl.list`); `calendar` also covers it | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.settings.readonly` | read | `calendar.get_settings` (`calendar.readonly` and `calendar` also cover it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/contacts` | write | `contacts.create`, `update`, `delete`, `create_group`, `update_group`, `delete_group`, `modify_group_members` (covers `contacts.readonly`) | sensitive |
+| `https://www.googleapis.com/auth/contacts.other.readonly` | read | `contacts.list_other_contacts`, `search_other_contacts` (`otherContacts.list` / `search` accept **only** this scope: `contacts` does not cover it) and `contacts.copy_other_contact` (`copyOtherContactToMyContactsGroup` accepts it or `contacts`) | sensitive |
+
+The other increment-5 tools reuse registered scopes: `calendar.events.readonly`
+(`calendar.list_instances`), `calendar.calendarlist.readonly` (`calendar.get_colors`:
+`colors.get` accepts it), `calendar.events` (`quick_add`, `move_event`, and the new
+event fields of `create_event` / `update_event`: recurrence, reminders, color, visibility,
+transparency, attachments, guest permissions), `tasks` (`create_tasklist`,
+`update_tasklist`, `delete_tasklist`, `move`, `clear_completed`, `tasks.create`'s
+`parent`), `contacts.readonly` (`contacts.list_groups`, `get_group`, and `contacts.get`'s new
+fields). `calendar.clear_calendar`'s reconciliation check lists events, so it also needs an
+events read scope (`calendar.events.readonly`, already requested). Connect asks for the read
+scopes of the tools a role shows, so `calendar.acls.readonly`,
+`calendar.settings.readonly` and `contacts.other.readonly` join Connect's request once a
+role shows those tools.
+
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
 only scopes the connector actually sends: Google shows the unverified-app screen whenever
@@ -973,6 +1001,16 @@ writes: `gmail.forward`, `untrash`, `delete`, `batch_modify_labels`, `update_dra
 `delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language`
 (attachments on `gmail.send` / `create_draft` keep those tools Auto).
 `TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035 and 00036 together must
+
+Migration 37 (`00037_google_calendar_tasks_contacts_default_ask.sql`, increment 5, Brain
+decision `9jfy0gb8`) does the same for the full Calendar, Tasks and Contacts writes:
+`calendar.quick_add`, `move_event`, `create_calendar`, `update_calendar`,
+`delete_calendar`, `clear_calendar`, `subscribe_calendar`, `unsubscribe_calendar`,
+`update_calendar_list_entry`, `share_calendar`, `update_acl`, `unshare_calendar`;
+`tasks.create_tasklist`, `update_tasklist`, `delete_tasklist`, `move`,
+`clear_completed`; `contacts.create`, `update`, `delete`, `create_group`,
+`update_group`, `delete_group`, `modify_group_members`, `copy_other_contact`.
+`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035 and 00037 together must
 seed every Google write except the eight Auto ones, and each migration's Down must remove
 exactly what its Up seeds.
 

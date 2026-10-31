@@ -1,0 +1,1 @@
+{"contactGroups": [{"resourceName": "contactGroups/myContacts"}, {"resourceName": "contactGroups/friends", "clientData": [{"key": "mcp-gateway-op", "value": "another-operation"}]}]}

@@ -1,0 +1,11 @@
+{"resourceName": "people/c1234567890", "etag": "%EgUBAi43PRoEAQIFByIM",
+ "names": [{"displayName": "Bob Example", "givenName": "Bob", "familyName": "Example"}],
+ "emailAddresses": [{"value": "bob@example.test"}],
+ "organizations": [{"name": "Example Corp", "title": "Engineer"}],
+ "phoneNumbers": [{"value": "+1 555 0100"}],
+ "addresses": [{"formattedValue": "1 Main St, Springfield"}],
+ "birthdays": [{"date": {"year": 1990, "month": 4, "day": 2}}],
+ "biographies": [{"value": "Met at the offsite."}],
+ "urls": [{"value": "https://bob.example.test"}],
+ "memberships": [{"contactGroupMembership": {"contactGroupResourceName": "contactGroups/friends"}}, {"contactGroupMembership": {"contactGroupResourceName": "contactGroups/myContacts"}}],
+ "clientData": [{"key": "other-app", "value": "keep"}]}

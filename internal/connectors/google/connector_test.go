@@ -30,16 +30,20 @@ func TestAppsAndToolNames(t *testing.T) {
 		t.Errorf("Apps() = %v, want %v", apps, google.Apps)
 	}
 	want := map[string][]string{
-		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event", "set_out_of_office", "set_working_location", "create_focus_time"},
-		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
-		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "get_draft", "get_profile", "get_filter", "list_send_as", "get_imap", "get_pop", "get_auto_forwarding", "list_forwarding_addresses", "get_language", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation", "forward", "untrash", "delete", "batch_modify_labels", "update_draft", "delete_draft", "create_label", "update_label", "delete_label", "create_filter", "delete_filter", "update_signature", "update_imap", "update_pop", "update_language"},
-		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "create_folder", "create_file", "update_file", "share", "add_comment"},
-		google.AppDocs:     {"get_text", "create", "append_text", "replace_text"},
-		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create"},
-		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
-		google.AppChat:     {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
-		google.AppSlides:   {"get_text", "create", "replace_text"},
-		google.AppForms:    {"get", "list_responses"},
+		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "list_instances", "list_acl", "get_colors", "get_settings",
+			"create_event", "update_event", "delete_event", "respond_to_event", "set_out_of_office", "set_working_location", "create_focus_time",
+			"quick_add", "move_event", "create_calendar", "update_calendar", "delete_calendar", "clear_calendar", "subscribe_calendar",
+			"unsubscribe_calendar", "update_calendar_list_entry", "share_calendar", "update_acl", "unshare_calendar"},
+		google.AppTasks:  {"list", "list_tasklists", "get", "create", "update", "complete", "delete", "create_tasklist", "update_tasklist", "delete_tasklist", "move", "clear_completed"},
+		google.AppGmail:  {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "get_draft", "get_profile", "get_filter", "list_send_as", "get_imap", "get_pop", "get_auto_forwarding", "list_forwarding_addresses", "get_language", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation", "forward", "untrash", "delete", "batch_modify_labels", "update_draft", "delete_draft", "create_label", "update_label", "delete_label", "create_filter", "delete_filter", "update_signature", "update_imap", "update_pop", "update_language"},
+		google.AppDrive:  {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "create_folder", "create_file", "update_file", "share", "add_comment"},
+		google.AppDocs:   {"get_text", "create", "append_text", "replace_text"},
+		google.AppSheets: {"read_range", "get_metadata", "append_rows", "update_range", "create"},
+		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory", "list_groups", "get_group", "list_other_contacts", "search_other_contacts",
+			"create", "update", "delete", "create_group", "update_group", "delete_group", "modify_group_members", "copy_other_contact"},
+		google.AppChat:   {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
+		google.AppSlides: {"get_text", "create", "replace_text"},
+		google.AppForms:  {"get", "list_responses"},
 	}
 	for app, names := range want {
 		var got []string

@@ -109,8 +109,9 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 		App: AppCalendar, Name: ToolCreateEvent, Kind: connectors.KindWrite,
 		Description: "Create an event in a Google Calendar with a summary, start and end (RFC 3339 timestamps, or YYYY-MM-DD dates for an all-day event), " +
 			"and optionally a description, location, attendees and whether to email them (send_updates; default none). " +
-			"add_meet_link adds a Google Meet video link. Returns the new event's id and url (and meet_url).",
-		InputSchema: objectSchema([]property{
+			"add_meet_link adds a Google Meet video link; recurrence (RRULE lines) makes it repeat; reminders, color_id, visibility, " +
+			"transparency, attachments (Drive file URLs) and the guests_can_* permissions are optional. Returns the new event's id and url (and meet_url).",
+		InputSchema: objectSchema(append([]property{
 			{"calendar_id", "string", "Calendar to create the event in: \"primary\" (default) or a calendar id.", nil},
 			{"summary", "string", "Event title.", nil},
 			{"start", "string", "Start: RFC 3339 timestamp (2026-10-10T10:00:00-07:00) or date (2026-10-10) for an all-day event.", nil},
@@ -121,7 +122,7 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 			{"attendees", "array", "Attendee email addresses.", nil},
 			{"send_updates", "string", "Whether Google emails the attendees: all, externalOnly or none (default).", sendUpdatesValues},
 			addMeetLinkProperty,
-		}, []string{"summary", "start", "end"}),
+		}, eventExtraProperties...), []string{"summary", "start", "end"}),
 		RequiredScopes:   []string{ScopeCalendarEvents},
 		ResourceIdentity: calendarIdentity(false),
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkEvent},
@@ -139,13 +140,14 @@ func (c *Connector) tasksWriteTools() []connectors.Tool {
 	return []connectors.Tool{{
 		App: AppTasks, Name: ToolCreateTask, Kind: connectors.KindWrite,
 		Description: "Create a task in a Google Tasks list (the default list unless tasklist is given) with a title and optionally notes " +
-			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day). Returns the new task's id and url.",
-		InputSchema: objectSchema([]property{
+			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day); parent makes it a subtask, previous places it after a sibling. " +
+			"Returns the new task's id and url.",
+		InputSchema: objectSchema(append([]property{
 			tasklistProperty,
 			{"title", "string", "Task title.", nil},
 			{"notes", "string", "Task notes.", nil},
 			{"due", "string", "Due date, YYYY-MM-DD (an RFC 3339 timestamp is reduced to its date).", nil},
-		}, []string{"title"}),
+		}, subtaskProperties...), []string{"title"}),
 		RequiredScopes:   []string{ScopeTasks},
 		ResourceIdentity: tasksIdentity,
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkTask},
@@ -346,11 +348,18 @@ func (c *Connector) createEvent(ctx context.Context, cl *client, call connectors
 		}
 		ev.Attendees = append(ev.Attendees, &calendar.EventAttendee{Email: addr.Address})
 	}
+	_, withAttachments, err := eventExtras(call.Args, ev)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.calendar(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
 	req := svc.Events.Insert(calendarID, ev).Context(ctx).SendUpdates(sendUpdates)
+	if withAttachments {
+		req = req.SupportsAttachments(true)
+	}
 	if addMeet {
 		ev.ConferenceData = meetRequest(call.OperationID)
 		req = req.ConferenceDataVersion(1)
@@ -391,11 +400,22 @@ func (c *Connector) createTask(ctx context.Context, cl *client, call connectors.
 		}
 		task.Due = d.Format("2006-01-02") + "T00:00:00Z"
 	}
+	parent, previous, err := subtaskArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.tasks(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	created, err := svc.Tasks.Insert(tasklist, task).Context(ctx).Do()
+	req := svc.Tasks.Insert(tasklist, task).Context(ctx)
+	if parent != "" {
+		req = req.Parent(parent)
+	}
+	if previous != "" {
+		req = req.Previous(previous)
+	}
+	created, err := req.Do()
 	if err := classifyWrite("create task", err); err != nil {
 		return connectors.Result{}, err
 	}

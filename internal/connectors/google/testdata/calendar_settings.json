@@ -1,0 +1,8 @@
+{
+  "kind": "calendar#settings",
+  "items": [
+    {"kind": "calendar#setting", "id": "timezone", "value": "America/Los_Angeles"},
+    {"kind": "calendar#setting", "id": "weekStart", "value": "1"},
+    {"kind": "calendar#setting", "id": "format24HourTime", "value": "false"}
+  ]
+}

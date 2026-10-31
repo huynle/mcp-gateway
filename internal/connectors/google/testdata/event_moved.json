@@ -1,0 +1,9 @@
+{
+  "kind": "calendar#event",
+  "id": "evt_standup_001",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=moved",
+  "summary": "Team standup",
+  "start": {"dateTime": "2026-10-09T09:30:00-07:00"},
+  "end": {"dateTime": "2026-10-09T09:45:00-07:00"}
+}
