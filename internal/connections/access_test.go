@@ -220,7 +220,7 @@ func TestMissingAccessGoogleImpliedScopes(t *testing.T) {
 // the settings writes need gmail.settings.basic (their methods accept no
 // other scope, not even mail.google.com) and the permanent delete needs
 // mail.google.com (messages.delete and threads.delete accept no other).
-var gmailBeyondModify = []string{"gmail.set_vacation", "gmail.delete"}
+var gmailBeyondModify = []string{"gmail.set_vacation", "gmail.delete", "gmail.create_filter", "gmail.delete_filter"}
 
 // failingVisibility stands in for a policy that cannot be evaluated.
 type failingVisibility struct{}

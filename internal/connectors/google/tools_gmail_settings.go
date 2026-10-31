@@ -276,15 +276,7 @@ func (c *Connector) listFilters(ctx context.Context, cl *client, _ connectors.Ca
 		if f == nil {
 			continue
 		}
-		item := Filter{ID: f.Id}
-		if cr := f.Criteria; cr != nil {
-			item.Criteria = FilterCriteria{From: cr.From, To: cr.To, Subject: cr.Subject, Query: cr.Query, NegatedQuery: cr.NegatedQuery,
-				HasAttachment: cr.HasAttachment, ExcludeChats: cr.ExcludeChats, Size: cr.Size, SizeComparison: cr.SizeComparison}
-		}
-		if ac := f.Action; ac != nil {
-			item.Action = FilterAction{AddLabelIDs: ac.AddLabelIds, RemoveLabelIDs: ac.RemoveLabelIds, Forward: ac.Forward}
-		}
-		out.Items = append(out.Items, item)
+		out.Items = append(out.Items, toFilter(f))
 	}
 	res := connectors.Result{Empty: len(out.Items) == 0}
 	for encodedSize(out) > c.bounds.MaxResultBytes && len(out.Items) > 1 {
