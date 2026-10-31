@@ -1,0 +1,11 @@
+{
+  "id": "Label_42",
+  "name": "Receipts",
+  "type": "user",
+  "labelListVisibility": "labelShow",
+  "messageListVisibility": "show",
+  "color": {
+    "backgroundColor": "#16a765",
+    "textColor": "#ffffff"
+  }
+}

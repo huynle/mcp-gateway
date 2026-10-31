@@ -2,6 +2,7 @@ package google
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -17,9 +18,9 @@ const (
 )
 
 // contactGetFields is what contacts.get reads: search's fields plus phone
-// numbers (a single contact the harness asked for by name); never photos
-// or notes.
-const contactGetFields = "names,emailAddresses,organizations,phoneNumbers"
+// numbers and, since increment 5 (contacts.update can change them),
+// addresses, birthday, notes, URLs and group memberships; never photos.
+const contactGetFields = "names,emailAddresses,organizations,phoneNumbers,addresses,birthdays,biographies,urls,memberships"
 
 // resourceNameRE is the shape of a contact's resource name.
 var resourceNameRE = regexp.MustCompile(`^people/[A-Za-z0-9_-]+$`)
@@ -28,6 +29,14 @@ var resourceNameRE = regexp.MustCompile(`^people/[A-Za-z0-9_-]+$`)
 type ContactDetail struct {
 	Contact
 	Phones []string `json:"phones,omitempty"`
+	// Increment 5: the rest of what contacts.update can change, plus the
+	// contact's groups (contactGroups/<id>). Notes are cut to the bounds.
+	Addresses []string `json:"addresses,omitempty"`
+	Birthday  string   `json:"birthday,omitempty"`
+	Notes     string   `json:"notes,omitempty"`
+	URLs      []string `json:"urls,omitempty"`
+	Groups    []string `json:"groups,omitempty"`
+	Truncated bool     `json:"truncated,omitempty"`
 }
 
 // ContactsList is contacts.list's result.
@@ -94,7 +103,9 @@ func (c *Connector) getContact(ctx context.Context, cl *client, call connectors.
 	if err := classify("get contact", err); err != nil {
 		return connectors.Result{}, err
 	}
-	return connectors.Result{Content: toContactDetail(p)}, nil
+	out := toContactDetail(p)
+	fitBody(&out.Notes, &out.Truncated, c.bounds.MaxResultBytes, func() any { return out })
+	return connectors.Result{Content: out, Partial: out.Truncated}, nil
 }
 
 // toContactDetail is toContact plus the phone numbers.
@@ -103,6 +114,37 @@ func toContactDetail(p *people.Person) ContactDetail {
 	for _, ph := range p.PhoneNumbers {
 		if ph != nil && ph.Value != "" {
 			out.Phones = append(out.Phones, ph.Value)
+		}
+	}
+	for _, a := range p.Addresses {
+		if a != nil && a.FormattedValue != "" {
+			out.Addresses = append(out.Addresses, a.FormattedValue)
+		}
+	}
+	for _, b := range p.Birthdays {
+		if b != nil && b.Date != nil && b.Date.Month > 0 {
+			if b.Date.Year > 0 {
+				out.Birthday = fmt.Sprintf("%04d-%02d-%02d", b.Date.Year, b.Date.Month, b.Date.Day)
+			} else {
+				out.Birthday = fmt.Sprintf("--%02d-%02d", b.Date.Month, b.Date.Day)
+			}
+			break
+		}
+	}
+	for _, b := range p.Biographies {
+		if b != nil && b.Value != "" {
+			out.Notes = b.Value
+			break
+		}
+	}
+	for _, u := range p.Urls {
+		if u != nil && u.Value != "" {
+			out.URLs = append(out.URLs, u.Value)
+		}
+	}
+	for _, m := range p.Memberships {
+		if m != nil && m.ContactGroupMembership != nil && m.ContactGroupMembership.ContactGroupResourceName != "" {
+			out.Groups = append(out.Groups, m.ContactGroupMembership.ContactGroupResourceName)
 		}
 	}
 	return out

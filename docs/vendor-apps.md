@@ -634,8 +634,8 @@ The same declaration rules as increment 3 apply; on an Internal app it is option
 Unlike the directory and Chat scopes, `gmail.settings.basic` and the Slides and Forms scopes are
 granted by **every** account (personal ones included). `gmail.settings.basic` is
 **restricted**: on a verified External app it joins the CASA scope set, so a deployment that
-does not want it leaves `gmail.set_vacation` locked (the two settings reads keep working
-with `gmail.readonly`).
+does not want it leaves `gmail.set_vacation` (and, since increment 5, the filter, signature,
+IMAP, POP and language writes) locked (the settings reads keep working with `gmail.readonly`).
 
 The other increment-4 tools reuse registered scopes: `calendar.events` (`add_meet_link` on
 `calendar.create_event` / `update_event`, and the Workspace-only event types
@@ -644,6 +644,80 @@ them for personal accounts), `drive.readonly` (`drive.list_shared_drives`: `driv
 accepts only `drive` and `drive.readonly`, so neither `drive.metadata.readonly` nor the
 per-file `drive.file` admits it) and `drive.file` (`slides.create`, through Drive
 `files.create` like `docs.create`).
+
+Increment 5 (full Gmail, `docs/connectors/google.md` "Increment 5"; Brain decision
+`9jfy0gb8`: users may do everything a consumer account can do through the Gmail API, gated
+by the deployment's approvals). Every account can grant these; the same declaration rules
+as increment 3 apply.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://mail.google.com/` | write | `gmail.delete` only (`messages.delete` / `threads.delete` accept no other scope). Covers every other Gmail scope but `gmail.settings.basic` / `gmail.settings.sharing` | **restricted** |
+| `https://www.googleapis.com/auth/gmail.settings.basic` (increment 4) | write | now also `gmail.create_filter`, `delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language` (their methods accept only this scope, `sendAs.patch` also `gmail.settings.sharing`; nothing covers it) | **restricted** |
+
+The other increment-5 tools reuse registered scopes: `gmail.readonly` (`get_draft`,
+`get_profile`, `get_filter`, `list_send_as`, `get_imap`, `get_pop`, `get_auto_forwarding`,
+`list_forwarding_addresses`, `get_language`; `forward` reads the original with it),
+`gmail.send` (`forward`, attachments on `send`), `gmail.compose` (`update_draft`,
+`delete_draft`, attachments on `create_draft`), `gmail.modify` (`untrash`,
+`batch_modify_labels`) and `gmail.labels` (`create_label`, `update_label`,
+`delete_label`; non-sensitive, `gmail.modify` covers it). A deployment that does not want
+`mail.google.com` leaves it out: only the permanent delete stays locked (`gmail.trash`
+keeps working). `gmail.settings.sharing` (auto-forwarding changes, forwarding addresses,
+send-as aliases, delegates) is never requested: Google grants it only to Workspace service
+accounts with domain-wide delegation.
+
+Increment 5 (full Calendar, Tasks and Contacts, `docs/connectors/google.md` "Increment 5";
+Brain decision `9jfy0gb8`). Every account can grant these (none is Workspace-only); the same
+declaration rules as increment 3 apply. Accepted scopes were checked against the discovery
+documents bundled in `google.golang.org/api` v0.298.0.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/calendar.calendars` | write | `calendar.create_calendar`, `update_calendar`, `delete_calendar`, `clear_calendar` (`calendars.insert` / `patch` / `delete` / `clear`; `calendar` also covers it; `calendar.app.created` would admit them only for calendars the gateway created and is not modelled) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.calendarlist` | write | `calendar.subscribe_calendar`, `unsubscribe_calendar`, `update_calendar_list_entry` (`calendarList.insert` / `delete` / `patch`; `calendar` also covers it; it covers `calendar.calendarlist.readonly`) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.acls.readonly` | read | `calendar.list_acl` (`acl.list` does **not** accept `calendar.readonly`; `calendar.acls` and `calendar` cover it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.acls` | write | `calendar.share_calendar`, `update_acl`, `unshare_calendar` and their reconciliation checks (`acl.list`); `calendar` also covers it | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/calendar.settings.readonly` | read | `calendar.get_settings` (`calendar.readonly` and `calendar` also cover it) | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/contacts` | write | `contacts.create`, `update`, `delete`, `create_group`, `update_group`, `delete_group`, `modify_group_members` (covers `contacts.readonly`) | sensitive |
+| `https://www.googleapis.com/auth/contacts.other.readonly` | read | `contacts.list_other_contacts`, `search_other_contacts` (`otherContacts.list` / `search` accept **only** this scope: `contacts` does not cover it) and `contacts.copy_other_contact` (`copyOtherContactToMyContactsGroup` accepts it or `contacts`) | sensitive |
+
+The other increment-5 tools reuse registered scopes: `calendar.events.readonly`
+(`calendar.list_instances`), `calendar.calendarlist.readonly` (`calendar.get_colors`:
+`colors.get` accepts it), `calendar.events` (`quick_add`, `move_event`, and the new
+event fields of `create_event` / `update_event`: recurrence, reminders, color, visibility,
+transparency, attachments, guest permissions), `tasks` (`create_tasklist`,
+`update_tasklist`, `delete_tasklist`, `move`, `clear_completed`, `tasks.create`'s
+`parent`), `contacts.readonly` (`contacts.list_groups`, `get_group`, and `contacts.get`'s new
+fields). `calendar.clear_calendar`'s reconciliation check lists events, so it also needs an
+events read scope (`calendar.events.readonly`, already requested). Connect asks for the read
+scopes of the tools a role shows, so `calendar.acls.readonly`,
+`calendar.settings.readonly` and `contacts.other.readonly` join Connect's request once a
+role shows those tools.
+
+Increment 5 (full Drive, Docs, Sheets, Slides and Forms, `docs/connectors/google.md`
+"Increment 5"). Two new scopes, both granted by every account; the same declaration rules
+as increment 3 apply.
+
+| Scope | Read/write | Tools | Classification |
+| --- | --- | --- | --- |
+| `https://www.googleapis.com/auth/forms.body` | write | `forms.set_publish_settings`, `forms.batch_update` (`forms.setPublishSettings` and `forms.batchUpdate` accept `forms.body`, `drive` or `drive.file`; `drive.file` per file). It also covers `forms.body.readonly`. `forms.create` uses `drive.file` | sensitive (confirm on the Data Access page) |
+| `https://www.googleapis.com/auth/drive` | write | `drive.empty_trash` only (`files.emptyTrash` accepts no other scope, so neither `drive.file` nor any narrower scope admits it). It covers every Drive, Docs, Sheets, Slides and Forms scope | **restricted** |
+
+The other increment-5 tools reuse registered scopes: `drive.file` (every Drive write:
+`copy_file`, `trash`, `untrash`, `delete`, `create_shortcut`, `upload_new_version`,
+`update_permission`, `remove_permission`, `transfer_ownership`, `reply_comment`,
+`resolve_comment`, `delete_comment`; and `forms.create`), `drive.metadata.readonly`
+(`drive.list_revisions`, `get_revision`, `get_about`; each also admitted per file by
+`drive.file`), `documents.readonly` / `documents` (`docs.get_structure`;
+`docs.batch_update`, `insert_text`, `insert_table`, `insert_image`, `delete_range`),
+`spreadsheets.readonly` / `spreadsheets` (`sheets.batch_get`; `sheets.batch_update`,
+`clear_range`, `add_sheet`, `delete_sheet`, `rename_sheet`, `duplicate_sheet`,
+`find_replace`), `presentations.readonly` / `presentations` (`slides.get_structure`,
+`get_thumbnail`; `slides.batch_update`, `add_slide`, `delete_slide`, `reorder_slides`,
+`insert_text`, `insert_image`) and `forms.responses.readonly` (`forms.get_response`). A
+deployment that does not want the restricted `drive` scope leaves it out: only
+`drive.empty_trash` stays locked (users empty the trash in Drive).
 
 "Classification" follows Google's published restricted-scope list and the Gmail/Drive
 scope pages; the Data Access page shows the same labels when you add a scope. Request
@@ -659,7 +733,8 @@ the requested scopes differ from the declared ones.
 - Do **not** leave it in Testing: Testing mode caps at 100 test users and expires refresh
   tokens after 7 days.
 - Restricted scopes in the list above (`gmail.readonly`, `gmail.compose`,
-  `drive.metadata.readonly`, and with increment 3 `gmail.modify` and `drive.readonly`) are what trigger the heavier path if the app is ever
+  `drive.metadata.readonly`, with increment 3 `gmail.modify` and `drive.readonly`, with increment 4
+  `gmail.settings.basic` and with increment 5 `mail.google.com`) are what trigger the heavier path if the app is ever
   submitted for verification: restricted-scope verification plus an **annual CASA security
   assessment** by a Google-approved assessor, because the gateway stores restricted-scope
   data (tokens) on a server. The design explicitly defers this; revisit when personal
@@ -849,7 +924,12 @@ No registered scope is unused by a v1 tool except `openid`/`userinfo.email`,
   People `people.searchContacts`. (2026-10-30) Gmail `users.settings.getVacation`,
   `updateVacation`, `filters.list`; Slides scopes (`developers.google.com/workspace/slides/api/scopes`),
   `presentations.get`, `batchUpdate`; Forms `forms.get`, `forms.responses.list`; the accepted-scope
-  lists of the discovery documents bundled with `google.golang.org/api` v0.298.0.
+  lists of the discovery documents bundled with `google.golang.org/api` v0.298.0. (2026-10-31)
+  the same discovery documents for every method increment 5 calls (Drive `files.copy`,
+  `update`, `delete`, `emptyTrash`, `permissions.update` / `delete` / `create`, `replies.create`,
+  `comments.get` / `delete`, `revisions.list` / `get`, `about.get`; Docs, Sheets, Slides and
+  Forms `batchUpdate`, Sheets `values.batchGet` / `clear`, Slides `pages.getThumbnail`, Forms
+  `setPublishSettings`, `responses.get`).
 - Microsoft: Graph permissions reference (`learn.microsoft.com/graph/permissions-reference`,
   AdminConsentRequired column); API pages for `user: list messages`, `sendMail`,
   `list events`, `create event`, `driveItem: search`, `create folder`, `channel: list`,
@@ -943,10 +1023,35 @@ after increments 1 and 2: `calendar.update_event`, `delete_event`, `respond_to_e
 `sheets.append_rows` stay Auto. Migration 35 (`00035_google_workspace_default_ask.sql`)
 does the same for the increment-4 writes: `calendar.set_out_of_office`,
 `set_working_location`, `create_focus_time`; `chat.send_message`, `reply_in_thread`;
-`gmail.set_vacation`; `slides.create`, `replace_text`. The `forms` app has no writes.
-`TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022 and 00035 together must seed
-every Google write except the eight Auto ones, and each migration's Down must remove
-exactly what its Up seeds.
+`gmail.set_vacation`; `slides.create`, `replace_text`.
+Migration 36 (`00036_google_gmail_default_ask.sql`) does the same for the increment-5 Gmail
+writes: `gmail.forward`, `untrash`, `delete`, `batch_modify_labels`, `update_draft`,
+`delete_draft`, `create_label`, `update_label`, `delete_label`, `create_filter`,
+`delete_filter`, `update_signature`, `update_imap`, `update_pop`, `update_language`
+(attachments on `gmail.send` / `create_draft` keep those tools Auto).
+
+Migration 37 (`00037_google_calendar_tasks_contacts_default_ask.sql`, increment 5, Brain
+decision `9jfy0gb8`) does the same for the full Calendar, Tasks and Contacts writes:
+`calendar.quick_add`, `move_event`, `create_calendar`, `update_calendar`,
+`delete_calendar`, `clear_calendar`, `subscribe_calendar`, `unsubscribe_calendar`,
+`update_calendar_list_entry`, `share_calendar`, `update_acl`, `unshare_calendar`;
+`tasks.create_tasklist`, `update_tasklist`, `delete_tasklist`, `move`,
+`clear_completed`; `contacts.create`, `update`, `delete`, `create_group`,
+`update_group`, `delete_group`, `modify_group_members`, `copy_other_contact`.
+
+Migration 38
+(`00038_google_drive_docs_default_ask.sql`) does the same for every increment-5 write
+(Brain decision `9jfy0gb8`: everything a consumer account can do in these apps, with the
+approval as the gate): `drive.copy_file`, `trash`, `untrash`, `delete`, `empty_trash`,
+`create_shortcut`, `upload_new_version`, `update_permission`, `remove_permission`,
+`transfer_ownership`, `reply_comment`, `resolve_comment`, `delete_comment`;
+`docs.batch_update`, `insert_text`, `insert_table`, `insert_image`, `delete_range`;
+`sheets.batch_update`, `clear_range`, `add_sheet`, `delete_sheet`, `rename_sheet`,
+`duplicate_sheet`, `find_replace`; `slides.batch_update`, `add_slide`, `delete_slide`,
+`reorder_slides`, `insert_text`, `insert_image`; `forms.create`, `set_publish_settings`,
+`batch_update`. `TestGoogleNewWritesAreSeededAsAsk` guards the list: 00022, 00035, 00036, 00037 and 00038
+together must seed every Google write except the eight Auto ones, and each
+migration's Down must remove exactly what its Up seeds.
 
 Migration 24 (`00024_github_default_ask.sql`) does the same for the GitHub writes added to
 close the gap with github-mcp-server: `create_or_update_file`, `update_issue`,

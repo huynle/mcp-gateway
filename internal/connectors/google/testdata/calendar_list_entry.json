@@ -1,0 +1,12 @@
+{
+  "kind": "calendar#calendarListEntry",
+  "id": "team@group.calendar.example.test",
+  "summary": "Team",
+  "timeZone": "UTC",
+  "colorId": "7",
+  "backgroundColor": "#42d692",
+  "foregroundColor": "#000000",
+  "accessRole": "writer",
+  "hidden": false,
+  "selected": true
+}

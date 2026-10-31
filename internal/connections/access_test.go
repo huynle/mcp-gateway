@@ -201,9 +201,9 @@ func TestMissingAccessGoogleImpliedScopes(t *testing.T) {
 			t.Errorf("%s: gap %+v lacks the tasks read scope and tool", variant, gap)
 		}
 		for _, tool := range gap.Tools {
-			// gmail.set_vacation needs gmail.settings.basic, which nothing
-			// covers (updateVacation accepts no other scope).
-			if tool == "gmail.set_vacation" {
+			// gmailBeyondModify need gmail.settings.basic (nothing covers
+			// it) or mail.google.com (permanent delete).
+			if slices.Contains(gmailBeyondModify, tool) {
 				continue
 			}
 			if strings.HasPrefix(tool, "gmail.") || strings.HasPrefix(tool, "calendar.") {
@@ -214,6 +214,15 @@ func TestMissingAccessGoogleImpliedScopes(t *testing.T) {
 			t.Errorf("%s: gap %+v lacks gmail.set_vacation and gmail.settings.basic (gmail.modify does not cover it)", variant, gap)
 		}
 	}
+}
+
+// gmailBeyondModify are the Gmail tools gmail.modify does not cover:
+// the settings writes need gmail.settings.basic (their methods accept no
+// other scope, not even mail.google.com) and the permanent delete needs
+// mail.google.com (messages.delete and threads.delete accept no other).
+var gmailBeyondModify = []string{
+	"gmail.set_vacation", "gmail.delete", "gmail.create_filter", "gmail.delete_filter",
+	"gmail.update_signature", "gmail.update_imap", "gmail.update_pop", "gmail.update_language",
 }
 
 // failingVisibility stands in for a policy that cannot be evaluated.
@@ -272,7 +281,7 @@ func TestAccessHintForListAccounts(t *testing.T) {
 	if hint.LockedTools != len(gap.Tools) || hint.LockedTools == 0 || hint.GrantURL != "http://gw.test/connections" {
 		t.Errorf("slack hint = %+v, want %d locked tools and the connections page", hint, len(gap.Tools))
 	}
-	gmail := connectors.Account{ID: "g-1", App: google.AppGmail, Scopes: []string{google.ScopeGmailModify, google.ScopeGmailSettingsBasic}}
+	gmail := connectors.Account{ID: "g-1", App: google.AppGmail, Scopes: []string{google.ScopeMail, google.ScopeGmailSettingsBasic}}
 	if hint, err := env.svc.AccessHint(ctx, userAlice, gmail); err != nil || hint != (connectors.AccessHint{}) {
 		t.Errorf("gmail hint = %+v, %v; want none (calendar's gap is not gmail's)", hint, err)
 	}

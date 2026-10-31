@@ -1,0 +1,1 @@
+{"connections": [{"resourceName": "people/c1", "clientData": [{"key": "mcp-gateway-op", "value": "another-operation"}]}, {"resourceName": "people/c2"}], "totalPeople": 2}

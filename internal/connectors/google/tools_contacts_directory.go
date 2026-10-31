@@ -14,10 +14,10 @@ const (
 	ToolListDirectory   = "list_directory"
 )
 
-// directoryReadMask is what the directory tools read: contacts.get's
-// fields (names, addresses, organizations, phone numbers), never photos
-// or notes.
-const directoryReadMask = contactGetFields
+// directoryReadMask is what the directory tools read: names, addresses,
+// organizations and phone numbers (contacts.get's fields before
+// increment 5), never photos or notes.
+const directoryReadMask = "names,emailAddresses,organizations,phoneNumbers"
 
 // directorySources are the directory entries the tools read: the
 // domain's user profiles and its shared domain contacts.

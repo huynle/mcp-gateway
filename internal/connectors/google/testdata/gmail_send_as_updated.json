@@ -1,0 +1,8 @@
+{
+  "sendAsEmail": "alice@example.test",
+  "displayName": "Alice Example",
+  "signature": "<div>New</div>",
+  "isPrimary": true,
+  "isDefault": true,
+  "verificationStatus": "accepted"
+}

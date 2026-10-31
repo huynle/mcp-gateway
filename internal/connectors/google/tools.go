@@ -24,7 +24,10 @@ type property struct {
 
 // objectSchema builds a closed object schema with the given properties
 // and required names. Array properties are arrays of strings; a "matrix"
-// property is an array of arrays of strings (rows of cells).
+// property is an array of arrays of strings (rows of cells); an
+// "objects" property is an array of objects (raw API requests); a type
+// named in schemaTypes takes that schema (arrays of objects, nested
+// objects).
 func objectSchema(props []property, required []string) json.RawMessage {
 	type schemaProp struct {
 		Type        string         `json:"type"`
@@ -34,11 +37,23 @@ func objectSchema(props []property, required []string) json.RawMessage {
 		Minimum     *int           `json:"minimum,omitempty"`
 		Maximum     *int           `json:"maximum,omitempty"`
 	}
-	properties := map[string]schemaProp{}
+	properties := map[string]any{}
 	for _, p := range props {
+		if fragment, ok := schemaTypes[p.Type]; ok {
+			sp := map[string]any{"description": p.Description}
+			for k, v := range fragment {
+				sp[k] = v
+			}
+			properties[p.Name] = sp
+			continue
+		}
 		sp := schemaProp{Type: p.Type, Description: p.Description, Enum: p.Enum}
 		if p.Type == "array" {
 			sp.Items = map[string]any{"type": "string"}
+		}
+		if p.Type == "objects" {
+			sp.Type = "array"
+			sp.Items = map[string]any{"type": "object"}
 		}
 		if p.Type == "matrix" {
 			sp.Type = "array"
@@ -60,6 +75,10 @@ func objectSchema(props []property, required []string) json.RawMessage {
 	}
 	return b
 }
+
+// schemaTypes are the property types objectSchema expands to a JSON
+// schema fragment of their own (registered by the tools that use them).
+var schemaTypes = map[string]map[string]any{}
 
 // idRE is the shape of a Google resource id the connector puts in a URL
 // path (event ids, task ids, tasklist ids, message ids, label ids,

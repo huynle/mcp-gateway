@@ -1,0 +1,29 @@
+{
+  "sendAs": [
+    {
+      "sendAsEmail": "alice@example.test",
+      "displayName": "Alice Example",
+      "replyToAddress": "",
+      "signature": "<div>Alice Example<br>Platform team</div>",
+      "isPrimary": true,
+      "isDefault": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "sendAsEmail": "alias@example.test",
+      "displayName": "Alice (alias)",
+      "replyToAddress": "alice@example.test",
+      "signature": "",
+      "isDefault": false,
+      "treatAsAlias": true,
+      "verificationStatus": "accepted"
+    },
+    {
+      "sendAsEmail": "alice@other.test",
+      "displayName": "Alice at Other",
+      "signature": "<b>Other</b>",
+      "treatAsAlias": false,
+      "verificationStatus": "pending"
+    }
+  ]
+}

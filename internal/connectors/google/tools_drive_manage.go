@@ -247,12 +247,13 @@ func (c *Connector) driveManageWriteTools() []connectors.Tool {
 		},
 		{
 			App: AppDrive, Name: ToolUpdateFile, Kind: connectors.KindWrite,
-			Description: "Rename a Drive file or folder, change its description, or move it into another folder (parent_id: it leaves " +
-				"its current folders). Only the fields given change. Returns the file's id, name, url and parents.",
+			Description: "Rename a Drive file or folder, change its description, star or unstar it, or move it into another folder " +
+				"(parent_id: it leaves its current folders). Only the fields given change. Returns the file's id, name, url and parents.",
 			InputSchema: objectSchema([]property{
 				fileIDProperty,
 				{"name", "string", "New name.", nil},
 				{"description", "string", "New description (empty clears it).", nil},
+				{"starred", "boolean", "Star (true) or unstar (false) the file.", nil},
 				{"parent_id", "string", "Folder to move the file into.", nil},
 			}, []string{"file_id"}),
 			RequiredScopes:   []string{ScopeDriveFile},
@@ -653,12 +654,19 @@ func (c *Connector) updateFile(ctx context.Context, cl *client, call connectors.
 		}
 		changed = true
 	}
+	if _, ok := call.Args["starred"]; ok {
+		if patch.Starred, err = optionalBool(call.Args, "starred", false); err != nil {
+			return connectors.Result{}, err
+		}
+		patch.ForceSendFields = append(patch.ForceSendFields, "Starred")
+		changed = true
+	}
 	parentID, err := idArgDefault(call.Args, "parent_id", "")
 	if err != nil {
 		return connectors.Result{}, err
 	}
 	if !changed && parentID == "" {
-		return connectors.Result{}, invalid("nothing to change: give name, description or parent_id")
+		return connectors.Result{}, invalid("nothing to change: give name, description, starred or parent_id")
 	}
 	svc, err := cl.drive(ctx)
 	if err != nil {

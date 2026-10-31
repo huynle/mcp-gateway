@@ -144,8 +144,9 @@ func (c *Connector) calendarManageWriteTools() []connectors.Tool {
 			Description: "Change an event of a Google Calendar: only the fields given are changed (summary, description, location, " +
 				"start and end in the same form as create_event, time_zone, attendees: the new full list of addresses). " +
 				"send_updates says whether Google emails the attendees (default none). add_meet_link adds a Google Meet video link " +
-				"(an event that already has one keeps it). Returns the event's id and url (and meet_url).",
-			InputSchema: objectSchema([]property{
+				"(an event that already has one keeps it); recurrence, reminders, use_default_reminders, color_id, visibility, transparency, " +
+				"attachments and guests_can_* change those fields. Returns the event's id and url (and meet_url).",
+			InputSchema: objectSchema(append([]property{
 				calendarIDProperty, eventIDProperty,
 				{"summary", "string", "New title.", nil},
 				{"description", "string", "New description (empty clears it).", nil},
@@ -156,7 +157,7 @@ func (c *Connector) calendarManageWriteTools() []connectors.Tool {
 				{"attendees", "array", "The new full list of attendee email addresses (replaces the current list).", nil},
 				sendUpdatesProperty,
 				addMeetLinkProperty,
-			}, []string{"event_id"}),
+			}, eventExtraProperties...), []string{"event_id"}),
 			RequiredScopes:   []string{ScopeCalendarEvents},
 			ResourceIdentity: calendarIdentity(true),
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkEventMarker},
@@ -499,8 +500,13 @@ func (c *Connector) updateEvent(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	if !changed && !addMeet {
-		return connectors.Result{}, invalid("nothing to change: give at least one of summary, description, location, start, end, attendees or add_meet_link")
+	extras, withAttachments, err := eventExtras(call.Args, patch)
+	if err != nil {
+		return connectors.Result{}, err
+	}
+	if !changed && !addMeet && !extras {
+		return connectors.Result{}, invalid("nothing to change: give at least one of summary, description, location, start, end, attendees, " +
+			"add_meet_link, recurrence, reminders, use_default_reminders, color_id, visibility, transparency, attachments or guests_can_*")
 	}
 	sendUpdates, err := sendUpdatesArg(call.Args)
 	if err != nil {
@@ -523,6 +529,9 @@ func (c *Connector) updateEvent(ctx context.Context, cl *client, call connectors
 	private[EventMarkerKey] = call.OperationID
 	patch.ExtendedProperties = &calendar.EventExtendedProperties{Private: private}
 	req := svc.Events.Patch(calendarID, eventID, patch).Context(ctx).SendUpdates(sendUpdates)
+	if withAttachments {
+		req = req.SupportsAttachments(true)
+	}
 	if addMeet && meetingURL(current) == "" {
 		// A new conference only when the event has none: a createRequest
 		// on an event with a Meet would replace the link attendees have.

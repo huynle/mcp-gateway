@@ -4,11 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base32"
-	"encoding/base64"
-	"mime"
 	"net/mail"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,8 +109,9 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 		App: AppCalendar, Name: ToolCreateEvent, Kind: connectors.KindWrite,
 		Description: "Create an event in a Google Calendar with a summary, start and end (RFC 3339 timestamps, or YYYY-MM-DD dates for an all-day event), " +
 			"and optionally a description, location, attendees and whether to email them (send_updates; default none). " +
-			"add_meet_link adds a Google Meet video link. Returns the new event's id and url (and meet_url).",
-		InputSchema: objectSchema([]property{
+			"add_meet_link adds a Google Meet video link; recurrence (RRULE lines) makes it repeat; reminders, color_id, visibility, " +
+			"transparency, attachments (Drive file URLs) and the guests_can_* permissions are optional. Returns the new event's id and url (and meet_url).",
+		InputSchema: objectSchema(append([]property{
 			{"calendar_id", "string", "Calendar to create the event in: \"primary\" (default) or a calendar id.", nil},
 			{"summary", "string", "Event title.", nil},
 			{"start", "string", "Start: RFC 3339 timestamp (2026-10-10T10:00:00-07:00) or date (2026-10-10) for an all-day event.", nil},
@@ -122,7 +122,7 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 			{"attendees", "array", "Attendee email addresses.", nil},
 			{"send_updates", "string", "Whether Google emails the attendees: all, externalOnly or none (default).", sendUpdatesValues},
 			addMeetLinkProperty,
-		}, []string{"summary", "start", "end"}),
+		}, eventExtraProperties...), []string{"summary", "start", "end"}),
 		RequiredScopes:   []string{ScopeCalendarEvents},
 		ResourceIdentity: calendarIdentity(false),
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkEvent},
@@ -140,13 +140,14 @@ func (c *Connector) tasksWriteTools() []connectors.Tool {
 	return []connectors.Tool{{
 		App: AppTasks, Name: ToolCreateTask, Kind: connectors.KindWrite,
 		Description: "Create a task in a Google Tasks list (the default list unless tasklist is given) with a title and optionally notes " +
-			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day). Returns the new task's id and url.",
-		InputSchema: objectSchema([]property{
+			"and a due date (YYYY-MM-DD; Google Tasks keeps no time of day); parent makes it a subtask, previous places it after a sibling. " +
+			"Returns the new task's id and url.",
+		InputSchema: objectSchema(append([]property{
 			tasklistProperty,
 			{"title", "string", "Task title.", nil},
 			{"notes", "string", "Task notes.", nil},
 			{"due", "string", "Due date, YYYY-MM-DD (an RFC 3339 timestamp is reduced to its date).", nil},
-		}, []string{"title"}),
+		}, subtaskProperties...), []string{"title"}),
 		RequiredScopes:   []string{ScopeTasks},
 		ResourceIdentity: tasksIdentity,
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkTask},
@@ -164,9 +165,9 @@ func (c *Connector) gmailWriteTools() []connectors.Tool {
 	return []connectors.Tool{
 		{
 			App: AppGmail, Name: ToolSend, Kind: connectors.KindWrite,
-			Description: "Send a plain-text email from the Gmail account to one or more recipients, with optional cc and bcc; " +
+			Description: "Send a plain-text email from the Gmail account to one or more recipients, with optional cc, bcc and attachments; " +
 				"in_reply_to makes it a reply in that message's thread. Returns the sent message's id, thread id and Message-ID.",
-			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty}, []string{"to", "subject", "body"}),
+			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty, attachmentsProperty}, []string{"to", "subject", "body"}),
 			RequiredScopes:   []string{ScopeGmailSend},
 			ResourceIdentity: recipientsIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkSent},
@@ -175,9 +176,9 @@ func (c *Connector) gmailWriteTools() []connectors.Tool {
 		},
 		{
 			App: AppGmail, Name: ToolCreateDraft, Kind: connectors.KindWrite,
-			Description: "Create a draft email in the Gmail account (not sent): recipients, optional cc and bcc, subject and plain-text body; " +
+			Description: "Create a draft email in the Gmail account (not sent): recipients, optional cc, bcc and attachments, subject and plain-text body; " +
 				"in_reply_to drafts a reply in that message's thread. Returns the draft's id and the draft message's id.",
-			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty}, []string{"to", "subject", "body"}),
+			InputSchema:      objectSchema([]property{toProperty, ccProperty, bccProperty, subjectProperty, bodyProperty, inReplyToProperty, attachmentsProperty}, []string{"to", "subject", "body"}),
 			RequiredScopes:   []string{ScopeGmailCompose},
 			ResourceIdentity: recipientsIdentity,
 			Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileMarker, Check: c.checkDraft},
@@ -217,6 +218,9 @@ func recipientsIdentity(args map[string]any) map[string]string {
 	if len(domains) > 0 {
 		sort.Strings(domains)
 		out["recipient_domains"] = strings.Join(domains, ",")
+	}
+	if n := attachmentCount(args); n > 0 {
+		out["attachments"] = strconv.Itoa(n)
 	}
 	return out
 }
@@ -344,11 +348,18 @@ func (c *Connector) createEvent(ctx context.Context, cl *client, call connectors
 		}
 		ev.Attendees = append(ev.Attendees, &calendar.EventAttendee{Email: addr.Address})
 	}
+	_, withAttachments, err := eventExtras(call.Args, ev)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.calendar(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
 	req := svc.Events.Insert(calendarID, ev).Context(ctx).SendUpdates(sendUpdates)
+	if withAttachments {
+		req = req.SupportsAttachments(true)
+	}
 	if addMeet {
 		ev.ConferenceData = meetRequest(call.OperationID)
 		req = req.ConferenceDataVersion(1)
@@ -389,11 +400,22 @@ func (c *Connector) createTask(ctx context.Context, cl *client, call connectors.
 		}
 		task.Due = d.Format("2006-01-02") + "T00:00:00Z"
 	}
+	parent, previous, err := subtaskArgs(call.Args)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.tasks(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	created, err := svc.Tasks.Insert(tasklist, task).Context(ctx).Do()
+	req := svc.Tasks.Insert(tasklist, task).Context(ctx)
+	if parent != "" {
+		req = req.Parent(parent)
+	}
+	if previous != "" {
+		req = req.Previous(previous)
+	}
+	created, err := req.Do()
 	if err := classifyWrite("create task", err); err != nil {
 		return connectors.Result{}, err
 	}
@@ -406,8 +428,10 @@ func (c *Connector) createTask(ctx context.Context, cl *client, call connectors.
 type outgoing struct {
 	to, cc, bcc                []string
 	subject, body              string
+	html                       bool // the body is text/html (a forwarded HTML message)
 	messageID, inReplyTo, refs string
 	threadID                   string
+	attachments                []attachment
 }
 
 // addressList reads and validates an address-list argument.
@@ -457,6 +481,9 @@ func (c *Connector) outgoingArgs(ctx context.Context, cl *client, call connector
 		return m, err
 	}
 	m.body, _ = optionalString(call.Args, "body") // validated above; keep the body's own whitespace
+	if m.attachments, err = attachmentsArg(call.Args); err != nil {
+		return m, err
+	}
 	parentID, err := optionalString(call.Args, "in_reply_to")
 	if err != nil {
 		return m, err
@@ -481,36 +508,6 @@ func (c *Connector) outgoingArgs(ctx context.Context, cl *client, call connector
 	return m, nil
 }
 
-// raw renders the message as RFC 5322 text, base64url-encoded as the
-// Gmail API expects.
-func (m outgoing) raw() string {
-	var b strings.Builder
-	write := func(name, value string) {
-		if value != "" {
-			b.WriteString(name + ": " + value + "\r\n")
-		}
-	}
-	write("To", strings.Join(m.to, ", "))
-	write("Cc", strings.Join(m.cc, ", "))
-	write("Bcc", strings.Join(m.bcc, ", "))
-	write("Subject", mime.QEncoding.Encode("utf-8", m.subject))
-	write("Message-ID", m.messageID)
-	write("In-Reply-To", m.inReplyTo)
-	write("References", m.refs)
-	write("Date", time.Now().UTC().Format(time.RFC1123Z))
-	write("MIME-Version", "1.0")
-	write("Content-Type", "text/plain; charset=UTF-8")
-	write("Content-Transfer-Encoding", "base64")
-	b.WriteString("\r\n")
-	encoded := base64.StdEncoding.EncodeToString([]byte(m.body))
-	for len(encoded) > 76 {
-		b.WriteString(encoded[:76] + "\r\n")
-		encoded = encoded[76:]
-	}
-	b.WriteString(encoded + "\r\n")
-	return base64.RawURLEncoding.EncodeToString([]byte(b.String()))
-}
-
 func (c *Connector) sendMessage(ctx context.Context, cl *client, call connectors.Call) (connectors.Result, error) {
 	m, err := c.outgoingArgs(ctx, cl, call)
 	if err != nil {
@@ -520,7 +517,11 @@ func (c *Connector) sendMessage(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	sent, err := svc.Users.Messages.Send(gmailUser, &gmail.Message{Raw: m.raw(), ThreadId: m.threadID}).Context(ctx).Do()
+	req := svc.Users.Messages.Send(gmailUser, m.message()).Context(ctx)
+	if media, ct := m.media(); media != nil {
+		req = req.Media(media, ct)
+	}
+	sent, err := req.Do()
 	if err := classifyWrite("send message", err); err != nil {
 		return connectors.Result{}, err
 	}
@@ -536,7 +537,11 @@ func (c *Connector) createDraft(ctx context.Context, cl *client, call connectors
 	if err != nil {
 		return connectors.Result{}, err
 	}
-	draft, err := svc.Users.Drafts.Create(gmailUser, &gmail.Draft{Message: &gmail.Message{Raw: m.raw(), ThreadId: m.threadID}}).Context(ctx).Do()
+	req := svc.Users.Drafts.Create(gmailUser, &gmail.Draft{Message: m.message()}).Context(ctx)
+	if media, ct := m.media(); media != nil {
+		req = req.Media(media, ct)
+	}
+	draft, err := req.Do()
 	if err := classifyWrite("create draft", err); err != nil {
 		return connectors.Result{}, err
 	}

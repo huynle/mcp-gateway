@@ -1,0 +1,4 @@
+{"otherContacts": [
+  {"resourceName": "otherContacts/c111", "names": [{"displayName": "Eve Mailer"}], "emailAddresses": [{"value": "eve@example.test"}]},
+  {"resourceName": "otherContacts/c222", "emailAddresses": [{"value": "frank@example.test"}], "phoneNumbers": [{"value": "+1 555 0199"}]}
+], "nextPageToken": "other-2", "totalSize": 9}

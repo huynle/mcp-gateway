@@ -1,0 +1,96 @@
+{
+  "id": "r-7788990011223344556",
+  "message": {
+    "id": "18f9draft0001",
+    "threadId": "18f1a2b3c4d5e6f0",
+    "labelIds": [
+      "DRAFT"
+    ],
+    "snippet": "Hi Alice, the gateway review is on Friday.",
+    "payload": {
+      "mimeType": "multipart/mixed",
+      "headers": [
+        {
+          "name": "From",
+          "value": "Bob Example <bob@example.test>"
+        },
+        {
+          "name": "To",
+          "value": "alice@example.test"
+        },
+        {
+          "name": "Cc",
+          "value": "carol@example.test"
+        },
+        {
+          "name": "Subject",
+          "value": "Gateway review"
+        },
+        {
+          "name": "Date",
+          "value": "Wed, 07 Oct 2026 10:15:00 -0700"
+        },
+        {
+          "name": "Message-ID",
+          "value": "<abc123@example.test>"
+        },
+        {
+          "name": "In-Reply-To",
+          "value": "<prev@example.test>"
+        }
+      ],
+      "parts": [
+        {
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0.0",
+              "mimeType": "text/plain",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=UTF-8"
+                }
+              ],
+              "body": {
+                "size": 54,
+                "data": "SGkgQWxpY2UsCgpUaGUgZ2F0ZXdheSByZXZpZXcgaXMgb24gRnJpZGF5IGF0IDEwLgoKQm9i"
+              }
+            },
+            {
+              "partId": "0.1",
+              "mimeType": "text/html",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/html; charset=UTF-8"
+                }
+              ],
+              "body": {
+                "size": 84,
+                "data": "PGRpdj5IaSBBbGljZSw8YnI-PGJyPlRoZSBnYXRld2F5IHJldmlldyBpcyBvbiA8Yj5GcmlkYXk8L2I-IGF0IDEwLjxicj48YnI-Qm9iPC9kaXY-"
+              }
+            }
+          ]
+        },
+        {
+          "partId": "1",
+          "mimeType": "application/pdf",
+          "filename": "agenda.pdf",
+          "headers": [
+            {
+              "name": "Content-Disposition",
+              "value": "attachment; filename=\"agenda.pdf\""
+            }
+          ],
+          "body": {
+            "attachmentId": "ANGjdJ8example",
+            "size": 18234
+          }
+        }
+      ]
+    },
+    "sizeEstimate": 24521,
+    "internalDate": "1791997700000"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "Label_42",
+  "name": "Receipts",
+  "type": "user",
+  "labelListVisibility": "labelHide",
+  "messageListVisibility": "hide"
+}
