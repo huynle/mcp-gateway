@@ -44,7 +44,12 @@ INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('sheets', 'duplicate_sheet'),
     ('sheets', 'find_replace'),
     ('sheets', 'rename_sheet'),
-    ('slides', 'batch_update')
+    ('slides', 'add_slide'),
+    ('slides', 'batch_update'),
+    ('slides', 'delete_slide'),
+    ('slides', 'insert_image'),
+    ('slides', 'insert_text'),
+    ('slides', 'reorder_slides')
 ON CONFLICT (app, tool) DO NOTHING;
 
 -- +goose Down
@@ -77,5 +82,10 @@ DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('sheets', 'duplicate_sheet'),
     ('sheets', 'find_replace'),
     ('sheets', 'rename_sheet'),
-    ('slides', 'batch_update')
+    ('slides', 'add_slide'),
+    ('slides', 'batch_update'),
+    ('slides', 'delete_slide'),
+    ('slides', 'insert_image'),
+    ('slides', 'insert_text'),
+    ('slides', 'reorder_slides')
 );

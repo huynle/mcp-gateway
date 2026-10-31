@@ -327,14 +327,3 @@ func (cl *client) postJSON(ctx context.Context, host, path string, body, out any
 	}
 	return true, json.Unmarshal(b, out)
 }
-
-// Increment 5 write tools of Docs, Sheets, Slides and Forms; later
-// helpers append to these lists.
-
-func (c *Connector) slidesFullWriteTools() []connectors.Tool {
-	return []connectors.Tool{c.batchTool(slidesBatch)}
-}
-
-func (c *Connector) slidesFullWriteHandlers() map[string]handler {
-	return map[string]handler{ToolBatchUpdate: c.batchHandler(slidesBatch)}
-}

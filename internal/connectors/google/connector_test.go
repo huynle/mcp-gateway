@@ -38,7 +38,7 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppSheets:   {"read_range", "get_metadata", "batch_get", "append_rows", "update_range", "create", "batch_update", "clear_range", "add_sheet", "delete_sheet", "rename_sheet", "duplicate_sheet", "find_replace"},
 		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
 		google.AppChat:     {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
-		google.AppSlides:   {"get_text", "create", "replace_text", "batch_update"},
+		google.AppSlides:   {"get_text", "get_structure", "get_thumbnail", "create", "replace_text", "batch_update", "add_slide", "delete_slide", "reorder_slides", "insert_text", "insert_image"},
 		google.AppForms:    {"get", "list_responses", "get_response", "create", "set_publish_settings", "batch_update"},
 	}
 	for app, names := range want {

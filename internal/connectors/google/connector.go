@@ -148,8 +148,8 @@ func New(opts Options) (*Connector, error) {
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
-	c.slides = c.newApp(AppSlides, c.slidesReadTools(), append(c.slidesWriteTools(), c.slidesFullWriteTools()...),
-		c.slidesReadHandlers(), merge(c.slidesWriteHandlers(), c.slidesFullWriteHandlers()))
+	c.slides = c.newApp(AppSlides, append(c.slidesReadTools(), c.slidesFullReadTools()...), append(c.slidesWriteTools(), c.slidesFullWriteTools()...),
+		merge(c.slidesReadHandlers(), c.slidesFullReadHandlers()), merge(c.slidesWriteHandlers(), c.slidesFullWriteHandlers()))
 	c.forms = c.newApp(AppForms, append(c.formsReadTools(), c.formsFullReadTools()...), c.formsWriteTools(),
 		merge(c.formsReadHandlers(), c.formsFullReadHandlers()), c.formsWriteHandlers())
 	return c, nil
