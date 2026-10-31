@@ -17,6 +17,10 @@
 -- +goose Up
 INSERT INTO vendor_tool_approvals (app, tool) VALUES
     ('docs', 'batch_update'),
+    ('docs', 'delete_range'),
+    ('docs', 'insert_image'),
+    ('docs', 'insert_table'),
+    ('docs', 'insert_text'),
     ('drive', 'copy_file'),
     ('drive', 'create_shortcut'),
     ('drive', 'delete'),
@@ -40,6 +44,10 @@ ON CONFLICT (app, tool) DO NOTHING;
 -- +goose Down
 DELETE FROM vendor_tool_approvals WHERE (app, tool) IN (
     ('docs', 'batch_update'),
+    ('docs', 'delete_range'),
+    ('docs', 'insert_image'),
+    ('docs', 'insert_table'),
+    ('docs', 'insert_text'),
     ('drive', 'copy_file'),
     ('drive', 'create_shortcut'),
     ('drive', 'delete'),

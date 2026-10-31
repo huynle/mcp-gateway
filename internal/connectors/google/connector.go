@@ -139,8 +139,8 @@ func New(opts Options) (*Connector, error) {
 	c.drive = c.newApp(AppDrive,
 		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools(), c.driveSharingReadTools()), slices.Concat(c.driveWriteTools(), c.driveManageWriteTools(), c.driveFilesWriteTools(), c.driveSharingWriteTools()),
 		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers(), c.driveSharingReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers(), c.driveFilesWriteHandlers(), c.driveSharingWriteHandlers()))
-	c.docs = c.newApp(AppDocs, c.docsReadTools(), slices.Concat(c.docsWriteTools(), c.docsManageWriteTools(), c.docsFullWriteTools()),
-		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers(), c.docsFullWriteHandlers()))
+	c.docs = c.newApp(AppDocs, append(c.docsReadTools(), c.docsFullReadTools()...), slices.Concat(c.docsWriteTools(), c.docsManageWriteTools(), c.docsFullWriteTools()),
+		merge(c.docsReadHandlers(), c.docsFullReadHandlers()), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers(), c.docsFullWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
 		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), slices.Concat(c.sheetsWriteTools(), c.sheetsManageWriteTools(), c.sheetsFullWriteTools()),
 		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers(), c.sheetsFullWriteHandlers()))

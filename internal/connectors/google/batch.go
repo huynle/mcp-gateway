@@ -318,14 +318,6 @@ func (cl *client) postJSON(ctx context.Context, host, path string, body, out any
 // Increment 5 write tools of Docs, Sheets, Slides and Forms; later
 // helpers append to these lists.
 
-func (c *Connector) docsFullWriteTools() []connectors.Tool {
-	return []connectors.Tool{c.batchTool(docsBatch)}
-}
-
-func (c *Connector) docsFullWriteHandlers() map[string]handler {
-	return map[string]handler{ToolBatchUpdate: c.batchHandler(docsBatch)}
-}
-
 func (c *Connector) sheetsFullWriteTools() []connectors.Tool {
 	return []connectors.Tool{c.batchTool(sheetsBatch)}
 }
