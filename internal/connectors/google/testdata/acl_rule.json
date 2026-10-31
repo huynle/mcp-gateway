@@ -1,0 +1,1 @@
+{"kind": "calendar#aclRule", "id": "user:bob@example.test", "role": "writer", "scope": {"type": "user", "value": "bob@example.test"}}

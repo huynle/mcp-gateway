@@ -1,0 +1,9 @@
+{
+  "kind": "calendar#acl",
+  "items": [
+    {"kind": "calendar#aclRule", "id": "user:alice@example.test", "role": "owner", "scope": {"type": "user", "value": "alice@example.test"}},
+    {"kind": "calendar#aclRule", "id": "user:bob@example.test", "role": "reader", "scope": {"type": "user", "value": "bob@example.test"}},
+    {"kind": "calendar#aclRule", "id": "domain:example.test", "role": "freeBusyReader", "scope": {"type": "domain", "value": "example.test"}},
+    {"kind": "calendar#aclRule", "id": "default", "role": "none", "scope": {"type": "default"}}
+  ]
+}

@@ -110,8 +110,9 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 		App: AppCalendar, Name: ToolCreateEvent, Kind: connectors.KindWrite,
 		Description: "Create an event in a Google Calendar with a summary, start and end (RFC 3339 timestamps, or YYYY-MM-DD dates for an all-day event), " +
 			"and optionally a description, location, attendees and whether to email them (send_updates; default none). " +
-			"add_meet_link adds a Google Meet video link. Returns the new event's id and url (and meet_url).",
-		InputSchema: objectSchema([]property{
+			"add_meet_link adds a Google Meet video link; recurrence (RRULE lines) makes it repeat; reminders, color_id, visibility, " +
+			"transparency, attachments (Drive file URLs) and the guests_can_* permissions are optional. Returns the new event's id and url (and meet_url).",
+		InputSchema: objectSchema(append([]property{
 			{"calendar_id", "string", "Calendar to create the event in: \"primary\" (default) or a calendar id.", nil},
 			{"summary", "string", "Event title.", nil},
 			{"start", "string", "Start: RFC 3339 timestamp (2026-10-10T10:00:00-07:00) or date (2026-10-10) for an all-day event.", nil},
@@ -122,7 +123,7 @@ func (c *Connector) calendarWriteTools() []connectors.Tool {
 			{"attendees", "array", "Attendee email addresses.", nil},
 			{"send_updates", "string", "Whether Google emails the attendees: all, externalOnly or none (default).", sendUpdatesValues},
 			addMeetLinkProperty,
-		}, []string{"summary", "start", "end"}),
+		}, eventExtraProperties...), []string{"summary", "start", "end"}),
 		RequiredScopes:   []string{ScopeCalendarEvents},
 		ResourceIdentity: calendarIdentity(false),
 		Reconcile:        connectors.Reconciliation{Kind: connectors.ReconcileStableID, Check: c.checkEvent},
@@ -344,11 +345,18 @@ func (c *Connector) createEvent(ctx context.Context, cl *client, call connectors
 		}
 		ev.Attendees = append(ev.Attendees, &calendar.EventAttendee{Email: addr.Address})
 	}
+	_, withAttachments, err := eventExtras(call.Args, ev)
+	if err != nil {
+		return connectors.Result{}, err
+	}
 	svc, err := cl.calendar(ctx)
 	if err != nil {
 		return connectors.Result{}, err
 	}
 	req := svc.Events.Insert(calendarID, ev).Context(ctx).SendUpdates(sendUpdates)
+	if withAttachments {
+		req = req.SupportsAttachments(true)
+	}
 	if addMeet {
 		ev.ConferenceData = meetRequest(call.OperationID)
 		req = req.ConferenceDataVersion(1)

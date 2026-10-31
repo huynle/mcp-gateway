@@ -124,10 +124,10 @@ func New(opts Options) (*Connector, error) {
 	}
 	c := &Connector{tokens: opts.Tokens, accounts: opts.Accounts, transport: transport, baseURL: base, bounds: bounds, timeout: timeout}
 	c.calendar = c.newApp(AppCalendar,
-		append(c.calendarReadTools(), c.calendarManageReadTools()...),
-		slices.Concat(c.calendarWriteTools(), c.calendarManageWriteTools(), c.calendarWorkspaceWriteTools()),
-		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers()),
-		merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers(), c.calendarWorkspaceWriteHandlers()))
+		slices.Concat(c.calendarReadTools(), c.calendarManageReadTools(), c.calendarFullReadTools()),
+		slices.Concat(c.calendarWriteTools(), c.calendarManageWriteTools(), c.calendarWorkspaceWriteTools(), c.calendarFullWriteTools()),
+		merge(c.calendarReadHandlers(), c.calendarManageReadHandlers(), c.calendarFullReadHandlers()),
+		merge(c.calendarWriteHandlers(), c.calendarManageWriteHandlers(), c.calendarWorkspaceWriteHandlers(), c.calendarFullWriteHandlers()))
 	c.tasks = c.newApp(AppTasks,
 		append(c.tasksReadTools(), c.tasksManageReadTools()...), append(c.tasksWriteTools(), c.tasksManageWriteTools()...),
 		merge(c.tasksReadHandlers(), c.tasksManageReadHandlers()), merge(c.tasksWriteHandlers(), c.tasksManageWriteHandlers()))

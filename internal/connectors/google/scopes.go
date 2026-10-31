@@ -22,15 +22,24 @@ const (
 	ScopeCalendarList           = "https://www.googleapis.com/auth/calendar.calendarlist"
 	ScopeCalendarFreeBusy       = "https://www.googleapis.com/auth/calendar.freebusy"
 	ScopeCalendarEventsFreeBusy = "https://www.googleapis.com/auth/calendar.events.freebusy"
-	ScopeTasksReadonly          = "https://www.googleapis.com/auth/tasks.readonly"
-	ScopeTasks                  = "https://www.googleapis.com/auth/tasks"
-	ScopeGmailReadonly          = "https://www.googleapis.com/auth/gmail.readonly"
-	ScopeGmailLabels            = "https://www.googleapis.com/auth/gmail.labels"
-	ScopeGmailMetadata          = "https://www.googleapis.com/auth/gmail.metadata"
-	ScopeGmailSend              = "https://www.googleapis.com/auth/gmail.send"
-	ScopeGmailCompose           = "https://www.googleapis.com/auth/gmail.compose"
-	ScopeGmailModify            = "https://www.googleapis.com/auth/gmail.modify"
-	ScopeMail                   = "https://mail.google.com/"
+	// Increment 5: secondary calendars (calendars.insert, patch, delete,
+	// clear), sharing (acl.*) and the user's settings. calendar covers
+	// them all; calendar.readonly covers calendars.get and settings, not
+	// the ACL.
+	ScopeCalendarCalendars         = "https://www.googleapis.com/auth/calendar.calendars"
+	ScopeCalendarCalendarsReadonly = "https://www.googleapis.com/auth/calendar.calendars.readonly"
+	ScopeCalendarAcls              = "https://www.googleapis.com/auth/calendar.acls"
+	ScopeCalendarAclsReadonly      = "https://www.googleapis.com/auth/calendar.acls.readonly"
+	ScopeCalendarSettingsReadonly  = "https://www.googleapis.com/auth/calendar.settings.readonly"
+	ScopeTasksReadonly             = "https://www.googleapis.com/auth/tasks.readonly"
+	ScopeTasks                     = "https://www.googleapis.com/auth/tasks"
+	ScopeGmailReadonly             = "https://www.googleapis.com/auth/gmail.readonly"
+	ScopeGmailLabels               = "https://www.googleapis.com/auth/gmail.labels"
+	ScopeGmailMetadata             = "https://www.googleapis.com/auth/gmail.metadata"
+	ScopeGmailSend                 = "https://www.googleapis.com/auth/gmail.send"
+	ScopeGmailCompose              = "https://www.googleapis.com/auth/gmail.compose"
+	ScopeGmailModify               = "https://www.googleapis.com/auth/gmail.modify"
+	ScopeMail                      = "https://mail.google.com/"
 	// gmail.settings.basic (restricted) is the only scope
 	// users.settings.updateVacation accepts (not even mail.google.com);
 	// getVacation and filters.list also accept gmail.readonly, which the
@@ -99,9 +108,12 @@ const (
 // People API references: the full drive scope is accepted by every Drive,
 // Docs and Sheets method, drive.readonly by their read-only methods.
 var scopeImplies = map[string][]string{
-	ScopeCalendar:               {ScopeCalendarEvents, ScopeCalendarReadonly, ScopeCalendarList},
-	ScopeCalendarEvents:         {ScopeCalendarEventsReadonly},
-	ScopeCalendarReadonly:       {ScopeCalendarEventsReadonly, ScopeCalendarListReadonly, ScopeCalendarFreeBusy},
+	ScopeCalendar:       {ScopeCalendarEvents, ScopeCalendarReadonly, ScopeCalendarList, ScopeCalendarCalendars, ScopeCalendarAcls},
+	ScopeCalendarEvents: {ScopeCalendarEventsReadonly},
+	ScopeCalendarReadonly: {ScopeCalendarEventsReadonly, ScopeCalendarListReadonly, ScopeCalendarFreeBusy, ScopeCalendarCalendarsReadonly,
+		ScopeCalendarSettingsReadonly},
+	ScopeCalendarCalendars:      {ScopeCalendarCalendarsReadonly},
+	ScopeCalendarAcls:           {ScopeCalendarAclsReadonly},
 	ScopeCalendarList:           {ScopeCalendarListReadonly},
 	ScopeCalendarEventsFreeBusy: {ScopeCalendarFreeBusy},
 	ScopeTasks:                  {ScopeTasksReadonly},

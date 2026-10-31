@@ -1,0 +1,8 @@
+{
+  "kind": "calendar#calendar",
+  "etag": "\"etag-cal-1\"",
+  "id": "c_0123abcd@group.calendar.example.test",
+  "summary": "Project X",
+  "description": "Milestones",
+  "timeZone": "Europe/Berlin"
+}

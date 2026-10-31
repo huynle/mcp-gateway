@@ -40,8 +40,13 @@ type Event struct {
 	Creator          string     `json:"creator,omitempty"`
 	Attendees        []Attendee `json:"attendees,omitempty"`
 	RecurringEventID string     `json:"recurring_event_id,omitempty"`
-	Created          string     `json:"created,omitempty"`
-	Updated          string     `json:"updated,omitempty"`
+	// Recurrence, ColorID, Visibility and Attachments: increment 5.
+	Recurrence  []string          `json:"recurrence,omitempty"`
+	ColorID     string            `json:"color_id,omitempty"`
+	Visibility  string            `json:"visibility,omitempty"`
+	Attachments []EventAttachment `json:"attachments,omitempty"`
+	Created     string            `json:"created,omitempty"`
+	Updated     string            `json:"updated,omitempty"`
 	// Truncated says the description was cut to fit the result bounds.
 	Truncated bool `json:"truncated,omitempty"`
 }
@@ -85,6 +90,12 @@ func toEvent(ev *calendar.Event, calendarID string) Event {
 		Created: normalizeTimestamp(ev.Created), Updated: normalizeTimestamp(ev.Updated),
 	}
 	out.Start, out.End, out.AllDay, out.TimeZone = eventTimes(ev.Start, ev.End)
+	out.Recurrence, out.ColorID, out.Visibility = ev.Recurrence, ev.ColorId, ev.Visibility
+	for _, a := range ev.Attachments {
+		if a != nil && a.FileUrl != "" {
+			out.Attachments = append(out.Attachments, EventAttachment{Title: a.Title, URL: a.FileUrl, MimeType: a.MimeType})
+		}
+	}
 	if ev.Organizer != nil {
 		out.Organizer = ev.Organizer.Email
 	}

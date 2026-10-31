@@ -1,0 +1,6 @@
+{
+  "kind": "calendar#acl",
+  "items": [
+    {"kind": "calendar#aclRule", "id": "user:alice@example.test", "role": "owner", "scope": {"type": "user", "value": "alice@example.test"}}
+  ]
+}

@@ -30,7 +30,10 @@ func TestAppsAndToolNames(t *testing.T) {
 		t.Errorf("Apps() = %v, want %v", apps, google.Apps)
 	}
 	want := map[string][]string{
-		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "create_event", "update_event", "delete_event", "respond_to_event", "set_out_of_office", "set_working_location", "create_focus_time"},
+		google.AppCalendar: {"list_events", "get_event", "list_calendars", "free_busy", "list_instances", "list_acl", "get_colors", "get_settings",
+			"create_event", "update_event", "delete_event", "respond_to_event", "set_out_of_office", "set_working_location", "create_focus_time",
+			"quick_add", "move_event", "create_calendar", "update_calendar", "delete_calendar", "clear_calendar", "subscribe_calendar",
+			"unsubscribe_calendar", "update_calendar_list_entry", "share_calendar", "update_acl", "unshare_calendar"},
 		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation"},
 		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "create_folder", "create_file", "update_file", "share", "add_comment"},

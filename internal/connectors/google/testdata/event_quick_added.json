@@ -1,0 +1,9 @@
+{
+  "kind": "calendar#event",
+  "id": "quickadd0001",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=quickadd0001",
+  "summary": "Lunch with Bob",
+  "start": {"dateTime": "2026-10-13T12:00:00-07:00"},
+  "end": {"dateTime": "2026-10-13T13:00:00-07:00"}
+}
