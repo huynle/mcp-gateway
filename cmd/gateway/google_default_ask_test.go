@@ -15,7 +15,8 @@ import (
 
 // The Google writes of increments 1 and 2 keep their Auto default; every
 // later Google write is seeded as Ask by a migration: 00022 (increment 3)
-// or 00035 (increment 4, Workspace tools; later phases append to it). A
+// 00035 (increment 4, Workspace tools) or 00038 (increment 5: full Drive,
+// Docs, Sheets, Slides and Forms; later phases append to it). A
 // new Google write tool must be seeded by one of them (or be listed here
 // on purpose), so it never ships without the confirmation default.
 var googleAutoWrites = []string{
@@ -24,7 +25,11 @@ var googleAutoWrites = []string{
 }
 
 // googleAskMigrations are the migrations seeding Ask for Google writes.
-var googleAskMigrations = []string{"00022_google_default_ask.sql", "00035_google_workspace_default_ask.sql"}
+var googleAskMigrations = []string{
+	"00022_google_default_ask.sql",
+	"00035_google_workspace_default_ask.sql",
+	"00038_google_drive_docs_default_ask.sql",
+}
 
 // seededAsk returns the (app.tool) rows a migration's goose Up inserts
 // and its Down deletes, each sorted.

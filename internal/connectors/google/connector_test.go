@@ -34,12 +34,12 @@ func TestAppsAndToolNames(t *testing.T) {
 		google.AppTasks:    {"list", "list_tasklists", "get", "create", "update", "complete", "delete"},
 		google.AppGmail:    {"search", "get_message", "list_labels", "get_thread", "list_drafts", "get_attachment", "get_vacation", "list_filters", "send", "create_draft", "modify_labels", "trash", "send_draft", "set_vacation"},
 		google.AppDrive:    {"search", "get_file_metadata", "get_content", "list_folder", "list_permissions", "list_comments", "list_shared_drives", "create_folder", "create_file", "update_file", "share", "add_comment"},
-		google.AppDocs:     {"get_text", "create", "append_text", "replace_text"},
-		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create"},
+		google.AppDocs:     {"get_text", "create", "append_text", "replace_text", "batch_update"},
+		google.AppSheets:   {"read_range", "get_metadata", "append_rows", "update_range", "create", "batch_update"},
 		google.AppContacts: {"search", "get", "list", "search_directory", "list_directory"},
 		google.AppChat:     {"list_spaces", "get_space", "list_messages", "get_message", "list_members", "send_message", "reply_in_thread"},
-		google.AppSlides:   {"get_text", "create", "replace_text"},
-		google.AppForms:    {"get", "list_responses"},
+		google.AppSlides:   {"get_text", "create", "replace_text", "batch_update"},
+		google.AppForms:    {"get", "list_responses", "batch_update"},
 	}
 	for app, names := range want {
 		var got []string

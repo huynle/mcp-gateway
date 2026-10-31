@@ -139,17 +139,18 @@ func New(opts Options) (*Connector, error) {
 	c.drive = c.newApp(AppDrive,
 		slices.Concat(c.driveReadTools(), c.driveManageReadTools(), c.driveSharedReadTools()), append(c.driveWriteTools(), c.driveManageWriteTools()...),
 		merge(c.driveReadHandlers(), c.driveManageReadHandlers(), c.driveSharedReadHandlers()), merge(c.driveWriteHandlers(), c.driveManageWriteHandlers()))
-	c.docs = c.newApp(AppDocs, c.docsReadTools(), append(c.docsWriteTools(), c.docsManageWriteTools()...),
-		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers()))
+	c.docs = c.newApp(AppDocs, c.docsReadTools(), slices.Concat(c.docsWriteTools(), c.docsManageWriteTools(), c.docsFullWriteTools()),
+		c.docsReadHandlers(), merge(c.docsWriteHandlers(), c.docsManageWriteHandlers(), c.docsFullWriteHandlers()))
 	c.sheets = c.newApp(AppSheets,
-		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), append(c.sheetsWriteTools(), c.sheetsManageWriteTools()...),
-		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers()))
+		append(c.sheetsReadTools(), c.sheetsManageReadTools()...), slices.Concat(c.sheetsWriteTools(), c.sheetsManageWriteTools(), c.sheetsFullWriteTools()),
+		merge(c.sheetsReadHandlers(), c.sheetsManageReadHandlers()), merge(c.sheetsWriteHandlers(), c.sheetsManageWriteHandlers(), c.sheetsFullWriteHandlers()))
 	c.contacts = c.newApp(AppContacts,
 		slices.Concat(c.contactsReadTools(), c.contactsManageReadTools(), c.contactsDirectoryReadTools()), c.contactsWriteTools(),
 		merge(c.contactsReadHandlers(), c.contactsManageReadHandlers(), c.contactsDirectoryReadHandlers()), c.contactsWriteHandlers())
 	c.chat = c.newApp(AppChat, c.chatReadTools(), c.chatWriteTools(), c.chatReadHandlers(), c.chatWriteHandlers())
-	c.slides = c.newApp(AppSlides, c.slidesReadTools(), c.slidesWriteTools(), c.slidesReadHandlers(), c.slidesWriteHandlers())
-	c.forms = c.newApp(AppForms, c.formsReadTools(), nil, c.formsReadHandlers(), nil)
+	c.slides = c.newApp(AppSlides, c.slidesReadTools(), append(c.slidesWriteTools(), c.slidesFullWriteTools()...),
+		c.slidesReadHandlers(), merge(c.slidesWriteHandlers(), c.slidesFullWriteHandlers()))
+	c.forms = c.newApp(AppForms, c.formsReadTools(), c.formsWriteTools(), c.formsReadHandlers(), c.formsWriteHandlers())
 	return c, nil
 }
 
